@@ -81,30 +81,40 @@ def findUnique (baseName : String) (startSuffix : Nat)
     | some name => name
     | none => disambiguate baseName (slowSuffix + usedList.length + 1)
 
+/-- The first of the candidates `cand i`, `cand (i + 1)`, … that is not `taken`, giving up after
+    `fuel` more candidates. -/
+def firstUntaken (taken : String → Bool) (cand : Nat → String) : Nat → Nat → String
+  | 0, i => cand i
+  | fuel + 1, i => if taken (cand i) then firstUntaken taken cand fuel (i + 1) else cand i
+
+/-- `base` if it is not `taken`, else the first of `base_1`, `base_2`, … that is not. The search
+    stops after `fuel + 1` candidates, so it finds an untaken one when at most `fuel` names are
+    taken. -/
+def freshNameBy (taken : String → Bool) (fuel : Nat) (base : String) : String :=
+  firstUntaken taken (fun k => if k = 0 then base else base ++ "_" ++ toString k) (fuel + 1) 0
+
+/-- A fresh name for each of `bases` in turn, as `freshNameBy` picks it, avoiding the names
+    `taken` accepts and the names picked before it. `fuel` bounds the number of taken names. -/
+def freshNamesBy (taken : String → Bool) (fuel : Nat) : List String → List String
+  | [] => []
+  | b :: rest =>
+    let n := freshNameBy taken fuel b
+    n :: freshNamesBy (fun m => taken m || m == n) (fuel + 1) rest
+
 /-- `base`, or `base_k` for the smallest `k ≥ 1` that makes it differ from
 every name in `taken`. Generated lemmas, abstracted calls and generated types
 are named this way, so that they never clash with a name of the program or
 with each other. -/
 def freshName (taken : Std.HashSet String) (base : String) : String :=
-  if !taken.contains base then base
-  else
-    let rec go (k : Nat) (fuel : Nat) : String :=
-      match fuel with
-      | 0 => s!"{base}_{k}"
-      | fuel + 1 =>
-        let n := s!"{base}_{k}"
-        if taken.contains n then go (k + 1) fuel else n
-    go 1 taken.size
+  freshNameBy taken.contains taken.size base
 
 /-- A fresh name for each of `bases` in turn, as `freshName` picks it, avoiding
 the names in `taken` and the names picked before it. Returns the names and
 `taken` with them added. -/
 def freshNames (taken : Std.HashSet String) (bases : List String) :
     List String × Std.HashSet String :=
-  let (acc, taken) := bases.foldl (init := ([], taken)) fun (acc, taken) b =>
-    let n := freshName taken b
-    (n :: acc, taken.insert n)
-  (acc.reverse, taken)
+  let names := freshNamesBy taken.contains taken.size bases
+  (names, names.foldl (fun t n => t.insert n) taken)
 
 end Strata.Name
 

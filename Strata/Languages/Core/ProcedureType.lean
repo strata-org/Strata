@@ -13,6 +13,8 @@ import all Strata.DL.Imperative.CFG
 import all Strata.DL.Imperative.CFGDominators
 import Strata.DL.Lambda.LExprT
 import Strata.Languages.Core.StatementType
+public import Strata.Languages.Core.TypeSkolem
+import Strata.Languages.Core.FunctionType
 import Strata.Languages.Core.CmdType
 
 ---------------------------------------------------------------------
@@ -26,34 +28,44 @@ open Imperative (MetaData HasVarsImp)
 open Imperative.CFG (cycleLabelsWith succMapSize)
 open Imperative.CFG.Dom (dominates)
 open Strata (Message FileRange)
+open Lambda
+
+/-! ## Procedure type checking with rigid type parameters -/
+
+/-- Deskolemize a `Message`, rewriting a rigid-parameter refinement as a "refined to"
+    message. -/
+def reformatMessage (known : Lambda.KnownTypes) (σ : RigidNames) (m : Message) : Message :=
+  { m with message := toString (reformatError known σ m.message) }
+
+/-- The registered types `known` with the types that the statements `ss` declare, so that a
+    message from `ss` shows their names. -/
+def withLocalTypes (known : Lambda.KnownTypes) (ss : List Statement) : Lambda.KnownTypes :=
+  (Imperative.Block.localTypeDecls ss).foldl (fun ks tc => ks.insert tc.name tc.numargs) known
+
+/-- The type names in the procedure signatures of `program`, computed on first use. -/
+def procSigTyNameThunk (program : Program) : Thunk (Std.HashSet String) :=
+  Thunk.mk fun _ => .ofList program.procSigTyNames
 
 namespace Procedure
 
+/-- The rigid renaming chosen for the type parameters of procedure `proc` checked in `C`: its
+    constants avoid the registered types, the names of `scope` and `progSigs`, and the type
+    names `tyNames ()` of `proc`. -/
+def rigidNames (scope progSigs : Thunk (Std.HashSet String))
+    (C : Core.Expression.TyContext) (proc : Procedure) (tyNames : Unit → List String) :
+    RigidNames :=
+  rigidNamesAvoiding C scope progSigs proc.header.name.name tyNames proc.header.typeArgs
+
+/-- Reject a parameter whose name starts with `old `: such names denote the initial values
+    of in-out parameters. -/
 private def checkParamNames (proc : Procedure) (sourceLoc : FileRange) :
     Except Message Unit := do
-  if !proc.header.inputs.keys.Nodup then
-    .error <| Message.withRange sourceLoc f!"[{proc.header.name}] Duplicates found in the formals!"
-  if !proc.header.outputs.keys.Nodup then
-    .error <| Message.withRange sourceLoc f!"[{proc.header.name}] Duplicates found in the return variables!"
-  -- Names starting with `old ` are reserved for the initial values of in-out parameters.
   match (proc.header.inputs.keys ++ proc.header.outputs.keys).find? CoreIdent.isOldIdent with
   | some id =>
     .error <| Message.withRange sourceLoc
       f!"[{proc.header.name}] Parameter {id}: a name starting with \"old \" denotes the \
          initial value of an in-out parameter!"
   | none => pure ()
-
-private def checkModificationRights (proc : Procedure) (sourceLoc : FileRange) :
-    Except Message Unit := do
-  let modifiedVars := (HasVarsImp.modifiedVars (P := Expression) proc.body).eraseDups
-  let definedVars := (HasVarsImp.definedVars (P := Expression) proc.body false).eraseDups
-  let allowedVars := proc.header.outputs.keys ++ definedVars
-  let disallowed := modifiedVars.filter (fun v => !allowedVars.contains v)
-  if !disallowed.isEmpty then
-    .error <| Message.withRange sourceLoc f!"[{proc.header.name}]: This procedure modifies variables it \
-              is not allowed to!\n\
-              Variables actually modified: {modifiedVars}\n\
-              Modification allowed for these variables: {allowedVars}"
 
 /-- Error unless every block label is unique. -/
 def checkUniqueLabels (procName : CoreIdent) (cfg : DetCFG) (sourceLoc : FileRange) :
@@ -345,10 +357,11 @@ Steps, in order:
    applied to every reachable block. An unreachable block is checked against the
    base environment alone, in its own substitution, and is annotated with that
    substitution; only its fresh-name state is carried forward. So an unreachable
-   block is checked only in isolation: it may use a polymorphic formal at a type
-   that conflicts with the reachable blocks' use, it may not read a local
-   declared in any other block (even another unreachable one), and the returned
-   body is well-typed as a whole only on its reachable blocks.
+   block is checked only in isolation: it may use a written type variable of its
+   own local at a type that conflicts with the reachable blocks' use of that
+   variable, it may not read a local declared in any other block (even another
+   unreachable one), and the returned body is well-typed as a whole only on its
+   reachable blocks.
 
 Steps 1 and 2 are the conditions of `WF.WFCFGProp`; the step-3 checks are plain
 rejections beyond it. -/
@@ -436,18 +449,14 @@ def typeCheck (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv)
     scopeCtx := scopeCtx.insert lbl ctx
   let mut annotated : Std.HashMap String (Imperative.DetBlock String Command Expression) := {}
   -- Carries the type substitution and the fresh-name generator state across
-  -- blocks (not the variable scope): a procedure type variable solved in one
-  -- block must stay solved for the others, and fresh `$__tyN` names must not be
+  -- blocks (not the variable scope): a written type variable of a local solved in
+  -- one block must stay solved for the others, and fresh `$__tyN` names must not be
   -- reused between blocks. The *variable scope* is set per block from
   -- `scopeCtx`.
   let mut carryEnv := resolveEnv.updateContext Env.context
   -- Apply a substitution to a block's annotated commands and branch guard.
   let substBlock := fun (S : type_of% Env.stateSubstInfo.subst)
-      (blk' : Imperative.DetBlock String Command Expression) =>
-    ({ cmds := blk'.cmds.map (Statement.Command.subst S),
-       transfer := match blk'.transfer with
-         | .condGoto p lt lf md => .condGoto (LExpr.applyTypeSubst p S) lt lf md
-         | .finish md => .finish md } : Imperative.DetBlock String Command Expression)
+      (blk' : Imperative.DetBlock String Command Expression) => Statement.DetBlock.subst S blk'
   -- A reachable block's annotated body is stored unsubstituted; the final
   -- whole-body substitution is applied to it after the per-block loop. A block
   -- with a polymorphic op, constructor, `init`, or `call` whose type variables
@@ -469,7 +478,12 @@ def typeCheck (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv)
     let cmds' := cmdsRev.reverse
     let transfer' ← match blk.transfer with
       | .condGoto p lt lf md =>
-        let (pa, newEnv) ← (LExpr.resolve C currentEnv p).mapError fun e =>
+        -- Resolve as a structured guard is, so a quantifier binder cannot capture an
+        -- undeclared free variable of the guard.
+        let (pa, newEnv) ←
+          (SourceExpr.orFreeVarError
+            (fun _ => currentEnv.freeVarCheck p (fun _ => f!"[{proc.header.name}]"))
+            (SourceExpr.resolve C currentEnv p)).mapError fun e =>
           (Message.fromFormat e).withRangeIfUnknown sourceLoc
         -- Unify the condition's type with `bool` rather than compare it, so a
         -- type variable that another block solves later is accepted in any
@@ -488,7 +502,7 @@ def typeCheck (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv)
       carryEnv := currentEnv
     else
       -- Keep a dead block's solution out of `carryEnv`: otherwise a dead use of a
-      -- polymorphic formal at a conflicting type would reject the procedure, and a
+      -- written type variable at a conflicting type would reject the procedure, and a
       -- binding made only in dead code would leak into the reachable annotations.
       annotated := annotated.insert lbl (substBlock currentEnv.stateSubstInfo.subst blk')
       carryEnv := { carryEnv with genEnv :=
@@ -512,96 +526,161 @@ end CFG
 
 namespace Procedure
 
--- Error message prefix for errors in processing procedure pre/post conditions.
+/-- The prefix of an error message about procedure `procName`. -/
+def procedureMsgPrefix (procName : CoreIdent) : String :=
+  s!"Procedure '{procName.name}': "
+
+/-- Error message prefix for a procedure condition, located at its source range. -/
 def conditionErrorMsgPrefix (procName : CoreIdent) (condName : CoreLabel)
     (md : MetaData Expression) : Message :=
-  md.toDiagnosticF f!"[{procName}:{condName}]:"
+  md.toDiagnosticF f!"Procedure '{procName.name}', condition '{condName}': "
 
--- Type checking procedure pre/post conditions.
-open Lambda.LTy.Syntax in
-private def typeCheckConditions (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv)
-    (conditions : ListMap CoreLabel Check) (procName : CoreIdent) :
-    Except Message (Array Expression.Expr × Core.Expression.TyEnv) := do
-  let mut results := #[]
-  let mut currentEnv := Env
-  for (name, condition) in (conditions.keys, conditions.values) do
-    let errorPrefix := conditionErrorMsgPrefix procName name condition.md
-    let (annotatedExpr, newEnv) ← Lambda.LExpr.resolve C currentEnv condition.expr
-                                    |>.mapError (fun e => { errorPrefix with message := errorPrefix.message ++ " " ++ toString e })
-    if annotatedExpr.toLMonoTy != mty[bool] then
-      .error { errorPrefix with message := errorPrefix.message ++ s!": Expected condition to be of type Bool, but got {annotatedExpr.toLMonoTy}!" }
-    results := results.push annotatedExpr.unresolved
-    currentEnv := newEnv
-  return (results, currentEnv)
+/-- Deskolemize a condition-checking failure, rewriting a rigid-parameter refinement as a
+    "refined to" message, and prefix it with the procedure and condition name. -/
+def conditionErrorMessage (known : Lambda.KnownTypes) (procName : CoreIdent) (σ : RigidNames)
+    (label : CoreLabel) (md : MetaData Expression) (e : Format) : Message :=
+  let pfx := conditionErrorMsgPrefix procName label md
+  { pfx with message := pfx.message ++ toString (reformatError known σ e) }
 
-def typeCheck (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (p : Program)
-    (proc : Procedure) (md : MetaData Expression) : Except Message (Procedure × Core.Expression.TyEnv) := do
+/-- Deskolemize an error from checking the body of procedure `procName` and prefix it with the
+    procedure name, keeping its source location. -/
+def bodyErrorMessage (known : Lambda.KnownTypes) (procName : CoreIdent) (σ : RigidNames)
+    (m : Message) : Message :=
+  let m' := reformatMessage known σ m
+  { m' with message := procedureMsgPrefix procName ++ m'.message }
+
+/-- Whether `S` leaves every variable of `rigidVars` unchanged. -/
+def ambientRigidVarsFixed (rigidVars : List TyIdentifier) (S : Subst) : Bool :=
+  rigidVars.all fun v => LMonoTy.subst S (.ftvar v) == .ftvar v
+
+/-- The failure reason when an inference result refined an ambient rigid type variable. -/
+def ambientRigidRefinedMsg : Format := "an ambient rigid type variable was refined"
+
+/-- Reject an inference result that refined an ambient rigid type variable. -/
+def ensureAmbientRigidVarsFixed (procName : CoreIdent)
+    (rigidVars : List TyIdentifier) (S : Subst) : Except Message Unit :=
+  if ambientRigidVarsFixed rigidVars S then
+    .ok ()
+  else
+    throw (Message.fromFormat f!"{procedureMsgPrefix procName}{ambientRigidRefinedMsg}")
+
+/-- Resolve a condition at type `bool` in `Env`, returning it elaborated and deskolemized. -/
+private def checkCondition (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv)
+    (procName : CoreIdent) (σ : RigidNames) (label : CoreLabel) (chk : Check) :
+    Except Message Check := do
+  let (expr, _, EnvR) ←
+    (Function.checkBoolProp C Env (σ.map Prod.fst) σ (format chk.expr) (fun _ => true)
+      chk.expr).mapError
+      (conditionErrorMessage C.knownTypes procName σ label chk.md)
+  unless ambientRigidVarsFixed C.rigidTypeVars EnvR.stateSubstInfo.subst do
+    throw (conditionErrorMessage C.knownTypes procName σ label chk.md ambientRigidRefinedMsg)
+  .ok { chk with expr := expr }
+
+/-- Check the names of a procedure header (`checkSignatureNames`). -/
+def checkHeaderNames (C : Core.Expression.TyContext) (h : Procedure.Header) :
+    Except Format Unit :=
+  checkSignatureNames (· ∈ C.functions) "Procedure" h.name.name h.typeArgs
+    (LMonoTys.freeVars (h.inputs.values ++ h.outputs.values)) (h.inputs.keys ++ h.outputs.keys)
+
+/-- Type check a `Procedure` whose header names passed `checkHeaderNames`: validate the rest of
+    its header, then check its conditions and body with the type parameters as rigid constants,
+    returning them elaborated and deskolemized. The rigid constants avoid the names of `scope`
+    and `progSigs` and the type names `tyNames ()` of `proc`. -/
+def typeCheckCore (scope progSigs : Thunk (Std.HashSet String))
+    (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (p : Program)
+    (proc : Procedure) (md : MetaData Expression) (tyNames : Unit → List String) :
+    Except Message (Procedure × Core.Expression.TyEnv) := do
   let fileRange := Imperative.getFileRange md |>.getD FileRange.unknown
-
-  -- Validate well-formedness of formals and returns.
+  let h := proc.header
+  let name := h.name
+  -- Signature well-formedness.
+  if !(decide h.inputs.keys.Nodup) then
+    throw (md.toDiagnosticF
+      f!"{procedureMsgPrefix name}duplicate input parameter names {h.inputs.keys}")
+  if !(decide h.outputs.keys.Nodup) then
+    throw (md.toDiagnosticF
+      f!"{procedureMsgPrefix name}duplicate output parameter names {h.outputs.keys}")
   checkParamNames proc fileRange
-  checkModificationRights proc fileRange
+  -- Signature well-kindedness.
+  let notRegistered := fun ty => f!"{procedureMsgPrefix name}signature type {ty} is not a \
+    registered type"
+  let (insR, Env) ← (resolveKnownTys C notRegistered h.inputs.values Env).mapError
+    md.toDiagnosticF
+  let (outsR, Env) ← (resolveKnownTys C notRegistered h.outputs.values Env).mapError
+    md.toDiagnosticF
+  let h := { h with inputs := h.inputs.keys.zip insR, outputs := h.outputs.keys.zip outsR }
+  let allowed := h.outputs.keys ++ HasVarsImp.definedVars (P := Expression) proc.body false
+  for v in HasVarsImp.modifiedVars (P := Expression) proc.body do
+    if !allowed.contains v then
+      throw (md.toDiagnosticF f!"{procedureMsgPrefix name}variable '{v.name}' is modified \
+               but is not an output parameter or a local variable")
+  -- Check conditions and body with the type parameters as rigid constants.
+  let sk := Procedure.rigidNames scope progSigs C proc tyNames
+  let C' := addSkolemTypes C sk
+  -- Preconditions: input context only.
+  let preEnv := Function.formalsEnv Env sk h.inputs
+  let preconds' ← proc.spec.preconditions.mapM (fun (label, chk) => do
+    let chk' ← checkCondition C' preEnv name sk label chk
+    .ok (label, chk'))
+  -- Postconditions and body: body context (inputs, outputs, and `old` bindings).
+  let inoutOld : @LMonoTySignature Unit :=
+    h.getInoutParams.map (fun (id, mty) => (CoreIdent.mkOld id.name, mty))
+  let bodyEnv := Function.formalsEnv Env sk (inoutOld ++ h.outputs ++ h.inputs)
+  let postconds' ← proc.spec.postconditions.mapM (fun (label, chk) => do
+    let chk' ← checkCondition C' bodyEnv name sk label chk
+    .ok (label, chk'))
+  let body' ← match proc.body with
+    | .cfg c => do
+      let cSk := if sk.isEmpty then c
+        else DetCFG.mapCmdsGuards c (skolemizeCmd none sk) (skolemizeBody none sk)
+      let (cOut, bodyEnv') ← (CFG.typeCheck C' bodyEnv p proc cSk fileRange).mapError
+        (bodyErrorMessage C'.knownTypes name sk)
+      let _ ← ensureAmbientRigidVarsFixed name C'.rigidTypeVars bodyEnv'.stateSubstInfo.subst
+      .ok (Procedure.Body.cfg (if sk.isEmpty then cOut
+        else DetCFG.mapCmdsGuards cOut (mapCmdTys (deskolemizeTy sk))
+          (mapExprTys (deskolemizeTy sk))))
+    | .structured ss => do
+      let ssSk := if sk.isEmpty then ss else skolemizeStmts none sk ss
+      let (ssOut, bodyEnv') ← (Statement.typeCheck C' bodyEnv p (some proc) ssSk).mapError
+        (bodyErrorMessage (withLocalTypes C'.knownTypes ss) name sk)
+      let _ ← ensureAmbientRigidVarsFixed name C'.rigidTypeVars bodyEnv'.stateSubstInfo.subst
+      .ok (Procedure.Body.structured
+        (if sk.isEmpty then ssOut else mapStmtsTys (deskolemizeTy sk) ssOut))
+  let proc' : Procedure :=
+    { proc with
+      header := h,
+      spec := { preconditions := preconds', postconditions := postconds' },
+      body := body' }
+  .ok (proc', Env)
 
-  let (inp_mty_sig, out_mty_sig, Env) ← proc.header.instantiate C Env.pushEmptyContext
-                                          |>.mapError (fun e => Message.withRange fileRange e)
+/-- Type check a `Procedure` after renaming its reserved type parameters
+    (`Procedure.renameReservedTypeArgs`) away from the type variables in scope (`scopeTyVars`)
+    and those of the inference substitution, with rigid constants that avoid the names of
+    `scope` and `progSigs`. Unlike a function or a lemma, a procedure body is checked under the
+    substitution of `Env`, which must not bind or mention the procedure's type parameters; the
+    new names keep this. The header names are first checked as written, so that a message shows
+    the names the user wrote. The types the procedure writes are collected once, on demand, for
+    both the renaming and the rigid constants: renaming type parameters does not change the type
+    names a procedure mentions. -/
+def typeCheckIn (scope progSigs : Thunk (Std.HashSet String))
+    (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (p : Program)
+    (proc : Procedure) (md : MetaData Expression) :
+    Except Message (Procedure × Core.Expression.TyEnv) := do
+  (checkHeaderNames C proc.header).mapError md.toDiagnosticF
+  let annot := Thunk.mk fun _ => procAnnotTys proc
+  typeCheckCore scope progSigs C Env p
+    (proc.renameReservedTypeArgs (fun _ => Statement.substTyVars Env ++ scopeTyVars C Env)
+      fun _ => annot.get) md
+    fun _ => procTyNames proc annot.get
 
-  -- Temporarily add the formals into the context.
-  let inp_lty_sig := Lambda.LMonoTySignature.toTrivialLTy inp_mty_sig
-  let envWithInputs := Env.addInNewestContext (Strata.Util.HMap.ofList inp_lty_sig)
-
-  -- Type check preconditions.
-  -- Note: `envWithInputs` does not have the return variables in the context,
-  -- which means that the presence of any return variables in the preconditions
-  -- will rightfully flag an error.
-  let (preconditions, envAfterPreconds) ← typeCheckConditions C envWithInputs
-                                            proc.spec.preconditions proc.header.name
-
-  -- Temporarily add returns into the context.
-  let out_lty_sig := Lambda.LMonoTySignature.toTrivialLTy out_mty_sig
-  let envWithOutputs := envAfterPreconds.addInNewestContext (T := CoreLParams)
-                          (Strata.Util.HMap.ofList out_lty_sig)
-
-  -- Add "old" variables for in-out parameters (those in both inputs and outputs)
-  -- so that postconditions and body can reference `old x`.
-  let oldInoutBindings : List (CoreIdent × Lambda.LTy) :=
-    (getInoutParams inp_mty_sig out_mty_sig).toList.map fun (id, ty) =>
-      (CoreIdent.mkOld id.name, .forAll [] ty)
-  let envWithOldVars := envWithOutputs.addInNewestContext (Strata.Util.HMap.ofList oldInoutBindings)
-
-  -- Type check postconditions.
-  let (postconditions, envAfterPostconds) ← typeCheckConditions C envWithOldVars
-                                              proc.spec.postconditions proc.header.name
-
-  -- Type check body.
-  -- Note that `Statement.typeCheck` already reports source locations in
-  -- error messages.
-  let (annotated_body, annotated_cfg, finalEnv) ← match proc.body with
-    | .structured ss =>
-      let (ss', env') ← Statement.typeCheck C envAfterPostconds p (.some proc) ss
-      pure (ss', none, env')
-    | .cfg cfgBody =>
-      let (cfg', env') ← CFG.typeCheck C envAfterPostconds p proc cfgBody fileRange
-      pure ([], some cfg', env')
-
-  -- Remove formals and returns from the context -- they ought to be local to
-  -- the procedure body.
-  let finalEnv := finalEnv.popContext
-
-  -- Construct final result.
-  let finalPreconditions := Procedure.Spec.updateCheckExprs preconditions.toList proc.spec.preconditions
-  let finalPostconditions := Procedure.Spec.updateCheckExprs postconditions.toList proc.spec.postconditions
-  -- Type arguments are empty below because we've replaced polytypes with monotypes.
-  let new_hdr := { proc.header with typeArgs := [],
-                                    inputs := inp_mty_sig,
-                                    outputs := out_mty_sig }
-  let new_spec := { proc.spec with preconditions := finalPreconditions,
-                                   postconditions := finalPostconditions }
-  let new_body := match annotated_cfg with
-    | some cfg' => .cfg cfg'
-    | none => .structured annotated_body
-  let new_proc := { proc with header := new_hdr, spec := new_spec, body := new_body }
-
-  return (new_proc, finalEnv)
+/-- Type check a `Procedure` (`typeCheckIn`) with rigid constants that avoid the type names in
+    scope in `C` and `Env` and those of the procedure signatures of `p`. Both sets are built
+    only for a polymorphic procedure. -/
+def typeCheck (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (p : Program)
+    (proc : Procedure) (md : MetaData Expression) :
+    Except Message (Procedure × Core.Expression.TyEnv) :=
+  typeCheckIn (scopeTyNameThunk C Env)
+    (procSigTyNameThunk p) C Env p proc md
 
 ---------------------------------------------------------------------
 

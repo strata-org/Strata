@@ -33,9 +33,8 @@ preconditions of any partial functions called within the body.
 
 See StrataTest/Transform/PrecondElim.lean for examples.
 
-Note that this transformation must be called BEFORE typechecking, since
-in the presence of polymorphic preconditions, the resulting assertions
-have type variables that must be unified.
+A polymorphic precondition is instantiated at each call's type instance, as far
+as the call's operator annotation and argument types determine it.
 -/
 
 public section
@@ -86,9 +85,9 @@ so expression-level metadata carries no source location. We therefore inherit
 the enclosing statement's `md` (with `propertySummary` stripped to prevent
 user-facing messages from leaking into generated checks).
 -/
-def collectPrecondAsserts (F : @Lambda.Factory CoreLParams) (e : Expression.Expr)
+def collectPrecondAssertCmds (F : @Lambda.Factory CoreLParams) (e : Expression.Expr)
 (labelPrefix : String) (md : Imperative.MetaData Expression)
-: List Statement :=
+: List Command :=
   let wfObs := Lambda.collectWFObligations F e
   -- Strip propertySummary: the enclosing statement's user-facing message
   -- (e.g., a Python assert message) should not propagate to generated
@@ -98,7 +97,7 @@ def collectPrecondAsserts (F : @Lambda.Factory CoreLParams) (e : Expression.Expr
   -- For nested calls like SafeSDiv(SafeSDiv(x,y),z), obligations arrive as
   -- [inner-0, inner-1, outer-0, outer-1] with the same funcName throughout.
   -- Without modulo, the index would be 0,1,2,3 instead of 0,1,0,1.
-  let (_, _, result) := wfObs.foldl (init := ("", 0, ([] : List Statement)))
+  let (_, _, result) := wfObs.foldl (init := ("", 0, ([] : List Command)))
     fun (prevFunc, prevIdx, acc) ob =>
       let rawIdx := if ob.funcName == prevFunc then prevIdx + 1 else 0
       let precondCount := F[ob.funcName]?.map (·.preconditions.length) |>.getD 1
@@ -107,32 +106,72 @@ def collectPrecondAsserts (F : @Lambda.Factory CoreLParams) (e : Expression.Expr
       let md' := match classifyPrecondition ob.funcName precondIdx with
         | some pt => md.pushElem Imperative.MetaData.propertyType (.msg pt)
         | none => md
-      let stmt := Statement.assert
-        s!"{labelPrefix}_calls_{ob.funcName}_{globalIdx}" ob.obligation md'
-      (ob.funcName, rawIdx, stmt :: acc)
+      let cmd := Imperative.CmdExt.cmd (.assert
+        s!"{labelPrefix}_calls_{ob.funcName}_{globalIdx}" ob.obligation md')
+      (ob.funcName, rawIdx, cmd :: acc)
   result.reverse
+
+/-- The assertions of `collectPrecondAssertCmds`, as statements. -/
+def collectPrecondAsserts (F : @Lambda.Factory CoreLParams) (e : Expression.Expr)
+    (labelPrefix : String) (md : Imperative.MetaData Expression) : List Statement :=
+  (collectPrecondAssertCmds F e labelPrefix md).map .cmd
 
 /--
 Collect assertions for all expressions in a command.
 -/
-def collectCmdPrecondAsserts (F : @Lambda.Factory CoreLParams)
-  (cmd : Imperative.Cmd Expression) : List Statement :=
+def collectCmdPrecondAssertCmds (F : @Lambda.Factory CoreLParams)
+  (cmd : Imperative.Cmd Expression) : List Command :=
   match cmd with
-  | .init _ _ (.det e) md => collectPrecondAsserts F e "init" md
+  | .init _ _ (.det e) md => collectPrecondAssertCmds F e "init" md
   | .init _ _ .nondet _ => []
-  | .set x (.det e) md => collectPrecondAsserts F e s!"set_{x.name}" md
+  | .set x (.det e) md => collectPrecondAssertCmds F e s!"set_{x.name}" md
   | .set _ .nondet _ => []
-  | .assert l e md => collectPrecondAsserts F e s!"assert_{l}" md
-  | .assume l e md => collectPrecondAsserts F e s!"assume_{l}" md
-  | .cover l e md => collectPrecondAsserts F e s!"cover_{l}" md
+  | .assert l e md => collectPrecondAssertCmds F e s!"assert_{l}" md
+  | .assume l e md => collectPrecondAssertCmds F e s!"assume_{l}" md
+  | .cover l e md => collectPrecondAssertCmds F e s!"cover_{l}" md
+
+/-- The assertions of `collectCmdPrecondAssertCmds`, as statements. -/
+def collectCmdPrecondAsserts (F : @Lambda.Factory CoreLParams)
+    (cmd : Imperative.Cmd Expression) : List Statement :=
+  (collectCmdPrecondAssertCmds F cmd).map .cmd
 
 /--
 Collect assertions for call arguments.
 -/
-def collectCallPrecondAsserts (F : @Lambda.Factory CoreLParams) (pname : String)
+def collectCallPrecondAssertCmds (F : @Lambda.Factory CoreLParams) (pname : String)
   (args : List Expression.Expr) (md : Imperative.MetaData Expression)
-  : List Statement :=
-  args.flatMap fun arg => collectPrecondAsserts F arg s!"call_{pname}_arg" md
+  : List Command :=
+  args.flatMap fun arg => collectPrecondAssertCmds F arg s!"call_{pname}_arg" md
+
+/-- The assertions of `collectCallPrecondAssertCmds`, as statements. -/
+def collectCallPrecondAsserts (F : @Lambda.Factory CoreLParams) (pname : String)
+    (args : List Expression.Expr) (md : Imperative.MetaData Expression) : List Statement :=
+  (collectCallPrecondAssertCmds F pname args md).map .cmd
+
+/--
+The precondition assertions a CFG body owes, put in its blocks: each command is preceded by
+the assertions for the calls in its expressions (`collectCmdPrecondAssertCmds`, and
+`collectCallPrecondAssertCmds` for a `call`'s arguments), and a block that ends in a branch
+gets the assertions for the calls in its branch condition after its last command. Returns
+whether any assertion was added, and the new body.
+-/
+private def transformCFG (g : DetCFG) : CoreTransformM (Bool × DetCFG) := do
+  let F ← getFactory
+  let (changed, g') ← runCFGCmds (g := g) fun cmd => do
+    let asserts := match cmd with
+      | .cmd c => collectCmdPrecondAssertCmds F c
+      | .call pname callArgs md =>
+        collectCallPrecondAssertCmds F pname (CallArg.getInputExprs callArgs) md
+    incrementStat s!"{Stats.callSiteAssertsEmitted}" asserts.length
+    return if asserts.isEmpty then none else some (asserts ++ [cmd])
+  let condAsserts := g'.blocks.map fun (_, b) => match b.transfer with
+    | .condGoto e _ _ md => collectPrecondAssertCmds F e "branch_cond" md
+    | .finish _ => []
+  let numCondAsserts := (condAsserts.map List.length).sum
+  incrementStat s!"{Stats.callSiteAssertsEmitted}" numCondAsserts
+  let blocks := (g'.blocks.zip condAsserts).map fun ((l, b), as) =>
+    (l, { b with cmds := b.cmds ++ as })
+  return (changed || numCondAsserts != 0, { g' with blocks })
 
 /-! ## Processing contract conditions -/
 
@@ -200,8 +239,8 @@ def mkContractWFLemmas (F : @Lambda.Factory CoreLParams) (taken : Std.HashSet St
   let name := proc.header.name.name
   let inouts := proc.header.getInoutParams.toList
   let atEntry (e : Expression.Expr) : Expression.Expr :=
-    inouts.foldl (init := e) fun e (x, _) =>
-      LExpr.substFvar e x (.fvar coreLoc (CoreIdent.mkOld x.name) none)
+    inouts.foldl (init := e) fun e (x, ty) =>
+      LExpr.substFvar e x (.fvar coreLoc (CoreIdent.mkOld x.name) (some ty))
   let precondStmts := proc.spec.preconditions.flatMap fun (label, check) =>
     processCondition F (atEntry check.expr) s!"{name}_pre_{label}" label check.md
   let postcondStmts := proc.spec.postconditions.flatMap fun (label, check) =>
@@ -387,14 +426,9 @@ where
           | .structured ss =>
             let (c, body') ← transformStmts ss
             pure (c, { proc with body := .structured body' })
-          -- A CFG body cannot be walked here, and passing it through would
-          -- lose the well-formedness and precondition asserts it owes: the
-          -- obligations would go missing rather than fail. `noCFGBodies` is
-          -- declared as a requirement; this is where it is enforced.
-          | .cfg _ =>
-            throw (Strata.Message.fromFormat
-              f!"❌ PrecondElim: procedure {proc.header.name.name} has a CFG body; \
-                 preconditions can only be eliminated from structured bodies.")
+          | .cfg g =>
+            let (c, g') ← transformCFG g
+            pure (c, { proc with body := .cfg g' })
         setFactory F -- reset factory
         let wfDecls := mkContractWFLemmas F taken proc
         taken := taken.insertMany (wfDecls.map (·.name.name))
@@ -479,9 +513,7 @@ end PrecondElim
     partial-function preconditions. Model-preserving because it only adds
     new assertions and procedures without abstracting existing ones. -/
 def precondElimPipelinePhase : PipelinePhase :=
-  -- A CFG-bodied procedure is passed through untouched, so its
-  -- well-formedness checks would go missing rather than fail; declaring the
-  -- requirement turns that into a rejected pipeline.
+  -- A CFG body gets its checks in its blocks (`PrecondElim.transformCFG`).
   -- The pass only inserts assertion commands ahead of existing statements and
   -- never introduces new assignments, so `staticSingleAssignment` survives.
   -- `noBetaRedexes` is not claimed: a
@@ -489,12 +521,12 @@ def precondElimPipelinePhase : PipelinePhase :=
   -- and a function-typed parameter applied to an abstraction argument would
   -- leave a redex behind.
   modelPreservingPipelinePhase "precondElim"
-    (requires := factSet![.noCFGBodies])
+    (requires := factSet![.typeAnnotated])
     (establishes := factSet![.noPrecondsFromFuncs])
     (preserves := factSet![.noCFGBodies, .noCalls, .noLoops, .noLoopInvariants,
                          .noLoopMeasures, .staticSingleAssignment, .noNondetGuards,
                          .noProcedureContracts,
-                         .noPolymorphicFunctions, .typeAnnotated, .noInits])
+                         .noPolymorphicFunctions, .typeAnnotated, .noInits, .exitsCovered])
     fun prog => do
       PrecondElim.precondElim prog
 

@@ -761,12 +761,12 @@ private theorem runStmtsRec_removeLoop_aux : ∀ (fuel : Nat) (ss : List Stateme
     sizeOf ss < fuel → Transform.Post (Transform.runStmtsRec removeLoop ss) (PassPost ss)
   | 0, _, h => absurd h (Nat.not_lt_zero _)
   | _ + 1, [], _ => by
-    simp only [Transform.runStmtsRec]
+    rw [Transform.runStmtsRec_eq]
     exact Transform.Post.pure ⟨.nil, Nat.le_refl _, by simp, fun _ => rfl⟩
   | fuel + 1, s :: rest, hsz => by
     have ih := runStmtsRec_removeLoop_aux fuel
     simp only [List.cons.sizeOf_spec] at hsz
-    rw [Transform.runStmtsRec.eq_def]
+    rw [Transform.runStmtsRec_eq]
     dsimp only
     refine Transform.Post.bind (Q₁ := fun r => ∃ s', r.2 = [s'] ∧ StmtRelPartial s s' ∧
         Stmt.numLoops s' ≤ Stmt.numLoops s ∧
@@ -888,18 +888,20 @@ private theorem declBodyRel_declStep {d₀ d : Decl} {r : Bool × Decl}
     cases hb : proc₀.body
     · rw [declBodyRel_structured hb] at h₁ ⊢
       obtain ⟨ss₁, hrel, rfl⟩ := h₁
-      obtain ⟨ss, ss', hss, hq, hr⟩ := h₂
-      obtain rfl : ss₁ = ss := Body.structured.inj hss
-      obtain ⟨c, d'⟩ := r
-      cases c
-      · exact ⟨ss₁, hrel, hr⟩
-      · exact ⟨ss', hrel.trans hq.1, hr⟩
-    · -- `runProgram` rejects a CFG body.
-      rw [declBodyRel_cfg hb] at h₁
+      rcases h₂ with ⟨ss, ss', hss, hq, hr⟩ | ⟨g, hg, -⟩
+      · obtain rfl : ss₁ = ss := Body.structured.inj hss
+        obtain ⟨c, d'⟩ := r
+        cases c
+        · exact ⟨ss₁, hrel, hr⟩
+        · exact ⟨ss', hrel.trans hq.1, hr⟩
+      · cases hg
+    · -- A CFG body is kept.
+      rw [declBodyRel_cfg hb] at h₁ ⊢
       subst h₁
-      obtain ⟨ss, -, hss, -⟩ := h₂
-      rw [hb] at hss
-      cases hss
+      rcases h₂ with ⟨ss, -, hss, -⟩ | ⟨-, -, rfl⟩
+      · rw [hb] at hss
+        cases hss
+      · rfl
   all_goals
     obtain rfl := h₁
     obtain rfl := h₂
@@ -913,12 +915,13 @@ private theorem declStep_numLoops {d : Decl} {r : Bool × Decl}
       (r.1 = Bool.false → declNumLoops r.2 = 0) := by
   cases d
   case proc proc md =>
-    obtain ⟨ss, ss', hb, hq, hr⟩ := h
-    obtain ⟨c, d'⟩ := r
-    cases c <;> simp only [Bool.false_eq_true, ↓reduceIte] at hr <;> subst hr <;>
-      simp only [declNumLoops, hb]
-    · exact ⟨Nat.le_refl _, nofun, fun _ => hq.2.2.2 rfl⟩
-    · exact ⟨Nat.le_of_lt (hq.2.2.1 rfl), fun _ => hq.2.2.1 rfl, nofun⟩
+    rcases h with ⟨ss, ss', hb, hq, hr⟩ | ⟨g, hb, rfl⟩
+    · obtain ⟨c, d'⟩ := r
+      cases c <;> simp only [Bool.false_eq_true, ↓reduceIte] at hr <;> subst hr <;>
+        simp only [declNumLoops, hb]
+      · exact ⟨Nat.le_refl _, nofun, fun _ => hq.2.2.2 rfl⟩
+      · exact ⟨Nat.le_of_lt (hq.2.2.1 rfl), fun _ => hq.2.2.1 rfl, nofun⟩
+    · simp [declNumLoops, hb]
   all_goals
     obtain rfl := h
     simp [declNumLoops]
@@ -960,11 +963,14 @@ private theorem rel₂_declStep {ds₀ ds : List Decl} {rs : List (Bool × Decl)
     reports a change and without loops when it reports none. -/
 theorem runProgram_removeLoop {p q : Program}
     (hq : List.Rel₂ (DeclBodyRel BlockRelPartial) p.decls q.decls) :
-    Transform.Post (Transform.runProgram removeLoop q) fun r =>
-      List.Rel₂ (DeclBodyRel BlockRelPartial) p.decls r.2.decls ∧
-      (r.1 = Bool.true → numLoops r.2 < numLoops q) ∧
-      (r.1 = Bool.false → numLoops r.2 = 0) :=
-  (Transform.runProgram_post runStmtsRec_removeLoop q).mono fun r ⟨rs, hrs, hdecls, hc⟩ => by
+    Transform.Post (Transform.runProgram removeLoop q (cfgCmd := some fun _ => pure none))
+      fun r => List.Rel₂ (DeclBodyRel BlockRelPartial) p.decls r.2.decls ∧
+        (r.1 = Bool.true → numLoops r.2 < numLoops q) ∧
+        (r.1 = Bool.false → numLoops r.2 = 0) :=
+  (Transform.runProgram_post runStmtsRec_removeLoop
+    (fun _ hh g γ => by cases hh; exact Transform.runCFGCmds_keep g γ)
+    (fun _ hh => by cases hh) q).mono
+    fun r ⟨rs, hrs, hdecls, hc⟩ => by
     obtain ⟨hrel, -, hlt, hz⟩ := rel₂_declStep hq hrs
     rw [numLoops_eq_sum, numLoops_eq_sum, hdecls, hc]
     exact ⟨hrel, hlt, hz⟩

@@ -9,6 +9,7 @@ public import Strata.Pipeline.Messages
 public import Strata.Languages.Core.SMTEncoder
 public import Strata.DL.Lambda.RecursiveAxioms
 public import Strata.Languages.Core.PipelinePhase
+public import Strata.Transform.CoreTypeCheck
 public import Strata.Transform.WP.WPCoreProgram
 public import Strata.Transform.SSA.SSACoreProgram
 public import Strata.Transform.DeadDefElim
@@ -37,6 +38,7 @@ public import Strata.Languages.Core.Statistics -- shake: keep
 public import Strata.Languages.Core.Env
 public import Strata.Languages.Core.Options
 public import Strata.Languages.Core.ProgramEval
+public import Strata.Languages.Core.SymExecTree
 import Strata.Languages.Core.ProgramType
 import Strata.Util.Tactics
 
@@ -702,27 +704,6 @@ open Strata
 
 public section
 
-def typeCheck (options : VerifyOptions) (program : Program)
-    (factory : Lambda.Factory CoreLParams := Core.Factory) :
-    Except Message Program := do
-  let T := Lambda.TEnv.default
-  -- Callers past `MonomorphizeFunctions` pass the transformed factory (poly
-  -- Factory originals dropped, specialized copies added) rather than the default.
-  let C := { Lambda.LContext.default with
-                functions := factory,
-                knownTypes := Core.KnownTypes }
-  match Factory.typeCheck C T with
-  | .error k =>
-    -- TODO: Message for functions defined in Factory?
-    throw (Message.fromFormat k)
-  | .ok T =>
-    let (program, _T) ← Program.typeCheck C T program
-    GenOpaqueTypeParams.checkClosedLemmaNames program
-    let program := GenOpaqueTypeParams.closeLemmaTypeVars program
-    -- dbg_trace f!"[Strata.Core] Annotated program:\n{program}"
-    if options.verbose >= .normal then dbg_trace f!"[Strata.Core] Type checking succeeded.\n"
-    return program
-
 def formatProofObligation (ob : Imperative.ProofObligation Expression) :
     Std.Format :=
   let flatEntries := ob.assumptions.flatten
@@ -783,10 +764,10 @@ def buildEnv (options : VerifyOptions) (program : Program)
     through `buildEnv` and `Program.eval`.  Returns the program-level declarations of the
     obligation program (the program's type declarations, the functions evaluation added with
     their recursive axioms, the `distinct` declarations), the obligations evaluation deferred,
-    and the statistics. -/
-def evalProgramDecls (options : VerifyOptions) (program : Program)
+    the statistics, and the environment after evaluation. -/
+private def evalProgramDeclsWithEnv (options : VerifyOptions) (program : Program)
     (moreFns : Lambda.Factory CoreLParams := Lambda.Factory.default) :
-    Except Message (List Decl × Imperative.ProofObligations Expression × Statistics) := do
+    Except Message (List Decl × Imperative.ProofObligations Expression × Statistics × Env) := do
   let factory ← Core.Factory.addFactory moreFns
   -- Symbolic evaluation gets both the factory and the program without the unconditional
   -- `inline` attribute, so expanding such a call is the Simplify phase's decision.
@@ -840,7 +821,43 @@ def evalProgramDecls (options : VerifyOptions) (program : Program)
     | none => Decl.func f .empty
   let distinctDecls := postEvalEnv.distinct.mapIdx fun i es =>
     Decl.distinct s!"distinct_{i}" es .empty
-  return (typeDecls ++ funcDecls ++ distinctDecls, postEvalEnv.deferred, stats)
+  return (typeDecls ++ funcDecls ++ distinctDecls, postEvalEnv.deferred, stats, postEvalEnv)
+
+/-- `evalProgramDeclsWithEnv` without the post-evaluation environment. -/
+def evalProgramDecls (options : VerifyOptions) (program : Program)
+    (moreFns : Lambda.Factory CoreLParams := Lambda.Factory.default) :
+    Except Message (List Decl × Imperative.ProofObligations Expression × Statistics) := do
+  let (decls, deferred, stats, _) ← evalProgramDeclsWithEnv options program moreFns
+  return (decls, deferred, stats)
+
+/-- The statements checking a deferred obligation `ob`: an `assume` per assumption, oldest
+    first, then its `assert` or `cover`. -/
+private def deferredBlock (ob : Imperative.ProofObligation Expression) : List Statement :=
+  let assumes := ob.assumptions.reverse.flatten.filterMap fun
+    | .assumption label e =>
+      some (Imperative.Stmt.cmd (CmdExt.cmd (Imperative.Cmd.assume label e ob.metadata)))
+    | _ => none
+  assumes ++ [Imperative.Stmt.cmd (CmdExt.cmd ob.toCheckCmd)]
+
+/-- The obligation program: `decls`, then one obligation procedure whose body has each of
+    `blocks` as a branch of nested `if *`s. The procedure is named after the first procedure of
+    `program`, else its first lemma; the name is only a label, since obligation extraction walks
+    the body. No obligation procedure when `program` has neither. -/
+private def obligationProgram (program : Program) (decls : List Decl)
+    (blocks : List (List Statement)) : Program :=
+  let procName := program.decls.findSome? fun
+    | .proc p _ => some p.header.name | _ => none
+  let procName := procName <|> program.decls.findSome? fun
+    | .lemma l _ => some (⟨l.name, ()⟩ : CoreIdent) | _ => none
+  let body := match blocks with
+    | [] => []
+    | [b] => b
+    | b :: rest => rest.foldl (fun acc block =>
+        [Imperative.Stmt.ite .nondet acc block .empty]) b
+  let oblProcs := match procName with
+    | some name => [Decl.obligationProc name body]
+    | none => []
+  { decls := decls ++ oblProcs }
 
 /-- Proof obligation program construction: Program → Program.
     Runs symbolic execution and converts obligations to a program
@@ -867,32 +884,8 @@ def toCoreProofObligationProgram (options : VerifyOptions) (program : Program)
   | some msg => throw (Message.fromString s!"toCoreProofObligationProgram: {msg}")
   | none => pure ()
   let (decls, deferred, stats) ← evalProgramDecls options program moreFns
-  -- Convert the evaluation Env's deferred obligations into a procedure body:
-  -- one obligation procedure containing all deferred obligations.
-  -- The procedure name is only used for the obligation procedure header;
-  -- downstream phases (ObligationExtraction) walk the body and ignore it.
-  -- We pick the first procedure name as a representative label, or the first
-  -- lemma name when a program has lemmas but no procedure.
-  let procName := program.decls.findSome? fun
-    | .proc p _ => some p.header.name | _ => none
-  let procName := procName <|> program.decls.findSome? fun
-    | .lemma l _ => some (⟨l.name, ()⟩ : CoreIdent) | _ => none
-  let blocks := deferred.toList.map fun ob =>
-    let assumes := ob.assumptions.reverse.flatten.filterMap fun
-      | .assumption label e =>
-        some (Imperative.Stmt.cmd (CmdExt.cmd (Imperative.Cmd.assume label e ob.metadata)))
-      | _ => none
-    let assertStmt := Imperative.Stmt.cmd (CmdExt.cmd ob.toCheckCmd)
-    assumes ++ [assertStmt]
-  let body := match blocks with
-    | [] => []
-    | [b] => b
-    | b :: rest => rest.foldl (fun acc block =>
-        [Imperative.Stmt.ite .nondet acc block .empty]) b
-  let oblProcs := match procName with
-    | some name => [Decl.obligationProc name body]
-    | none => []
-  let oblProgram : Program := { decls := decls ++ oblProcs }
+  -- One obligation procedure containing all deferred obligations.
+  let oblProgram := obligationProgram program decls (deferred.toList.map deferredBlock)
 
   if options.verbose >= .normal then do
     dbg_trace f!"{Std.Format.line}VCs:"
@@ -915,29 +908,6 @@ def declObligationsProgram (options : VerifyOptions) (program : Program)
   | .ok p => return (p, stats)
   | .error e => throw (Message.fromString e)
 
-/-- **The WP phase of a program** (`Core.WP.wpProcsProgram`): each procedure that is not an
-    obligation unit becomes a guarded procedure of the same name and header; every other
-    declaration is kept.  The names the procedures introduce avoid the names of the factory's
-    functions and those the program declares. -/
-def wpProgram (program : Program)
-    (moreFns : Lambda.Factory CoreLParams := Lambda.Factory.default) : Except Message Program := do
-  let factory ← Core.Factory.addFactory moreFns
-  let reserved := factory.toArray.toList.map (·.name)
-  match WP.wpProcsProgram reserved program with
-  | .ok p => return p
-  | .error e => throw (Message.fromString e)
-
-/-- **The SSA phase of a program** (`Core.WP.ssaProgram`): each guarded procedure becomes an
-    obligation procedure of the same name; the names it introduces avoid the names of the
-    factory's functions and those the program declares. -/
-def ssaProgramOf (program : Program)
-    (moreFns : Lambda.Factory CoreLParams := Lambda.Factory.default) : Except Message Program := do
-  let factory ← Core.Factory.addFactory moreFns
-  let reserved := factory.toArray.toList.map (·.name)
-  match WP.ssaProgram reserved program with
-  | .ok p => return p
-  | .error e => throw (Message.fromString e)
-
 /-- The declaration phase of a program, then its WP phase, then its SSA phase. -/
 def wpSSAProgram (options : VerifyOptions) (program : Program)
     (moreFns : Lambda.Factory CoreLParams := Lambda.Factory.default) :
@@ -947,21 +917,180 @@ def wpSSAProgram (options : VerifyOptions) (program : Program)
   let out ← ssaProgramOf mid moreFns
   return (out, stats)
 
-/-- Convenience: type check then build obligation program. -/
+/-- The statements for one symbolic-execution obligation: `axAssumes` (an `assume` per axiom in
+    scope, oldest first), an `assume` per path-condition entry (oldest first), then the `assert`
+    or `cover`. -/
+private def symExecBlock (axAssumes : List Statement) (o : SymExec.Obl) : List Statement :=
+  axAssumes ++ SymExec.newAssumes o.pc 0 ++ [SymExec.checkStmt o]
+
+/-- Why a run is incomplete (`SymExec.Result.completeness`), if a path neither finished nor
+    joined (it stopped, ran out of work, exited to an unmatched label, or is still running):
+    obligations past that point are missing. The first reason, in node order. -/
+private def symExecIncomplete (r : SymExec.Result) : Option String :=
+  match r.completeness with
+  | .complete => none
+  | .notAnalyzed reasons => reasons.head?.orElse fun _ => some "the run is incomplete"
+
+/-- Per-path step budget for `--vcgen symexec` (`exploreProc`'s `runFuel`). -/
+private def symExecRunFuel : Nat := 1000000
+/-- Bound on the explorer's worklist pops per procedure for `--vcgen symexec` (`exploreProc`'s
+    `maxSteps`). -/
+private def symExecMaxSteps : Nat := 100000000
+/-- Path limit for `--vcgen symexec` in every merge mode (`ExploreCfg.maxPaths`): a procedure
+    with more paths than this, finished or still to be explored, is not fully explored, and the
+    run stops with an error (`toSymExecObligationProgram`). -/
+private def symExecMaxPaths : Nat := 10000
+
+/-- The blocks on a cycle reachable from the entry of `p`'s CFG body, in block order (`[]`
+    for a structured body). -/
+private def cfgLoopBlocks (p : Procedure) : List String :=
+  match p.body with
+  | .structured _ => []
+  | .cfg g =>
+    let onCycle := Imperative.CFG.cycleLabelsWith g.succMap [g.entry]
+    g.labels.filter onCycle.contains
+
+/-- The metadata field marking a check that is the only one in the program with its label and
+    metadata. The per-path results of a marked check are grouped together even without a source
+    range (`vcResultGroupKey`); for an unmarked one, label and metadata name several checks, so
+    each result is kept apart. -/
+private def onlyCheckField : MetaDataElem.Field Expression := .label "symExecOnlyCheck"
+
+/-- Whether `md` carries the mark (`onlyCheckField`). -/
+private def isOnlyCheck (md : MetaData Expression) : Bool :=
+  (md.findElem onlyCheckField).isSome
+
+/-- The checks (`assert`s and `cover`s) of `program`, by label and metadata: each procedure
+    body's checks and the asserts its non-free postconditions become, with how many checks
+    share that label and metadata. -/
+private def checkCounts (program : Program) : Std.HashMap String Nat :=
+  let key (label : String) (md : MetaData Expression) := s!"{label}@{repr md}"
+  let bodyKeys (body : Procedure.Body) : List String := match body with
+    | .structured ss =>
+      (Statement.Statements.collectAsserts ss ++
+        Statement.Statements.collectCovers ss).map fun (l, md) => key l md
+    | .cfg g => g.blocks.flatMap fun (_, b) => b.cmds.filterMap fun
+        | .cmd (.assert label _ md) | .cmd (.cover label _ md) => some (key label md)
+        | _ => none
+  let keys := program.decls.flatMap fun
+    | .proc p _ => bodyKeys p.body ++
+        p.spec.postconditions.toList.filterMap fun (label, c) => match c.attr with
+          | .Free => none
+          | _ => some (key label c.md)
+    | _ => []
+  keys.foldl (fun m k => m.insert k ((m.getD k 0) + 1)) {}
+
+/-- Mark the checks of `p` that are the only ones in the program with their label and metadata
+    (`onlyCheckField`, `checkCounts`), in the body and in the non-free postconditions, so the
+    verifier can group the per-path results of such a check without a source range
+    (`vcResultGroupKey`). -/
+private def markOnlyChecks (counts : Std.HashMap String Nat) (p : Procedure) : Procedure :=
+  let mark (label : String) (md : MetaData Expression) : MetaData Expression :=
+    if counts.getD s!"{label}@{repr md}" 0 == 1 then md.pushElem onlyCheckField (.switch true)
+    else md
+  let markCmd : Imperative.Cmd Expression → Imperative.Cmd Expression
+    | .assert label e md => .assert label e (mark label md)
+    | .cover label e md => .cover label e (mark label md)
+    | c => c
+  let markCommand : Command → Command
+    | .cmd c => .cmd (markCmd c)
+    | c => c
+  let body := match p.body with
+    | .structured ss => Procedure.Body.structured (Imperative.Block.mapExpr id markCommand ss)
+    | .cfg g => Procedure.Body.cfg { g with blocks := g.blocks.map fun (l, b) =>
+        (l, { b with cmds := b.cmds.map markCommand }) }
+  let post := p.spec.postconditions.toList.map fun (label, c) => match c.attr with
+    | .Free => (label, c)
+    | _ => (label, { c with md := mark label c.md })
+  { p with body, spec := { p.spec with postconditions := post } }
+
+/-- The proof obligation program by symbolic execution on the monadic interpreter
+    (`--vcgen symexec`). Declarations (functions, axioms, lemmas, `distinct`) are processed as
+    the symbolic evaluator processes them (`evalProgramDeclsWithEnv` on the program without its
+    procedures). Each procedure is run by `SymExec.exploreProc` under the axioms declared before
+    it and the evaluator's factory, merging where `policy` says (default: the preset
+    `options.symExecMode` names), giving one tree-shaped block (`SymExec.Result.treeStmts`) plus
+    one block per check no path reached. The lemma blocks and these become the `if *` branches
+    of one obligation procedure, named after the first procedure (else the first lemma). Each
+    run stops past `symExecMaxPaths` paths. The whole run stops with an error, naming the
+    procedure and the reason, if the program fails a fact `SymExec.failedRequires` checks, a CFG
+    body has a loop (`cfgLoopBlocks`), or a procedure's run is incomplete (`symExecIncomplete`,
+    such as the path limit or a path that stopped); no obligations are produced then. -/
+def toSymExecObligationProgram (options : VerifyOptions) (program : Program)
+    (moreFns : Lambda.Factory CoreLParams := Lambda.Factory.default)
+    (policy : Option SymExec.MergePolicy := none) :
+    Except Message (Program × Statistics) := do
+  match SymExec.failedRequires program with
+  | [] => pure ()
+  | fs => throw (Message.fromString
+      s!"symExec: the program does not satisfy {fs.map (·.name)}; run the pipeline phases \
+        that establish them first.")
+  let declProgram : Program :=
+    { program with decls := program.decls.filter fun | .proc _ _ => false | _ => true }
+  let (decls, deferred, stats, postEvalEnv) ← evalProgramDeclsWithEnv options declProgram moreFns
+  let F := postEvalEnv.exprEnv.config.factory
+  let fnNames := F.toArray.toList.map (·.name.name)
+  -- Lemma obligations, as the symbolic evaluator states them.
+  let lemmaBlocks := deferred.toList.map deferredBlock
+  -- Procedures, in declaration order, each under the axioms declared before it.
+  let counts := checkCounts program
+  let (_, _, procBlocks, stats) ← program.decls.foldlM
+    (fun (acc : Array (String × Expression.Expr) × Nat × Array (List Statement) × Statistics) d =>
+      let (axioms, idx, blocks, stats) := acc
+      match d with
+      | .ax a _ => pure (axioms.push (toString a.name, a.e), idx, blocks, stats)
+      | .proc p _ =>
+        let p := markOnlyChecks counts p
+        let pol := policy.getD (SymExec.MergePolicy.ofMode options.symExecMode)
+        let loops := cfgLoopBlocks p
+        if !loops.isEmpty then throw (Message.fromString
+            s!"symExec: procedure '{p.header.name}': its CFG body has a loop (through blocks \
+              {loops}), which --vcgen symexec does not analyze") else
+        let r := SymExec.exploreProc { simpFuel := postEvalEnv.exprEnv.config.fuel,
+                                       maxPaths := some symExecMaxPaths }
+          symExecMaxSteps symExecRunFuel F p fnNames s!"{idx}_" pol
+        match symExecIncomplete r with
+        | some why =>
+          -- The hint names the merge modes that merge more paths than the one in use.
+          let hint := match policy, options.symExecMode with
+            | none, .never =>
+              "; merge paths with --vcgen symexec:merge-above:N or --vcgen symexec:merged"
+            | none, .pathsAbove _ => "; merge more paths with a smaller N or --vcgen symexec:merged"
+            | _, _ => ""
+          let limit := if r.countStatus (· matches .overPathLimit) == 0 then "" else
+            s!" (more than {symExecMaxPaths} paths{hint})"
+          throw (Message.fromString s!"symExec: procedure '{p.header.name}': {why}{limit}")
+        | none =>
+          let stats := (stats.increment "SymExec.paths" r.finished).increment
+            "SymExec.steps" r.steps
+          let stats := (stats.increment "SymExec.obligations" r.obligations.length).increment
+            "SymExec.merges" r.merges
+          -- One tree-shaped block per procedure (each assumption written once, on the tree
+          -- edge that introduces it), plus one block per unreached check.
+          let axAssumes := axioms.toList.map fun (l, e) => Statement.assume l e #[]
+          let tree := if r.obligations.isEmpty then [] else [axAssumes ++ r.treeStmts]
+          pure (axioms, idx + 1,
+            blocks ++ tree.toArray ++ (r.unreached.map (symExecBlock axAssumes)).toArray, stats)
+      | _ => pure (axioms, idx, blocks, stats))
+    ((#[] : Array (String × Expression.Expr)), 0, (#[] : Array (List Statement)), stats)
+  return (obligationProgram program decls (lemmaBlocks ++ procBlocks.toList), stats)
+
+/-- Convenience: type check then build obligation program. The program's lemmas keep their
+    type parameters; the verification pipeline's opaque-type phase closes them. -/
 def typeCheckAndBuildObligationProgram (options : VerifyOptions) (program : Program)
     (moreFns : Lambda.Factory CoreLParams := Lambda.Factory.default) :
     Except Message (Program × Statistics) := do
-  let factory ← Core.Factory.addFactory moreFns
-  let program ← typeCheck options program factory
+  let program ← typeCheck options program (moreFns := moreFns)
   toCoreProofObligationProgram options program moreFns
 
 /-- Convenience: type check then symbolic eval. Returns the list of
-    evaluation environments and statistics. -/
+    evaluation environments and statistics. The program's lemmas keep their type parameters;
+    the verification pipeline's opaque-type phase closes them. -/
 def typeCheckAndEval (options : VerifyOptions) (program : Program)
     (moreFns : Lambda.Factory CoreLParams := Lambda.Factory.default) :
     Except Message ((List Env) × Statistics) := do
   let factory ← Core.Factory.addFactory moreFns
-  let program ← typeCheck options program factory
+  let program ← typeCheck options program (moreFns := moreFns)
   let (E, declStats) ← buildEnv options program factory
   let (pEs, evalStats) ← Program.eval E
   let stats := declStats.merge evalStats
@@ -1485,26 +1614,33 @@ def VCResult.merge (a b : VCResult) : VCResult :=
                  then a.lexprModel else b.lexprModel
     { a with outcome := .ok merged, lexprModel := model }
 
-/-- Compute a grouping key for a VCResult based on its source location.
-    Uses the display label (property summary) combined with the primary FileRange
-    and related FileRanges (from inlining). When the file range is unknown,
-    returns `none` so the result is not merged with others. -/
+/-- The grouping key of a `VCResult` (`mergeByAssertion`). A result with a source range is keyed
+    by its display label (property summary, else label), its primary `FileRange` and the related
+    `FileRange`s (from inlining). A range-less result is keyed by its check's label and metadata
+    when the check is marked as the only one with them (`isOnlyCheck`), so its per-path results
+    are grouped, and otherwise by a key of its own (`uid`, then incremented), so it is merged
+    with no other result. -/
 private def vcResultGroupKey (r : VCResult) (uid : Nat) : String × Nat :=
   let displayLabel := r.obligation.metadata.getPropertySummary.getD r.obligation.label
+  let md := r.obligation.metadata
+  let noRange : String × Nat :=
+    if isOnlyCheck md then (s!"{r.obligation.label}@{repr md}", uid)
+    else (s!"{displayLabel}@__unique_{uid}", uid + 1)
   match Imperative.getFileRange r.obligation.metadata with
   | some fr =>
-    if fr.range.isNone then (s!"{displayLabel}@__unique_{uid}", uid + 1)
+    if fr.range.isNone then noRange
     else
       let related := Imperative.getRelatedFileRanges r.obligation.metadata
       let relatedKey := related.foldl (fun acc r => s!"{acc}+{repr r}") ""
       (s!"{displayLabel}@{repr fr}{relatedKey}", uid)
-  | none => (s!"{displayLabel}@__unique_{uid}", uid + 1)
+  | none => noRange
 
-/-- Merge `VCResults` that originate from the same assertion (identified by
-    source location + related locations from inlining). Outcomes are merged
-    at the `VCOutcome` level: if a proposition is sat on any path, the merged
-    result is sat. Preserves first-occurrence order.
-    When the file range is unknown, each VCResult is kept as-is. -/
+/-- Merge the `VCResults` of the same check (same key, `vcResultGroupKey`): its source location
+    and related locations from inlining, or, for a range-less result of a check marked as the
+    only one with its label and metadata (`isOnlyCheck`), those. Any other range-less result
+    gets its own key and is merged with no other. Outcomes are merged at the `VCOutcome` level:
+    if a proposition is sat on any path, the merged result is sat. Preserves first-occurrence
+    order. -/
 def VCResults.mergeByAssertion (rs : VCResults) : VCResults :=
   let (resultsByKey, order, _) := rs.foldl
     (init := (Std.HashMap.emptyWithCapacity (α := String) (β := VCResult),
@@ -1804,12 +1940,15 @@ def preprocessObligation (obligation : ProofObligation Expression) (p : Program)
     during evaluation (not as a program-to-program pass), making it the
     closest phase to SMT.
 
-    `assertWellFormedCalls` comes first, so an ill-formed call is reported in
-    every procedure, including ones the procedure filter then drops. The filter
-    follows, and then `assertNoCFGBodies`, which turns a throw from inside
-    `runProgram` into a rejection naming the fact, so every statement-level
-    transform after it may rely on structured bodies. -/
-def transformPipelinePhases (options : VerifyOptions := VerifyOptions.default) :
+    `typeCheck` comes first and checks the whole program as written, so an ill-typed
+    procedure or ill-formed call is reported even when the filter then drops it. Every later
+    phase relies on its annotations and on the well-formed calls it establishes. The filter
+    follows. Without `--vcgen symexec`, `assertNoCFGBodies` comes next, so a CFG body is refused
+    by a message naming the fact. Under `--vcgen symexec` CFG bodies go on to symbolic
+    execution: call elimination and precondition elimination rewrite the commands of their
+    blocks, and the other phases keep them as they are. -/
+def transformPipelinePhases (options : VerifyOptions := VerifyOptions.default)
+    (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default) :
     List PipelinePhase :=
   let procs := options.proceduresToVerify
   let filterPhases := match procs with
@@ -1819,35 +1958,13 @@ def transformPipelinePhases (options : VerifyOptions := VerifyOptions.default) :
     | some ps =>
       [filterProceduresPipelinePhase ps (keepUnlistedLemmas := false)]
     | none => []
+  let cfgCheck := if options.symExec.isSome && options.vcgen == .symbolic then []
+    else [ProgramFact.assertPhase .noCFGBodies]
   -- The filter runs before `assertNoCFGBodies`, so a caller naming structured
   -- procedures to verify is not refused for an excluded CFG body.
-  [ProgramFact.assertPhase .wellFormedCalls] ++ filterPhases ++
-    [ProgramFact.assertPhase .noCFGBodies,
-      callElimPipelinePhase, termCheckPipelinePhase, precondElimPipelinePhase]
+  [typeCheckPipelinePhase options (moreFns := moreFns)] ++ filterPhases ++ cfgCheck ++
+    [callElimPipelinePhase, termCheckPipelinePhase, precondElimPipelinePhase]
     ++ postFilterPhases ++ [insertLoopInvariantAssertsPipelinePhase, loopElimPipelinePhase]
-
-/-- Type-checking pipeline phase: runs `Core.typeCheck` on the program against
-    `factory` (the full function set to type-check against; defaults to the
-    pristine `Core.Factory`). -/
-def typeCheckPipelinePhase
-    (options : VerifyOptions := VerifyOptions.default)
-    (factory : @Lambda.Factory CoreLParams := Core.Factory) : PipelinePhase :=
-  -- Type checking annotates expressions and leaves every statement where it
-  -- is, so it carries all facts across. Annotation does not change which
-  -- constructor an expression is, so a redex-free program stays redex-free.
-  -- It rejects a CFG body and an `exit` whose label names no enclosing block,
-  -- so every body of its output has its exits covered.
-  modelPreservingPipelinePhase "typeCheck"
-    (establishes := factSet![.typeAnnotated, .exitsCovered])
-    (preserves := factSet![.noCFGBodies, .noCalls, .noLoops, .noLoopInvariants,
-                         .noLoopMeasures, .staticSingleAssignment, .noBetaRedexes,
-                         .noPrecondsFromFuncs, .noNondetGuards, .noProcedureContracts,
-                         .noPolymorphicProcedures,
-                         .noPolymorphicFunctions, .noInits])
-    fun prog => do
-      match Core.typeCheck options prog factory with
-      | .ok prog' => return (true, prog')
-      | .error err => throw { err with message := s!"❌ Type checking error.\n{err.message}" }
 
 /-- Symbolic-evaluation pipeline phase: partially evaluates the program into
     the passive proof-obligation form consumed by obligation extraction.
@@ -1863,7 +1980,7 @@ def symbolicEvalPipelinePhase
   -- re-establishes them. `noNondetGuards` is not preserved: the output separates
   -- obligations with `ite *`.
   modelPreservingPipelinePhase "symbolicEval"
-    (requires := factSet![.noCFGBodies, .noLoops, .noNondetGuards])
+    (requires := factSet![.noCFGBodies, .noLoops, .noNondetGuards, .typeAnnotated])
     (establishes := factSet![.noCalls, .staticSingleAssignment, .hasObligationForm,
                              .noProcedureContracts, .noInits])
     (preserves := factSet![.noCFGBodies, .noLoops, .noLoopInvariants, .noLoopMeasures,
@@ -1880,15 +1997,15 @@ def symbolicEvalPipelinePhase
     declarations symbolic evaluation produces for the program without its procedures (type
     declarations, functions, `distinct` declarations) replace the program's, every axiom and
     every procedure is kept unchanged, and each lemma becomes an obligation unit (a procedure
-    asserting its obligation). It evaluates no procedure, so it requires nothing of them; it
-    keeps every procedure, emits obligation units without loops, calls, contracts, type
-    parameters or nondeterministic guards, and its functions are those symbolic evaluation
-    emits. -/
+    asserting its obligation). It evaluates no procedure, so it requires of them only the
+    annotations the back end reads; it keeps every procedure, emits obligation units without
+    loops, calls, contracts, type parameters or nondeterministic guards, and its functions are
+    those symbolic evaluation emits. -/
 def declObligationsPipelinePhase
     (options : VerifyOptions := VerifyOptions.default)
     (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default) : PipelinePhase :=
   modelPreservingPipelinePhase "declObligations"
-    (requires := factSet![])
+    (requires := factSet![.typeAnnotated])
     (establishes := factSet![])
     (preserves := factSet![.noCFGBodies, .noCalls, .noLoops, .noLoopInvariants, .noLoopMeasures,
                          .noPrecondsFromFuncs, .noNondetGuards,
@@ -1901,54 +2018,6 @@ def declObligationsPipelinePhase
       modify fun σ => { σ with statistics := σ.statistics.merge stats }
       return (true, prog')
 
-/-- The WP pipeline phase: each procedure that is not an obligation unit becomes a guarded
-    procedure, every other declaration is kept (`--vcgen wp` runs it after
-    `declObligationsPipelinePhase`, then `ssaPipelinePhase`). It requires a program without
-    calls, since it rejects every call, and bodies whose every `exit` targets an enclosing
-    block, which it checks of each procedure again (`WP.checkLoopFree`). It empties every
-    contract, emits only guarded-form bodies whose every `ite` arm contains an obligation
-    (`Imperative.WP.wpEntry_armsHaveObl`; each obligation unit it keeps is one `assert` or
-    `cover`), emits no loop and no `exit`, keeps headers, touches no function and builds only
-    annotated variables, literals and `ite`s. -/
-def wpPipelinePhase
-    (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default) : PipelinePhase :=
-  modelPreservingPipelinePhase "wp"
-    (requires := factSet![.noCFGBodies, .noCalls, .noLoops, .noNondetGuards, .exitsCovered])
-    (establishes := factSet![.noProcedureContracts, .treeForm, .armsHaveObligations])
-    (preserves := factSet![.noCFGBodies, .noCalls, .noLoops, .noLoopInvariants, .noLoopMeasures,
-                         .noPrecondsFromFuncs,
-                         .noPolymorphicProcedures,
-                         .noPolymorphicFunctions, .typeAnnotated, .exitsCovered])
-    fun prog => do
-      let prog' ← Transform.liftDiag
-        (Core.wpProgram prog moreFns |>.mapError fun err =>
-          { err with message := s!"❌ WP error.\n{err.message}" })
-      return (true, prog')
-
-/-- The SSA pipeline phase: each guarded procedure becomes an obligation procedure. It emits
-    only `init`, `assume`, `assert`, `cover` and `ite *`, and no `set`; it drops the
-    procedures' specifications, so it requires none. The obligation program declares its
-    variables in place, so it does not establish `noInits`, and `commonSubexprElim`, which
-    requires `noInits`, cannot follow it. It requires every `ite` arm to contain an obligation:
-    it drops an arm without one and inlines the other arm, so a run through the dropped arm
-    would be replayed by running the other arm's definitions. It keeps every obligation and
-    emits an `ite *` only when both arms are nonempty, so its output keeps that fact. -/
-def ssaPipelinePhase
-    (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default) : PipelinePhase :=
-  modelPreservingPipelinePhase "ssa"
-    (requires := factSet![.noCFGBodies, .noProcedureContracts, .treeForm, .armsHaveObligations])
-    (establishes := factSet![.staticSingleAssignment, .hasObligationForm])
-    (preserves := factSet![.noCFGBodies, .noCalls, .noLoops, .noLoopInvariants,
-                         .noLoopMeasures, .noPrecondsFromFuncs, .noProcedureContracts,
-                         .noPolymorphicProcedures,
-                         .noPolymorphicFunctions, .typeAnnotated, .exitsCovered,
-                         .armsHaveObligations])
-    fun prog => do
-      let prog' ← Transform.liftDiag
-        (Core.ssaProgramOf prog moreFns |>.mapError fun err =>
-          { err with message := s!"❌ SSA error.\n{err.message}" })
-      return (true, prog')
-
 /-- The phases `--vcgen wp` runs in place of `symbolicEvalPipelinePhase`: the declaration phase,
     the WP phase, the SSA phase, then the erasure of unread definitions. -/
 def wpVCGenPhases (options : VerifyOptions := VerifyOptions.default)
@@ -1956,24 +2025,48 @@ def wpVCGenPhases (options : VerifyOptions := VerifyOptions.default)
   [declObligationsPipelinePhase options moreFns, wpPipelinePhase moreFns, ssaPipelinePhase moreFns,
     deadDefElimPipelinePhase]
 
-/-- The phases that run between `transformPipelinePhases` and `symbolicEvalPipelinePhase`:
-    replace procedure and lemma type parameters by opaque types, type-check, monomorphize functions, and eliminate
-    nondeterminism.
+/-- Experimental alternative to `symbolicEvalPipelinePhase` (`--vcgen symexec`): obligations by
+    symbolic execution on the monadic interpreter (`toSymExecObligationProgram`). Requires the
+    facts `SymExec.symExecRequires` lists (built from that list, so the two cannot drift). A
+    `policy` (any Lean merge policy) replaces the preset `options.symExecMode` names. -/
+def symExecPipelinePhase
+    (options : VerifyOptions := VerifyOptions.default)
+    (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default)
+    (policy : Option SymExec.MergePolicy := none) : PipelinePhase :=
+  -- Its output's only procedure is the obligation procedure, whose body is structured, so it
+  -- establishes `noCFGBodies` for the CFG bodies it accepts.
+  modelPreservingPipelinePhase "symExec"
+    (requires := ProgramFactSet.ofList SymExec.symExecRequires)
+    (establishes := factSet![.noCFGBodies, .staticSingleAssignment, .hasObligationForm,
+                             .noProcedureContracts, .noInits])
+    (preserves := factSet![.noCalls, .noLoops, .noLoopInvariants, .noLoopMeasures,
+                         .noPrecondsFromFuncs,
+                         .noPolymorphicProcedures,
+                         .noPolymorphicFunctions, .typeAnnotated, .exitsCovered])
+    fun prog => do
+      let (prog', stats) ← Transform.liftDiag
+        (Core.toSymExecObligationProgram options prog moreFns policy |>.mapError
+          fun err => { err with message := s!"❌ Symbolic execution error.\n{err.message}" })
+      modify fun σ => { σ with statistics := σ.statistics.merge stats }
+      return (true, prog')
 
-    Factored out so `genVCs` in `MetaVerifier` can reuse them without pulling in
-    the full `transformPipelinePhases` prefix (call elimination, precondition
-    lifting, etc.), which is unnecessary for programs that already arrive
-    call-free from the Boole→Core translation. -/
-def preSymbolicEvalPipelinePhases (options : VerifyOptions := .default)
-    (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default) : List PipelinePhase :=
-  -- `verify` pre-validates `Core.Factory.addFactory moreFns`, so the `getD`
-  -- fallback here is only a totality safety net.
-  let typeCheckFactory := (Core.Factory.addFactory moreFns).toOption.getD Core.Factory
+/-- The phases that run between `transformPipelinePhases` and `symbolicEvalPipelinePhase`:
+    replace procedure and lemma type parameters by opaque types, monomorphize functions,
+    simplify, and eliminate nondeterminism. -/
+def preSymbolicEvalPipelinePhases : List PipelinePhase :=
   [genOpaqueTypeParamsPipelinePhase,
-   typeCheckPipelinePhase options typeCheckFactory,
    monomorphizeFunctionsPipelinePhase,
    simplifyPhase,
    NondetElim.nondetElimPipelinePhase]
+
+/-- Under `--vcgen symexec:per-path`, the tree size above which an expression makes common
+    subexpression elimination run (`corePipelinePhases`). Programs whose expressions stay
+    smaller go to the solver unchanged. The bound sits well above ordinary programs: in
+    Strata's test programs the largest expression before this phase has 462 nodes, apart from
+    one common-subexpression stress test (114,667). A value that copies itself, such as
+    `r := r + r`, passes it after 14 copies; without sharing, its SMT text doubles with each
+    copy. -/
+def symExecPerPathCSETreeSize : Nat := 100000
 
 /-- The full pipeline phases for program-to-program transforms, including
     type checking, symbolic evaluation, and common subexpression elim.
@@ -1984,11 +2077,22 @@ def preSymbolicEvalPipelinePhases (options : VerifyOptions := .default)
 def corePipelinePhases
     (options : VerifyOptions := VerifyOptions.default)
     (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default) : List PipelinePhase :=
-  transformPipelinePhases options
-    ++ preSymbolicEvalPipelinePhases options moreFns
+  transformPipelinePhases options moreFns
+    ++ preSymbolicEvalPipelinePhases
     ++ (match options.vcgen with
-        | .symbolic => [symbolicEvalPipelinePhase options moreFns, betaReducePipelinePhase,
-                        commonSubexprElimPhase]
+        | .symbolic =>
+          if options.symExec.isSome then
+            -- CSE runs whenever merging can happen (`always`, `pathsAbove`): each merge builds
+            -- an `ite` holding both branches' values, which later merges copy, and CSE names
+            -- each shared part once. Under `never` it runs only on a program with an
+            -- expression whose tree has more than `symExecPerPathCSETreeSize` nodes (a value
+            -- that copies itself, such as `r := r + r` repeated).
+            [symExecPipelinePhase options moreFns, betaReducePipelinePhase,
+              if options.symExecMode == .never then
+                commonSubexprElimPhase (minTreeSize := some symExecPerPathCSETreeSize)
+              else commonSubexprElimPhase]
+          else [symbolicEvalPipelinePhase options moreFns, betaReducePipelinePhase,
+                commonSubexprElimPhase]
         -- CSE requires `noInits`, which the SSA phase does not establish.
         | .wp => wpVCGenPhases options moreFns ++ [betaReducePipelinePhase])
 
@@ -2892,7 +2996,7 @@ def typeCheck (ictx : InputContext) (env : Program) (options : Core.VerifyOption
   Except Message Core.Program := do
   let (program, errors) := TransM.run ictx (translateProgram env)
   if errors.isEmpty then
-    Core.Factory.addFactory moreFns >>= (Core.typeCheck options program ·)
+    Core.typeCheck options program (moreFns := moreFns)
   else
     .error <| Message.fromFormat s!"DDM Transform Error: {repr errors}"
 

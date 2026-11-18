@@ -1386,10 +1386,7 @@ def translateProcedure (proc : Procedure) : TranslateM Core.Procedure := do
   let outputs ← proc.outputs.mapM translateParameterToCore
   -- Propagate the procedure's type parameters to Core. `translateType` lowers
   -- each `.TVar` to an `.ftvar`, so the procedure's signature and spec carry the
-  -- source type variables. These are instantiated per call site during call
-  -- elimination (see `CallElim.callElimCmd` / `freshenTypeArgsSubst`), which
-  -- renames them to globally-fresh names at each call so the same procedure can
-  -- be called at different concrete types in one body.
+  -- source type variables.
   let header : Core.Procedure.Header := {
     name := proc.name.text
     typeArgs := proc.typeArgs.map (·.text)

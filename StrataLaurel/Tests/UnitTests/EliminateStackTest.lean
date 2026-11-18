@@ -8,6 +8,7 @@ import StrataLaurel.Implementation
 import StrataLaurel.Implementation.LaurelCompilationPipeline
 import StrataLaurel.Tests.Util.TestLaurel
 import StrataLaurel.Implementation.Interpreter
+import StrataLaurel.Implementation.LabelledJumps
 import StrataCortex.Implementation.Pipeline
 
 open Strata
@@ -32,6 +33,11 @@ private def toStack (program : LaurelProgram) : LaurelProgram :=
       if callee.text == "preconditionOf" then match args with
         | [call] => ⟨.ContractOf .Precondition call, e.source⟩
         | _ => e
+      else if callee.text == "stackShape" then
+        ⟨.Call none (mkId stackShapeName) [] (args.map fun a => match a.val with
+          | .LiteralBool _ => ⟨.TBool, a.source⟩
+          | .Var (.Local n) => ⟨.UserDefined n, a.source⟩
+          | _ => ⟨.TInt, a.source⟩), e.source⟩
       else if callee.text.startsWith "permute_" || callee.text == "cmp3" then
         ⟨.Call none (mkId s!"${callee.text}") args typeArgs, e.source⟩
       else e
@@ -271,6 +277,7 @@ private def interpret (source : String) : IO Unit := do
     | .completed => "completed"
     | .escaped v => s!"escaped {v.display}"
     | .outOfFuel => "out of fuel"
+    | .infeasible => "infeasible"
   IO.println s!"failures: {failures.map (·.message)}"
   IO.println outcome
 
@@ -2212,5 +2219,305 @@ info: procedure f(i: int)
 -/
 #guard_msgs in
 #eval showEliminated nestedOrTwoLeaves
+
+/-! A value live at a block that a jump reaches from elsewhere is carried in a
+local declared at the top of the body, assigned on every edge into the block:
+here the jump out of `start` and the fall-through out of it. -/
+
+private def mergedAtLabel := r"
+procedure pick(b: bool) returns (r: int)
+  opaque
+  ensures r == (if b then 1 else 2)
+{
+  var t: int := 0;
+  { stki := 1; if (b) then { goto join }; t := stk; stki := 2 } start;
+  { r := stk } join
+};
+procedure main()
+  opaque
+{
+  var a: int := pick(true);
+  assert a == 1;
+  var c: int := pick(false);
+  assert c == 2
+};
+"
+
+/--
+info: procedure pick(b: bool)
+  returns (r: int)
+  opaque
+  ensures r == (if b
+  then 1
+  else 2)
+{
+  var $stack_1: int := 0;
+  var t: int := 0;
+  var $stack_3: int := 0;
+  {
+    var $stack_0: int := 1;
+    if b
+      then {
+        $stack_1 := $stack_0;
+        goto join
+      };
+    t := $stack_0;
+    $stack_3 := 2
+  }start;
+  $stack_1 := $stack_3;
+  {
+    r := $stack_1
+  }join
+};
+procedure main()
+  opaque
+{
+  var a: int := pick(true);
+  assert a == 1;
+  var c: int := pick(false);
+  assert c == 2
+};
+-/
+#guard_msgs in
+#eval showEliminated mergedAtLabel
+
+/-- info: verified -/
+#guard_msgs in
+#eval verify mergedAtLabel
+
+/--
+info: failures: #[]
+completed
+-/
+#guard_msgs in
+#eval interpret mergedAtLabel
+
+/-! A label can state the types of the values live there, as a JVM
+`StackMapTable` frame does, so the pushes need none. -/
+
+private def annotatedLabel := r"
+procedure pick(b: bool) returns (r: int)
+  opaque
+  ensures r == (if b then 1 else 2)
+{
+  var t: int := 0;
+  { stk := 1; if (b) then { goto join }; t := stk; stk := 2 } start;
+  { stackShape(0); r := stk } join
+};
+procedure main()
+  opaque
+{
+  var a: int := pick(true);
+  assert a == 1;
+  var c: int := pick(false);
+  assert c == 2
+};
+"
+
+/-- info: verified -/
+#guard_msgs in
+#eval verify annotatedLabel
+
+/--
+info: failures: #[]
+completed
+-/
+#guard_msgs in
+#eval interpret annotatedLabel
+
+/-! A stack annotation states the types live at a label, so anywhere but the first
+statement of a labelled block it is refused, in a coroutine as in a procedure. -/
+
+/-- info: userError: a stack annotation must be the first statement of a labelled block -/
+#guard_msgs in
+#eval verify r"
+procedure misplaced() returns (r: int)
+  opaque
+{
+  { r := 1; stackShape(0) } block
+};
+"
+
+/-- info: userError: a stack annotation must be the first statement of a labelled block -/
+#guard_msgs in
+#eval verify r"
+coroutine misplacedInCoroutine() yields (x: int)
+  modifies *
+{
+  { x := 1; stackShape(0); yield } block
+};
+"
+
+/-! An annotation states what a jump to its block carries, so one on a block no jump
+from outside it targets is refused. -/
+
+/-- info: userError: a stack annotation states the stack a jump carries to its block, and no jump from outside 'block' targets it -/
+#guard_msgs in
+#eval verify r"
+procedure untargeted() returns (r: int)
+  opaque
+{
+  { stackShape(0); r := 1 } block
+};
+"
+
+/-! An annotation naming an unknown type is reported once. -/
+
+/-- info: userError: Resolution failed: 'Nope' is not defined -/
+#guard_msgs in
+#eval verify r"
+procedure pick(b: bool) returns (r: int)
+  opaque
+{
+  var t: int := 0;
+  { stk := 1; if (b) then { goto join }; t := stk; stk := 2 } start;
+  { stackShape(Nope); r := 0 } join
+};
+"
+
+/-! Without either, the value has no type to declare its local at. -/
+
+/--
+info: procedure pick(b: bool)
+  returns (r: int)
+  opaque
+{
+  var $stack_1;
+  var t: int := 0;
+  {
+    var $stack_0 := 1;
+    if b
+      then {
+        $stack_1 := $stack_0;
+        goto join
+      };
+    t := $stack_0;
+    $stack_3 := 2
+  }start;
+  $stack_1 := $stack_3;
+  {
+    r := $stack_1
+  }join
+};
+userError: a stack value live at 'join' needs a type, on its push or on the label
+userError: a value pushed in both branches needs a type on its push
+-/
+#guard_msgs in
+#eval showEliminated r"
+procedure pick(b: bool) returns (r: int)
+  opaque
+{
+  var t: int := 0;
+  { stk := 1; if (b) then { goto join }; t := stk; stk := 2 } start;
+  { r := stk } join
+};
+"
+
+/-! The jumps into a block must agree on how many values they carry. -/
+
+/--
+info: procedure pick(b: bool)
+  returns (r: int)
+  opaque
+{
+  var $stack_1: int := 0;
+  var $stack_2: int := 0;
+  var t: int := 0;
+  {
+    var $stack_0: int := 1;
+    if b
+      then {
+        $stack_1 := $stack_0;
+        goto join
+      };
+    t := $stack_0
+  }start;
+  {
+    r := 0;
+    $stack_2 := $stack_1
+  }join
+};
+userError: the jumps to 'join' carry different numbers of stack values
+userError: stack values are left over at the end of an expression
+-/
+#guard_msgs in
+#eval showEliminated r"
+procedure pick(b: bool) returns (r: int)
+  opaque
+{
+  var t: int := 0;
+  { stki := 1; if (b) then { goto join }; t := stk } start;
+  { r := 0 } join
+};
+"
+
+/-! A labelled block that ends in a jump does not fall into the next one, so the
+values it pushed reach only the block it jumps to. -/
+
+private def pastJumpingBlock := r"
+procedure pick(b: bool) returns (r: int)
+  opaque
+  ensures r == (if b then 1 else 2)
+{
+  var t: int := 0;
+  { if (b) then { goto one }; goto two } start;
+  { stki := 1; goto join } one;
+  { stki := 2 } two;
+  { r := stk } join
+};
+procedure main()
+  opaque
+{
+  var a: int := pick(true);
+  assert a == 1;
+  var c: int := pick(false);
+  assert c == 2
+};
+"
+
+/-- info: verified -/
+#guard_msgs in
+#eval verify pastJumpingBlock
+
+/--
+info: failures: #[]
+completed
+-/
+#guard_msgs in
+#eval interpret pastJumpingBlock
+
+/-! A jump target first in an unlabelled block after a block that ends in a jump
+is not fallen into either: its stack is the jumps' stack. -/
+
+private def targetFirstInBlock := r"
+procedure pick(b: bool) returns (r: int)
+  opaque
+  ensures r == (if b then 1 else 2)
+{
+  { if (b) then { goto one }; goto two } start;
+  { stki := 2; goto join } two;
+  { stki := 1; goto join } one;
+  { { r := stk } join }
+};
+procedure main()
+  opaque
+{
+  var a: int := pick(true);
+  assert a == 1;
+  var c: int := pick(false);
+  assert c == 2
+};
+"
+
+/-- info: verified -/
+#guard_msgs in
+#eval verify targetFirstInBlock
+
+/--
+info: failures: #[]
+completed
+-/
+#guard_msgs in
+#eval interpret targetFirstInBlock
 
 end Strata.Laurel

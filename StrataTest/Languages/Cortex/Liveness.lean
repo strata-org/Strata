@@ -99,11 +99,25 @@ b1: in [a, i, x] out [r] handlers []
 -/
 #guard_msgs in
 #eval showLive [proc "arrays" [("k", int), ("i", int), ("x", int)] [("r", int)]
-  [blk "b0" [.init "a" (.named "Ints") none (at_ 1), decl "n" 2, decl "t" 3,
-             .newArray "a" "Ints" (v "k") (at_ 4)] (.goto "b1" (at_ 5)),
+  [blk "b0" [.init "a" (ints) none (at_ 1), decl "n" 2, decl "t" 3,
+             .newArray "a" int (v "k") (at_ 4)] (.goto "b1" (at_ 5)),
    blk "b1" [.writeElem (v "a") (v "i") (v "x") int (at_ 6), .arrayLength "n" (v "a") (at_ 7),
              .readElem "t" (v "a") (v "i") int (at_ 8),
              .set "r" (some (.op "Int.Add" [v "n", v "t"])) (at_ 9)] (.finish (at_ 10))]]
+
+/-! An `instanceOfComponent` reads the variables of the object and of the array and assigns
+its result: `o` and `a` are live on entry to `b1`, and `c`, which the command assigns before
+it is read, is not. -/
+
+/--
+info: b0: in [a, o] out [a, o] handlers []
+b1: in [a, o] out [r] handlers []
+-/
+#guard_msgs in
+#eval showLive [proc "component" [("a", boxes), ("o", .named "Box")] [("r", .bool)]
+  [blk "b0" [.init "c" .bool none (at_ 1)] (.goto "b1" (at_ 2)),
+   blk "b1" [.instanceOfComponent "c" (v "o") (v "a") (at_ 3), .set "r" (some (v "c")) (at_ 4)]
+     (.finish (at_ 5))]]
 
 end Cortex.LivenessTest
 

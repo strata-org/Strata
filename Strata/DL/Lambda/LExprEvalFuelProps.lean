@@ -703,13 +703,14 @@ theorem eval_value_isValue
               (fun e' b' h' => ih e' h') hv
           subst hp
           split
-          · -- dite true branch: match computeTypeSubst
+          · -- dite true branch: match instantiateBody?
             rename_i h_cond
             simp only [h_cond, dite_true] at hv
             split
-            · -- computeTypeSubst = some tySubst → (eval n' F env ...).fst
-              rename_i tySubst h_subst
+            · -- instantiateBody? = some → (eval n' F env ...).fst
+              rename_i inlined h_subst
               simp only [h_subst] at hv
+              obtain ⟨tySubst, -, rfl⟩ := LFunc.instantiateBody?_eq_some.mp h_subst
               generalize h_target : LExpr.substFvarsLifting
                 ((lfunc.body.get _).applyTypeSubst tySubst)
                 (lfunc.inputs.keys.zip (List.map (fun a => (LExpr.eval n' F env a).fst) args)) = target at hv ⊢
@@ -720,7 +721,7 @@ theorem eval_value_isValue
                 · rw [h_split] at hv; simp [LExpr.EvalResult.combineValueFlag] at hv
               obtain ⟨b0, hb0⟩ := h_and
               exact ih _ hb0
-            · -- computeTypeSubst = none → (e, .nonvalue).fst
+            · -- instantiateBody? = none → (e, .nonvalue).fst
               rename_i h_subst
               simp only [h_subst] at hv
               exact absurd hv LExpr.EvalResult.noConfusion
@@ -1016,8 +1017,9 @@ public theorem eval_getVars_origin
         · -- inline
           rename_i h_cond
           split
-          · -- computeTypeSubst = some tySubst → eval n' new_e
-            rename_i tySubst h_ts
+          · -- instantiateBody? = some → eval n' new_e
+            rename_i inlined h_ts
+            obtain ⟨tySubst, -, rfl⟩ := LFunc.instantiateBody?_eq_some.mp h_ts
             intro hy
             refine getVars_origin_trans hidem (fun z hz => Or.inr ?_) (ih _ y hy)
             rcases getVars_substFvarsLifting_mem _ _ z hz with ⟨hin, hnone⟩ | ⟨k, v, hk, hv⟩
@@ -1044,7 +1046,7 @@ public theorem eval_getVars_origin
               rw [List.mem_map] at hv_args'
               obtain ⟨a, ha_mem, ha_eq⟩ := hv_args'
               exact h_arg a ha_mem z (by rw [ha_eq]; exact hv)
-          · -- computeTypeSubst = none → (mkApp, .nonvalue)
+          · -- instantiateBody? = none → (mkApp, .nonvalue)
             exact h_app y
         · -- non-inline
           cases h_fEC : Strata.DL.Util.FuncAttr.findEvalIfConstr lfunc.attr <;>
@@ -1328,8 +1330,9 @@ theorem eval_env_congr
         · -- inline
           rename_i h_cond
           split
-          · -- computeTypeSubst some → eval env new_e
-            rename_i tySubst h_ts
+          · -- instantiateBody? some → eval env new_e
+            rename_i inlined h_ts
+            obtain ⟨tySubst, -, rfl⟩ := LFunc.instantiateBody?_eq_some.mp h_ts
             generalize h_new_e :
               LExpr.substFvarsLifting
                 ((lfunc.body.get (by simp only [Bool.and_eq_true] at h_cond; exact h_cond.1)).applyTypeSubst tySubst)
@@ -1363,9 +1366,10 @@ theorem eval_env_congr
                   apply eval_getVars_subset hIdent F env₂ hWF henv₂ n' a x
                   rw [ha_eq]; exact hv
                 exact hag x (callOfLFunc_getVars_args F e op_expr args lfunc h_call a ha_mem x hxa)
-            rw [h_ih_new]
-          · -- computeTypeSubst none
-            rfl
+            rw [h_ih_new, h_ts, h_new_e]
+          · -- instantiateBody? none
+            rename_i h_none
+            rw [h_none]
         · -- non-inline
           cases h_fEC : Strata.DL.Util.FuncAttr.findEvalIfConstr lfunc.attr <;>
           cases h_fEV : Strata.DL.Util.FuncAttr.findEvalIfValue lfunc.attr <;> (
@@ -1894,8 +1898,9 @@ theorem eval_value_true_mono (F : @Factory Tbase) (env : Env Tbase)
           have h_body_isSome : lfunc.body.isSome = true := by
             simp only [Bool.and_eq_true] at h_cond; exact h_cond.1
           split
-          · -- computeTypeSubst = some tySubst
-            rename_i tySubst h_ts
+          · -- instantiateBody? = some
+            rename_i inlined h_ts
+            obtain ⟨tySubst, -, rfl⟩ := LFunc.instantiateBody?_eq_some.mp h_ts
             intro h
             -- `inner` is the substituted body evaluated at fuel n'.
             let inner := LExpr.substFvarsLifting
@@ -2440,7 +2445,8 @@ theorem eval_frame
           have h_body_isSome : lfunc.body.isSome = true := by
             simp only [Bool.and_eq_true] at h_cond; exact h_cond.1
           split
-          · rename_i tySubst h_ts
+          · rename_i inlined h_ts
+            obtain ⟨tySubst, -, rfl⟩ := LFunc.instantiateBody?_eq_some.mp h_ts
             intro h
             let inner := LExpr.substFvarsLifting
                 ((lfunc.body.get h_body_isSome).applyTypeSubst tySubst)

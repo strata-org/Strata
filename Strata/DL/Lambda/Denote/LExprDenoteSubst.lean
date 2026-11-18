@@ -4,6 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 module
+public import Strata.DL.Lambda.Denote.LExprDenote
 import all Strata.DL.Lambda.LExprWFProps
 
 import all Strata.DL.Lambda.Denote.LExprDenoteProps
@@ -18,6 +19,8 @@ Proves that bound-variable operations commute with denotation.
 - `subst_denote` / `varOpen_denote` — substitution and variable opening commute with `denote`
 - `liftBVars_denote` — lifting bound variable indices preserves denotation
 - `substFvarsLifting_denote` — free variable substitution with lifting commutes with `denote`
+- `IdentInterp.withArgs_cons_self` / `IdentInterp.withArgs_cons_of_ne` — reading a variable
+  valuation that `withArgs` overrides
 -/
 
 namespace Lambda
@@ -480,6 +483,22 @@ theorem IdentInterp.withArgs_get [DecidableEq T.IDMeta]
     · intro j hj
       have := h_first (j + 1) (by omega)
       simpa using this
+
+/-- `withArgs` maps the first binding's name, at its sort, to the first value. -/
+public theorem IdentInterp.withArgs_cons_self [DecidableEq T.IDMeta] {tc : TyConstrInterp}
+    (fv : IdentInterp T tc) (name : Identifier T.IDMeta) (s : LSort)
+    (rest : List (Identifier T.IDMeta × LSort)) (v : SortDenote tc s)
+    (vs : HList (SortDenote tc) (rest.map Prod.snd)) :
+    (fv.withArgs ((name, s) :: rest) (.cons v vs)) name s = v := by
+  simp [IdentInterp.withArgs]
+
+/-- `withArgs` reads a name other than the first binding's from the remaining bindings. -/
+public theorem IdentInterp.withArgs_cons_of_ne [DecidableEq T.IDMeta] {tc : TyConstrInterp}
+    (fv : IdentInterp T tc) {name x : Identifier T.IDMeta} {s₁ : LSort} (s : LSort)
+    (rest : List (Identifier T.IDMeta × LSort)) (v : SortDenote tc s₁)
+    (vs : HList (SortDenote tc) (rest.map Prod.snd)) (hne : x ≠ name) :
+    (fv.withArgs ((name, s₁) :: rest) (.cons v vs)) x s = (fv.withArgs rest vs) x s := by
+  simp [IdentInterp.withArgs, hne]
 
 /-- `go` preserves `typeCheck` when fvar annotations match binding types. -/
 private theorem go_typeCheck [DecidableEq T.IDMeta]

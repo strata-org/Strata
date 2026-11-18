@@ -4,7 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import StrataTest.Languages.Core.Tests.Logic.HoareAfterSupport
+import StrataTest.Languages.Core.Tests.Logic.HoareUtils
 import Strata.Transform.StructuredToUnstructuredCoreCorrect
 
 open Imperative
@@ -12,7 +12,7 @@ open StrataDDM (Program)
 
 namespace Strata.HoareAfterStructuredToUnstructuredTest
 
-open HoareAfterSupport
+open HoareUtils
 
 /-- The program.  It comes first in the file: the translation records the byte offsets of its
     statements in their metadata, which `cdBody` spells out with `loc`, so an edit above it
@@ -90,8 +90,8 @@ private abbrev subE : Core.Expression.Expr :=
 
 /-- The translated body. -/
 private abbrev cdBody : Core.Statements :=
-  [Core.Statement.set rId (v nId) (loc 689 696),
-   .loop (.det gtE) none [] [Core.Statement.set rId subE (loc 726 745)] (loc 699 749)]
+  [Core.Statement.set rId (v nId) (loc 675 682),
+   .loop (.det gtE) none [] [Core.Statement.set rId subE (loc 712 731)] (loc 685 735)]
 
 /-- The translated body really is the assignment followed by the loop. -/
 private theorem cd_body_eq : cdProc.body = .structured cdBody := by native_decide
@@ -99,9 +99,9 @@ private theorem cd_body_eq : cdProc.body = .structured cdBody := by native_decid
 /-! ## The lowered CFG, spelled out -/
 
 /-- `r := n`. -/
-private abbrev setR0 : Core.Command := .cmd (.set rId (.det (v nId)) (loc 689 696))
+private abbrev setR0 : Core.Command := .cmd (.set rId (.det (v nId)) (loc 675 682))
 /-- `r := int.sub(r, 1)`. -/
-private abbrev setSub : Core.Command := .cmd (.set rId (.det subE) (loc 726 745))
+private abbrev setSub : Core.Command := .cmd (.set rId (.det subE) (loc 712 731))
 
 private abbrev lEntry : String := "$__s2u_before_loop$_3"
 private abbrev lLoop : String := "$__s2u_loop_entry$_1"
@@ -304,6 +304,10 @@ theorem countdown_meets_contract :
   rw [Core.Logic.Hoare.Procedure.contractTriple, hfactory]
   refine ⟨cdProc, by native_decide, by native_decide, ?_⟩
   rw [cd_body_eq]
+  -- The body proof does not use the axioms visible to the procedure.
+  refine Core.Logic.Hoare.consequence _ _
+    (Pre := Core.Logic.Hoare.Procedure.contractPre Core.Factory cdProc) ?_
+    (fun _ h => h.1) (fun _ h => h)
   refine Core.Logic.Hoare.of_forall_entryFactory π _ fun E => ?_
   by_cases hE : E.factory = Core.Factory
   case neg =>

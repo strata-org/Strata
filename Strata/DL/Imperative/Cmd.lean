@@ -47,6 +47,12 @@ inductive ExprOrNondet (P : PureExpr) where
 instance [BEq P.Expr] : BEq (ExprOrNondet P) where
   beq := ExprOrNondet.beq
 
+/-- The expression of a deterministic value, as a list: empty for a
+    non-deterministic one. -/
+def ExprOrNondet.toList : ExprOrNondet P → List P.Expr
+  | .det e => [e]
+  | .nondet => []
+
 theorem ExprOrNondet.beq_eq {P : PureExpr} [DecidableEq P.Expr]
     (a b : ExprOrNondet P) : ExprOrNondet.beq a b = true ↔ a = b := by
   solve_beq a b
@@ -153,6 +159,13 @@ def Cmd.getMetaData (c : Cmd P) : MetaData P :=
 
 instance (P : PureExpr) : HasInitTypesImp P (Cmd P) where
   initTypes := Cmd.initTypes
+
+/-- The expressions `c` reads: the initializer or right-hand side of `init` and `set` when
+    deterministic, and the condition of `assert`, `assume` and `cover`. -/
+def Cmd.readExprs (c : Cmd P) : List P.Expr :=
+  match c with
+  | .init _ _ e _ | .set _ e _ => e.toList
+  | .assert _ e _ | .assume _ e _ | .cover _ e _ => [e]
 
 ---------------------------------------------------------------------
 

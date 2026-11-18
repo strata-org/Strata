@@ -6,6 +6,7 @@
 module
 
 public import Strata.Transform.Passive.CoreProgram
+public import Strata.Languages.Core.PipelinePhase
 public import Strata.Transform.SSA.SSA
 
 /-! # The SSA phase on Core procedures and programs
@@ -13,9 +14,10 @@ public import Strata.Transform.SSA.SSA
 The SSA phase of `Imperative.WP.ssaEntry` lifted to Core procedures and programs: the SSA phase
 of a procedure (`ssaLoopFree`, `ssaProc`: every parameter of `Procedure.entryParams` to a fresh
 name, and every `old x` of `Procedure.oldAliases` to the entry name of `x`) and of a program
-(`ssaProgram`).
+(`ssaProgram`), the SSA phase of a program with the names of a factory's functions reserved
+(`Core.ssaProgramOf`), and the pipeline phase that runs it (`Core.ssaPipelinePhase`).
 
-Key definitions: `ssaLoopFree`, `ssaProgram`. -/
+Key definitions: `ssaLoopFree`, `ssaProgram`, `Core.ssaPipelinePhase`. -/
 
 namespace Core
 namespace WP
@@ -55,4 +57,47 @@ public section
 end -- public section
 
 end WP
+
+open Strata
+
+public section
+
+/-- **The SSA phase of a program** (`Core.WP.ssaProgram`): each guarded procedure becomes an
+    obligation procedure of the same name; the names it introduces avoid the names of the
+    factory's functions and those the program declares. -/
+def ssaProgramOf (program : Program)
+    (moreFns : Lambda.Factory CoreLParams := Lambda.Factory.default) : Except Message Program := do
+  let factory ← Core.Factory.addFactory moreFns
+  let reserved := factory.toArray.toList.map (·.name)
+  match WP.ssaProgram reserved program with
+  | .ok p => return p
+  | .error e => throw (Message.fromString e)
+
+/-- The SSA pipeline phase: each guarded procedure becomes an obligation procedure. It emits
+    only `init`, `assume`, `assert`, `cover` and `ite *`, and no `set`; it drops the
+    procedures' specifications, so it requires none. The obligation program declares its
+    variables in place, so it does not establish `noInits`, and `commonSubexprElim`, which
+    requires `noInits`, cannot follow it. It requires every `ite` arm to contain an obligation:
+    it drops an arm without one and inlines the other arm, so a run through the dropped arm
+    would be replayed by running the other arm's definitions. It keeps every obligation and
+    emits an `ite *` only when both arms are nonempty, so its output keeps that fact. -/
+def ssaPipelinePhase
+    (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default) : PipelinePhase :=
+  modelPreservingPipelinePhase "ssa"
+    (requires := factSet![.noCFGBodies, .noProcedureContracts, .typeAnnotated, .treeForm,
+      .armsHaveObligations])
+    (establishes := factSet![.staticSingleAssignment, .hasObligationForm])
+    (preserves := factSet![.noCFGBodies, .noCalls, .noLoops, .noLoopInvariants,
+                         .noLoopMeasures, .noPrecondsFromFuncs, .noProcedureContracts,
+                         .noPolymorphicProcedures,
+                         .noPolymorphicFunctions, .typeAnnotated, .exitsCovered,
+                         .armsHaveObligations])
+    fun prog => do
+      let prog' ← Transform.liftDiag
+        (Core.ssaProgramOf prog moreFns |>.mapError fun err =>
+          { err with message := s!"❌ SSA error.\n{err.message}" })
+      return (true, prog')
+
+end -- public section
+
 end Core

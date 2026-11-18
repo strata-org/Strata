@@ -30,6 +30,7 @@ information, etc.
 -/
 class TypeContext (P : PureExpr) (Context TypeEnv TypeError : Type) where
   isBoolType   : P.Ty → Bool
+  isMonoType   : P.Ty → Bool
   freeVars     : P.Expr → List P.Ident
   preprocess   : Context → TypeEnv → P.Ty → Except TypeError (P.Ty × TypeEnv)
   postprocess  : Context → TypeEnv → P.Ty → Except TypeError (P.Ty × TypeEnv)
@@ -37,6 +38,8 @@ class TypeContext (P : PureExpr) (Context TypeEnv TypeError : Type) where
   lookup       : TypeEnv → P.Ident → Option P.Ty
   inferType    : Context → TypeEnv → Cmd P → P.Expr → Except TypeError (P.Expr × P.Ty × TypeEnv)
   unifyTypes   : TypeEnv → List (P.Ty × P.Ty) → Except TypeError TypeEnv
+  /-- Apply the environment's solved types to an expression's annotations. -/
+  substExpr    : Context → TypeEnv → P.Expr → P.Expr
   typeErrorFmt : TypeError → Std.Format
 
 ---------------------------------------------------------------------

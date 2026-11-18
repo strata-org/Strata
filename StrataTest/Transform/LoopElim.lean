@@ -182,17 +182,130 @@ procedure conflict(n : int)
 #guard_msgs in
 #eval IO.println (runLoopElim (translate labelConflictPgm))
 
-/-- A program with a CFG procedure body and no loops is still rejected. -/
+/-- A program with a CFG procedure body and no loops; `loopElim` keeps the body as it is. -/
 def cfgOnlyPgm : Core.Program :=
   { decls := [.proc
       { (default : Procedure) with
           header := { (default : Procedure.Header) with name := ⟨"cfgProc", ()⟩ }
-          body := .cfg { entry := "entry", blocks := [] } }
+          body := .cfg { entry := "entry",
+                         blocks := [("entry", { cmds := [], transfer := .finish #[] })] } }
       default] }
 
-/-- info: error: runProgram: cannot apply statement-level transform to CFG body (procedure 'cfgProc') -/
+/--
+info: program Core;
+
+procedure cfgProc ()
+cfg entry {
+  entry: {
+    return;
+  }
+};
+-/
 #guard_msgs in
 #eval IO.println (runLoopElim cfgOnlyPgm)
+
+-- `runProgram` with no rewrite for CFG bodies refuses one.
+/--
+info: error: runProgram: cannot apply statement-level transform to CFG body
+  (procedure 'cfgProc')
+-/
+#guard_msgs (whitespace := lax) in
+#eval IO.println (match run cfgOnlyPgm (runProgram (fun _ => pure none)) with
+  | .ok _ => "accepted"
+  | .error e => s!"error: {e}")
+
+/-- A whole-CFG rewrite: an `assume` named after the procedure at the start of each block. -/
+private def tagBlocks (proc : Procedure) (g : DetCFG) : CoreTransformM (Bool × DetCFG) :=
+  pure (true, { g with blocks := g.blocks.map fun (l, b) =>
+    (l, { b with cmds := .cmd (.assume proc.header.name.1 Core.true #[]) :: b.cmds }) })
+
+-- `runProgram` with a whole-CFG rewrite (`cfgBody`) gives it each CFG procedure and its graph,
+-- and does not use `cfgCmd`.
+/--
+info: changed true
+program Core;
+
+procedure cfgProc ()
+cfg entry {
+  entry: {
+    assume [cfgProc]: true;
+    return;
+  }
+};
+-/
+#guard_msgs (whitespace := lax) in
+#eval IO.println (match run cfgOnlyPgm (runProgram (fun _ => pure none)
+    (cfgCmd := some fun _ => throw (Strata.Message.fromString "cfgCmd used"))
+    (cfgBody := some tagBlocks)) with
+  | .ok (changed, res) => s!"changed {changed}\n{(Std.format res.eraseTypes).pretty 96}"
+  | .error e => s!"error: {e}")
+
+/-- Run the loop-elimination pipeline phase with a fresh transform state, formatting the
+    transformed program on success or the diagnostic on failure. -/
+private def runLoopElimPhase (p : Core.Program) : String :=
+  match run p loopElimPipelinePhase.transform with
+  | .ok (_, res) => (Std.format res.eraseTypes).pretty 96
+  | .error e => s!"error: {e}"
+
+/-- A structured procedure with a loop and a CFG procedure whose blocks branch back and forth
+    without a loop. -/
+private def mixedLoopPgm :=
+#strata
+program Core;
+procedure L(n : int, out i : int)
+{
+  i := 0;
+  while (int.lt(i, n))
+  {
+    i := int.add(i, 1);
+  }
+};
+procedure C(x : int, out y : int)
+cfg entry {
+  entry: { y := x; branch (int.gt(x, 0)) goto pos else goto done; }
+  pos: { y := int.add(y, 1); goto done; }
+  done: { return; }
+};
+#end
+
+-- The phase eliminates the structured procedure's loop and keeps the CFG body as it is.
+/--
+info: program Core;
+
+procedure L (n : int, out i : int)
+{
+  i := 0;
+  if (int.lt(i, n)) {
+    $__loopElim_arbitrary_iter_facts_loop_0: {
+      $__loopElim_havoc_loop_0: {
+        havoc i;
+      }
+      assume [$__loopElimAssume_guard_loop_0]: int.lt(i, n);
+      i := int.add(i, 1);
+    }
+    $__loopElim_havoc_loop_0: {
+      havoc i;
+    }
+    assume [$__loopElimAssume_not_guard_loop_0]: !(int.lt(i, n));
+  }
+};
+procedure C (x : int, out y : int)
+cfg entry {
+  entry: {
+    y := x;
+    branch (int.gt(x, 0)) goto pos else goto done;
+  }
+  pos: {
+    y := int.add(y, 1);
+    goto done;
+  }
+  done: {
+    return;
+  }
+};
+-/
+#guard_msgs (whitespace := lax) in
+#eval IO.println (runLoopElimPhase (translate mixedLoopPgm))
 
 end LoopElimExamples
 

@@ -6,6 +6,7 @@
 module
 
 meta import Strata.Languages.Core.StatementEval
+meta import StrataTest.DL.Lambda.RenamingFixtures
 
 meta section
 
@@ -377,6 +378,72 @@ Deferred Proof Obligations:
                       [Statement.set "x" eb[#2] .empty]
                       .empty,
                     .assert "x_pos" eb[(x == #1)] .empty]) |> format
+
+/-! ### A call's contract does not depend on type variable names
+
+`p<a, b>(x : a, y : b)` requires `opPair(x, y)`, with `opPair : a → b → bool`. Calling `p(u, v)`
+with `u : b` and `v : a`, and the same call with the caller's `b` and `a` renamed to `d` and
+`c`, gives the same precondition up to that renaming. -/
+
+private def contractRenamed (tyU tyV : Lambda.LMonoTy) : Format :=
+  let tvA : Lambda.LMonoTy := .ftvar "a"
+  let tvB : Lambda.LMonoTy := .ftvar "b"
+  let pre : Expression.Expr := Lambda.RenamingFixtures.opPairCall Core.coreLoc tvA tvB
+  let proc : Procedure :=
+    { header := { name := "p", typeArgs := ["a", "b"],
+                  inputs := [("x", tvA), ("y", tvB)], outputs := [] },
+      spec := { preconditions := [("pre", ⟨pre, .Default, #[]⟩)], postconditions := [] } }
+  let E := { Env.init with program := { decls := [.proc proc .empty] } }
+  let (_, E) := Command.inlineCallContract E [] "p"
+    [.fvar Core.coreLoc "u" (some tyU), .fvar Core.coreLoc "v" (some tyV)] .empty
+  Format.joinSep (E.deferred.toList.map fun ob =>
+    (Lambda.LExpr.instToFormatLExpr CoreLParams.mono).format ob.obligation) Format.line
+
+/-- info: ((~opPair : (arrow b (arrow a bool))) (u : b) (v : a)) -/
+#guard_msgs in
+#eval contractRenamed (.ftvar "b") (.ftvar "a")
+
+/-- info: ((~opPair : (arrow d (arrow c bool))) (u : d) (v : c)) -/
+#guard_msgs in
+#eval contractRenamed (.ftvar "d") (.ftvar "c")
+
+/-! `q<a, b, c>(x : a, y : b) returns (r : a)` requires `opQ(x, y, k)`, with
+`opQ : a → b → c → bool` and `k : c`. In `w := q(u, v)`, `u` has no known type, `v : a` fixes the
+callee's `b`, and `w : b` fixes its `a`. Renaming the caller's `b` and `a` to `d` and `c` renames
+the precondition alike; no argument fixes the callee's `c`, which becomes `$__callty2`. -/
+
+private def contractRenamedOut (tyV tyW : Lambda.LMonoTy) : Format :=
+  let tvA : Lambda.LMonoTy := .ftvar "a"
+  let tvB : Lambda.LMonoTy := .ftvar "b"
+  let tvC : Lambda.LMonoTy := .ftvar "c"
+  let pre : Expression.Expr :=
+    .app Core.coreLoc (.app Core.coreLoc
+                       (.app Core.coreLoc (.op Core.coreLoc "opQ"
+                                           (some (.arrow tvA (.arrow tvB (.arrow tvC .bool)))))
+      (.fvar Core.coreLoc "x" (some tvA))) (.fvar Core.coreLoc "y" (some tvB)))
+          (.op Core.coreLoc "k" (some tvC))
+  let proc : Procedure :=
+    { header := { name := "q", typeArgs := ["a", "b", "c"],
+                  inputs := [("x", tvA), ("y", tvB)], outputs := [("r", tvA)] },
+      spec := { preconditions := [("pre", ⟨pre, .Default, #[]⟩)], postconditions := [] } }
+  let E := { Env.init with program := { decls := [.proc proc .empty] } }
+  let E := E.insertInContext ("w", some tyW) (.fvar Core.coreLoc "w" (some tyW))
+  let (_, E) := Command.inlineCallContract E ["w"] "q"
+    [.fvar Core.coreLoc "u" none, .fvar Core.coreLoc "v" (some tyV)] .empty
+  Format.joinSep (E.deferred.toList.map fun ob =>
+    (Lambda.LExpr.instToFormatLExpr CoreLParams.mono).format ob.obligation) Format.line
+
+/--
+info: ((~opQ : (arrow b (arrow a (arrow $__callty2 bool)))) u (v : a) (~k : $__callty2))
+-/
+#guard_msgs in
+#eval contractRenamedOut (.ftvar "a") (.ftvar "b")
+
+/--
+info: ((~opQ : (arrow d (arrow c (arrow $__callty2 bool)))) u (v : c) (~k : $__callty2))
+-/
+#guard_msgs in
+#eval contractRenamedOut (.ftvar "c") (.ftvar "d")
 
 end Tests
 ---------------------------------------------------------------------

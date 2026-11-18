@@ -4,7 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import StrataTest.Languages.Core.Tests.Logic.HoareAfterSupport
+import StrataTest.Languages.Core.Tests.Logic.HoareUtils
 import Strata.Transform.LoopInitHoistCoreCorrect
 
 open Imperative
@@ -12,7 +12,7 @@ open StrataDDM (Program)
 
 namespace Strata.HoareAfterLoopInitHoistTest
 
-open HoareAfterSupport
+open HoareUtils
 
 /-- The program.  It comes first in the file: the translation records the byte offsets of its
     statements in their metadata, which `sumBody` spells out with `loc`, so an edit above it
@@ -100,19 +100,20 @@ private abbrev incE : Core.Expression.Expr :=
   .app Core.valueLoc (.app Core.valueLoc Core.intAddOp (v iId)) (.intConst Core.valueLoc 1)
 
 /-- The metadata of the declaration of `sq` and of the loop. -/
-private abbrev mdSq : MetaData Core.Expression := loc 708 738
-private abbrev mdL : MetaData Core.Expression := loc 681 791
+private abbrev mdSq : MetaData Core.Expression := loc 694 724
+private abbrev mdL : MetaData Core.Expression := loc 667 777
 
 /-- The statements after the loop's declaration of `sq`. -/
 private abbrev bodyTail : Core.Statements :=
-  [Core.Statement.set sId addE (loc 743 763), Core.Statement.set iId incE (loc 768 787)]
+  [Core.Statement.set sId addE (loc 729 749), Core.Statement.set iId incE (loc 754 773)]
 
 /-- `s := 0`. -/
-private abbrev setS0 : Core.Statement := Core.Statement.set sId (.intConst Core.valueLoc 0) (loc 651 658)
+private abbrev setS0 : Core.Statement :=
+  Core.Statement.set sId (.intConst Core.valueLoc 0) (loc 637 644)
 
 /-- `var i : int := 0`. -/
 private abbrev initI : Core.Statement :=
-  Core.Statement.init iId intLTy (.det (.intConst Core.valueLoc 0)) (loc 661 678)
+  Core.Statement.init iId intLTy (.det (.intConst Core.valueLoc 0)) (loc 647 664)
 
 /-- The translated body. -/
 private abbrev sumBody : Core.Statements :=
@@ -234,8 +235,8 @@ private theorem loopBody_triple :
       (fun ρ => Inv E ρ ∧ Core.Expression.eval ρ.factory ρ.store ltE =
         some (HasBool.ttVal ρ.factory)) tgtLoopBody (Inv E) := by
   change Core.Logic.Hoare.Triple π testParams _ ([Core.Statement.set sqId mulE mdSq] ++
-    ([Core.Statement.set sId addE (loc 743 763)] ++
-      [Core.Statement.set iId incE (loc 768 787)])) (Inv E)
+    ([Core.Statement.set sId addE (loc 729 749)] ++
+      [Core.Statement.set iId incE (loc 754 773)])) (Inv E)
   refine Core.Logic.Hoare.seq π testParams (Mid := Squared E) ?_ ?_ (by covered)
   · refine Core.Logic.Hoare.set π testParams _ _ _ _ _
       (fun ρ₀ σ' v ⟨⟨hf, a, b, hs, hi, ha, hb⟩, _⟩ hev hup => ?_)
@@ -320,6 +321,10 @@ theorem sum_meets_contract :
   rw [Core.Logic.Hoare.Procedure.contractTriple, hfactory]
   refine ⟨sumProc, by native_decide, by native_decide, ?_⟩
   rw [sum_body_eq]
+  -- The body proof does not use the axioms visible to the procedure.
+  refine Core.Logic.Hoare.consequence _ _
+    (Pre := Core.Logic.Hoare.Procedure.contractPre Core.Factory sumProc) ?_
+    (fun _ h => h.1) (fun _ h => h)
   refine Core.Logic.Hoare.of_forall_entryFactory π _ fun E => ?_
   by_cases hE : E.factory = Core.Factory
   case neg =>

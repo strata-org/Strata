@@ -14,8 +14,8 @@ public import Strata.Util.HMaps
 
 /-! ## Definitions shared by the typing relation and the typing rules of `ProgramTypeSpec`
 
-Variable scopes, the conditions on expression annotations, and the condition on factory
-extensions. -/
+Variable scopes (with `TypeScopes.addInits`, `addCFGInits` and `monoType?`), the conditions
+on expression annotations, and the condition on factory extensions. -/
 
 public section
 
@@ -33,6 +33,34 @@ open LExpr
 
 /-- The stack of variable scopes of a type scope. -/
 abbrev TypeScopes := Strata.Util.HMaps (Lambda.Identifier Unit) LTy
+
+/-- `vt` with the variable `x` of type `ty` added to the newest scope. -/
+def TypeScopes.addInit (vt : TypeScopes) (x : Expression.Ident) (ty : LTy) : TypeScopes :=
+  vt.pop.push (vt.newest.insert x ty)
+
+/-- `vt` with each variable an `init` of `ss` declares added to the newest scope. -/
+def TypeScopes.addInits (vt : TypeScopes) (ss : List Statement) :
+    TypeScopes :=
+  ss.foldl (init := vt) fun vt s =>
+    match s with
+    | .init x ty _ _ => vt.addInit x ty
+    | _ => vt
+
+/-- `vt` with each variable an `init` command of any block of `g` declares added to the newest
+    scope. A CFG has no nested scopes, and its checker rejects a local declared at two types or
+    with the name of a header variable, so the one flat scope gives each variable exactly its
+    declared type. -/
+def TypeScopes.addCFGInits (vt : TypeScopes) (g : DetCFG) : TypeScopes :=
+  g.blocks.foldl (init := vt) fun vt (_, b) =>
+    b.cmds.foldl (init := vt) fun vt c =>
+      match c with
+      | .cmd (.init x ty _ _) => vt.addInit x ty
+      | _ => vt
+
+/-- The monotype `vt` declares for the variable `x`. -/
+def TypeScopes.monoType? (vt : TypeScopes) (x : Expression.Ident) :
+    Option Lambda.LMonoTy :=
+  (vt.find? x).bind Lambda.LTy.toMonoType?
 
 /-- Every binder annotation in `e` applies only type constructors registered at their arity. -/
 @[expose] def BinderAnnotsKnown (C : LContext CoreLParams) (e : Expression.Expr) : Prop :=
@@ -87,6 +115,24 @@ structure FactoryExtendedBy (agrees : LFunc CoreLParams → LFunc CoreLParams �
   /-- No name is present in `C'` unless it was in `C` or is one of the new
       functions. -/
   no_other : ∀ nm ∈ C'.functions, nm ∈ C.functions ∨ nm ∈ newFuncs.map (·.name.name)
+
+/-- `ren` renames distinct type parameters among `typeArgs` to distinct new names, none of
+    them among `mentioned`, the type variables of the declaration. So the renamed declaration
+    means the same, and no type parameter turns into another type variable of the
+    declaration. -/
+def TyArgRenamingCore (typeArgs mentioned : List String) (ren : List (String × String)) : Prop :=
+  (ren.map Prod.fst).Nodup ∧ (ren.map Prod.snd).Nodup ∧
+    ∀ p ∈ ren, p.1 ∈ typeArgs ∧ p.2 ∉ mentioned
+
+/-- An injective renaming of type parameters to names the declaration does not
+    mention (`TyArgRenamingCore`) that renames only type parameters with a
+    reserved prefix, to names that are neither rigid in `C` nor free in the type
+    of a variable of `Γ`. -/
+def TyArgRenaming (C : LContext CoreLParams) (Γ : TContext Unit)
+    (typeArgs mentioned : List String) (ren : List (String × String)) : Prop :=
+  TyArgRenamingCore typeArgs mentioned ren ∧
+    ∀ p ∈ ren, isAllowedName p.1 = false ∧ p.2 ∉ C.rigidTypeVars ∧
+      TContext.isFresh (T := CoreLParams) p.2 Γ
 
 end TypeSpec
 

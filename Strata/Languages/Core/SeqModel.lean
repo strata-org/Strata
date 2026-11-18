@@ -11,7 +11,7 @@ public import Strata.Init
 # Sequence Axiom Model
 
 Lean theorems over `List` that are isomorphic to the sequence axioms declared
-in `Factory.lean`.  Each theorem is named after the axiom it models and carries
+in `AggregateTypesFactory.lean`.  Each theorem is named after the axiom it models and carries
 a doc-comment referencing the corresponding Factory function.
 
 ## Mapping

@@ -29,9 +29,10 @@ import Strata.DL.Lambda.Denote.LExprDenoteConsts
 Core's bounded evaluator `evalBounded` reaches the value the reference evaluator
 `Expression.eval` (`Lambda.LExpr.denoteEval`) gives an expression only on part of Core: it does
 not decide quantifiers (`∀ x : int. x == x` denotes `true`, and `LExpr.eval` never reduces it), it
-does not evaluate functions without a concrete evaluator or a body it unfolds (map, set and
-sequence operations, polymorphic operators, uninterpreted functions), and a concrete evaluator may
-leave a call undecided (`Int.Div` on a zero divisor, whose reference value the model gives). This
+does not evaluate functions without a concrete evaluator or a body it unfolds (set operations,
+uninterpreted functions), and a concrete evaluator may leave a call undecided (`Int.Div` on a zero
+divisor, whose reference value the model gives, or a map or sequence operation on arguments that
+are not literals). This
 module states the expressions on which it does, and the closure laws of that class.
 
 *Computable expression evaluation* (`ComputableEval F σ e`) is that predicate: on every runtime
@@ -60,7 +61,10 @@ evaluator soundness (`EvalFactoryWF`):
 
 Key definitions: `ComputableEval`, `ConstrsNotLit`, `LitsOfTypes`, `CevalTotal`,
 `CevalShortCircuits`, `ComputableOp`. Key theorems: the closure laws above,
-`engEvalReach_of_computableEval`, `denotes_const_iff`. -/
+`engEvalReach_of_computableEval`, `denotes_const_iff`.
+
+The module also defines a runner for straight-line code whose values are literals (`evalLit`,
+`runLits`, `runLitsProgresses`); its soundness and termination are in `InterpreterReachProps`. -/
 
 namespace Core
 open Lambda Imperative
@@ -479,12 +483,14 @@ private theorem eval_call_body {F : Lambda.Factory CoreLParams} {σr : RStore Ex
     rw [hb]
     revert hinl
     cases fn.attr.contains .inline <;> simp <;> grind
+  have hinst : fn.instantiateBody? body op ls =
+      some ((body.applyTypeSubst S).substFvarsLifting (fn.inputs.keys.zip ls)) :=
+    (LFunc.instantiateBody?_eq_some (fn := fn)).mpr ⟨S, hS, rfl⟩
   simp only [LExpr.eval, isValue_call hcall hc, hcall, hsc, LExpr.List_map_fst_map_eval,
-    LExpr.List_all_snd_isValueTrue_map_eval, hmap, hall, Bool.false_eq_true, ↓reduceIte,
-    hS]
+    LExpr.List_all_snd_isValueTrue_map_eval, hmap, hall, Bool.false_eq_true, ↓reduceIte]
   have hg : ∀ h', fn.body.get h' = body := by rw [hb]; intro; rfl
   split
-  · simp only [hg, hres, LExpr.combineEvalResValueFlag_eq_pair]
+  · simp only [hg, hinst, hres, LExpr.combineEvalResValueFlag_eq_pair]
     rfl
   · rename_i h
     exact absurd hcond h
@@ -780,7 +786,7 @@ theorem computableEval_userFn (F : Expression.Factory) (hF : EvalFactoryWF F.fac
     (evalBounded_of_eval hS hd (hct ▸ hty) hops ?_ (LConst.wt_of_isPrimitive hcd))
       fun _ => hcd
   refine eval_call_body (S := Subst.empty) hcall hc hb (by simp [LExpr.shortCircuitCall?, hce])
-    ?_ (by simp [LFunc.computeTypeSubst, LFunc.opTypeSubst, hmono]) (hk _ (by omega)) ?_
+    ?_ (by simp [LFunc.computeTypeSubst, hmono]) (hk _ (by omega)) ?_
   · have hia : ls.all (LExpr.isInlineArg F.factory) = true := List.all_eq_true.2 fun l hl => by
       obtain ⟨m, c, rfl, -, -⟩ := hls.mem hl
       simp [LExpr.isInlineArg]
@@ -800,6 +806,77 @@ theorem engEvalReach_of_computableEval {F : Expression.Factory} {σ : SemanticSt
     rwa [typeCheckWith_const_isSome] at hck
   exact ⟨n, _, hb, (Option.some.inj (hc.symm.trans hv)) ▸
     denotes_literal (LExpr.denoteEval_const hw)⟩
+
+/-! ## Running straight-line code over literals
+
+`evalLit` evaluates an expression with Core's concrete evaluator over a store of literals, and
+`runLits` runs a list of `init`/`set` commands with deterministic right-hand sides that way.
+`runLitsProgresses` also checks that every write is at the type of its target.
+`InterpreterReachProps` proves what these results tell about every model of `Core.Factory`. -/
+
+/-- Literal values of variables, the most recent binding of a name first. -/
+abbrev LitBinds := List (Expression.Ident × LConst)
+
+/-- The runtime store holding the literals of `bs`. -/
+@[expose] def LitBinds.rstore (bs : LitBinds) : RStore Expression :=
+  fun x => (bs.lookup x).map (.const valueLoc)
+
+/-- The semantic store holding the values of the literals of `bs` under `tc`. -/
+@[expose] noncomputable def LitBinds.store (tc : TyConstrInterp) (bs : LitBinds) : CoreStore :=
+  fun x => (bs.lookup x).map (SemValue.ofConst tc)
+
+/-- The store `σ` holds the value under `tc` of every literal of `bs`. -/
+@[expose] def LitBinds.Holds (tc : TyConstrInterp) (σ : CoreStore) (bs : LitBinds) : Prop :=
+  ∀ b ∈ bs, σ b.1 = some (SemValue.ofConst tc b.2)
+
+/-- `bs` with `x` bound to `c`. -/
+@[expose] def LitBinds.set (bs : LitBinds) (x : Expression.Ident) (c : LConst) : LitBinds :=
+  (x, c) :: bs.filter (·.1 != x)
+
+/-- The literal Core's concrete evaluator computes for `e` from the literals of `bs`, at `fuel`,
+    when every literal of `bs` is well typed and binds every free variable of `e`. -/
+@[expose] def evalLit (fuel : Nat) (bs : LitBinds) (e : Expression.Expr) : Option LConst :=
+  if bs.all (·.2.wt) && e.freeVars.all (fun p => (bs.lookup p.1).isSome) then
+    match evalBounded fuel Core.Factory bs.rstore e with
+    | some (.const _ c) => if c.wt then some c else none
+    | _ => none
+  else none
+
+/-- Run one `init` or `set` command with a deterministic right-hand side over the literals of
+    `bs`, evaluating the right-hand side with `evalLit`; `none` for any other statement. -/
+@[expose] def stepLit (fuel : Nat) : LitBinds → Statement → Option LitBinds
+  | bs, Stmt.cmd (CmdExt.cmd (Cmd.set x (.det e) _)) => (evalLit fuel bs e).map (bs.set x)
+  | bs, Stmt.cmd (CmdExt.cmd (Cmd.init x _ (.det e) _)) => (evalLit fuel bs e).map (bs.set x)
+  | _, _ => none
+
+/-- Run a list of `init` and `set` commands with `stepLit`. -/
+@[expose] def runLits (fuel : Nat) : LitBinds → Statements → Option LitBinds
+  | bs, [] => some bs
+  | bs, s :: ss => (stepLit fuel bs s).bind fun bs' => runLits fuel bs' ss
+
+/-- Names a store declares before a run, such as a procedure's outputs, with their types. -/
+abbrev LitDecls := List (Expression.Ident × LMonoTy)
+
+/-- The store `σ` binds every name of `Γ` to a value of `F` of its type. -/
+@[expose] def LitDecls.Holds (F : Expression.Factory) (σ : CoreStore) (Γ : LitDecls) : Prop :=
+  ∀ p ∈ Γ, ∃ v, σ p.1 = some v ∧ HasVal.valueOfTy F v (.forAll [] p.2)
+
+/-- Whether `runLits` runs `ss` from `bs`, over a store declaring the names of `Γ`, with every
+    write at the type of its target: each `set` writes a name of `Γ` a value of its type, and each
+    `init` declares a name outside `Γ` with a value of the declared type. -/
+@[expose] def runLitsProgresses (fuel : Nat) : LitBinds → LitDecls → Statements → Bool
+  | _, _, [] => true
+  | bs, Γ, Stmt.cmd (CmdExt.cmd (Cmd.set x (.det e) _)) :: ss =>
+    match evalLit fuel bs e with
+    | some c => decide (Γ.lookup x = some c.ty) &&
+        runLitsProgresses fuel (bs.set x c) Γ ss
+    | none => false
+  | bs, Γ, Stmt.cmd (CmdExt.cmd (Cmd.init x ty (.det e) _)) :: ss =>
+    match evalLit fuel bs e with
+    | some c => (Γ.lookup x).isNone && decide (ty.toMonoType? = some c.ty) &&
+        runLitsProgresses fuel (bs.set x c) ((x, c.ty) :: Γ) ss
+    | none => false
+  | _, _, _ :: _ => false
 
 end
 end Core

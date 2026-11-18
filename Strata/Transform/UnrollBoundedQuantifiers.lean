@@ -715,7 +715,7 @@ def Core.unrollBoundedQuantifiersPipelinePhase : Core.PipelinePhase :=
     -- `hasObligationForm` rules out `block` and `exit`. `collectAssumeIntFacts`
     -- reads an `assume` out of a `block`, which is unsound if an `exit` skips it.
     (requires := factSet![.noCFGBodies, .noLoops, .staticSingleAssignment,
-                          .hasObligationForm])
+                          .hasObligationForm, .typeAnnotated])
     -- `noBetaRedexes` survives because an instance is the body with a *constant* index
     -- substituted for the bound variable, which cannot put an abstraction in an
     -- application's head; the fold builds applications of operators; and the per-instance

@@ -240,20 +240,21 @@ def numLoops (p : Program) : Nat :=
       | .cfg _ => n
     | _ => n) 0
 
-/-- Loop-elimination pass suitable for the pipeline: replace every loop in the
+/-- Loop-elimination pass: replace every loop in the structured procedure bodies of the
     program with its acyclic passive encoding, iterating to a fixed point so
     that loops nested inside loop bodies are also eliminated. The iterations are
-    bounded by `numLoops p + 1`: at least the loop nesting depth, and at least one,
-    so a CFG procedure body is rejected even when `p` has no loops. Returns whether
+    bounded by `numLoops p + 1`, more than the loop nesting depth. A CFG procedure body is
+    kept as it is (a block holds no loop). Returns whether
     any loop was eliminated and the transformed program. Throws if an `exit` in a loop body
     targets a label starting with `loopElimPrefix`, which generated blocks use. -/
 def loopElim (p : Program) : Transform.CoreTransformM (Bool × Program) :=
   Transform.runProgramUntil removeLoop p (maxIters := some (numLoops p + 1))
+    (cfgCmd := some fun _ => pure none)
 
 /-- Loop-elimination pipeline phase: replaces each loop with an acyclic
-    encoding. -/
+    encoding (`loopElim`). -/
 def loopElimPipelinePhase : PipelinePhase where
-  transform := loopElim
+  transform p := loopElim p
   phase.name := "loopElim"
   phase.getValidation obligation :=
     if obligationHasLabelPrefix obligation loopElimAssumePrefix then
@@ -262,13 +263,13 @@ def loopElimPipelinePhase : PipelinePhase where
   -- Iterating to a fixed point dissolves nested loops as well, so a successful
   -- run leaves none; what replaces them havocs, which is why
   -- `staticSingleAssignment` is not claimed.
-  requires := factSet![.noCFGBodies, .noLoopInvariants, .noLoopMeasures]
+  requires := factSet![.noLoopInvariants, .noLoopMeasures, .typeAnnotated]
   establishes := factSet![.noLoops]
   preserves := factSet![.noCFGBodies, .noCalls, .noLoopInvariants,
                       .noLoopMeasures, .noBetaRedexes, .noPrecondsFromFuncs, .noNondetGuards,
                       .noProcedureContracts,
                          .noPolymorphicProcedures,
-                         .noPolymorphicFunctions, .typeAnnotated]
+                         .noPolymorphicFunctions, .typeAnnotated, .exitsCovered]
 
 end -- public section
 

@@ -289,3 +289,67 @@ procedure runAll()
   divideBy(0)
 };
 #end
+
+/-! A field target's receiver is evaluated once, before the right-hand side, so an
+effectful receiver runs once and a right-hand side that reassigns the receiver's local
+does not redirect the write. -/
+
+#eval testLaurelExecution {} <|
+#strata
+program Laurel;
+composite Box {
+  var f: int
+}
+
+procedure receiverReassignedInRhs()
+  entry
+  opaque
+  modifies *
+{
+  var a: Box := new Box;
+  a#f := 0;
+  var b: Box := new Box;
+  b#f := 100;
+  var o: Box := a;
+  o#f += { o := b; 1 };
+  assert a#f == 1;
+  assert b#f == 100
+};
+
+procedure receiverEvaluatedOnce()
+  entry
+  opaque
+  modifies *
+{
+  var o: Box := new Box;
+  o#f := 0;
+  var k: int := 0;
+  { k := k + 1; o }#f += 1;
+  assert k == 1;
+  var old: int := { k := k + 1; o }#f++;
+  assert k == 2;
+  assert old == 1;
+  assert o#f == 2
+};
+#end
+
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
+#strata
+program Laurel;
+composite Box {
+  var v: int
+}
+constrained CB = b: Box where b#v >= 0 witness <??>
+//                                             ^^^^ error: assertion does not hold
+
+procedure compoundOnViolatedReceiver(c: CB)
+  opaque
+  modifies *
+{
+  c#v := 0 - 5;
+  c#v += 1;
+  assert c#v == 0 - 4;
+  c#v++;
+  assert c#v == 0 - 3
+};
+#end

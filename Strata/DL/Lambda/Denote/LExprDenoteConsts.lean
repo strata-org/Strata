@@ -24,6 +24,8 @@ denotations (`denoteConst`), which `LExprDenote` defines.
 - `constVal_denoteConst` — the denotation of a well-typed literal is its value
 - `constVal_injective` (with `constValElems_injective`) — literals with no map in their sort are
   determined by their values
+- `constValElems_iff`, `constValEntries_iff`, `constVal_mapSelect`, `constValEntries_mapUpdate`,
+  `constValElems_contains` — the values of the map and sequence literals the evaluator builds
 -/
 
 namespace Lambda
@@ -253,5 +255,334 @@ public theorem constValElems_injective : ∀ (s : LSort) (as bs : List LConst)
       · cases hb
     · cases ha
 end
+
+/-! ### Values of collection literals
+
+Laws of `constVal` on map and sequence literals: how the values of the literals the evaluator
+builds (`LConst.mapSelect`, `LConst.mapUpdate`, and the array operations on sequence elements)
+relate to the values of the literals it builds them from. The `Map` and `Sequence` evaluators of
+a language's factory are proved consistent with its model from these laws.
+-/
+
+public section
+
+variable {tcInterp : TyConstrInterp}
+
+/-! ### Sequence elements -/
+
+/-- A list of constants has the list `a` as values at a sort exactly when `a` has the same
+    length and each constant has as value the element of `a` at its position. -/
+theorem constValElems_iff {s : LSort} :
+    ∀ {l : List LConst} {a : List (SortDenote tcInterp s)},
+      constValElems tcInterp s l = some a ↔
+        ∃ h : a.length = l.length, ∀ (i : Nat) (hi : i < l.length),
+          constVal tcInterp s l[i] = some (a[i]'(h ▸ hi))
+  | [], a => by
+    simp only [constValElems, Option.some.injEq, List.length_nil, List.length_eq_zero_iff]
+    constructor
+    · rintro rfl; exact ⟨rfl, fun i hi => absurd hi (Nat.not_lt_zero _)⟩
+    · rintro ⟨h, -⟩; exact h.symm
+  | c :: l, a => by
+    simp only [constValElems]
+    constructor
+    · intro h
+      split at h
+      · rename_i x r hx hr
+        simp only [Option.some.injEq] at h; subst h
+        obtain ⟨hlen, hall⟩ := (constValElems_iff (l := l)).mp hr
+        refine ⟨by simp [hlen], fun i hi => ?_⟩
+        cases i with
+        | zero => exact hx
+        | succ i => exact hall i (by simpa using hi)
+      · cases h
+    · rintro ⟨hlen, hall⟩
+      cases a with
+      | nil => simp at hlen
+      | cons x r =>
+        have hx : constVal tcInterp s c = some x := hall 0 (by simp)
+        have hr : constValElems tcInterp s l = some r :=
+          (constValElems_iff (l := l)).mpr
+            ⟨by simpa using hlen, fun i hi => hall (i + 1) (by simpa using hi)⟩
+        simp [hx, hr]
+
+/-- If two lists of constants have values at a sort, their concatenation has as values the
+    concatenation of their values. -/
+theorem constValElems_append {s : LSort} {l₁ l₂ : List LConst}
+    {a₁ a₂ : List (SortDenote tcInterp s)}
+    (h₁ : constValElems tcInterp s l₁ = some a₁) (h₂ : constValElems tcInterp s l₂ = some a₂) :
+    constValElems tcInterp s (l₁ ++ l₂) = some (a₁ ++ a₂) := by
+  obtain ⟨hl₁, hv₁⟩ := constValElems_iff.mp h₁
+  obtain ⟨hl₂, hv₂⟩ := constValElems_iff.mp h₂
+  refine constValElems_iff.mpr ⟨by simp [hl₁, hl₂], fun i hi => ?_⟩
+  by_cases hlt : i < l₁.length
+  · rw [List.getElem_append_left hlt, List.getElem_append_left (by omega)]
+    exact hv₁ i hlt
+  · rw [List.getElem_append_right (show l₁.length ≤ i by omega),
+      List.getElem_append_right (show a₁.length ≤ i by omega)]
+    simp only [hl₁]
+    exact hv₂ (i - l₁.length) (by simp at hi; omega)
+
+/-- If a list of constants has values at a sort, its first `n` constants have as values the
+    first `n` of its values. -/
+theorem constValElems_take {s : LSort} {l : List LConst} {a : List (SortDenote tcInterp s)}
+    (h : constValElems tcInterp s l = some a) (n : Nat) :
+    constValElems tcInterp s (l.take n) = some (a.take n) := by
+  obtain ⟨hl, hv⟩ := constValElems_iff.mp h
+  refine constValElems_iff.mpr ⟨by simp [hl], fun i hi => ?_⟩
+  simp only [List.getElem_take]
+  exact hv i (by simp at hi; omega)
+
+/-- If a list of constants has values at a sort, the list without its first `n` constants has
+    as values its values without their first `n`. -/
+theorem constValElems_drop {s : LSort} {l : List LConst} {a : List (SortDenote tcInterp s)}
+    (h : constValElems tcInterp s l = some a) (n : Nat) :
+    constValElems tcInterp s (l.drop n) = some (a.drop n) := by
+  obtain ⟨hl, hv⟩ := constValElems_iff.mp h
+  refine constValElems_iff.mpr ⟨by simp [hl], fun i hi => ?_⟩
+  simp only [List.getElem_drop]
+  exact hv (n + i) (by simp at hi; omega)
+
+/-- If a list of constants has values at a sort, replacing its constant at position `j` by a
+    constant with value `x` replaces its value at position `j` by `x`. -/
+theorem constValElems_set {s : LSort} {l : List LConst} {a : List (SortDenote tcInterp s)}
+    (h : constValElems tcInterp s l = some a) (j : Nat) {c : LConst} {x : SortDenote tcInterp s}
+    (hc : constVal tcInterp s c = some x) :
+    constValElems tcInterp s (l.set j c) = some (a.set j x) := by
+  obtain ⟨hl, hv⟩ := constValElems_iff.mp h
+  refine constValElems_iff.mpr ⟨by simp [hl], fun i hi => ?_⟩
+  simp only [List.getElem_set]
+  split
+  · exact hc
+  · exact hv i (by simpa using hi)
+
+/-- Whether a list of constants at a sort without `Map` contains a constant is whether one of
+    their values is its value. -/
+theorem constValElems_contains {s : LSort} (hs : s.hasMap = false) {l : List LConst}
+    {a : List (SortDenote tcInterp s)} (h : constValElems tcInterp s l = some a)
+    {c : LConst} {x : SortDenote tcInterp s} (hc : constVal tcInterp s c = some x) :
+    l.contains c = true ↔ ∃ (i : Nat) (hi : i < a.length), a[i] = x := by
+  obtain ⟨hl, hv⟩ := constValElems_iff.mp h
+  rw [List.contains_iff_mem, List.mem_iff_getElem]
+  constructor
+  · rintro ⟨i, hi, rfl⟩
+    have hvi := hv i hi
+    exact ⟨i, by omega, Option.some.inj (hvi.symm.trans hc)⟩
+  · rintro ⟨i, hi, rfl⟩
+    exact ⟨i, by omega, constVal_injective _ _ hs (hv i (by omega)) hc⟩
+
+/-! ### Map entries -/
+
+/-- A list of map entries has the list `kvs` as values at key and value sorts exactly when
+    `kvs` has the same length and each entry's key and value have as values the key and value
+    of the element of `kvs` at its position. -/
+theorem constValEntries_iff {k v : LSort} :
+    ∀ {ents : List (LConst × LConst)} {kvs : List (SortDenote tcInterp k × SortDenote tcInterp v)},
+      constValEntries tcInterp k v ents = some kvs ↔
+        ∃ h : kvs.length = ents.length, ∀ (i : Nat) (hi : i < ents.length),
+          constVal tcInterp k ents[i].1 = some (kvs[i]'(h ▸ hi)).1 ∧
+          constVal tcInterp v ents[i].2 = some (kvs[i]'(h ▸ hi)).2
+  | [], kvs => by
+    simp only [constValEntries, Option.some.injEq, List.length_nil, List.length_eq_zero_iff]
+    constructor
+    · rintro rfl; exact ⟨rfl, fun i hi => absurd hi (Nat.not_lt_zero _)⟩
+    · rintro ⟨h, -⟩; exact h.symm
+  | (a, b) :: ents, kvs => by
+    simp only [constValEntries]
+    constructor
+    · intro h
+      split at h
+      · rename_i x y r hx hy hr
+        simp only [Option.some.injEq] at h; subst h
+        obtain ⟨hlen, hall⟩ := (constValEntries_iff (ents := ents)).mp hr
+        refine ⟨by simp [hlen], fun i hi => ?_⟩
+        cases i with
+        | zero => exact ⟨hx, hy⟩
+        | succ i => exact hall i (by simpa using hi)
+      · cases h
+    · rintro ⟨hlen, hall⟩
+      cases kvs with
+      | nil => simp at hlen
+      | cons p r =>
+        obtain ⟨hx, hy⟩ : constVal tcInterp k a = some p.1 ∧ constVal tcInterp v b = some p.2 :=
+          hall 0 (by simp)
+        have hr : constValEntries tcInterp k v ents = some r :=
+          (constValEntries_iff (ents := ents)).mpr
+            ⟨by simpa using hlen, fun i hi => hall (i + 1) (by simpa using hi)⟩
+        simp [hx, hy, hr]
+
+open Classical in
+/-- The map with default `dv` and entries `p :: kvs` gives `x` the value `p.2` if `p`'s key is
+    `x`, and otherwise the value the map with entries `kvs` gives it. -/
+private theorem SortDenote.mapOf_cons {k v : LSort} (dv : SortDenote tcInterp v)
+    (p : SortDenote tcInterp k × SortDenote tcInterp v) (kvs : List _) (x : SortDenote tcInterp k) :
+    SortDenote.mapOf dv (p :: kvs) x = if p.1 = x then p.2 else SortDenote.mapOf dv kvs x := by
+  unfold SortDenote.mapOf
+  rw [List.find?_cons]
+  by_cases h : p.1 = x <;> simp [h]
+
+/-- The map with default `dv` and no entries gives every key the value `dv`. -/
+private theorem SortDenote.mapOf_nil {k v : LSort} (dv : SortDenote tcInterp v)
+    (x : SortDenote tcInterp k) :
+    SortDenote.mapOf (k := k) dv [] x = dv := rfl
+
+open Classical in
+/-- Appending an entry to the entries of a map changes its value only at the entry's key, and
+    there only if no earlier entry has that key: it acts as the default value there. -/
+private theorem SortDenote.mapOf_append_single {k v : LSort} (dv : SortDenote tcInterp v)
+    (l : List (SortDenote tcInterp k × SortDenote tcInterp v)) (a : SortDenote tcInterp k)
+    (b : SortDenote tcInterp v) (z : SortDenote tcInterp k) :
+    SortDenote.mapOf dv (l ++ [(a, b)]) z =
+      SortDenote.mapOf (if a = z then b else dv) l z := by
+  induction l with
+  | nil => rw [List.nil_append, SortDenote.mapOf_cons]; rfl
+  | cons p l ih => rw [List.cons_append, SortDenote.mapOf_cons, SortDenote.mapOf_cons, ih]
+
+/-- The value a map literal gives a key is the value of the map at the key's value, at a key
+    sort without `Map`. -/
+theorem constVal_mapSelect {k v : LSort} (hk : k.hasMap = false) {d : LConst}
+    {dv : SortDenote tcInterp v} (hd : constVal tcInterp v d = some dv) :
+    ∀ {ents : List (LConst × LConst)} {kvs : List (SortDenote tcInterp k × SortDenote tcInterp v)},
+      constValEntries tcInterp k v ents = some kvs →
+      ∀ {key : LConst} {x : SortDenote tcInterp k}, constVal tcInterp k key = some x →
+      constVal tcInterp v (LConst.mapSelect d ⟨ents⟩ key) = some (SortDenote.mapOf dv kvs x)
+  | [], kvs, h, key, x, _ => by
+    simp only [constValEntries, Option.some.injEq] at h; subst h
+    simp only [LConst.mapSelect, ← Array.find?_toList, List.find?_nil]
+    exact hd
+  | (a, b) :: ents, kvs, h, key, x, hx => by
+    simp only [constValEntries] at h
+    split at h
+    · rename_i xa xb r ha hb hr
+      simp only [Option.some.injEq] at h; subst h
+      have ih := constVal_mapSelect hk hd hr hx
+      rw [SortDenote.mapOf_cons]
+      simp only [LConst.mapSelect, ← Array.find?_toList] at ih ⊢
+      rw [List.find?_cons]
+      by_cases hab : a = key
+      · subst hab
+        have hxa : xa = x := Option.some.inj (ha.symm.trans hx)
+        rw [show (a == a) = true from beq_self_eq_true a]
+        simp only [hxa, ↓reduceIte]
+        exact hb
+      · have hxa : xa ≠ x := fun he => hab (constVal_injective _ _ hk ha (he ▸ hx))
+        rw [show (a == key) = false from beq_eq_false_iff_ne.mpr hab]
+        simp only [hxa, ↓reduceIte]
+        exact ih
+    · cases h
+
+/-- If two lists of map entries have values at key and value sorts, their concatenation has as
+    values the concatenation of their values. -/
+private theorem constValEntries_append {k v : LSort} {l₁ l₂ : List (LConst × LConst)}
+    {a₁ a₂ : List (SortDenote tcInterp k × SortDenote tcInterp v)}
+    (h₁ : constValEntries tcInterp k v l₁ = some a₁)
+    (h₂ : constValEntries tcInterp k v l₂ = some a₂) :
+    constValEntries tcInterp k v (l₁ ++ l₂) = some (a₁ ++ a₂) := by
+  obtain ⟨hl₁, hv₁⟩ := constValEntries_iff.mp h₁
+  obtain ⟨hl₂, hv₂⟩ := constValEntries_iff.mp h₂
+  refine constValEntries_iff.mpr ⟨by simp [hl₁, hl₂], fun i hi => ?_⟩
+  by_cases hlt : i < l₁.length
+  · rw [List.getElem_append_left hlt, List.getElem_append_left (by omega)]
+    exact hv₁ i hlt
+  · rw [List.getElem_append_right (show l₁.length ≤ i by omega),
+      List.getElem_append_right (show a₁.length ≤ i by omega)]
+    simp only [hl₁]
+    exact hv₂ (i - l₁.length) (by simp at hi; omega)
+
+open Classical in
+/-- The entries of a map literal without the entries of key `key` have as values the entries
+    without the key's value, at a key sort without `Map`. -/
+private theorem constValEntries_filter {k v : LSort} (hk : k.hasMap = false) {key : LConst}
+    {xk : SortDenote tcInterp k} (hkey : constVal tcInterp k key = some xk) :
+    ∀ {ents : List (LConst × LConst)} {kvs : List (SortDenote tcInterp k × SortDenote tcInterp v)},
+      constValEntries tcInterp k v ents = some kvs →
+      constValEntries tcInterp k v (ents.filter (fun e => e.1 != key)) =
+        some (kvs.filter (fun p => !decide (p.1 = xk)))
+  | [], kvs, h => by
+    simp only [constValEntries, Option.some.injEq] at h; subst h; rfl
+  | (a, b) :: ents, kvs, h => by
+    simp only [constValEntries] at h
+    split at h
+    · rename_i xa xb r ha hb hr
+      simp only [Option.some.injEq] at h; subst h
+      have ih := constValEntries_filter hk hkey hr
+      by_cases hab : a = key
+      · subst hab
+        have hxa : xa = xk := Option.some.inj (ha.symm.trans hkey)
+        subst hxa
+        simp only [List.filter_cons, bne_self_eq_false, decide_true, Bool.not_true,
+          Bool.false_eq_true, ↓reduceIte]
+        exact ih
+      · have hxa : xa ≠ xk := fun he => hab (constVal_injective _ _ hk ha (he ▸ hkey))
+        simp only [List.filter_cons, bne_iff_ne, ne_eq, hab, not_false_eq_true,
+          ↓reduceIte, hxa, decide_false, Bool.not_false]
+        simp [constValEntries, ha, hb, ih]
+    · cases h
+
+open Classical in
+/-- Dropping the entries of a key leaves a map's other values unchanged. -/
+private theorem SortDenote.mapOf_filter_ne {k v : LSort} (dv : SortDenote tcInterp v)
+    (kvs : List (SortDenote tcInterp k × SortDenote tcInterp v)) {xk z : SortDenote tcInterp k}
+    (hz : z ≠ xk) :
+    SortDenote.mapOf dv (kvs.filter (fun p => !decide (p.1 = xk))) z =
+      SortDenote.mapOf dv kvs z := by
+  induction kvs with
+  | nil => rfl
+  | cons p kvs ih =>
+    rw [List.filter_cons, SortDenote.mapOf_cons]
+    by_cases hp : p.1 = xk
+    · subst hp
+      have hpz : p.1 ≠ z := fun h => hz h.symm
+      simp [hpz, ih]
+    · simp only [hp, decide_false, Bool.not_false, ↓reduceIte, SortDenote.mapOf_cons, ih]
+
+open Classical in
+/-- A map without the entries of a key takes its default value at the key. -/
+private theorem SortDenote.mapOf_filter_eq {k v : LSort} (dv : SortDenote tcInterp v)
+    (kvs : List (SortDenote tcInterp k × SortDenote tcInterp v)) (xk : SortDenote tcInterp k) :
+    SortDenote.mapOf dv (kvs.filter (fun p => !decide (p.1 = xk))) xk = dv := by
+  induction kvs with
+  | nil => rfl
+  | cons p kvs ih =>
+    rw [List.filter_cons]
+    by_cases hp : p.1 = xk
+    · simp [hp, ih]
+    · simp only [hp, decide_false, Bool.not_false, ↓reduceIte, SortDenote.mapOf_cons, ih]
+
+open Classical in
+/-- The entries of a map literal after `LConst.mapUpdate` give the map updated at the key, at a
+    key sort without `Map`. -/
+theorem constValEntries_mapUpdate {k v : LSort} (hk : k.hasMap = false) {d : LConst}
+    {dv : SortDenote tcInterp v} (hd : constVal tcInterp v d = some dv)
+    {ents : List (LConst × LConst)} {kvs : List (SortDenote tcInterp k × SortDenote tcInterp v)}
+    (hes : constValEntries tcInterp k v ents = some kvs)
+    {key x : LConst} {xk : SortDenote tcInterp k} {xv : SortDenote tcInterp v}
+    (hkey : constVal tcInterp k key = some xk) (hx : constVal tcInterp v x = some xv) :
+    ∃ kvs', constValEntries tcInterp k v (LConst.mapUpdate d ⟨ents⟩ key x).toList = some kvs' ∧
+      ∀ z, SortDenote.mapOf dv kvs' z =
+        if z = xk then xv else SortDenote.mapOf dv kvs z := by
+  have hf := constValEntries_filter (v := v) hk hkey hes
+  unfold LConst.mapUpdate
+  dsimp only
+  split
+  · rename_i hxd
+    subst hxd
+    have hxv : xv = dv := Option.some.inj (hx.symm.trans hd)
+    subst hxv
+    refine ⟨_, by rw [Array.toList_filter]; exact hf, fun z => ?_⟩
+    by_cases hz : z = xk
+    · subst hz; simp [SortDenote.mapOf_filter_eq]
+    · simp [hz, SortDenote.mapOf_filter_ne _ _ hz]
+  · refine ⟨kvs.filter (fun p => !decide (p.1 = xk)) ++ [(xk, xv)], ?_, fun z => ?_⟩
+    · rw [Array.toList_push, Array.toList_filter]
+      have hpair : constValEntries tcInterp k v [(key, x)] = some [(xk, xv)] := by
+        simp [constValEntries, hkey, hx]
+      exact constValEntries_append hf hpair
+    · rw [SortDenote.mapOf_append_single]
+      by_cases hz : z = xk
+      · subst hz; simp [SortDenote.mapOf_filter_eq]
+      · have hxz : xk ≠ z := fun h => hz h.symm
+        simp [hz, hxz, SortDenote.mapOf_filter_ne _ _ hz]
+
+end -- public section
 
 end Lambda

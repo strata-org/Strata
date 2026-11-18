@@ -291,17 +291,17 @@ def insertInvariantAsserts (s : Statement)
 /-- Insert loop invariant/measure assertions across all procedures of a Core
     program, iterating so that loops nested inside loop bodies are also
     decorated. Each iteration decorates the outermost loops not decorated yet, so
-    the iterations are bounded by `numLoops p + 1`: at least the loop nesting
-    depth, and at least one, so a CFG procedure body is rejected even when `p`
-    has no loops. Returns whether anything changed and the transformed
-    program. -/
+    the iterations are bounded by `numLoops p + 1`, more than the loop nesting
+    depth. A CFG procedure body is kept as it is (a block holds no loop). Returns
+    whether anything changed and the transformed program. -/
 def insertLoopInvariantAsserts (p : Program) : Transform.CoreTransformM (Bool × Program) :=
   Transform.runProgramUntil insertInvariantAsserts p (maxIters := some (numLoops p + 1))
+    (cfgCmd := some fun _ => pure none)
 
 /-- Pipeline phase that materializes loop invariant/measure verification
-    conditions. -/
+    conditions (`insertLoopInvariantAsserts`). -/
 def insertLoopInvariantAssertsPipelinePhase : PipelinePhase where
-  transform := insertLoopInvariantAsserts
+  transform p := insertLoopInvariantAsserts p
   phase.name := "insertLoopInvariantAsserts"
   phase.getValidation obligation :=
     if obligationHasLabelPrefix obligation insertLoopInvAssumePrefix then
@@ -310,12 +310,12 @@ def insertLoopInvariantAssertsPipelinePhase : PipelinePhase where
   -- The measure snapshot is an `init`, which declares rather than reassigns, so
   -- `staticSingleAssignment` survives; the invariants, measure and guard are
   -- relocated unchanged, so no redex appears.
-  requires := factSet![.noCFGBodies]
+  requires := factSet![.typeAnnotated]
   establishes := factSet![.noLoopInvariants, .noLoopMeasures]
   preserves := factSet![.noCFGBodies, .noCalls, .noLoops, .staticSingleAssignment,
                       .noBetaRedexes, .noPrecondsFromFuncs, .noNondetGuards, .noProcedureContracts,
                          .noPolymorphicProcedures,
-                         .noPolymorphicFunctions, .typeAnnotated]
+                         .noPolymorphicFunctions, .typeAnnotated, .exitsCovered]
 
 end -- public section
 

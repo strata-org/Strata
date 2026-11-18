@@ -6,6 +6,8 @@
 module
 
 public import Strata.Init
+public import Strata.Util.ListUtils
+import Strata.Util.ListUtilsProps
 
 /-!
 ## `Except` Utilities
@@ -116,47 +118,33 @@ theorem List.forIn_yield_ok_mem {α ε} (l : List α)
         · rw [hb]
         · exact ih (fun y hy => hne y (List.mem_cons_of_mem a hy)) h x hx'
 
-/-- If `mapM f` succeeds, `f` succeeds on every input, with a result among the outputs. -/
-theorem mapM_except_mem_left {α β ε : Type _} (f : α → Except ε β) :
+/-- A successful `mapM` relates each input, in order, to the output `f` returns for it. -/
+theorem mapM_except_rel₂ {α β ε : Type _} (f : α → Except ε β) :
     ∀ (as : List α) (bs : List β), as.mapM f = .ok bs →
-      ∀ a ∈ as, ∃ b ∈ bs, f a = .ok b := by
-  intro as
-  induction as with
-  | nil => intro bs h a ha; simp at ha
-  | cons hd tl ih =>
-    intro bs h a ha
+      List.Rel₂ (fun a b => f a = .ok b) as bs
+  | [], bs, h => by
+    simp only [List.mapM_nil, pure, Except.pure, Except.ok.injEq] at h
+    subst h
+    exact .nil
+  | a :: as, bs, h => by
     rw [List.mapM_cons] at h
     obtain ⟨b, hb, h⟩ := (Except.bind_is_ok _ _ _).mp h
     obtain ⟨bs', hbs', h⟩ := (Except.bind_is_ok _ _ _).mp h
     simp only [pure, Except.pure, Except.ok.injEq] at h
     subst h
-    rcases List.mem_cons.mp ha with rfl | ha'
-    · exact ⟨b, List.mem_cons_self, hb⟩
-    · obtain ⟨b', hb', hfb'⟩ := ih bs' hbs' a ha'
-      exact ⟨b', List.mem_cons_of_mem b hb', hfb'⟩
+    exact .cons hb (mapM_except_rel₂ f as bs' hbs')
+
+/-- If `mapM f` succeeds, `f` succeeds on every input, with a result among the outputs. -/
+theorem mapM_except_mem_left {α β ε : Type _} (f : α → Except ε β) :
+    ∀ (as : List α) (bs : List β), as.mapM f = .ok bs →
+      ∀ a ∈ as, ∃ b ∈ bs, f a = .ok b :=
+  fun as bs h _ ha => (mapM_except_rel₂ f as bs h).exists_of_mem_left ha
 
 /-- `mapM` success gives, for each output, a witnessing input. -/
 theorem mapM_except_mem_right {α β ε : Type _} (f : α → Except ε β) :
     ∀ (as : List α) (bs : List β), as.mapM f = .ok bs →
-      ∀ b ∈ bs, ∃ a ∈ as, f a = .ok b := by
-  intro as
-  induction as with
-  | nil =>
-    intro bs h b hb
-    simp only [List.mapM_nil, pure, Except.pure, Except.ok.injEq] at h
-    subst h
-    simp at hb
-  | cons hd tl ih =>
-    intro bs h b hb
-    rw [List.mapM_cons] at h
-    obtain ⟨b0, hb0, h⟩ := (Except.bind_is_ok _ _ _).mp h
-    obtain ⟨bs', hbs', h⟩ := (Except.bind_is_ok _ _ _).mp h
-    simp only [pure, Except.pure, Except.ok.injEq] at h
-    subst h
-    rcases List.mem_cons.mp hb with rfl | hb'
-    · exact ⟨hd, List.mem_cons_self, hb0⟩
-    · obtain ⟨a, ha, hfa⟩ := ih bs' hbs' b hb'
-      exact ⟨a, List.mem_cons_of_mem hd ha, hfa⟩
+      ∀ b ∈ bs, ∃ a ∈ as, f a = .ok b :=
+  fun as bs h _ hb => (mapM_except_rel₂ f as bs h).exists_of_mem_right hb
 
 /-- If a `for` loop that throws when `b` fails succeeds, `b` holds on every element. -/
 theorem forIn_guard_all {ε α : Type} (b : α → Bool) (e : α → ε) :

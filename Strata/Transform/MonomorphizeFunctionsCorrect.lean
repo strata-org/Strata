@@ -87,17 +87,19 @@ noncomputable def instModel (M : ModeledFactory CoreLParams) {F' : Lambda.Factor
     (hrel : ∀ n (hn : n ∈ F'), ∃ o, ∃ ho : o ∈ M.factory, FnInstance (M.factory[o]'ho) (F'[n]'hn))
     (hnat : ConcreteEvalsCommuteDemangle M.factory)
     (hconstr : ∀ f' ∈ F'.toArray, f'.isConstr = true →
-      f' ∈ M.factory.toArray ∧ demangleName f'.name.name = f'.name.name) :
+      f' ∈ M.factory.toArray ∧ demangleName f'.name.name = f'.name.name)
+    (hcover : ∀ f ∈ M.factory.toArray, f.isConstr = true → f ∈ F'.toArray) :
     ModeledFactory CoreLParams :=
-  ⟨F', Interp.ofInstances M.model hrel hnat hconstr, M.tyVarVal⟩
+  ⟨F', Interp.ofInstances M.model hrel hnat hconstr hcover, M.tyVarVal⟩
 
 /-- Renaming the operators of an expression without `#` keeps its value from the old model to
     the model of instances. -/
 private theorem eval_instModel {g : CoreIdent → Option LMonoTy → CoreIdent} (hg : RenOK g)
-    (M : ModeledFactory CoreLParams) {F' : Lambda.Factory CoreLParams} {hrel hnat hconstr}
+    (M : ModeledFactory CoreLParams) {F' : Lambda.Factory CoreLParams} {hrel hnat hconstr hcover}
     (σ : ValStore CoreLParams) {e : Expression.Expr} (he : OpsUnmangled e) :
-    (e.renameOps g).denoteEval (instModel M (F' := F') hrel hnat hconstr) σ = e.denoteEval M σ := by
-  refine LExpr.denoteEval_renameOps (M := M) (M' := instModel M hrel hnat hconstr) g σ e
+    (e.renameOps g).denoteEval (instModel M (F' := F') hrel hnat hconstr hcover) σ =
+      e.denoteEval M σ := by
+  refine LExpr.denoteEval_renameOps (M := M) (M' := instModel M hrel hnat hconstr hcover) g σ e
     rfl HEq.rfl rfl ?_
   intro q hq
   show HEq (M.model.opInterp (demangleName (g q.1 (some q.2)).name)) _
@@ -137,7 +139,8 @@ public theorem monomorphizeFunctions_reflectsLemmas :
   dsimp only at hfac0 hstore ⊢
   subst hfac0
   have hsrc : ∀ f', f' ∈ (runtimeFactoryOf s'.factory p'.decls).toArray →
-      ∃ lf ∈ contributed s.factory p.decls, FnInstance lf f' ∧ (f'.isConstr = true → f' = lf) := by
+      ∃ lf ∈ contributed s.factory p.decls, FnInstance lf f' ∧
+        ((f'.isConstr = true → f' = lf) ∧ (lf.isConstr = true → f' = lf)) := by
     intro f' h
     have hc := mem_contributed_of_runtimeFactoryOf h
     rw [hfac, hdecls, ← hzlen] at hc
@@ -147,7 +150,7 @@ public theorem monomorphizeFunctions_reflectsLemmas :
       ∃ o, ∃ ho : o ∈ runtimeFactoryOf s.factory p.decls,
         FnInstance ((runtimeFactoryOf s.factory p.decls)[o]'ho) (_[n]'hn) := by
     intro n hn
-    obtain ⟨lf, hlf, hinst, -⟩ := hsrc _ (getElem_mem_toArray _ n hn)
+    obtain ⟨lf, hlf, hinst, -, -⟩ := hsrc _ (getElem_mem_toArray _ n hn)
     have hget := getElem?_runtimeFactoryOf_of_contributed hdist hlf
     exact ⟨lf.name.name, Lambda.Factory.getElem?_some_implies_mem hget, by
       rw [Lambda.Factory.getElem?_some_getElem hget]; exact hinst⟩
@@ -158,16 +161,17 @@ public theorem monomorphizeFunctions_reflectsLemmas :
       f' ∈ (runtimeFactoryOf s.factory p.decls).toArray ∧
         demangleName f'.name.name = f'.name.name := by
     intro f' hf' hc
-    obtain ⟨lf, hlf, -, heq⟩ := hsrc f' hf'
+    obtain ⟨lf, hlf, -, heq, -⟩ := hsrc f' hf'
     rw [heq hc]
     exact ⟨Lambda.Factory.getElem?_is_some_implies_mem
         (getElem?_runtimeFactoryOf_of_contributed hdist hlf),
       demangleName_of_not_hash (hpre.unmangled lf hlf).1⟩
+  have hcover := runtime_constr_cover hpre hdecls hdist hsrc
   let M₀ : ModeledFactory CoreLParams := ⟨runtimeFactoryOf s.factory p.decls, M, tv⟩
   have hev : ∀ e, OpsUnmangled e → ∀ σ,
-      (e.renameOps g).denoteEval (instModel M₀ hrel hnat hconstr) σ = e.denoteEval M₀ σ :=
+      (e.renameOps g).denoteEval (instModel M₀ hrel hnat hconstr hcover) σ = e.denoteEval M₀ σ :=
     fun e he σ => eval_instModel hg M₀ σ he
-  refine ⟨⟨store, instModel M₀ hrel hnat hconstr⟩, ⟨rfl, hstore⟩, ?_⟩
+  refine ⟨⟨store, instModel M₀ hrel hnat hconstr hcover⟩, ⟨rfl, hstore⟩, ?_⟩
   intro i l md hl hval hfacts
   have hlops : OpsUnmangled l.e :=
     hops _ (List.mem_of_getElem? hl) l.e (by simp [Decl.ownExprs])

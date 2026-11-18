@@ -4,7 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import StrataTest.Languages.Core.Tests.Logic.HoareAfterSupport
+import StrataTest.Languages.Core.Tests.Logic.HoareUtils
 import Strata.Transform.StructuredToUnstructuredPipelineCoreCorrect
 
 open Imperative
@@ -12,7 +12,7 @@ open StrataDDM (Program)
 
 namespace Strata.HoareAfterStructuredToUnstructuredPipelineTest
 
-open HoareAfterSupport
+open HoareUtils
 
 /-- The program.  It comes first in the file: the translation records the byte offsets of its
     statements in their metadata, which `drainBody` spells out with `loc`, so an edit above it
@@ -109,11 +109,11 @@ private abbrev subE : Core.Expression.Expr :=
 
 /-- The translated body. -/
 private abbrev drainBody : Core.Statements :=
-  [Core.Statement.set rId (v nId) (loc 713 720),
+  [Core.Statement.set rId (v nId) (loc 699 706),
    .loop (.det gtE) none []
-     [Core.Statement.init stepId intLTy (.det (.intConst Core.valueLoc 1)) (loc 750 770),
-      .ite .nondet [Core.Statement.set rId subE (loc 788 810)] [] (loc 775 816)]
-     (loc 723 820)]
+     [Core.Statement.init stepId intLTy (.det (.intConst Core.valueLoc 1)) (loc 736 756),
+      .ite .nondet [Core.Statement.set rId subE (loc 774 796)] [] (loc 761 802)]
+     (loc 709 806)]
 
 /-- The translated body really is the assignment followed by the loop. -/
 private theorem drain_body_eq : drainProc.body = .structured drainBody := by native_decide
@@ -121,17 +121,18 @@ private theorem drain_body_eq : drainProc.body = .structured drainBody := by nat
 /-! ## The CFG of the pipeline, spelled out -/
 
 /-- `r := n`. -/
-private abbrev setR0 : Core.Command := .cmd (.set rId (.det (v nId)) (loc 713 720))
+private abbrev setR0 : Core.Command := .cmd (.set rId (.det (v nId)) (loc 699 706))
 /-- The hoisted declaration of `step`. -/
-private abbrev initStep : Core.Command := .cmd (.init stepId intLTy .nondet (loc 750 770))
+private abbrev initStep : Core.Command := .cmd (.init stepId intLTy .nondet (loc 736 756))
 /-- The declaration of the fresh guard. -/
-private abbrev initG : Core.Command := .cmd (.init gId HasBool.boolTy .nondet (loc 775 816))
+private abbrev initG : Core.Command := .cmd (.init gId HasBool.boolTy .nondet (loc 761 802))
 /-- `step := 1`, what is left of the declaration of `step` in the loop body. -/
-private abbrev setStep : Core.Command := .cmd (.set stepId (.det (.intConst Core.valueLoc 1)) (loc 750 770))
+private abbrev setStep : Core.Command :=
+  .cmd (.set stepId (.det (.intConst Core.valueLoc 1)) (loc 736 756))
 /-- The havoc of the fresh guard. -/
-private abbrev havocG : Core.Command := .cmd (.set gId .nondet (loc 775 816))
+private abbrev havocG : Core.Command := .cmd (.set gId .nondet (loc 761 802))
 /-- `r := int.sub(r, step)`. -/
-private abbrev setSub : Core.Command := .cmd (.set rId (.det subE) (loc 788 810))
+private abbrev setSub : Core.Command := .cmd (.set rId (.det subE) (loc 774 796))
 /-- The fresh guard, read. -/
 private abbrev gE : Core.Expression.Expr := HasFvar.mkTypedFvar gId HasBool.boolTy
 
@@ -417,6 +418,10 @@ theorem drain_meets_contract :
   rw [Core.Logic.Hoare.Procedure.contractTriple, hfactory]
   refine ⟨drainProc, by native_decide, by native_decide, ?_⟩
   rw [drain_body_eq]
+  -- The body proof does not use the axioms visible to the procedure.
+  refine Core.Logic.Hoare.consequence _ _
+    (Pre := Core.Logic.Hoare.Procedure.contractPre Core.Factory drainProc) ?_
+    (fun _ h => h.1) (fun _ h => h)
   refine Core.Logic.Hoare.of_forall_entryFactory π _ fun E => ?_
   by_cases hE : E.factory = Core.Factory
   case neg =>

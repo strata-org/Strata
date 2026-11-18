@@ -7,6 +7,7 @@ module
 
 meta import Strata.Languages.Core.Verifier
 import StrataDDM.Integration.Lean.HashCommands
+meta import StrataTest.Languages.Core.Tests.TestUtil
 
 meta section
 open StrataDDM (Program)
@@ -15,8 +16,8 @@ open StrataDDM (Program)
 # Datatype Typing Tests
 
 Tests for the Core typechecker's handling of datatype declarations:
-strict positivity, uniformity, nesting, inhabitedness, name clashes, and
-agreement of type parameters across a mutual block.
+strict positivity, uniformity, nesting, inhabitedness, name clashes, duplicate or reserved
+type parameters, and agreement of type parameters across a mutual block.
 -/
 
 namespace Strata.DatatypeTypingTests
@@ -301,6 +302,202 @@ info: error: Datatypes in a mutual block must declare the same type parameters, 
 #guard_msgs in
 #eval Core.typeCheck .default (TransM.run Inhabited.default (translateProgram mutualParamMismatchPgm) |>.fst).stripMetaData
 
+/-! ## Duplicate type parameters -/
+
+open Core.TestUtil (translate)
+
+def dupTypeParamsPgm : Program :=
+#strata
+program Core;
+
+datatype Dup (x : Type, x : Type) { MkDup(f: x) };
+#end
+
+/--
+info: error: Datatype 'Dup': duplicates found in the type arguments!
+Type Arguments: [x, x]
+-/
+#guard_msgs in
+#eval Core.typeCheck .default (translate dupTypeParamsPgm)
+
+/-! ## Type parameter with a reserved prefix -/
+
+def reservedTyParamPgm : Program :=
+#strata
+program Core;
+
+datatype Res ($__ty0 : Type) { MkRes(f: $__ty0) };
+#end
+
+/--
+info: error: Datatype 'Res': type parameter '$__ty0' is a reserved name
+-/
+#guard_msgs in
+#eval Core.typeCheck .default (translate reservedTyParamPgm)
+
+/-! ## Reserved substring after the first character -/
+
+-- A reserved prefix is rejected only when it starts the parameter name.
+def okTypeParamsPgm : Program :=
+#strata
+program Core;
+
+datatype Ok (a : Type, b$__ty0 : Type) { MkOk(f: a, g: b$__ty0) };
+#end
+
+/--
+info: [Strata.Core] Type checking succeeded.
+
+---
+info: ok: program Core;
+
+datatype Ok (a : Type, b$__ty0 : Type) {
+  MkOk(f : a, g : b$__ty0)
+};
+-/
+#guard_msgs in
+#eval Core.typeCheck .default (translate okTypeParamsPgm)
+
 end Strata.DatatypeTypingTests
+
+/-! ## Datatype blocks built directly as Core declarations -/
+
+namespace Core.MutualDatatypeTypeCheckTests
+
+open Lambda
+open Core.TestUtil (aliasEnv programVerdict)
+
+/-- The default context with `Alias` in its declaration-name registry. -/
+private def aliasContext : Expression.TyContext :=
+  { initTyContext with idents := initTyContext.idents.insert "Alias" () }
+
+/-- A program containing one mutual datatype block. -/
+private def dataProgram (block : List (LDatatype Unit)) : Program :=
+  { decls := [.type (.data block) .empty] }
+
+/-- A datatype with one constructor and no type parameters. -/
+private def baseDatatype : LDatatype Unit :=
+  { name := "D", typeArgs := [],
+    constrs := [{ name := ⟨"C", ()⟩, args := [], testerName := "D..isC" }],
+    constrs_ne := rfl }
+
+/-- A type environment containing the nullary synonym `Alias := int`. -/
+private def aliasIntEnv : Expression.TyEnv :=
+  aliasEnv [{ name := "Alias", typeArgs := [], type := .int }]
+
+-- A reserved datatype name declared twice gets the duplicate-name error.
+private def duplicateReservedDatatype : LDatatype Unit :=
+  { baseDatatype with name := "$__rigid_D" }
+
+/--
+info: REJECTED: Error in type $__rigid_D: a declaration of this name already exists.
+-/
+#guard_msgs in
+#eval programVerdict (dataProgram [duplicateReservedDatatype, duplicateReservedDatatype])
+
+-- A datatype type parameter may not use the namespace reserved for rigid type constants.
+/-- info: REJECTED: Datatype 'D': type parameter '$__rigid_a' is a reserved name -/
+#guard_msgs in
+#eval programVerdict (dataProgram
+  [{ baseDatatype with
+      typeArgs := ["$__rigid_a"],
+      constrs := [{ name := ⟨"C", ()⟩,
+                    args := [(⟨"value", ()⟩, .ftvar "$__rigid_a")],
+                    testerName := "D..isC" }] }])
+
+-- A constructor may have a reserved name.
+/-- info: ACCEPTED -/
+#guard_msgs in
+#eval programVerdict (dataProgram
+  [{ baseDatatype with
+      constrs := [{ name := ⟨"$__rigid_C", ()⟩, args := [],
+                    testerName := "D..isC" }] }])
+
+-- A tester may have a reserved name.
+/-- info: ACCEPTED -/
+#guard_msgs in
+#eval programVerdict (dataProgram
+  [{ baseDatatype with
+      constrs := [{ name := ⟨"C", ()⟩, args := [],
+                    testerName := "$__rigid_isC" }] }])
+
+-- A constructor argument type naming the unregistered type `$__rigid_a` is rejected.
+/-- info: REJECTED: Error in datatype D, constructor C: Undefined type '$__rigid_a' -/
+#guard_msgs in
+#eval programVerdict (dataProgram
+  [{ baseDatatype with
+      constrs := [{ name := ⟨"C", ()⟩,
+                    args := [(⟨"value", ()⟩, .tcons "$__rigid_a" [])],
+                    testerName := "D..isC" }] }])
+
+-- Through the entry point, a datatype may have a reserved name.
+/--
+info: [Strata.Core] Type checking succeeded.
+
+---
+info: ok: program Core;
+
+datatype $__rigid_a {
+  C()
+};
+-/
+#guard_msgs (whitespace := lax) in
+#eval Std.format (Core.typeCheck .default
+  (dataProgram [{ baseDatatype with name := "$__rigid_a" }]))
+
+-- Through the entry point, a constructor argument type naming the unregistered type
+-- `$__rigid_a` is rejected.
+/-- info: error: Error in datatype D, constructor C: Undefined type '$__rigid_a' -/
+#guard_msgs (whitespace := lax) in
+#eval Std.format (Core.typeCheck .default
+  (dataProgram
+    [{ baseDatatype with
+        constrs := [{ name := ⟨"C", ()⟩,
+                      args := [(⟨"value", ()⟩, .tcons "$__rigid_a" [])],
+                      testerName := "D..isC" }] }]))
+
+-- A datatype name cannot also denote a type synonym, even in a caller-supplied environment.
+/-- info: REJECTED: Error in type Alias: a declaration of this name already exists. -/
+#guard_msgs in
+#eval programVerdict (dataProgram [{ baseDatatype with name := "Alias" }]) aliasContext aliasIntEnv
+
+-- An ambient alias missing from the name registry is accepted: the checker does not validate
+-- the ambient aliases.
+/-- info: ACCEPTED -/
+#guard_msgs in
+#eval programVerdict (dataProgram [{ baseDatatype with name := "Alias" }]) initTyContext aliasIntEnv
+
+-- A legal generic datatype is accepted.
+/-- info: ACCEPTED -/
+#guard_msgs in
+#eval programVerdict (dataProgram
+  [{ baseDatatype with
+      typeArgs := ["a"],
+      constrs := [{ name := ⟨"C", ()⟩,
+                    args := [(⟨"value", ()⟩, .ftvar "a")],
+                    testerName := "D..isC" }] }])
+
+-- A constructor argument type may be an alias.
+/-- info: ACCEPTED -/
+#guard_msgs in
+#eval programVerdict (dataProgram
+  [{ baseDatatype with
+      constrs := [{ name := ⟨"C", ()⟩,
+                    args := [(⟨"value", ()⟩, .tcons "Alias" [])],
+                    testerName := "D..isC" }] }]) aliasContext aliasIntEnv
+
+-- An inhabited recursive datatype is accepted.
+/-- info: ACCEPTED -/
+#guard_msgs in
+#eval programVerdict (dataProgram
+  [{ name := "Natish", typeArgs := [],
+     constrs := [
+       { name := ⟨"Zero", ()⟩, args := [], testerName := "Natish..isZero" },
+       { name := ⟨"Next", ()⟩,
+         args := [(⟨"pred", ()⟩, .tcons "Natish" [])],
+         testerName := "Natish..isNext" }],
+     constrs_ne := rfl }])
+
+end Core.MutualDatatypeTypeCheckTests
 
 end

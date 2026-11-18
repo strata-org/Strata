@@ -67,7 +67,7 @@ function BadFunc (o: Option(int)) : int {
 #end
 
 /--
-info: error: (1382-1455) Impossible to unify (arrow string int) with (arrow int $__ty4).
+info: error: (1382-1455) Impossible to unify (arrow string int) with (arrow int _).
 First mismatch: string with int.
 -/
 #guard_msgs in

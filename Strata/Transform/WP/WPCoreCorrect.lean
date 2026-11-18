@@ -19,6 +19,7 @@ import Strata.Transform.WP.WPOutDecls
 import Strata.Transform.WP.WPCoreOps
 import Strata.Util.ExceptProps
 import all Strata.Languages.Core.Verifier
+import all Strata.Transform.WP.WPCoreProgram
 import all Strata.Languages.Core.PipelinePhase
 import all Strata.Transform.CoreTransform
 
@@ -117,15 +118,17 @@ theorem wpLoopFree_runsOverapproximate (π : String → Option Procedure)
     `wpLoopFree_runsOverapproximate` asks of the statement list `p.contractWrapped body`, which
     `wpPipelinePhase` rewrites, `Statements.WellTyped` under the parameter types of `p`.  The
     statement: for a monomorphic program `Core.typeCheck` accepts, the contract-wrapped
-    structured body of each of its procedures meets that premise.  This is the statement, not yet
+    structured body of each of its procedures meets that premise, whether `Core.typeCheck` is
+    given a factory or not and whatever extra functions it adds.  This is the statement, not yet
     a theorem.  `Specification.Analysis.TypeCheckWellTypes` and `TypeCheckAnnotates` do not
     imply it: they type each expression under its own annotations, and say nothing of ground
     types, of the agreement of the annotations with the parameter types and the declarations, or
     of the types of the variables nondeterministic assignments write. -/
 @[expose] def TypeCheckWPWellTyped : Prop :=
   ∀ (options : VerifyOptions) (program program' : Program)
-    (factory : Lambda.Factory CoreLParams),
-    Core.typeCheck options program factory = .ok program' →
+    (factory : Option (Lambda.Factory CoreLParams))
+    (moreFns : Lambda.Factory CoreLParams),
+    Core.typeCheck options program factory moreFns = .ok program' →
     program'.noPolymorphicProcedures = Bool.true →
     ∀ p md body, Decl.proc p md ∈ program'.decls → p.body = .structured body →
       Statements.WellTyped (fun x => Tys.get? p.paramTys x) (p.contractWrapped body)

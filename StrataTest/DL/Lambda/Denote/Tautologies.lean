@@ -708,8 +708,10 @@ private def trivialInterp : Interp emptyF where
   interpConsistent := ⟨fun _ hf => absurd hf (Factory.default_empty _),
                        fun _ hf => absurd hf (Factory.default_empty _)⟩
   axiomsSatisfied := fun _ hf => absurd hf (Factory.default_empty _)
-  constrConsistent := ⟨fun _ _ hf => absurd hf (by simp [emptyF]),
-                       fun _ hf => absurd hf (by simp [emptyF])⟩
+  constrConsistent :=
+    ⟨fun _ _ hf => absurd hf (by simp [emptyF]),
+     fun _ hf => absurd hf (by simp [emptyF]),
+     fun _ _ _ _ ⟨_, hf, _⟩ => absurd hf (by simp [emptyF])⟩
 
 theorem not_valid_all_p : ¬ Valid emptyF all_p all_p_ty := by
   intro h

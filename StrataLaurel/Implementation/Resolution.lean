@@ -19,6 +19,7 @@ import StrataLaurel.Implementation.GlobalVarAnalysis
 import StrataLaurel.Implementation.MapStmtExpr
 import StrataLaurel.Implementation.PushOldInward
 import StrataLaurel.Implementation.StackShape
+import StrataLaurel.Implementation.LabelledJumps
 
 /-!
 # Name Resolution Pass
@@ -187,6 +188,26 @@ structure ResolveState where
   stackTypes : List HighTypeMd := []
   stackWindow : Option (List HighTypeMd) := none
   exitStacks : List (String × List HighTypeMd) := []
+  /-- How many blocks of the procedure body being resolved carry each label: a
+      jump to a block that does not enclose it names it by a label unique here. -/
+  procLabels : Std.HashMap String Nat := {}
+  /-- The labels of the current procedure body that a non-enclosing jump targets. -/
+  jumpTargets : Std.HashSet String := {}
+  /-- Locals declared with neither a type nor an initializer and not yet assigned,
+      by id, with the declaration's source: the first assignment gives the type. -/
+  untypedDecls : Std.HashMap Nat (FileRange × String) := {}
+  /-- The types such locals took at their first assignment, by id. -/
+  inferredDecls : Std.HashMap Nat HighTypeMd := {}
+  /-- The stacks carried by non-enclosing jumps to a block's start not yet reached. -/
+  entryStacks : List (String × List HighTypeMd) := []
+  /-- The stack typed at a jump target that has been passed, keyed by the label and
+      whether it is the block's start, against which a later jump is checked. -/
+  labelStacks : List ((String × Bool) × List HighTypeMd) := []
+  /-- Whether the statement before the one being resolved ends abruptly, so a jump
+      target there is not reached by falling through. -/
+  prevAbrupt : Bool := false
+  /-- The labels of the current procedure body whose end some `exit` reaches. -/
+  exitedLabels : Std.HashSet String := {}
   /-- Overload table for static procedures: each name maps to the list of
       registered overloads as `(uniqueId, procedure)` pairs, in declaration
       order. A name with more than one entry is overloaded. The flat `scope`
@@ -340,6 +361,10 @@ private def targetTypeName (target : StmtExprMd) : ResolveM (Option String) := d
     | some innerTy =>
       match (← fieldTypeInScope innerTy fieldName) with
       | some (.UserDefined typRef) => pure (some typRef.text)
+      | some (.Applied base _) =>
+        match base.val with
+        | .UserDefined typRef => pure (some typRef.text)
+        | _ => pure none
       | _ => pure none
   | .AsType _ castTy =>
     -- A cast `(e as T)` fixes the static type to `T` for a following field
@@ -929,6 +954,12 @@ private def isReference (ctx : TypeLattice) (ty : HighTypeMd) : Bool :=
   | .UserDefined _ | .Unknown => true
   | _ => false
 
+/-- A local declared without a type that is read, or that the body ends, before any
+    assignment gave it one. -/
+private def reportUninferred (source : FileRange) (name : String) : ResolveM Unit :=
+  modify fun s => { s with errors := s.errors.push (diagnosticFromSource source
+    s!"cannot infer a type for '{name}': a declaration with neither a type annotation nor an initializer takes the type of its first assignment, and '{name}' is read before it is assigned or never assigned; add an annotation (`var {name} : T`) or an initializer (`var {name} := e`)") }
+
 /-- Get the type of a resolved reference. Prefers the resolved definition by
     `uniqueId` (the post-resolution ground truth, populated as definitions are
     registered and never shadowed): a field reference carries its field's
@@ -940,11 +971,15 @@ private def isReference (ctx : TypeLattice) (ty : HighTypeMd) : Bool :=
     finally to `Unknown`. -/
 private def getVarType (ref : Identifier) : ResolveM HighTypeMd := do
   let s ← get
+  if let some (id, _) := s.scope.get? ref.text then
+    if let some (source, name) := s.untypedDecls.get? id then
+      modify fun s => { s with untypedDecls := s.untypedDecls.erase id }
+      reportUninferred source name
   match ref.uniqueId.bind s.idToNode.get? with
   | some node => pure node.getType
   | none =>
     match s.scope.get? ref.text with
-    | some (_, node) => pure node.getType
+    | some (id, node) => pure ((s.inferredDecls.get? id).getD node.getType)
     | none => pure { val := .Unknown, source := ref.source }
 
 /-- The declared return type of a call to `proc`, tagged with `callee`'s source.
@@ -1343,6 +1378,105 @@ private def mergeExitStacks (label : String) (naturalAbrupt : Bool) : ResolveM U
     for other in rest do
       mergeStackArms (← currentStack) other
 
+private def reportAt (source : FileRange) (msg : String) : ResolveM Unit :=
+  modify fun s => { s with errors := s.errors.push (diagnosticFromSource source msg) }
+
+private def checkJumpStack (label : String) (expected actual : List HighTypeMd) (source : FileRange) :
+    ResolveM Unit := do
+  if expected.length != actual.length then
+    reportAt source s!"the jumps to '{label}' carry different numbers of stack values"
+
+/-- The stack at the start of a jump target: the annotation if the block carries
+    one, else the stacks of the jumps that reach it so far and of falling into it. -/
+private def enterJumpTarget (label : Option String) (stmts : List StmtExprMd) (source : FileRange) :
+    ResolveM Unit := do
+  let s ← get
+  let fallsIn := !s.prevAbrupt
+  let some l := label | return
+  modify fun st => { st with prevAbrupt := false }
+  if !s.usesStack || !s.jumpTargets.contains l then return
+  let incoming := (s.entryStacks.filter (·.1 == l)).reverse.map (·.2)
+    ++ (if fallsIn then [s.stackTypes] else [])
+  modify fun st => { st with entryStacks := st.entryStacks.filter (·.1 != l) }
+  let annotated ← match stmts.head? >>= stackAnnotation? with
+    | some tys => do
+      let errors := (← get).errors
+      let resolved ← tys.reverse.mapM resolveHighType
+      modify fun st => { st with errors }
+      pure (some resolved)
+    | none => pure none
+  match annotated, incoming with
+  | some tys, _ =>
+    for other in incoming do checkJumpStack l tys other source
+    let _ ← resetStack tys
+  | none, [] => let _ ← resetStack []
+  | none, first :: rest =>
+    let _ ← resetStack first
+    for other in rest do
+      checkJumpStack l first other source
+      mergeStackArms (← currentStack) other
+  modify fun st => { st with labelStacks := ((l, true), st.stackTypes) :: st.labelStacks }
+
+private def leaveJumpTarget (label : Option String) (naturalAbrupt : Bool) : ResolveM Unit := do
+  modify fun st => { st with prevAbrupt := false }
+  let some l := label | return
+  mergeExitStacks l naturalAbrupt
+  if (← get).jumpTargets.contains l then
+    modify fun st => { st with labelStacks := ((l, false), st.stackTypes) :: st.labelStacks }
+
+private def recordJumpStack (label : String) (destination : GotoDestination) (source : FileRange) :
+    ResolveM Unit := do
+  let s ← get
+  if !s.usesStack then return
+  let start := destination matches .blockStart
+  match s.labelStacks.find? (·.1 == (label, start)) with
+  | some (_, expected) => checkJumpStack label expected s.stackTypes source
+  | none =>
+    if start then set { s with entryStacks := (label, s.stackTypes) :: s.entryStacks }
+    else set { s with exitStacks := (label, s.stackTypes) :: s.exitStacks }
+
+private def notePrevAbrupt (s : StmtExprMd) : ResolveM StmtExprMd := do
+  modify fun st => { st with prevAbrupt := endsAbruptlyIn st.exitedLabels s }
+  pure s
+
+private def resolveStackAnnotation (s : StmtExprMd) (tys : List HighTypeMd) : ResolveM StmtExprMd := do
+  let tys' ← tys.mapM resolveHighType
+  match s.val with
+  | .Call none callee _ _ => pure ⟨.Call none callee [] tys', s.source⟩
+  | _ => pure s
+
+/-- The binding type every clause of a `try` states, when they all state the same
+    one: a front end's handler for whatever the body throws, such as a catch-all.
+    When the body's thrown types cannot be determined, such clauses are discarded
+    like any other, but without a warning: the front end placed them knowing the
+    body may throw nothing. -/
+private def statedCatchType (catches : List CatchClause) : Option HighTypeMd :=
+  match catches with
+  | [] => none
+  | c :: rest =>
+    if c.bindingType.val matches .Unknown then none
+    else if rest.all (fun d => highEq d.bindingType c.bindingType) then some c.bindingType else none
+
+/-- Report a statement after a terminator, unless a jump reaches it. -/
+private def reportDeadCode (init' : List StmtExprMd) (last : Option StmtExprMd) (lastSource : FileRange) :
+    ResolveM Unit := do
+  let isTerminator (s : StmtExprMd) : Bool :=
+    match s.val with
+    | .Goto _ _ | .Return _ => true
+    | _ => false
+  let targets := (← get).jumpTargets
+  let reached (s : StmtExprMd) : Bool := (blockLabels s).any targets.contains
+  match init'.findIdx? isTerminator with
+  | some i =>
+    if (init'[i + 1]? <|> last).any reached then return
+    let nextSource : FileRange := ((init'[i + 1]?).map (·.source)).getD lastSource
+    let termName : String :=
+      match init'[i]? with
+      | some s => s.val.constrName
+      | none   => "exit"
+    reportAt nextSource s!"dead code after '{termName}'"
+  | none => pure ()
+
 private def incrDecrTargetType (target : VariableMd) : ResolveM (Option HighType) := do
   let s ← get
   match target.val with
@@ -1482,6 +1616,25 @@ rules* index in `LaurelUserGuide.lean`:
 The dispatch functions `Synth.resolveStmtExpr` and `Check.resolveStmtExpr`
 pattern-match on the constructor and delegate to the corresponding helper. -/
 
+/-- Diagnostics for `Declare` nodes at `n` whose type annotation is still
+    `none`. Declarations occur in four positions: as a standalone `Var`
+    statement, as an `Assign` target, and (per the AST, though not the
+    surface syntax) as an `IncrDecr` or `CompoundAssign` target.
+    Public so `ResolutionProps` can state per-node cleanliness lemmas. -/
+def unannotatedDeclares (n : StmtExprMd) : List Message :=
+  let bug (source : FileRange) (name : Identifier) : Message :=
+    diagnosticFromSource source
+      s!"declaration of '{name.text}' left resolution without a type annotation; resolution rewrites every declaration to carry an explicit type"
+      .strataBug
+  match n.val with
+  | .Var (.Declare ⟨name, none⟩) => [bug n.source name]
+  | .Assign targets _ => targets.filterMap fun
+      | ⟨.Declare ⟨name, none⟩, src⟩ => some (bug src name)
+      | _ => none
+  | .IncrDecr _ _ ⟨.Declare ⟨name, none⟩, src⟩ => [bug src name]
+  | .CompoundAssign _ ⟨.Declare ⟨name, none⟩, src⟩ _ => [bug src name]
+  | _ => []
+
 namespace Resolution
 
 /-- Shared guard for Decl-Synth (`Synth.declInfer`/`Check.declInfer`): the
@@ -1546,7 +1699,7 @@ private def componentTypes (targets : List VariableMd)
           s!"tried to unpack {tys.length} values into {targets.length} variables"
         modify fun s => { s with errors := s.errors.push diag }
         pure (targets.map fun _ => none, true)
-    | _ => pure (targets.map fun _ => none, false)
+    | _ => pure (if targets.length == 1 then [some valueTy] else targets.map fun _ => none, false)
   | none => pure (targets.map fun _ => none, false)
 
 /-- Whether `pred`, the guard of a `catch <binding> when pred`, provably holds
@@ -1676,10 +1829,11 @@ private def alwaysCompletesAbruptlyIn (opened : List String) (stmt : StmtExprMd)
   -- pending completion exactly as a `return`/`throw` would.)
   | .Goto label _ => !opened.contains label
   -- Statements after an unconditional terminator are unreachable, so a block is
-  -- abrupt as soon as any of its statements is.
+  -- abrupt as soon as any of its statements is, unless a jump reaches a later one.
   | .Block stmts label _ _ =>
     let inner := match label with | some l => l :: opened | none => opened
-    stmts.attach.any (fun ⟨s, _⟩ => alwaysCompletesAbruptlyIn inner s)
+    stmts.attach.zipIdx.any (fun (⟨s, _⟩, i) => alwaysCompletesAbruptlyIn inner s
+      && !(stmts.drop (i + 1)).any (fun t => !(statementLabels t).isEmpty))
   | .IfThenElse _ t (some e) =>
     alwaysCompletesAbruptlyIn opened t && alwaysCompletesAbruptlyIn opened e
   | _ => false
@@ -1691,7 +1845,7 @@ private def alwaysCompletesAbruptlyIn (opened : List String) (stmt : StmtExprMd)
     all_goals (try (simp_all; omega))
 
 private def alwaysCompletesAbruptly (stmt : StmtExprMd) : Bool :=
-  alwaysCompletesAbruptlyIn [] stmt
+  alwaysCompletesAbruptlyIn (blockLabels stmt) stmt
 
 /-- Over-approximate the exception types (each with a source location) that can escape the
     resolved `expr` uncaught: the types of the values it throws and the thrown types of the
@@ -2039,6 +2193,76 @@ private def genericCallResult (callee callee' : Identifier) (proc : Procedure)
 -- The `h : exprMd.val = .Foo args ...` parameters on the recursive helpers
 -- look unused to the linter, but each one is referenced by that helper's
 -- `decreasing_by` tactic to relate `sizeOf args` to `sizeOf exprMd`.
+
+/-- A local declared without a type, not yet assigned: the id it resolved to. -/
+private def untypedLocal? (target : VariableMd) : ResolveM (Option Nat) := do
+  match target.val with
+  | .Local ref =>
+    let s ← get
+    let id? := ref.uniqueId <|> (s.scope.get? ref.text).map (·.1)
+    pure (id?.filter s.untypedDecls.contains)
+  | _ => pure none
+
+/-- Give a local declared without a type the type `ty` of its first assignment. -/
+private def inferUntypedLocal (id : Nat) (ref : Identifier) (ty : HighTypeMd) : ResolveM Unit :=
+  modify fun s =>
+    let node : ResolvedNode := .var ref ty
+    { s with
+      untypedDecls := s.untypedDecls.erase id
+      inferredDecls := s.inferredDecls.insert id ty
+      idToNode := s.idToNode.insert id node
+      scope := match s.scope.get? ref.text with
+        | some (defId, _) => if defId == id then s.scope.insert ref.text (id, node) else s.scope
+        | none => s.scope }
+
+/-- (Var-Declare) without a type: the local takes the type of its first assignment
+    (`finishUntypedDecls`). -/
+private def declareLocal (param : Parameter?) (source : FileRange) : ResolveM StmtExprMd := do
+  match param.type with
+  | some ty =>
+    let ty' ← resolveHighType ty
+    let name' ← defineNameCheckDup param.name (.var param.name ty')
+    pure { val := .Var (.Declare ⟨name', some ty'⟩), source := source }
+  | none =>
+    let unknown : HighTypeMd := { val := .Unknown, source := source }
+    let name' ← defineNameCheckDup param.name (.var param.name unknown)
+    modify fun s => match name'.uniqueId with
+      | some id => { s with untypedDecls := s.untypedDecls.insert id (source, param.name.text) }
+      | none => s
+    pure { val := .Var (.Declare ⟨name', some unknown⟩), source := source }
+
+/-- Whether an assignment synthesizes its value to type a target: an unannotated
+    declaration, an untyped stack push, or a local declared without a type and not
+    yet assigned. -/
+private def synthesizesValue (targets : List VariableMd) : ResolveM Bool := do
+  pure (targets.any (fun t => t.val matches .Declare ⟨_, none⟩ || t.val matches .Stack none)
+    || (← targets.mapM untypedLocal?).any Option.isSome)
+
+/-- Resolve an assigned local and give its type; a local declared without a type takes
+    the type `compTy` of the value its first assignment stores. -/
+private def resolveLocalTarget (ref : Identifier) (source : FileRange) (compTy : Option HighTypeMd) :
+    ResolveM (Identifier × HighTypeMd) := do
+  let ref' ← resolveRef ref source
+  if let (some id, some t) := (← untypedLocal? ⟨.Local ref', source⟩, compTy) then
+    inferUntypedLocal id ref' t
+  pure (ref', ← getVarType ref')
+
+/-- Write the types inferred for locals declared without one into their declarations,
+    and report those never assigned. -/
+private def finishUntypedDecls (body : StmtExprMd) : ResolveM StmtExprMd := do
+  let s ← get
+  for (_, (source, name)) in s.untypedDecls.toList do
+    reportUninferred source name
+  let inferred := s.inferredDecls
+  modify fun s => { s with untypedDecls := {}, inferredDecls := {} }
+  let patched := mapStmtExpr (fun n => match n.val with
+    | .Var (.Declare ⟨name, _⟩) =>
+      match name.uniqueId.bind inferred.get? with
+      | some ty => ⟨.Var (.Declare ⟨name, some ty⟩), n.source⟩
+      | none => n
+    | _ => n) body
+  pure (if (collectStmtExprList unannotatedDeclares patched).isEmpty then patched else body)
+
 set_option linter.unusedVariables false in
 mutual
 
@@ -2374,16 +2598,8 @@ def Synth.varField (exprMd : StmtExprMd)
     cascade further type errors. -/
 def Check.varDeclare (param : Parameter?) (source : FileRange) :
     ResolveM StmtExprMd := do
-  let ty' ← match param.type with
-    | some ty => resolveHighType ty
-    | none =>
-      let unknown : HighTypeMd := { val := .Unknown, source := source }
-      typeMismatch source none
-        s!"cannot infer a type for '{param.name.text}': a declaration with neither a type annotation nor an initializer has no type to read off; add an annotation (`var {param.name.text} : T`) or an initializer (`var {param.name.text} := e`)"
-        unknown
-      pure unknown
-  let name' ← defineNameCheckDup param.name (.var param.name ty')
-  pure { val := .Var (.Declare ⟨name', some ty'⟩), source := source }
+  declareLocal param source
+
 
 -- ### Control flow
 
@@ -2449,16 +2665,24 @@ def Check.while (exprMd : StmtExprMd)
     The premise `l ∈ Γ_lbl` requires the target label to name an
     enclosing labeled block; labels live in their own namespace
     (`ResolveState.labelScope`, populated by `Check.block` via
-    `withLabel`). An unknown label is reported here as
-    `"label '<l>' is not in scope"`. -/
+    `withLabel`). Failing that, `l` may name another block of the procedure
+    body (`ResolveState.procLabels`): a jump to a block that does not enclose
+    it, whose placement `validateJumps` checks. The stack such a jump carries is
+    typed at its target (see `enterJumpTarget`). An unknown label is reported
+    here as `"label '<l>' is not in scope"`. -/
 def Check.goto (target : String) (destination : GotoDestination) (source : FileRange) :
     ResolveM StmtExprMd := do
-  unless (← get).labelScope.contains target do
+  let st ← get
+  if st.labelScope.contains target then
+    if destination matches .blockEnd then
+      modify fun s => if s.usesStack then { s with exitStacks := (target, s.stackTypes) :: s.exitStacks } else s
+  else if st.procLabels.contains target then
+    recordJumpStack target destination source
+  else
     let diag := diagnosticFromSource source
       s!"label '{target}' is not in scope"
     modify fun s => { s with errors := s.errors.push diag }
-  if destination matches .blockEnd then
-    modify fun s => if s.usesStack then { s with exitStacks := (target, s.stackTypes) :: s.exitStacks } else s
+  modify fun s => if s.usesStack then { s with stackTypes := [] } else s
   pure { val := .Goto target destination, source := source }
 
 /-- (Return)
@@ -2690,15 +2914,19 @@ def Check.block (exprMd : StmtExprMd)
   -- A non-last statement is in effect position: admitted by `Check.statement`
   -- (`Γ ⊢ s ⋄` — its value is never consumed).
   let checkNonLast (s : StmtExprMd) (_h_mem : s ∈ stmts) : ResolveM StmtExprMd :=
-    Check.statement s
+    match stackAnnotation? s with
+    | some tys => resolveStackAnnotation s tys
+    | none => do notePrevAbrupt (← Check.statement s)
   -- The last statement carries the block's value: push `expected` in (so
   -- check-only forms are reachable). When the block itself sits in statement
   -- position (`expected = TVoid`), the last statement is also in effect
   -- position and goes through `Check.statement`.
   let checkLast (s : StmtExprMd) (_h_mem : s ∈ stmts) : ResolveM StmtExprMd := do
-    match expected.val with
-    | .TVoid => Check.statement s
-    | _ => withStackWindow s (Check.resolveStmtExpr s expected)
+    match stackAnnotation? s, expected.val with
+    | some tys, _ => resolveStackAnnotation s tys
+    | none, .TVoid => Check.statement s
+    | none, _ => withStackWindow s (Check.resolveStmtExpr s expected)
+  enterJumpTarget label stmts source
   withScope <| withLabel label do
     let init' ← stmts.dropLast.attach.mapM fun ⟨s, hMem⟩ => do
       have h_mem : s ∈ stmts := List.dropLast_subset stmts hMem
@@ -2706,24 +2934,7 @@ def Check.block (exprMd : StmtExprMd)
     -- Dead-code diagnostic: a terminator (`Exit`/`Return`) among the
     -- non-last statements is followed by at least one more statement.
     -- Flag it once at the position of the next statement.
-    let isTerminator (s : StmtExprMd) : Bool :=
-      match s.val with
-      | .Goto _ _ | .Return _ => true
-      | _ => false
-    match init'.findIdx? isTerminator with
-    | some i =>
-      let nextSource : FileRange :=
-        match init'[i + 1]? with
-        | some next => next.source
-        | none      => (stmts.getLast?.map (·.source)).getD source
-      let termName : String :=
-        match init'[i]? with
-        | some s => s.val.constrName
-        | none   => "exit"
-      let diag := diagnosticFromSource nextSource
-        s!"dead code after '{termName}'"
-      modify fun st => { st with errors := st.errors.push diag }
-    | none => pure ()
+    reportDeadCode init' stmts.getLast? ((stmts.getLast?.map (·.source)).getD source)
     -- Check the last statement against `expected`. The dispatcher only
     -- calls `Check.block` on `head :: tail`, so the `none` (empty-list)
     -- arm is dead and kept only to remain total.
@@ -2734,7 +2945,7 @@ def Check.block (exprMd : StmtExprMd)
     | some last =>
       have := List.mem_of_getLast? _lastResult
       let last' ← checkLast last ‹_›
-      if let some l := label then mergeExitStacks l (endsAbruptly last')
+      leaveJumpTarget label (endsAbruptly last')
       pure { val := .Block (init' ++ [last']) label invs' dec', source := source }
   termination_by sizeOf exprMd * 5 + 0
   decreasing_by
@@ -2927,35 +3138,23 @@ def Synth.block (exprMd : StmtExprMd)
     (h : exprMd.val = .Block stmts label invs dec)
     (expected? : Option HighTypeMd := none) : ResolveM (StmtExpr × HighTypeMd) := do
   let (invs', dec') ← resolveBlockInvariantsAndMeasure invs dec label source
+  enterJumpTarget label stmts source
   withScope <| withLabel label do
     let init' ← stmts.dropLast.attach.mapM fun ⟨s, hMem⟩ => do
       have h_mem : s ∈ stmts := List.dropLast_subset stmts hMem
-      Check.statement s
-    let isTerminator (s : StmtExprMd) : Bool :=
-      match s.val with
-      | .Goto _ _ | .Return _ => true
-      | _ => false
-    match init'.findIdx? isTerminator with
-    | some i =>
-      let nextSource : FileRange :=
-        match init'[i + 1]? with
-        | some next => next.source
-        | none      => (stmts.getLast?.map (·.source)).getD source
-      let termName : String :=
-        match init'[i]? with
-        | some s => s.val.constrName
-        | none   => "exit"
-      let diag := diagnosticFromSource nextSource
-        s!"dead code after '{termName}'"
-      modify fun st => { st with errors := st.errors.push diag }
-    | none => pure ()
+      match stackAnnotation? s with
+      | some tys => resolveStackAnnotation s tys
+      | none => do notePrevAbrupt (← Check.statement s)
+    reportDeadCode init' stmts.getLast? ((stmts.getLast?.map (·.source)).getD source)
     match _lastResult: stmts.getLast? with
     | none =>
       pure (.Block init' label invs' dec', Synth.emptyBlock source)
     | some last =>
       have := List.mem_of_getLast? _lastResult
-      let (last', lastTy) ← withStackWindow last (Synth.resolveStmtExpr last expected?)
-      if let some l := label then mergeExitStacks l (endsAbruptly last')
+      let (last', lastTy) ← match stackAnnotation? last with
+        | some tys => do pure ((← resolveStackAnnotation last tys), Synth.emptyBlock source)
+        | none => withStackWindow last (Synth.resolveStmtExpr last expected?)
+      leaveJumpTarget label (endsAbruptly last')
       pure (.Block (init' ++ [last']) label invs' dec', lastTy)
   termination_by sizeOf exprMd * 5 + 1
   decreasing_by
@@ -3086,7 +3285,7 @@ def Check.tryCatch (exprMd : StmtExprMd)
       -- program in which the exception is never caught. So it must not be silent —
       -- this is the only place that knows *why* the type is undetermined, and
       -- `lowerTry` relies on the warning being emitted here.
-      unless catches.isEmpty do
+      unless catches.isEmpty || (statedCatchType catches).isSome do
         modify fun s => { s with errors := s.errors.push (diagnosticFromSource source
           "the `catch` clause(s) of this `try` can never fire: no exception type could be \
            determined for the `try` body, so they are discarded and the body is verified as \
@@ -3170,7 +3369,7 @@ def Synth.assign (exprMd : StmtExprMd)
   -- the synthesized tuple (the callee's declared output); the RHS/target
   -- compatibility is then enforced by a tuple-level Sub check at the end
   -- instead of the usual push-in.
-  let inferInfo ← if targets.any (fun t => t.val matches .Declare ⟨_, none⟩ || t.val matches .Stack none) then
+  let inferInfo ← if (← synthesizesValue targets) then
       some <$> Synth.resolveStmtExpr value
     else pure none
   let (compTys, arityError) ← componentTypes targets inferInfo
@@ -3189,8 +3388,8 @@ def Synth.assign (exprMd : StmtExprMd)
     have := hv
     match (dependent := true) v with
     | ⟨.Local ref, vs⟩ =>
-      let ref' ← resolveRef ref source
-      pure (Sum.inl ((⟨.Local ref', vs⟩ : VariableMd), ← getVarType ref))
+      let (ref', ty) ← resolveLocalTarget ref source compTy
+      pure (Sum.inl ((⟨.Local ref', vs⟩ : VariableMd), ty))
     | ⟨.Field target fieldName, vs⟩ =>
       let (target', holderTy) ← Synth.resolveStmtExpr target
       let fieldName' ← resolveFieldRef target' fieldName source holderTy
@@ -5091,21 +5290,38 @@ private def resolveOutputParameters (inputNames : List String) (outputs : List P
 private def scopeTypeParams (typeArgs : List Identifier) : ResolveM (List Identifier) :=
   typeArgs.mapM (fun tv => defineNameCheckDup tv (.typeParameter tv))
 
+/-- The resolution state for resolving `body`: its labels, and the targets of its
+    non-enclosing jumps. -/
+def bodyLabelState (body : Body) (s : ResolveState) : ResolveState :=
+  match body with
+  | .Transparent b | .Opaque _ (some b) _ =>
+    { s with procLabels := labelCounts b, jumpTargets := nonEnclosingTargets b,
+             exitedLabels := exitedLabels b, entryStacks := [], labelStacks := [] }
+  | _ => s
+
+/-- Run `act` with the labels of `body` in scope for its jumps. -/
+def withBodyLabels (body : Body) (act : ResolveM α) : ResolveM α := do
+  let saved ← get
+  modify (bodyLabelState body)
+  let r ← act
+  modify fun s => { s with procLabels := saved.procLabels, jumpTargets := saved.jumpTargets }
+  pure r
+
 /-- Resolve a procedure body (if any) in statement position (`Check.statement`:
     its value is never consumed, outputs flow only through `return` and
     named-output assignment). Bodies without an implementation (`Abstract`,
     `External`) resolve postconditions only. -/
-def resolveBody (body : Body) : ResolveM Body := do
+def resolveBody (body : Body) : ResolveM Body := withBodyLabels body do
   match body with
   | .Transparent b =>
-    return .Transparent (← Check.statement b)
+    return .Transparent (← finishUntypedDecls (← Check.statement b))
   | .Opaque posts impl mods =>
     -- Postconditions are boolean: check against `TBool` (like preconditions and loop
     -- invariants) so a non-bool `ensures` errors instead of silently synthesizing, and
     -- the truthiness coercion is inserted for an `Any`-typed condition.
     let posts' ← posts.mapM (·.mapM (fun c =>
       Check.resolveStmtExpr c { val := .TBool, source := c.source }))
-    let impl' ← impl.mapM Check.statement
+    let impl' ← impl.mapM fun b => do finishUntypedDecls (← Check.statement b)
     let mods' ← resolveModifies mods
     return .Opaque posts' impl' mods'
   | .Abstract posts =>
@@ -7502,24 +7718,6 @@ private def validateMultiOutputCallContexts (model : SemanticModel)
             else none
         | _ => none
 
-/-- Diagnostics for `Declare` nodes at `n` whose type annotation is still
-    `none`. Declarations occur in four positions: as a standalone `Var`
-    statement, as an `Assign` target, and (per the AST, though not the
-    surface syntax) as an `IncrDecr` or `CompoundAssign` target.
-    Public so `ResolutionProps` can state per-node cleanliness lemmas. -/
-def unannotatedDeclares (n : StmtExprMd) : List Message :=
-  let bug (source : FileRange) (name : Identifier) : Message :=
-    diagnosticFromSource source
-      s!"declaration of '{name.text}' left resolution without a type annotation; resolution rewrites every declaration to carry an explicit type"
-      .strataBug
-  match n.val with
-  | .Var (.Declare ⟨name, none⟩) => [bug n.source name]
-  | .Assign targets _ => targets.filterMap fun
-      | ⟨.Declare ⟨name, none⟩, src⟩ => some (bug src name)
-      | _ => none
-  | .IncrDecr _ _ ⟨.Declare ⟨name, none⟩, src⟩ => [bug src name]
-  | .CompoundAssign _ ⟨.Declare ⟨name, none⟩, src⟩ _ => [bug src name]
-  | _ => []
 
 /-- Enforce the post-resolution invariant that every variable declaration
     carries a type annotation (see the Var-Declare and Decl-Synth rules:
@@ -7791,6 +7989,13 @@ public def resolve (program : LaurelProgram) (existingModel: Option SemanticMode
       ++ program'.types.flatMap fun
         | .Composite ct => ct.instanceProcedures.map (fun p => (s!"{ct.name.text}.{p.name.text}", p))
         | _ => []
+  let jumpErrors :=
+    if existingModel.isNone then
+      (namedProcs.map (·.2) ++ program'.staticFunctions).flatMap fun p =>
+        match p.body with
+        | .Transparent b | .Opaque _ (some b) _ => validateJumps b p.is_coroutine
+        | _ => []
+    else []
   let exceptionErrors :=
     validateExceptionEscapes semanticModel typeLattice namedProcs
       ++ (if existingModel.isNone then
@@ -7805,7 +8010,7 @@ public def resolve (program : LaurelProgram) (existingModel: Option SemanticMode
       globalInitializerErrors ++
       globalCallErrors ++ bodilessGlobalErrors ++ declaredGlobalErrors ++
       entryGlobalErrors ++ invokeOnErrors ++
-      coroutineErrors ++ multiOutputCallErrors ++ exceptionErrors ++ annotationBugs
+      coroutineErrors ++ multiOutputCallErrors ++ exceptionErrors ++ jumpErrors ++ annotationBugs
   }
 
 -- `resolve` establishes the invariant that every `Declare` in its output is

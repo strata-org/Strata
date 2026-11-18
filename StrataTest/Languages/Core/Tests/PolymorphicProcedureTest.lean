@@ -45,7 +45,7 @@ info: [Strata.Core] Type checking succeeded.
 
 
 VCs:
-Label: callElimAssert_Extract_requires_0_3
+Label: callElimAssert_Extract_requires_0_2
 Property: assert
 Obligation:
 List..isCons(xs@3)
@@ -57,7 +57,7 @@ true
 
 ---
 info:
-Obligation: callElimAssert_Extract_requires_0_3
+Obligation: callElimAssert_Extract_requires_0_2
 Property: assert
 Result: ❌ fail
 Model:
@@ -100,14 +100,14 @@ VCs:
 Label: assert_0
 Property: assert
 Assumptions:
-callElimAssume_MkCons_ensures_0_3: List..isCons(r@3)
+callElimAssume_MkCons_ensures_0_2: List..isCons(r@3)
 Obligation:
 List..isCons(r@3)
 
 Label: Test_ensures_0
 Property: assert
 Assumptions:
-callElimAssume_MkCons_ensures_0_3: List..isCons(r@3)
+callElimAssume_MkCons_ensures_0_2: List..isCons(r@3)
 Obligation:
 true
 
@@ -131,10 +131,9 @@ end Strata.PolymorphicPostconditionTest
 namespace Strata.PolymorphicInoutPrecondTest
 
 -- An in-out parameter's precondition constrains its type variable to a concrete
--- type, which is incompatible with the procedure being polymorphic.  Because
--- `GenOpaqueTypeParams` runs before type checking, `a` is first replaced by a
--- fresh opaque type; the precondition `x == 5` then fails to unify that opaque
--- type with `int`, so the procedure is rejected.
+-- type, which is incompatible with the procedure being polymorphic. Type checking
+-- treats `a` as a rigid type variable, and the precondition `x == 5` would refine it
+-- to `int`, so the procedure is rejected.
 def polyInoutPgm : Program :=
 #strata
 program Core;
@@ -149,7 +148,7 @@ spec {
 
 /--
 error: ❌ Type checking error.
-[P:P_requires_0]: Impossible to unify $__opaque_P_a_0 with int.
+Procedure 'P', condition 'P_requires_0': Rigid type variable 'a' was refined to 'int'
 -/
 #guard_msgs in
 #eval Core.verify polyInoutPgm

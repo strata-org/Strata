@@ -65,7 +65,7 @@ def dispatch (procThrows : Bool) (exitLabel : Label) (md : MD) (summary : String
     | some t =>
       let next ← dispatch procThrows exitLabel md summary rest
       let l ← freshLabel "$catchTest"
-      addBlock l { cmds := [.instanceOf (ident testVar) (mkFvar exvVar) t md],
+      addBlock l { cmds := [.instanceOf (ident testVar) (mkFvar exvVar) (mono (tcon t)) md],
                    transfer := .condGoto (mkFvar testVar) bind next md }
       return l
 

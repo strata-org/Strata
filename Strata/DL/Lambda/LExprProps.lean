@@ -21,7 +21,8 @@ Structural lemmas relating `LExpr.getVars` (the free variables of an expression)
 to the various substitution and decomposition operations on `LExpr`. These are
 factored out of `LExprEvalProps` so they can be reused independently of the
 evaluator. Also: the type of a constant has no free type variables
-(`LConst.ty_freeVars`).
+(`LConst.ty_freeVars`), and the literals of a list of arguments (`LExpr.constArgs?`) do not
+depend on metadata (`LExpr.constArgs?_eraseMetadata`).
 -/
 
 namespace Lambda
@@ -159,6 +160,10 @@ theorem hasBVarCached_eq {T : LExprParamsT} (e : LExpr T) :
     hasBVarCached e = hasBVar e :=
   run'_output_eq (hasBVarPtrCache e) PtrCache.empty
 
+/-- The pointer-address-memoized `sizeCached` computes exactly the tree size `size`. -/
+theorem sizeCached_eq {T : LExprParamsT} (e : LExpr T) : sizeCached e = size T e :=
+  run'_output_eq (sizePtrCache e) PtrCache.empty
+
 /-- Every expression equals itself when metadata is ignored. -/
 theorem beqIgnoringMetadata_refl {T : LExprParamsT} [BEq T.TypeType] [LawfulBEq T.TypeType]
     [BEq (Identifier T.base.IDMeta)] [LawfulBEq (Identifier T.base.IDMeta)] (e : LExpr T) :
@@ -212,6 +217,33 @@ theorem eraseMetadata_op_cases {T : LExprParams} (a b : LExpr T.mono)
     intro m o ty hb
     subst hb
     exact absurd h (by simp [LExpr.eraseMetadata, LExpr.replaceMetadata])
+
+/-- `constArgs?` is insensitive to metadata. -/
+public theorem LExpr.constArgs?_eraseMetadata {T : LExprParams}
+    {args1 args2 : List (LExpr T.mono)}
+    (h : args1.map LExpr.eraseMetadata = args2.map LExpr.eraseMetadata) :
+    LExpr.constArgs? args1 = LExpr.constArgs? args2 := by
+  induction args1 generalizing args2 with
+  | nil => cases args2 <;> simp_all
+  | cons a as ih =>
+    cases args2 with
+    | nil => simp at h
+    | cons b bs =>
+      simp only [List.map_cons, List.cons.injEq] at h
+      obtain ⟨hab, hrest⟩ := h
+      cases a with
+      | const m c =>
+        cases b with
+        | const m' c' =>
+          simp only [LExpr.eraseMetadata, LExpr.replaceMetadata, LExpr.const.injEq,
+            true_and] at hab
+          subst hab
+          simp only [LExpr.constArgs?, ih hrest]
+        | _ => simp [LExpr.eraseMetadata, LExpr.replaceMetadata] at hab
+      | _ =>
+        cases b with
+        | const => simp [LExpr.eraseMetadata, LExpr.replaceMetadata] at hab
+        | _ => simp [LExpr.constArgs?]
 
 /-- Two lists that differ only in metadata have entries that differ only in metadata. -/
 theorem getElem?_of_map_eraseMetadata_eq {T : LExprParams}

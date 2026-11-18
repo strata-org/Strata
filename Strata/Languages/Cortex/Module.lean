@@ -77,7 +77,7 @@ def fieldMono (p : UnorderedProgram) (f : FieldRef) : Except String LMonoTy :=
     | _ => .error s!"polymorphic field {f.owner}.{f.field}"
   | none => .error s!"unknown field {f.owner}.{f.field}"
 
-/-- The element type that an element read or write states, which is monomorphic. -/
+/-- The element type that an array command states, which is monomorphic. -/
 def elemMono (ty : Core.Expression.Ty) : Except String LMonoTy :=
   match (ty : LTy) with
   | .forAll [] t => .ok t
@@ -88,17 +88,25 @@ partial def mapMonoTy (f : String → Option LMonoTy) : LMonoTy → LMonoTy
   | .tcons n args => .tcons n (args.map (mapMonoTy f))
   | t => t
 
-def mapLTy (f : String → Option LMonoTy) : LTy → LTy
-  | .forAll vs t => .forAll vs (mapMonoTy f t)
+/-- The type of the values of type `t`: each constrained type of `cs` gives way to its base type,
+except inside the element type of an array type. An array type is identified by its element
+type, so `Array a` and `Array b` are different types even when `a` and `b` constrain the same
+base type. -/
+partial def valueTy (cs : List ConstrainedDecl) (t : LMonoTy) : LMonoTy :=
+  match t with
+  | .tcons n [] => (baseOf cs n).getD t
+  | .tcons n args => if (arrayElem? t).isSome then t else .tcons n (args.map (valueTy cs))
+  | t => t
 
-partial def mapExprTys (f : String → Option LMonoTy) : Expr → Expr
-  | .op m o ty => .op m o (ty.map (mapMonoTy f))
-  | .fvar m n ty => .fvar m n (ty.map (mapMonoTy f))
-  | .abs m n ty e => .abs m n (ty.map (mapMonoTy f)) (mapExprTys f e)
-  | .quant m k n ty tr e => .quant m k n (ty.map (mapMonoTy f)) (mapExprTys f tr) (mapExprTys f e)
-  | .app m a b => .app m (mapExprTys f a) (mapExprTys f b)
-  | .ite m c t e => .ite m (mapExprTys f c) (mapExprTys f t) (mapExprTys f e)
-  | .eq m a b => .eq m (mapExprTys f a) (mapExprTys f b)
+/-- Applies `m` to every type annotation of an expression. -/
+partial def mapExprMonoTys (m : LMonoTy → LMonoTy) : Expr → Expr
+  | .op md o ty => .op md o (ty.map m)
+  | .fvar md n ty => .fvar md n (ty.map m)
+  | .abs md n ty e => .abs md n (ty.map m) (mapExprMonoTys m e)
+  | .quant md k n ty tr e => .quant md k n (ty.map m) (mapExprMonoTys m tr) (mapExprMonoTys m e)
+  | .app md a b => .app md (mapExprMonoTys m a) (mapExprMonoTys m b)
+  | .ite md c t e => .ite md (mapExprMonoTys m c) (mapExprMonoTys m t) (mapExprMonoTys m e)
+  | .eq md a b => .eq md (mapExprMonoTys m a) (mapExprMonoTys m b)
   | e => e
 
 partial def mapExpr (f : Expr → Option Expr) (e : Expr) : Expr :=
@@ -147,20 +155,25 @@ def mapBaseCmd (g : Expr → Expr) (t : LTy → LTy) : Cmd Core.Expression → C
   | .assume l b md => .assume l (g b) md
   | .cover l b md => .cover l (g b) md
 
-def mapCmdExprs (g : Expr → Expr) (t : LTy → LTy) : IRCmd → IRCmd
+/-- Applies `g` to the expressions of a command, `t` to its types and `elem` to the element type
+that an array command states. -/
+def mapCmd (g : Expr → Expr) (t elem : LTy → LTy) : IRCmd → IRCmd
   | .cmd c => .cmd (mapBaseCmd g t c)
   | .cast x ty e m md => .cast x ty (g e) m md
   | .new x ty md => .new x ty md
   | .readField x o f md => .readField x (g o) f md
   | .writeField o f v md => .writeField (g o) f (g v) md
-  | .instanceOf x o ty md => .instanceOf x (g o) ty md
-  | .newArray x ty len md => .newArray x ty (g len) md
-  | .readElem x a i ty md => .readElem x (g a) (g i) (t ty) md
-  | .writeElem a i v ty md => .writeElem (g a) (g i) (g v) (t ty) md
+  | .instanceOf x o ty md => .instanceOf x (g o) (t ty) md
+  | .newArray x ty len md => .newArray x (elem ty) (g len) md
+  | .readElem x a i ty md => .readElem x (g a) (g i) (elem ty) md
+  | .writeElem a i v ty md => .writeElem (g a) (g i) (g v) (elem ty) md
   | .arrayLength x a md => .arrayLength x (g a) md
+  | .instanceOfComponent x o a md => .instanceOfComponent x (g o) (g a) md
   | .call lhs p args md => .call lhs p (args.map g) md
   | .virtualCall lhs o meth args md => .virtualCall lhs o meth (args.map g) md
   | .throw e md => .throw (g e) md
+
+def mapCmdExprs (g : Expr → Expr) (t : LTy → LTy) : IRCmd → IRCmd := mapCmd g t t
 
 def mapTransfer (g : Expr → Expr) : DetTransferCmd Label Core.Expression → DetTransferCmd Label Core.Expression
   | .condGoto c lt lf md => .condGoto (g c) lt lf md
@@ -172,13 +185,16 @@ def mapBlock (h : IRCmd → List IRCmd) (g : Expr → Expr) (b : LBlock) : LBloc
 def mapBody (h : IRCmd → List IRCmd) (g : Expr → Expr) (b : Body) : Body :=
   { b with cfg := { b.cfg with blocks := b.cfg.blocks.map fun (l, blk) => (l, mapBlock h g blk) } }
 
-def mapProgramTys (f : String → Option LMonoTy) (p : UnorderedProgram) : UnorderedProgram :=
-  let t := mapLTy f
-  let g := mapExprTys f
+/-- Applies `m` to every type of the program outside its datatypes, and `elem` to the element
+type that an array command states. -/
+def mapProgramMonoTys (m : LMonoTy → LMonoTy) (elem : LMonoTy → LMonoTy) (p : UnorderedProgram) :
+    UnorderedProgram :=
+  let t := mapLTyTys m
+  let g := mapExprMonoTys m
   let params := fun (ps : List (Core.Expression.Ident × LTy)) => ps.map fun (x, ty) => (x, t ty)
   { p with
     composites := p.composites.map fun c =>
-      { c with fields := c.fields.map fun fd => { fd with ty := t fd.ty }, elem := c.elem.map t }
+      { c with fields := c.fields.map fun fd => { fd with ty := t fd.ty } }
     constrained := p.constrained.map fun c => { c with base := t c.base, constraint := g c.constraint }
     globals := params p.globals
     globalInit := p.globalInit.map (mapBaseCmd g t)
@@ -186,19 +202,25 @@ def mapProgramTys (f : String → Option LMonoTy) (p : UnorderedProgram) : Unord
       { pr with
         inputs := params pr.inputs
         outputs := params pr.outputs
-        body := pr.body.map (mapBody (fun c => [mapCmdExprs g t c]) g) } }
+        body := pr.body.map (mapBody (fun c => [mapCmd g t (mapLTyTys elem) c]) g) } }
 
-def mapConstrTys (f : String → Option LMonoTy) (c : LConstr Unit) : LConstr Unit :=
-  { c with args := c.args.map fun (n, ty) => (n, mapMonoTy f ty) }
+def mapConstrTys (m : LMonoTy → LMonoTy) (c : LConstr Unit) : LConstr Unit :=
+  { c with args := c.args.map fun (n, ty) => (n, m ty) }
 
-def mapDatatypeTys (f : String → Option LMonoTy) (dt : LDatatype Unit) : LDatatype Unit where
+def mapDatatypeTys (m : LMonoTy → LMonoTy) (dt : LDatatype Unit) : LDatatype Unit where
   name := dt.name
   typeArgs := dt.typeArgs
-  constrs := dt.constrs.map (mapConstrTys f)
+  constrs := dt.constrs.map (mapConstrTys m)
   constrs_ne := by have := dt.constrs_ne; simpa using this
 
+/-- Applies `m` to every type of the program, and `elem` to the element type that an array
+command states. -/
+def UnorderedProgram.mapMonoTys (m : LMonoTy → LMonoTy) (elem : LMonoTy → LMonoTy := m)
+    (p : UnorderedProgram) : UnorderedProgram :=
+  { mapProgramMonoTys m elem p with datatypes := p.datatypes.map (mapDatatypeTys m) }
+
 def UnorderedProgram.mapTys (f : String → Option LMonoTy) (p : UnorderedProgram) : UnorderedProgram :=
-  { mapProgramTys f p with datatypes := p.datatypes.map (mapDatatypeTys f) }
+  p.mapMonoTys (mapMonoTy f)
 
 def UnorderedProgram.mapProcedures (f : Procedure → Procedure) (p : UnorderedProgram) : UnorderedProgram :=
   { p with procedures := p.procedures.map f }
@@ -216,7 +238,7 @@ def assignedNames : IRCmd → List String
   | .cmd (.init x ..) | .cmd (.set x ..) | .cast x .. => [x.name]
   | .call lhs .. | .virtualCall lhs .. => lhs.map (·.name)
   | .new x .. | .readField x .. | .instanceOf x .. => [x.name]
-  | .newArray x .. | .readElem x .. | .arrayLength x .. => [x.name]
+  | .newArray x .. | .readElem x .. | .arrayLength x .. | .instanceOfComponent x .. => [x.name]
   | _ => []
 
 /-- The variables that the commands of `b` declare or assign. -/

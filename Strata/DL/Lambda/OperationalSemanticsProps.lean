@@ -2108,14 +2108,6 @@ private theorem typeCheck_eraseMetadata {T : LExprParams}
   simpa [LExpr.eraseMetadata] using
     (typeCheck_replaceMetadata e ctx (fun _ => ())).symm
 
-/-- Expressions with the same metadata-free form type-check identically. -/
-private theorem typeCheck_of_eraseMetadata_eq {T : LExprParams}
-    (e₁ e₂ : LExpr T.mono) (h : e₁.eraseMetadata = e₂.eraseMetadata) :
-    LExpr.typeCheck [] e₁ = LExpr.typeCheck [] e₂ := by
-  have h1 := typeCheck_eraseMetadata e₁ []
-  have h2 := typeCheck_eraseMetadata e₂ []
-  rw [h] at h1; rw [← h1, h2]
-
 -- computeTypeSubst is metadata-invariant: if callee and args have the same
 -- eraseMetadata, computeTypeSubst produces the same result.
 -- computeTypeSubst depends on callee only through its .op type annotation
@@ -2126,43 +2118,12 @@ theorem computeTypeSubst_eraseMetadata_congr {T : LExprParams}
     (h_op : op₁.eraseMetadata = op₂.eraseMetadata)
     (h_args : args₁.map LExpr.eraseMetadata = args₂.map LExpr.eraseMetadata) :
     LFunc.computeTypeSubst fn op₁ args₁ = LFunc.computeTypeSubst fn op₂ args₂ := by
-
-  -- For the args part:
-  have h_argC : ((args₁.zip fn.inputs.values).filterMap
-      (fun (arg, formal) => (LExpr.typeCheck [] arg).map (·, formal))) =
-    ((args₂.zip fn.inputs.values).filterMap
-      (fun (arg, formal) => (LExpr.typeCheck [] arg).map (·, formal))) := by
-    -- Prove by auxiliary induction on args and formals simultaneously
-    suffices h_suff : ∀ (l₁ l₂ : List (LExpr T.mono)) (vs : List LMonoTy),
-        l₁.map LExpr.eraseMetadata = l₂.map LExpr.eraseMetadata →
-        (l₁.zip vs).filterMap
-            (fun (arg, formal) => (LExpr.typeCheck [] arg).map (·, formal)) =
-        (l₂.zip vs).filterMap
-            (fun (arg, formal) => (LExpr.typeCheck [] arg).map (·, formal)) from
-      h_suff args₁ args₂ fn.inputs.values h_args
-    intro l₁ l₂ vs h_eM
-    induction l₁ generalizing l₂ vs with
-    | nil =>
-      have h_l₂_nil : l₂ = [] := by cases l₂ with | nil => rfl | cons => simp at h_eM
-      subst h_l₂_nil; rfl
-    | cons hd₁ tl₁ ih =>
-      match l₂, vs with
-      | hd₂ :: tl₂, v :: vs' =>
-        simp only [List.zip_cons_cons, List.filterMap_cons]
-        have h_hd : hd₁.eraseMetadata = hd₂.eraseMetadata := by
-          have h_head_eq := congrArg List.head? h_eM; simp only [List.map_cons, List.head?_cons, Option.some.injEq] at h_head_eq; exact h_head_eq
-        have h_tl : tl₁.map LExpr.eraseMetadata = tl₂.map LExpr.eraseMetadata := by
-          have h_tail_eq := congrArg List.tail h_eM; simp only [List.map_cons, List.tail_cons] at h_tail_eq; exact h_tail_eq
-        rw [typeCheck_of_eraseMetadata_eq _ _ h_hd, ih tl₂ vs' h_tl]
-      | hd₂ :: tl₂, [] => simp [List.zip]
-      | [], _ => simp at h_eM
-  -- opTypeSubst only depends on the type annotation of the callee
-  have h_opTS : fn.opTypeSubst op₁ = fn.opTypeSubst op₂ := by
-    simp only [LFunc.opTypeSubst]
-    cases op₁ <;> cases op₂ <;>
-      simp only [LExpr.eraseMetadata, LExpr.replaceMetadata, LExpr.op.injEq, true_and, List.isEmpty_iff, reduceCtorEq] at h_op ⊢
-    rename_i ty
-    cases ty <;> grind
-  simp only [LFunc.computeTypeSubst, h_opTS, h_argC]
+  have h_tys : args₁.map (LExpr.typeCheck []) = args₂.map (LExpr.typeCheck []) := by
+    have h_erased := congrArg (List.map (LExpr.typeCheck [])) h_args
+    have h_comp : (LExpr.typeCheck [] ∘ LExpr.eraseMetadata : LExpr T.mono → _) =
+        LExpr.typeCheck [] := funext fun e => typeCheck_eraseMetadata e []
+    simp only [List.map_map, h_comp] at h_erased
+    exact h_erased
+  simp only [LFunc.computeTypeSubst, LFuncDefined.callInstance?_congr fn.toFunc h_op h_tys]
 end -- public section
 end Lambda

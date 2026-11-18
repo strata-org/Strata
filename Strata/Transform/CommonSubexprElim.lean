@@ -524,6 +524,13 @@ def runCSE (p : Program) : Transform.CoreTransformM (Bool × Program) := do
   ) ([], 0, false)
   return (changed, { decls := revDecls.reverse })
 
+/-- `runCSE` on `p` if some expression of `p` has a tree of more than `minTreeSize` nodes
+    (`LExpr.sizeCached`, which visits each shared subterm once); otherwise `p` unchanged. -/
+def runCSEAbove (minTreeSize : Nat) (p : Program) :
+    Transform.CoreTransformM (Bool × Program) :=
+  if p.allExprs (fun e => LExpr.sizeCached e ≤ minTreeSize) then pure (false, p)
+  else runCSE p
+
 end Core.CSE
 
 /-- CSE pipeline phase: extracts common subexpressions into fresh
@@ -531,17 +538,22 @@ end Core.CSE
     definitional equalities without changing program semantics.
     A pipeline that omits it is therefore sound, though the SMT encoding then
     has a different shape, which can affect whether the solver reaches a
-    conclusive result. -/
-def Core.commonSubexprElimPhase : Core.PipelinePhase :=
+    conclusive result. With `minTreeSize := some n`, the phase runs only on a program with
+    an expression whose tree has more than `n` nodes (`Core.CSE.runCSEAbove`), and leaves
+    any other program unchanged. -/
+def Core.commonSubexprElimPhase (minTreeSize : Option Nat := none) : Core.PipelinePhase :=
   -- Naming a shared subexpression replaces it with a variable, which puts no
   -- abstraction in a function position, so `noBetaRedexes` survives the last
   -- phase before the encoder.
-  Core.modelPreservingPipelinePhase "commonSubexprElim" Core.CSE.runCSE
+  Core.modelPreservingPipelinePhase "commonSubexprElim"
+    (match minTreeSize with
+     | none => Core.CSE.runCSE
+     | some n => Core.CSE.runCSEAbove n)
     -- Abbreviating an expression is only sound if its value cannot change
     -- between the definition and the uses, which is what
     -- `staticSingleAssignment` gives. The abbreviations are prepended to the
     -- body, so the body must declare no variable they could read: `noInits`.
-    (requires := factSet![.noCFGBodies, .staticSingleAssignment, .noInits])
+    (requires := factSet![.noCFGBodies, .staticSingleAssignment, .typeAnnotated, .noInits])
     (preserves := factSet![.noCFGBodies, .noCalls, .noLoops, .noLoopInvariants,
                          .noLoopMeasures, .staticSingleAssignment,
                          .noBetaRedexes, .noPrecondsFromFuncs, .noNondetGuards,

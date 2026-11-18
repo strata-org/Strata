@@ -166,6 +166,10 @@ def Decl.const (name : Expression.Ident) (ty : Lambda.LMonoTy)
     (md : MetaData Expression := .empty) : Decl :=
   .func (Function.const name ty value attr) md
 
+/-- The declaration of the opaque type `name`, which takes no type parameters. -/
+def Decl.opaqueType (name : String) : Decl :=
+  .type (.con { name := name, params := [] }) .empty
+
 def Decl.eraseTypes (d : Decl) : Decl :=
   match d with
   | .ax a md     => .ax a.eraseTypes md
@@ -217,11 +221,31 @@ def Program.init : Program :=
 instance : Inhabited Program where
   default := .init
 
-/-- The names of the types the program declares at the top level. -/
+/-- The names of the types the program declares, at the top level or inside a structured
+    procedure body. -/
 def Program.typeNames (p : Program) : List String :=
   p.decls.flatMap fun
     | .type td _ => td.names.map (·.name)
+    | .proc proc _ =>
+      match proc.body with
+      | .structured ss => (Imperative.Block.localTypeDecls ss).map (·.name)
+      | .cfg _ => []
     | _ => []
+
+/-- The type names in the signatures of the procedures of `P`. -/
+def Program.procSigTyNames (P : Program) : List String :=
+  P.decls.flatMap fun
+    | .proc q _ => (q.header.inputs.values ++ q.header.outputs.values).flatMap Lambda.getTypeRefs
+    | _ => []
+
+/-- The names in `names` that start with `pfx`. -/
+def namesWithPrefix (names : List String) (pfx : String) : Std.HashSet String :=
+  Std.HashSet.ofList (names.filter (·.startsWith pfx))
+
+/-- The names of the types the program declares, at the top level or inside a procedure body,
+    that start with `pfx`: the names a pass that names types with `pfx` must avoid. -/
+def Program.typeNamesWithPrefix (p : Program) (pfx : String) : Std.HashSet String :=
+  namesWithPrefix p.typeNames pfx
 
 /-- Declarations that appear strictly before the first procedure named
     `procName`. If no such procedure exists, this is every declaration. -/

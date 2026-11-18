@@ -1260,6 +1260,12 @@ theorem lookup_of_mem_nodup
       simp only [lookup, h_neq]
       exact ih h_nodup_tl h_tl
 
+/-- A key `lookup` finds is paired with the value it returns by an entry of the list. -/
+theorem mem_of_lookup_eq_some {α β : Type} [BEq α] [LawfulBEq α] {l : List (α × β)} {k : α}
+    {v : β} (h : l.lookup k = some v) : (k, v) ∈ l := by
+  obtain ⟨l₁, l₂, rfl, -⟩ := List.lookup_eq_some_iff.mp h
+  simp
+
 /-- The `nodupB` worker started from the set `seen` accepts `l` exactly when `l`
 has no duplicates and no element of `l` is in `seen`. -/
 private theorem nodupB_go_iff {α : Type} [BEq α] [Hashable α] [LawfulBEq α]
@@ -1403,6 +1409,13 @@ theorem mem_orderedPairs {α : Type _} :
     · exact ⟨List.mem_cons_self, List.mem_cons_of_mem _ hc⟩
     · obtain ⟨ha, hb⟩ := mem_orderedPairs h
       exact ⟨List.mem_cons_of_mem _ ha, List.mem_cons_of_mem _ hb⟩
+
+/-- A failed `any` test for name `n` means every element's name differs from `n`. -/
+theorem names_ne_of_not_any {α β : Type} [BEq β] [LawfulBEq β] {name : α → β}
+    {xs : List α} {n : β} (h : ¬ ((xs.any fun x => name x == n) = true)) :
+    ∀ x ∈ xs, name x ≠ n := by
+  intro x hx heq
+  exact absurd (List.any_eq_true.mpr ⟨x, hx, by simp [heq]⟩) h
 
 end List
 
@@ -1623,6 +1636,18 @@ theorem List.Rel₂.map_eq {α β γ : Type _} {R : α → β → Prop} {l1 : Li
   induction h with
   | nil => rfl
   | cons hab _ ih => rw [List.map_cons, List.map_cons, hfg _ _ hab, ih]
+
+/-- Every element of the right list of a pointwise relation is related to an element of the
+    left list. -/
+theorem List.Rel₂.exists_of_mem_right {α β : Type _} {R : α → β → Prop} {l1 : List α}
+    {l2 : List β} (h : Rel₂ R l1 l2) {b : β} (hb : b ∈ l2) : ∃ a ∈ l1, R a b := by
+  induction h with
+  | nil => cases hb
+  | cons hab _ ih =>
+    rcases List.mem_cons.mp hb with rfl | hmem
+    · exact ⟨_, List.mem_cons_self, hab⟩
+    · obtain ⟨a, ha, hr⟩ := ih hmem
+      exact ⟨a, List.mem_cons_of_mem _ ha, hr⟩
 
 /-- Reversing both lists preserves a pointwise relation. -/
 theorem List.Rel₂.reverse {α β : Type _} {R : α → β → Prop} {a : List α} {b : List β}

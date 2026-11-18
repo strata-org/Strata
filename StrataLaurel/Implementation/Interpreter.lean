@@ -6,6 +6,9 @@
 module
 public import Std.Data.HashMap
 public import StrataLaurel.Implementation
+public import StrataLaurel.Implementation.LiftInstanceProcedures
+public import StrataLaurel.Implementation.TypeAliasElim
+public import StrataLaurel.Implementation.LabelledJumps
 
 namespace Strata.Laurel.Interpreter
 
@@ -20,9 +23,12 @@ structure Options where
       Laurel examples read as a transcript; a runtime with hundreds of thousands
       of asserts needs it off. -/
   printAsserts : Bool := true
-  /-- Maximum evaluation steps before giving up, so a divergent program under
-      test fails instead of hanging. -/
+  /-- The evaluator's fuel: the initial step budget (`EvalState.steps`) and the
+      structural fuel. See `chargeStep`. The structural fuel also bounds how deeply
+      evaluation can nest, so a deeply recursive program needs more fuel than its
+      step count alone; each call level uses about a dozen units. -/
   fuel : Nat := 100000000
+  limitSteps : Bool := true
   deriving Inhabited
 
 /-- A value that lives in the host (backend) language rather than in Lean —
@@ -71,10 +77,12 @@ inductive Value where
   /-- A `real`. Laurel's `real` is the mathematical reals, so `Rat` models it
       exactly rather than approximating it as a float. -/
   | real     (v : Rat)
-  /-- A reference to a composite instance: an index into `EvalState.heap`.
-      Composites are reference types, so this is what `==` compares (identity)
-      and what a field write mutates through. -/
-  | ref      (addr : Nat)
+  /-- A reference to a composite instance: an index into `EvalState.heap`, and the
+      runtime type it was allocated at. Composites are reference types, so the
+      address is what `==` compares (identity) and what a field write mutates
+      through. The type travels with the reference, as in the verifier's
+      `MkComposite(ref, typeTag)`, so `is` reads it without touching the heap. -/
+  | ref      (addr : Nat) (typeName : String)
   /-- A datatype value: the constructor's name and its arguments. Compared
       structurally, which is what makes two equal `PyKey`s the same dict key. -/
   | data     (ctor : String) (args : Array Value)
@@ -113,7 +121,7 @@ partial def Value.display : Value → String
   | .bool p     => toString p.b
   | .string p   => p.s
   | .real r     => toString r
-  | .ref a      => s!"#{a}"
+  | .ref a _      => s!"#{a}"
   | .data c as_ =>
     if as_.isEmpty then s!"{c}()"
     else s!"{c}({String.intercalate ", " (as_.toList.map Value.display)})"
@@ -122,6 +130,21 @@ partial def Value.display : Value → String
   | .bv w n     => s!"{n}bv{w}"
   | .unset      => "<unset>"
 
+theorem Value.sz_arr {a : Value} {as_ : Array Value} (h : a ∈ as_.toList) : sizeOf a < sizeOf as_ := by
+  rcases as_ with ⟨l⟩
+  have := List.sizeOf_lt_of_mem h
+  simp only [Array.mk.sizeOf_spec]
+  simp at this
+  omega
+
+theorem Value.sz_ent {e : String × Value × Value} {m : List (String × Value × Value)} (h : e ∈ m) :
+    sizeOf e.2.2 < sizeOf m := by
+  have := List.sizeOf_lt_of_mem h
+  rcases e with ⟨a, b, c⟩
+  simp only [Prod.mk.sizeOf_spec] at this
+  simp only
+  omega
+
 /-- A collision-free string rendering used as a `Map` key.
 
     A Laurel `Map` key is an arbitrary value, and `Std.HashMap` needs `Hashable`,
@@ -129,67 +152,116 @@ partial def Value.display : Value → String
     key structurally sidesteps that. It must be injective, so constructor
     arguments are length-prefixed rather than separated — otherwise `K("a,b")` and
     `K("a", "b")` would collide, and two distinct dict keys would become one. -/
-partial def Value.keyRepr : Value → String
+def Value.keyRepr : Value → String
   | .int p      => s!"i{p.n}"
   | .bool p     => s!"b{p.b}"
   | .string p   => s!"s{p.s.length}:{p.s}"
   | .real r     => s!"r{r}"
-  | .ref a      => s!"@{a}"
+  | .ref a _      => s!"@{a}"
   | .data c as_ =>
-    let parts := as_.toList.map (fun a => let r := Value.keyRepr a; s!"{r.length}:{r}")
+    let parts := as_.toList.attach.map (fun ⟨a, _⟩ => let r := Value.keyRepr a; s!"{r.length}:{r}")
     s!"d{c.length}:{c}({String.intercalate "" parts})"
   | .seq items =>
-    let parts := items.toList.map (fun a => let r := Value.keyRepr a; s!"{r.length}:{r}")
+    let parts := items.toList.attach.map (fun ⟨a, _⟩ => let r := Value.keyRepr a; s!"{r.length}:{r}")
     s!"q[{String.intercalate "" parts}]"
   | .map m d =>
     let dr := Value.keyRepr d
-    let m := m.filter fun (_, _, v) => Value.keyRepr v != dr
+    let m := m.attach.filter fun ⟨(_, _, v), _⟩ => Value.keyRepr v != dr
     -- Sorted by the entry key's repr: `mapSet` conses fresh entries to the
     -- front, so two equal maps built in different orders hold their entries in
     -- different orders, and injectivity is over the map VALUE, not the list.
-    let parts := (m.map (fun (kr, _, v) =>
+    let parts := (m.map (fun ⟨(kr, _, v), _⟩ =>
       let vr := Value.keyRepr v
       s!"{kr.length}:{kr}{vr.length}:{vr}")).mergeSort (· ≤ ·)
     s!"m{m.length}[{String.intercalate "" parts}]{dr.length}:{dr}"
   | .bv w n     => s!"v{w}:{n}"
   | .unset      => "u"
   | .external e => s!"x{e.path}"
+termination_by v => sizeOf v
+decreasing_by
+  all_goals simp_wf
+  all_goals first
+    | (have := Value.sz_arr ‹_›; omega)
+    | (have := Value.sz_ent (e := (_, _, _)) ‹_›; simp at this; omega)
+    | omega
 
+
+def Value.hasRef : Value → Bool
+  | .ref _ _ => true
+  | .data _ as_ => as_.toList.attach.any fun ⟨a, _⟩ => Value.hasRef a
+  | .seq as_ => as_.toList.attach.any fun ⟨a, _⟩ => Value.hasRef a
+  | .map m d => m.attach.any (fun ⟨(_, k, v), _⟩ => Value.hasRef k || Value.hasRef v) || Value.hasRef d
+  | _ => false
+termination_by v => sizeOf v
+decreasing_by
+  all_goals simp_wf
+  all_goals first
+    | omega
+    | (have := Value.sz_arr ‹_›; omega)
+    | (rename_i h; have := List.sizeOf_lt_of_mem h; simp at this; omega)
+
+def Value.closedBelow (n : Nat) : Value → Bool
+  | .ref a _ => decide (a < n)
+  | .data _ as_ => as_.toList.attach.all fun ⟨a, _⟩ => Value.closedBelow n a
+  | .seq as_ => as_.toList.attach.all fun ⟨a, _⟩ => Value.closedBelow n a
+  | .map m d => m.attach.all (fun ⟨(_, k, v), _⟩ => Value.closedBelow n k && Value.closedBelow n v) &&
+      Value.closedBelow n d
+  | _ => true
+termination_by v => sizeOf v
+decreasing_by
+  all_goals simp_wf
+  all_goals first
+    | omega
+    | (have := Value.sz_arr ‹_›; omega)
+    | (rename_i h; have := List.sizeOf_lt_of_mem h; simp at this; omega)
+
+def isMapBuiltin (name : String) : Bool :=
+  name == "mapEmpty" || name == "mapContains" || name == "mapGet" || name == "mapSet" || name == "mapRemove" ||
+    name == "mapConst" || name == "select" || name == "update"
+
+set_option linter.unusedVariables false in
 /-- Structural equality, with reference identity for composites.
 
     `.ref` compares addresses because a Laurel composite is a reference type, so
     `==` on two composites is identity — the distinction PyDyn relies on for
     `x is None`. Everything else compares by value. -/
-partial def Value.eq : Value → Value → Bool
+def Value.eq : Value → Value → Bool
   | .int a,    .int b    => a == b
   | .bool a,   .bool b   => a == b
   | .string a, .string b => a == b
   | .real a,   .real b   => a == b
-  | .ref a,    .ref b    => a == b
+  | .ref a _,    .ref b _    => a == b
   | .bv w1 a,  .bv w2 b  => w1 == w2 && a == b
   | .unset,    .unset    => true
   | .data c1 a1, .data c2 a2 =>
     c1 == c2 && a1.size == a2.size &&
-      (a1.zip a2).all (fun (x, y) => Value.eq x y)
+      (a1.toList.attach.zip a2.toList.attach).all (fun (⟨x, hx⟩, ⟨y, hy⟩) => Value.eq x y)
   | .seq a,    .seq b    =>
-    a.size == b.size && (a.zip b).all (fun (x, y) => Value.eq x y)
+    a.size == b.size && (a.toList.attach.zip b.toList.attach).all (fun (⟨x, hx⟩, ⟨y, hy⟩) => Value.eq x y)
   | .map a da, .map b db =>
     -- Extensional: equal defaults, and the same value at every key once an
     -- entry holding the default is read as absent.
-    let live (m : List (String × Value × Value)) (d : Value) :=
-      m.filter fun (_, _, v) => !Value.eq v d
-    let a := live a da
-    let b := live b db
+    let a := a.attach.filter fun ⟨(_, _, v), hx⟩ => !Value.eq v da
+    let b := b.attach.filter fun ⟨(_, _, v), hy⟩ => !Value.eq v db
     Value.eq da db &&
     -- Order-insensitive: `mapSet` conses to the front, so equal maps can hold
     -- their entries in different orders. Key reprs are unique within a map,
     -- so equal sizes plus every left entry matched on the right is equality.
     a.length == b.length &&
-      a.all (fun (kr, _, v) =>
-        match b.find? (fun (r, _, _) => r == kr) with
-        | some (_, _, w) => Value.eq v w
+      a.all (fun ⟨(kr, _, v), hx⟩ =>
+        match b.find? (fun ⟨(r, _, _), _⟩ => r == kr) with
+        | some ⟨(_, _, w), hy⟩ => Value.eq v w
         | none => false)
   | _,         _         => false
+termination_by x y => sizeOf x + sizeOf y
+decreasing_by
+  all_goals simp_wf
+  all_goals first
+    | omega
+    | (have := Value.sz_arr hx; have := Value.sz_arr hy; omega)
+    | (have := Value.sz_ent hx; have := Value.sz_ent hy; simp at *; omega)
+    | (have := Value.sz_ent hx; simp at *; omega)
+    | (have := Value.sz_ent hy; simp at *; omega)
 
 /-- One composite instance on the heap: its runtime type name (what `is`/`as`
     test against) and its fields. -/
@@ -254,6 +326,9 @@ structure ProgramIndex where
       walks the receiver's `ancestors` and takes the first hit, which is dynamic
       dispatch: an override in a subtype is found before the method it overrides. -/
   methods : Std.HashMap String (Std.HashMap String Procedure) := {}
+  methodsById : Std.HashMap Nat Procedure := {}
+  methodOwner : Std.HashMap Nat String := {}
+  methodLists : Std.HashMap String (List Procedure) := {}
   /-- Names declared by more than one static procedure. A call to one carries no
       overload unless it was resolved. -/
   overloaded : Std.HashSet String := {}
@@ -261,9 +336,7 @@ structure ProgramIndex where
   procsNamed : Std.HashMap String (List Procedure) := {}
   /-- Composite name → its fields, including inherited ones, with initializers. -/
   compositeFields : Std.HashMap String (List (String × HighType × Option StmtExprMd)) := {}
-  /-- Type alias and constrained type name → the type it stands for, so a value of
-      one starts at that type's default. -/
-  typeAliases : Std.HashMap String HighType := {}
+  aliasMap : AliasMap := {}
   /-- Constrained type name → its witness's value. A value of the type starts at its
       witness, which satisfies the constraint where the base type's default might not.
       A literal witness is read when the index is built; any other is evaluated before
@@ -272,6 +345,7 @@ structure ProgramIndex where
   /-- Constrained types whose witness could not be evaluated, so they have no value to
       start at. -/
   noWitness : Std.HashSet String := {}
+  exceptionBases : Std.HashMap String HighType := {}
   /-- Composite name → its ancestors, including itself. `x is T` is a membership
       test in this list, so it is precomputed rather than walked per test. -/
   ancestors : Std.HashMap String (List String) := {}
@@ -282,8 +356,19 @@ structure ProgramIndex where
   /-- Destructor name (`PyKey..ki`, and the `!` variant) → (constructor, index). -/
   destructors : Std.HashMap String (String × Nat × HighType) := {}
   heapFields : Std.HashMap String (String × HighType) := {}
-  constants : Std.HashMap String StmtExprMd := {}
+  constants : Std.HashMap String Constant := {}
   deriving Inhabited
+
+def ProgramIndex.unalias (ix : ProgramIndex) (t : HighType) : HighType := unaliasWith ix.aliasMap t
+
+def allocHead (t : HighType) (ref : Identifier) : Identifier :=
+  match t with
+  | .Applied ⟨.UserDefined r, _⟩ _ => r
+  | .UserDefined r => r
+  | _ => ref
+
+def ProgramIndex.allocName (ix : ProgramIndex) (ref : Identifier) (typeArgs : List HighTypeMd) : Identifier :=
+  allocHead (ix.unalias (allocatedType ref typeArgs default).val) ref
 
 structure EvalState where
   stack    : StackFrame
@@ -293,10 +378,8 @@ structure EvalState where
       A single growable array rather than a map per object, so allocation is a
       push and a field write is an in-place `Array.set`. -/
   heap     : Array HeapObject := #[]
-  /-- Steps remaining. The Laurel interpreter has no fuel of its own, but a
-      program under test can diverge, and a test harness needs that to come back
-      as an error rather than a hang. -/
-  fuel     : Nat := 0
+  /-- Steps remaining, or `none` for no limit. See `chargeStep`. -/
+  steps    : Option Nat := none
   /-- Runtime assertion failures accumulated during a run, in evaluation order.
       A failing `assert` records a source-mapped `Message` here and execution
       continues, mirroring the Core interpreter's `collectAllAssertFailures`
@@ -304,6 +387,7 @@ structure EvalState where
   assertFailures : Array Strata.Message := #[]
   /-- Set when `printAsserts` is off; see `Options`. -/
   quiet : Bool := false
+  muted : Bool := false
   /-- Names of the procedures currently on the call stack, innermost first.
       Only used to locate a runtime error: a message like "read of unassigned
       field" is nearly useless without knowing which procedure did the reading,
@@ -359,7 +443,12 @@ structure EvalState where
   /-- Set while an `old(e)` is being evaluated, so a read of an object the
       procedure allocated can say so. -/
   inOld : Bool := false
-  usesStack : Bool := false
+  /-- The labels of the labelled blocks being run in the current procedure, innermost
+      first. A jump to one of them leaves or restarts it, and a jump to any other
+      labelled block of the procedure is a `jump_`. A call runs its callee with none open,
+      since labels such as `bb3` repeat across procedures, and a `jump_` never leaves a
+      call or an expression (`jumpBoundary`). -/
+  openLabels : List String := []
   operands : List Value := []
   operandWindow : Option (List Value) := none
   deriving Inhabited
@@ -389,6 +478,10 @@ inductive Control where
   /-- `goto L` — go back to the start of the enclosing block labelled `L`.
       Caught by that block, which re-runs itself. -/
   | goto_ (label : String)
+  /-- A jump to the start or past the end of a labelled block that does not enclose it.
+      Caught by the innermost statement list holding that block, which carries on from
+      there. -/
+  | jump_ (label : String) (destination : GotoDestination)
   /-- `throw v` — the exceptional channel. Caught by an enclosing `catch` whose
       predicate holds, and otherwise propagates through the call boundary, unlike
       `return_`. -/
@@ -403,46 +496,176 @@ inductive Control where
       this step, and by nothing in between — in particular a `finally` must not
       run at a suspension, since the body has not left its `try`. -/
   | suspended
+  | infeasible
   /-- A call the interpreter will not run. It ends the run as an `IO` error would, but the
       failures found so far are kept. No `catch` or `finally` sees it, since they would run
       on state the call left undetermined. -/
   | refused (reason : String)
 
-abbrev EvalM := ExceptT Control (StateT EvalState IO)
+/-- Which of the interpreter's checks an `Event.check` reports. -/
+inductive CheckKind where
+  | assert | precondition | postcondition | constraint | destructor
+  deriving Inhabited, DecidableEq, Repr
+
+/-- An observation the interpreter reports to its host: a check it performed, with
+    the condition, whether it held, and the state it was checked in; or an `assume`,
+    which the interpreter does not evaluate.
+
+    These are the same observations Core's trace semantics labels its steps with
+    (`StepStmtE`'s assert and assume events), so a run's event list is its trace.
+    A check is still evaluated and logged in `assertFailures`; the event only adds
+    what a proof needs to compare two runs. -/
+inductive Event where
+  | check (kind : CheckKind) (cond : Option StmtExprMd) (failure : Strata.Message) (holds : Bool)
+      (state : EvalState)
+  | assume (cond : StmtExprMd) (site : FileRange) (state : EvalState)
+
+/-- What the interpreter needs from the monad it runs in: aborting with an error,
+    receiving `Event`s, and choosing a value where the program leaves one
+    unconstrained (`dflt` is the type's default, which an executing host returns).
+
+    Abstracting over the host lets one interpreter be both the executable semantics
+    and a trace semantics. The `IO` host below prints and picks defaults; the proof
+    host in `PassSemantics/Host.lean` is pure, records the events and answers
+    `choose` from an oracle. Nothing can be proved about what an `IO` run returns,
+    so the proofs need a pure host, and having one avoids a second interpreter that
+    would have to be kept in step with this one. -/
+class InterpHost (m : Type → Type) where
+  fail {α : Type} : String → m α
+  emit : Event → m Unit
+  choose : Option HighType → Value → m Value
+  chooseInit : String → Option HighType → Value → m Value := fun _ ty d => choose ty d
+  chooseHeap : Array HeapObject → m (Array HeapObject)
+  recover {α : Type} : m α → m α → m α
+  mute {α : Type} : m α → m α := fun x => x
+  stuck {α : Type} : String → m α := fail
+
+instance : InterpHost IO where
+  fail msg := throw (IO.userError msg)
+  recover x y := tryCatch x fun _ => y
+  emit
+    | .check .assert (some cond) _ true st =>
+      unless st.quiet do
+        IO.println s!"· PASS assert {toString (Strata.Laurel.formatStmtExpr cond)}"
+    | _ => pure ()
+  choose _ dflt := pure dflt
+  chooseHeap h := pure h
+
+abbrev EvalM (m : Type → Type) := ExceptT Control (StateT EvalState m)
+
+instance : Inhabited Control := ⟨.suspended⟩
+
+def intPrimOp? : String → Option Operation
+  | "$intAdd" => some .Add | "$intSub" => some .Sub | "$intMul" => some .Mul | "$intNeg" => some .Neg
+  | "$intLt" => some .Lt | "$intLe" => some .Leq | "$intGt" => some .Gt | "$intGe" => some .Geq
+  | _ => none
+
+def opBase? (name : String) : Option Operation :=
+  match Operation.ofProcName? name <|> intPrimOp? name with
+  | some op => some op
+  | none =>
+    match name.toList with
+    | '$' :: 'o' :: 'v' :: rest =>
+      match rest.span Char.isDigit with
+      | (_ :: _, '$' :: tail) => Operation.ofProcName? (String.ofList tail)
+      | _ => none
+    | _ => none
+
+def asFunctionSuffix : List Char := "$asFunction".toList
+
+def opOf? (name : String) : Option Operation :=
+  match opBase? name with
+  | some op => some op
+  | none =>
+    if asFunctionSuffix.isSuffixOf name.toList then
+      opBase? (String.ofList (name.toList.take (name.toList.length - asFunctionSuffix.length)))
+    else none
+
+section Host
+
+variable {m : Type → Type} [Monad m] [InterpHost m]
+
+def hostFail {α : Type} (msg : String) : EvalM m α := liftM (InterpHost.fail msg : m α)
+
+/-- Spend one unit of the step budget, if there is one. The structural `fuel` argument
+    of the evaluator bounds nesting depth, not total work: every statement of a block
+    and every iteration of an inner loop starts with nearly the whole remaining fuel,
+    so a divergent loop around a nested loop would take fuel × inner iterations to run
+    out. The step budget bounds total work. -/
+def chargeStep : EvalM m Unit := do
+  match (← get).steps with
+  | none => pure ()
+  | some 0 => throw .outOfFuel
+  | some (n + 1) => modify fun s => { s with steps := some n }
+
+/-- Charge a loop iteration. An unlabelled block body already charges on entry, so
+    every iteration costs exactly one step. Every iteration draws on the shared budget,
+    including labelled bodies (`break`/`continue`) and unbraced ones, so `Options.fuel`
+    bounds the iterations of all loops in a run together, not each loop separately. -/
+def chargeIteration (body : StmtExprMd) : EvalM m Unit :=
+  match body.val with
+  | .Block _ none _ _ => pure ()
+  | _ => chargeStep
+
+def emitEvent (e : Event) : EvalM m Unit := liftM (InterpHost.emit e : m Unit)
+
+def escapeMsg (proc : Procedure) (v : Value) : Strata.Message :=
+  Strata.Message.withRange proc.name.source
+    s!"exception {v.display} escapes '{proc.name.text}', which does not declare `throws`"
+
+
+def muteE {α : Type} (x : EvalM m α) : EvalM m α := ExceptT.mk fun σ => do
+  let (r, σ') ← (InterpHost.mute ((ExceptT.run x).run { σ with muted := true }) : m _)
+  pure (r, { σ' with assertFailures := σ.assertFailures, muted := σ.muted })
+
+def chooseValue (ty : Option HighType) (dflt : Value) : EvalM m Value :=
+  liftM (InterpHost.choose ty dflt : m Value)
+
+structure StrictRefs where
+  refEq : StmtExpr → Bool := fun _ => false
+  fieldOK : String → Identifier → Bool := fun _ _ => true
+  heapBound : Nat
 
 /-- Abstraction for backends that support external (host-language) values.
     Every field except `cleanup` defaults to throwing `IO.userError`, so a
     backend with no external support (e.g. pure Lean) is just `{}`. Backends
     that *do* support externals override the relevant fields. -/
-structure ExternalBackend where
-  cleanup      : IO Unit := pure ()
+structure ExternalBackendM (m : Type → Type) [Monad m] [InterpHost m] where
+  cleanup      : m Unit := pure ()
   /-- Runs the named external procedure with `args`. Always produces a host
       value; callers wrap with `.external` at the use site. -/
-  callExternal : (name : String) → (args : List Value) → IO ExternalValue :=
-    fun name _ => throw (IO.userError s!"No ExternalBackend support for calling external procedure '{name}'")
+  callExternal : (name : String) → (args : List Value) → m ExternalValue :=
+    fun name _ => InterpHost.fail (s!"No ExternalBackend support for calling external procedure '{name}'")
   /-- Explicit down-conversion from an `ExternalValue` to a Laurel primitive.
       The type system is expected to guarantee the underlying host value has
       the requested Laurel type; a wrong-shape `display` throws. -/
-  valueInt     : ExternalValue → IO IntPrimitive :=
-    fun _ => throw (IO.userError "No ExternalBackend support for valueInt")
-  valueBool    : ExternalValue → IO BoolPrimitive :=
-    fun _ => throw (IO.userError "No ExternalBackend support for valueBool")
-  valueString  : ExternalValue → IO StringPrimitive :=
-    fun _ => throw (IO.userError "No ExternalBackend support for valueString")
+  valueInt     : ExternalValue → m IntPrimitive :=
+    fun _ => InterpHost.fail ("No ExternalBackend support for valueInt")
+  valueBool    : ExternalValue → m BoolPrimitive :=
+    fun _ => InterpHost.fail ("No ExternalBackend support for valueBool")
+  valueString  : ExternalValue → m StringPrimitive :=
+    fun _ => InterpHost.fail ("No ExternalBackend support for valueString")
   /-- Direct truthiness read of a host value using the host language's own
       coercion rules. Not a type-checked Bool conversion — assertions may
       consume any host value, so backends decide truthiness (e.g. JS
       `Boolean(v)`, Python `bool(v)`). -/
-  externalTruthy : ExternalValue → IO Bool :=
-    fun _ => throw (IO.userError "No ExternalBackend support for externalTruthy")
+  externalTruthy : ExternalValue → m Bool :=
+    fun _ => InterpHost.stuck ("No ExternalBackend support for externalTruthy")
+  enumerate : HighType → m (List Value) :=
+    fun _ => InterpHost.fail ("No ExternalBackend support for enumerating a quantifier's values")
+  canEnumerate : Bool := false
+  strict : Option StrictRefs := none
+  modular : Bool := false
+
+abbrev ExternalBackend := ExternalBackendM IO
 
 /-- Laurel-owned truthiness. `.external` defers to the backend's
     `externalTruthy` since only the host knows its own coercion rules;
     `.int`/`.string` error rather than being coerced. -/
-private def isTrue (cfg : ExternalBackend) : Value → IO Bool
+def isTrue (cfg : ExternalBackendM m) : Value → m Bool
   | .bool p     => pure p.b
   | .external e => cfg.externalTruthy e
-  | v           => throw (IO.userError s!"expected Bool for truthiness, got: {v.display}")
+  | v           => InterpHost.stuck (s!"expected Bool for truthiness, got: {v.display}")
 
 /-- Structural equality on primitives. External-vs-external comparison
     is unsupported: `display` is a rendering, not identity, and only the
@@ -451,7 +674,7 @@ private def isTrue (cfg : ExternalBackend) : Value → IO Bool
     as Laurel primitives (needed so `len("s") == 5` works: an external
     call's return value is `.external`, but the assertion phrases it as
     a primitive). Mixed primitive shapes are unequal. -/
-private def primEq (cfg : ExternalBackend) : Value → Value → IO Bool
+def primEq (cfg : ExternalBackendM m) : Value → Value → m Bool
   -- The aggregate and reference cases are Laurel-owned and never involve the
   -- host, so they answer from `Value.eq` (identity for `.ref`, structural
   -- otherwise) without consulting the backend.
@@ -460,7 +683,7 @@ private def primEq (cfg : ExternalBackend) : Value → Value → IO Bool
   | .unset,       .unset       => pure true
   | .unset,       _            => pure false
   | _,            .unset       => pure false
-  | .ref a,       .ref b       => pure (a == b)
+  | .ref a _,       .ref b _       => pure (a == b)
   | .real a,      .real b      => pure (a == b)
   | .bv w1 a,     .bv w2 b     => pure (w1 == w2 && a == b)
   | a@(.data ..), b            => pure (Value.eq a b)
@@ -473,7 +696,7 @@ private def primEq (cfg : ExternalBackend) : Value → Value → IO Bool
   | .bool a,      .bool b      => pure (a == b)
   | .string a,    .string b    => pure (a == b)
   | .external _,  .external _  =>
-      throw (IO.userError "unsupported equality on two .external values: host-value equality is a host concern; cast one side via valueInt/valueBool/valueString first")
+      InterpHost.fail ("unsupported equality on two .external values: host-value equality is a host concern; cast one side via valueInt/valueBool/valueString first")
   | .external a,  .int b       => do let p ← cfg.valueInt a;    pure (p == b)
   | .int a,       .external b  => do let p ← cfg.valueInt b;    pure (a == p)
   | .external a,  .bool b      => do let p ← cfg.valueBool a;   pure (p == b)
@@ -485,47 +708,53 @@ private def primEq (cfg : ExternalBackend) : Value → Value → IO Bool
 /-- Compact per-variant label for error messages, so mismatched-shape
     op-dispatch errors read as `[.int, .string]` rather than dumping the
     entire value. -/
-private def reprVariant : Value → String
+def reprVariant : Value → String
   | .external _ => ".external"
   | .int _      => ".int"
   | .bool _     => ".bool"
   | .string _   => ".string"
   | .real _     => ".real"
-  | .ref _      => ".ref"
+  | .ref _ _      => ".ref"
   | .data c _   => s!".data({c})"
   | .seq _      => ".seq"
   | .map ..     => ".map"
   | .bv w _     => s!".bv{w}"
   | .unset      => ".unset"
 
+/-- An operator applied to arguments of the wrong shape (host values included) is
+    ill-typed, so the run is stuck. -/
+def opIllTyped (args : List Value) (msg : String) : m Value :=
+  let _ := args
+  InterpHost.stuck msg
+
 /-- Laurel-owned primitive-op dispatch. `.external` values are rejected:
     callers must explicitly cast via `valueInt`/`valueBool`/`valueString`
     before feeding a host value to a primitive op. `.Eq`/`.Neq` are the sole
     exception, since equality legitimately spans shapes via `primEq`. -/
-private def evalOp (cfg : ExternalBackend) : Operation → List Value → IO Value
+def evalOp (cfg : ExternalBackendM m) : Operation → List Value → m Value
   -- Bool
   | .Not, [.bool ⟨x⟩]              => pure (.bool ⟨!x⟩)
   | .Not, args                     =>
-      throw (IO.userError s!"unsupported types for op .Not: {args.map reprVariant}")
+      opIllTyped args (s!"unsupported types for op .Not: {args.map reprVariant}")
   | .And, [.bool ⟨x⟩, .bool ⟨y⟩]   => pure (.bool ⟨x && y⟩)
   | .And, args                     =>
-      throw (IO.userError s!"unsupported types for op .And: {args.map reprVariant}")
+      opIllTyped args (s!"unsupported types for op .And: {args.map reprVariant}")
   | .Or, [.bool ⟨x⟩, .bool ⟨y⟩]    => pure (.bool ⟨x || y⟩)
   | .Or, args                      =>
-      throw (IO.userError s!"unsupported types for op .Or: {args.map reprVariant}")
+      opIllTyped args (s!"unsupported types for op .Or: {args.map reprVariant}")
   -- Int arithmetic
   | .Add, [.int ⟨x⟩, .int ⟨y⟩]     => pure (.int ⟨x + y⟩)
   | .Add, [.real x, .real y]       => pure (.real (x + y))
   | .Add, args                     =>
-      throw (IO.userError s!"unsupported types for op .Add: {args.map reprVariant}")
+      opIllTyped args (s!"unsupported types for op .Add: {args.map reprVariant}")
   | .Sub, [.int ⟨x⟩, .int ⟨y⟩]     => pure (.int ⟨x - y⟩)
   | .Sub, [.real x, .real y]       => pure (.real (x - y))
   | .Sub, args                     =>
-      throw (IO.userError s!"unsupported types for op .Sub: {args.map reprVariant}")
+      opIllTyped args (s!"unsupported types for op .Sub: {args.map reprVariant}")
   | .Mul, [.int ⟨x⟩, .int ⟨y⟩]     => pure (.int ⟨x * y⟩)
   | .Mul, [.real x, .real y]       => pure (.real (x * y))
   | .Mul, args                     =>
-      throw (IO.userError s!"unsupported types for op .Mul: {args.map reprVariant}")
+      opIllTyped args (s!"unsupported types for op .Mul: {args.map reprVariant}")
   -- A zero divisor violates the operator's `requires`, which the call reports
   -- (see `checkOpPreconditions`); the quotient itself is then unconstrained, and
   -- answers the type's default.
@@ -534,19 +763,19 @@ private def evalOp (cfg : ExternalBackend) : Operation → List Value → IO Val
   | .Div, [.real x, .real y]       =>
       if y == 0 then pure (.real 0) else pure (.real (x / y))
   | .Div, args                     =>
-      throw (IO.userError s!"unsupported types for op .Div: {args.map reprVariant}")
+      opIllTyped args (s!"unsupported types for op .Div: {args.map reprVariant}")
   | .Mod, [.int ⟨x⟩, .int ⟨y⟩]     =>
       if y == 0 then pure (.int ⟨0⟩) else pure (.int ⟨Int.emod x y⟩)
   | .Mod, args                     =>
-      throw (IO.userError s!"unsupported types for op .Mod: {args.map reprVariant}")
+      opIllTyped args (s!"unsupported types for op .Mod: {args.map reprVariant}")
   | .Neg, [.int ⟨x⟩]               => pure (.int ⟨-x⟩)
   | .Neg, [.real x]                => pure (.real (-x))
   | .Neg, args                     =>
-      throw (IO.userError s!"unsupported types for op .Neg: {args.map reprVariant}")
+      opIllTyped args (s!"unsupported types for op .Neg: {args.map reprVariant}")
   -- String
   | .StrConcat, [.string ⟨x⟩, .string ⟨y⟩] => pure (.string ⟨x ++ y⟩)
   | .StrConcat, args                       =>
-      throw (IO.userError s!"unsupported types for op .StrConcat: {args.map reprVariant}")
+      opIllTyped args (s!"unsupported types for op .StrConcat: {args.map reprVariant}")
   -- Int, real and string comparisons. `real` is Laurel's mathematical reals, so
   -- these are exact `Rat` comparisons rather than float ones; strings compare
   -- lexicographically by code point, as the prelude's `$strLt` does.
@@ -554,25 +783,25 @@ private def evalOp (cfg : ExternalBackend) : Operation → List Value → IO Val
   | .Lt, [.real x, .real y]        => pure (.bool ⟨x < y⟩)
   | .Lt, [.string ⟨x⟩, .string ⟨y⟩] => pure (.bool ⟨decide (x < y)⟩)
   | .Lt, args                      =>
-      throw (IO.userError s!"unsupported types for op .Lt: {args.map reprVariant}")
+      opIllTyped args (s!"unsupported types for op .Lt: {args.map reprVariant}")
   | .Leq, [.int ⟨x⟩, .int ⟨y⟩]     => pure (.bool ⟨x <= y⟩)
   | .Leq, [.real x, .real y]       => pure (.bool ⟨x <= y⟩)
   | .Leq, [.string ⟨x⟩, .string ⟨y⟩] => pure (.bool ⟨decide (x ≤ y)⟩)
   | .Leq, args                     =>
-      throw (IO.userError s!"unsupported types for op .Leq: {args.map reprVariant}")
+      opIllTyped args (s!"unsupported types for op .Leq: {args.map reprVariant}")
   | .Gt, [.int ⟨x⟩, .int ⟨y⟩]      => pure (.bool ⟨x > y⟩)
   | .Gt, [.real x, .real y]        => pure (.bool ⟨x > y⟩)
   | .Gt, [.string ⟨x⟩, .string ⟨y⟩] => pure (.bool ⟨decide (y < x)⟩)
   | .Gt, args                      =>
-      throw (IO.userError s!"unsupported types for op .Gt: {args.map reprVariant}")
+      opIllTyped args (s!"unsupported types for op .Gt: {args.map reprVariant}")
   | .Geq, [.int ⟨x⟩, .int ⟨y⟩]     => pure (.bool ⟨x >= y⟩)
   | .Geq, [.real x, .real y]       => pure (.bool ⟨x >= y⟩)
   | .Geq, [.string ⟨x⟩, .string ⟨y⟩] => pure (.bool ⟨decide (y ≤ x)⟩)
   | .Geq, args                     =>
-      throw (IO.userError s!"unsupported types for op .Geq: {args.map reprVariant}")
+      opIllTyped args (s!"unsupported types for op .Geq: {args.map reprVariant}")
   | .Implies, [.bool ⟨x⟩, .bool ⟨y⟩] => pure (.bool ⟨!x || y⟩)
   | .Implies, args                 =>
-      throw (IO.userError s!"unsupported types for op .Implies: {args.map reprVariant}")
+      opIllTyped args (s!"unsupported types for op .Implies: {args.map reprVariant}")
   -- Real arithmetic shares these `Operation` constructors with the integer forms
   -- and is dispatched on the argument shape, so each `.real` alternative sits
   -- beside its `.int` one -- above the shared catch-all, or it would be dead.
@@ -581,11 +810,11 @@ private def evalOp (cfg : ExternalBackend) : Operation → List Value → IO Val
   | .DivT, [.int ⟨x⟩, .int ⟨y⟩]    =>
       if y == 0 then pure (.int ⟨0⟩) else pure (.int ⟨x.tdiv y⟩)
   | .DivT, args                    =>
-      throw (IO.userError s!"unsupported types for op .DivT: {args.map reprVariant}")
+      opIllTyped args (s!"unsupported types for op .DivT: {args.map reprVariant}")
   | .ModT, [.int ⟨x⟩, .int ⟨y⟩]    =>
       if y == 0 then pure (.int ⟨0⟩) else pure (.int ⟨x.tmod y⟩)
   | .ModT, args                    =>
-      throw (IO.userError s!"unsupported types for op .ModT: {args.map reprVariant}")
+      opIllTyped args (s!"unsupported types for op .ModT: {args.map reprVariant}")
   -- Equality (spans shapes via primEq)
   | .Eq,  [a, b] => do
       let eq ← primEq cfg a b
@@ -594,7 +823,7 @@ private def evalOp (cfg : ExternalBackend) : Operation → List Value → IO Val
       let eq ← primEq cfg a b
       pure (.bool ⟨!eq⟩)
   | op, args =>
-      throw (IO.userError s!"unsupported op {repr op} on args: {args.map reprVariant}")
+      opIllTyped args (s!"unsupported op {repr op} on args: {args.map reprVariant}")
 
 /-! ## Prelude collections, as interpreter builtins
 
@@ -607,10 +836,14 @@ Implementing them natively rather than interpreting a Laurel encoding is also wh
 keeps them cheap: a dict lookup is a hash lookup, not a walk down a chain of
 `update` frames. -/
 
+def hostOfExcept : Except String α → m α
+  | .ok a => pure a
+  | .error e => InterpHost.fail e
+
 /-- The prelude's per-width signed bitvector comparisons, `$bv<w>SLt` and friends.
     They are `external` in the prelude because Core implements them, so the
     interpreter supplies them here. -/
-private def bvBuiltin? (name : String) (args : List Value) : Option (IO Value) := do
+def bvBuiltinE (name : String) (args : List Value) : Option (Except String Value) := do
   let cs := name.toList
   guard (cs.take 3 == "$bv".toList)
   let rest := cs.drop 3
@@ -626,14 +859,19 @@ private def bvBuiltin? (name : String) (args : List Value) : Option (IO Value) :
     if width > 0 && n ≥ 2 ^ (width - 1) then Int.ofNat n - Int.ofNat (2 ^ width) else Int.ofNat n
   match args with
   | [.bv w1 a, .bv w2 b] =>
-    if w1 == width && w2 == width then some (pure (.bool ⟨cmp (signed a) (signed b)⟩))
-    else some (throw (IO.userError s!"'{name}' applied to bv{w1} and bv{w2}"))
-  | _ => some (throw (IO.userError s!"'{name}' applied to {args.map reprVariant}"))
+    if w1 == width && w2 == width then some (.ok (.bool ⟨cmp (signed a) (signed b)⟩))
+    else some (.error (s!"'{name}' applied to bv{w1} and bv{w2}"))
+  | _ => some (.error (s!"'{name}' applied to {args.map reprVariant}"))
+
+def bvBuiltin? (name : String) (args : List Value) : Option (m Value) :=
+  (bvBuiltinE name args).map fun
+    | .ok v => pure v
+    | .error e => InterpHost.stuck e
 
 /-- Whether a partial operation's arguments violate its prelude `requires`: a zero
     integer divisor (real division has no `requires`), or an index or count outside
     the sequence. -/
-private def partialOpFails (name : String) (args : List Value) : Bool :=
+def partialOpFails (name : String) (args : List Value) : Bool :=
   match name, args with
   | "seqSelect", [.seq q, .int ⟨i⟩] | "seqUpdate", [.seq q, .int ⟨i⟩, _] =>
     i < 0 || i >= Int.ofNat q.size
@@ -647,72 +885,74 @@ private def partialOpFails (name : String) (args : List Value) : Bool :=
     `none` means "not a builtin", so the caller falls through to an ordinary
     procedure lookup. A builtin that is applied to the wrong shapes throws
     instead, since that is a real error rather than a miss. -/
-private def callBuiltin (name : String) (args : List Value) (absent : Value := .unset)
-    : Option (IO Value) :=
-  let bad : IO Value := throw (IO.userError
+def callBuiltinE (name : String) (args : List Value) (absent : Value := .unset)
+    : Option (Except String Value) :=
+  let bad : Except String Value := .error (
     s!"builtin '{name}' applied to {args.map reprVariant}")
   match name, args with
   | "$cmp3", [.int ⟨x⟩, .int ⟨y⟩] =>
-      some (pure (.int ⟨if x < y then -1 else if x == y then 0 else 1⟩))
+      some (.ok (.int ⟨if x < y then -1 else if x == y then 0 else 1⟩))
   | "$cmp3", _ => some bad
   -- Sequences. An index out of range violates the operation's `requires`, which the
   -- call reports; the result is then unconstrained, and answers a fixed value.
-  | "seqEmpty",    []                          => some (pure (.seq #[]))
-  | "seqLength",   [.seq q]                    => some (pure (.int ⟨Int.ofNat q.size⟩))
-  | "seqBuild",    [.seq q, v]                 => some (pure (.seq (q.push v)))
+  | "seqEmpty",    []                          => some (.ok (.seq #[]))
+  | "seqLength",   [.seq q]                    => some (.ok (.int ⟨Int.ofNat q.size⟩))
+  | "seqBuild",    [.seq q, v]                 => some (.ok (.seq (q.push v)))
   | "seqSelect",   [.seq q, .int ⟨i⟩]          => some (
-      if i < 0 || i >= Int.ofNat q.size then pure .unset else pure q[i.toNat]!)
+      if i < 0 || i >= Int.ofNat q.size then .ok .unset else .ok q[i.toNat]!)
   | "seqUpdate",   [.seq q, .int ⟨i⟩, v]       => some (
-      if i < 0 || i >= Int.ofNat q.size then pure (.seq q) else pure (.seq (q.set! i.toNat v)))
-  | "seqAppend",   [.seq a, .seq b]            => some (pure (.seq (a ++ b)))
+      if i < 0 || i >= Int.ofNat q.size then .ok (.seq q) else .ok (.seq (q.set! i.toNat v)))
+  | "seqAppend",   [.seq a, .seq b]            => some (.ok (.seq (a ++ b)))
   | "seqContains", [.seq q, v]                 =>
-      some (pure (.bool ⟨q.any (fun x => Value.eq x v)⟩))
+      some (.ok (.bool ⟨q.any (fun x => Value.eq x v)⟩))
   | "seqTake",     [.seq q, .int ⟨n⟩]          => some (
-      if n < 0 || n > Int.ofNat q.size then pure (.seq q) else pure (.seq (q.extract 0 n.toNat)))
+      if n < 0 || n > Int.ofNat q.size then .ok (.seq q) else .ok (.seq (q.extract 0 n.toNat)))
   | "seqDrop",     [.seq q, .int ⟨n⟩]          => some (
-      if n < 0 || n > Int.ofNat q.size then pure (.seq #[]) else pure (.seq (q.extract n.toNat q.size)))
+      if n < 0 || n > Int.ofNat q.size then .ok (.seq #[]) else .ok (.seq (q.extract n.toNat q.size)))
   | "seqEmpty", _ | "seqLength", _ | "seqBuild", _ | "seqSelect", _
   | "seqUpdate", _ | "seqAppend", _ | "seqContains", _ | "seqTake", _
   | "seqDrop", _ => some bad
   -- Maps. Reading an absent key is unconstrained in the prelude, so it answers the
   -- map's `absent` value, the value type's default. `mapEmpty<K, V>` is where that
   -- is fixed, from the call's recorded type arguments (`absent` here).
-  | "mapEmpty",    []                          => some (pure (.map [] absent))
+  | "mapEmpty",    []                          => some (.ok (.map [] absent))
   | "mapContains", [.map m _, k]               =>
       let kr := k.keyRepr
-      some (pure (.bool ⟨m.any (fun (r, _, _) => r == kr)⟩))
+      some (.ok (.bool ⟨m.any (fun (r, _, _) => r == kr)⟩))
   | "mapGet",      [.map m d, k]               => some (
       let kr := k.keyRepr
       match m.find? (fun (r, _, _) => r == kr) with
-      | some (_, _, v) => pure v
-      | none => pure d)
+      | some (_, _, v) => .ok v
+      | none => .ok d)
   | "mapSet",      [.map m d, k, v]            =>
       let kr := k.keyRepr
-      some (pure (.map ((m.filter (fun (r, _, _) => r != kr)).cons (kr, k, v)) d))
+      some (.ok (.map ((m.filter (fun (r, _, _) => r != kr)).cons (kr, k, v)) d))
   | "mapRemove",   [.map m d, k]               =>
       let kr := k.keyRepr
-      some (pure (.map (m.filter (fun (r, _, _) => r != kr)) d))
+      some (.ok (.map (m.filter (fun (r, _, _) => r != kr)) d))
   | "mapEmpty", _ | "mapContains", _ | "mapGet", _ | "mapSet", _
   | "mapRemove", _ => some bad
   -- Core's total maps: `mapConst v` holds `v` at every key, which is exactly a map
   -- whose absent value is `v`.
-  | "mapConst",    [v]                         => some (pure (.map [] v))
+  | "mapConst",    [v]                         => some (.ok (.map [] v))
   | "select",      [.map m d, k]               => some (
       let kr := k.keyRepr
       match m.find? (fun (r, _, _) => r == kr) with
-      | some (_, _, v) => pure v
-      | none => pure d)
+      | some (_, _, v) => .ok v
+      | none => .ok d)
   | "update",      [.map m d, k, v]            =>
       let kr := k.keyRepr
-      some (pure (.map ((m.filter (fun (r, _, _) => r != kr)).cons (kr, k, v)) d))
+      some (.ok (.map ((m.filter (fun (r, _, _) => r != kr)).cons (kr, k, v)) d))
   | "mapConst", _ | "select", _ | "update", _ => some bad
-  | _, _ => bvBuiltin? name args
+  | _, _ => bvBuiltinE name args
 
+def callBuiltin (name : String) (args : List Value) (absent : Value := .unset) : Option (m Value) :=
+  (callBuiltinE name args absent).map hostOfExcept
 
 /-! ## Static program information -/
 
 /-- The name of a `HighType`, for `is`/`as` and for `new`. -/
-private def highTypeName? (t : HighType) : Option String :=
+def highTypeName? (t : HighType) : Option String :=
   match t with
   | .UserDefined n => some n.text
   | .Applied base _ => match base.val with
@@ -721,26 +961,33 @@ private def highTypeName? (t : HighType) : Option String :=
   | _ => none
 
 /-- Collect a composite's fields, its parents' first so a subtype's `new`
-    allocates the inherited `ob_type` as well as its own payload. -/
-private partial def collectFields (defs : Std.HashMap String CompositeType) (name : String)
-    : List (String × HighType × Option StmtExprMd) :=
+    allocates the inherited `ob_type` as well as its own payload. `depth` bounds the
+    walk up the hierarchy. -/
+def collectFields (defs : Std.HashMap String CompositeType) (name : String)
+    (depth : Nat) : List (String × HighType × Option StmtExprMd) :=
+  match depth with
+  | 0 => []
+  | d + 1 =>
   match defs[name]? with
   | none => []
   | some ct =>
     let inherited := ct.extending.flatMap fun parent =>
       match highTypeName? parent.val with
-      | some p => collectFields defs p
+      | some p => collectFields defs p d
       | none => []
     inherited ++ ct.fields.map (fun f => (f.name.text, f.type.val, f.initializer))
 
-private partial def collectAncestors (defs : Std.HashMap String CompositeType) (name : String)
-    : List String :=
+def collectAncestors (defs : Std.HashMap String CompositeType) (name : String)
+    (depth : Nat) : List String :=
+  match depth with
+  | 0 => [name]
+  | d + 1 =>
   match defs[name]? with
   | none => [name]
   | some ct =>
     name :: ct.extending.flatMap fun parent =>
       match highTypeName? parent.val with
-      | some p => collectAncestors defs p
+      | some p => collectAncestors defs p d
       | none => []
 
 /-! ## Lifting `yield` out of expressions
@@ -778,7 +1025,6 @@ private def liftBlock (stmts : List StmtExprMd) (src : FileRange) : StmtExprMd :
   | _ => ⟨.Block stmts none [] none, src⟩
 
 mutual
-
 /-- The statements to run first and the expression to evaluate after them. -/
 private partial def liftExpr (e : StmtExprMd) : LiftM (List StmtExprMd × StmtExprMd) := do
   if !hasYield e then return ([], e)
@@ -788,7 +1034,7 @@ private partial def liftExpr (e : StmtExprMd) : LiftM (List StmtExprMd × StmtEx
       let t ← liftFresh
       pure ([liftDecl t e], liftVar t src)
   | .Call none callee [a, b] tys =>
-    match Operation.ofProcName? callee.text with
+    match opOf? callee.text with
     | some .AndThen | some .OrElse | some .Implies =>
       if !hasYield b then do
         let (pa, a') ← liftExpr a
@@ -800,7 +1046,7 @@ private partial def liftExpr (e : StmtExprMd) : LiftM (List StmtExprMd × StmtEx
         let setB := liftBlock (pb ++ [liftSet t b']) src
         let tv := liftVar t src
         let skip : StmtExprMd := ⟨.Block [] none [] none, src⟩
-        let branch : StmtExprMd := match Operation.ofProcName? callee.text with
+        let branch : StmtExprMd := match opOf? callee.text with
           | some .OrElse => ⟨.IfThenElse tv skip (some setB), src⟩
           | some .Implies =>
             ⟨.IfThenElse tv setB (some (liftSet t ⟨.LiteralBool true, src⟩)), src⟩
@@ -994,29 +1240,69 @@ def liftCoroutineYields (proc : Procedure) : Procedure :=
   | _ => proc
 
 /-- The value of a literal, or of a negated integer or decimal literal. -/
-private def literalValue? : StmtExpr → Option Value
+def literalValue? : StmtExpr → Option Value
   | .LiteralInt n => some (.int ⟨n⟩)
   | .LiteralBool b => some (.bool ⟨b⟩)
   | .LiteralString str => some (.string ⟨str⟩)
   | .LiteralDecimal d => some (.real (StrataDDM.Decimal.toRat d))
   | .LiteralBv v w => some (.bv w (v % 2 ^ w))
   | .Call none callee [⟨.LiteralInt n, _⟩] _ =>
-    match Operation.ofProcName? callee.text with
+    match opOf? callee.text with
     | some .Neg => some (.int ⟨-n⟩)
     | _ => none
   | .Call none callee [⟨.LiteralDecimal d, _⟩] _ =>
-    match Operation.ofProcName? callee.text with
+    match opOf? callee.text with
     | some .Neg => some (.real (-(StrataDDM.Decimal.toRat d)))
     | _ => none
   | _ => none
 
+abbrev DtTables := Std.HashMap String (List String) × Std.HashMap String String ×
+  Std.HashMap String (String × Nat × HighType)
+
+def destrStep (amap : AliasMap) (dt : DatatypeDefinition) (ctor : DatatypeConstructor)
+    (ds : Std.HashMap String (String × Nat × HighType)) (ai : Parameter × Nat) :
+    Std.HashMap String (String × Nat × HighType) :=
+  let base := dt.destructorName ai.1
+  (ds.insert base (ctor.name.text, ai.2, unaliasWith amap ai.1.type.val)).insert (base ++ "!")
+    (ctor.name.text, ai.2, unaliasWith amap ai.1.type.val)
+
+def ctorStep (amap : AliasMap) (dt : DatatypeDefinition) (acc : DtTables) (ctor : DatatypeConstructor) : DtTables :=
+  (acc.1.insert ctor.name.text (ctor.args.map (·.name.text)), acc.2.1.insert (dt.testerName ctor) ctor.name.text,
+    ctor.args.zipIdx.foldl (destrStep amap dt ctor) acc.2.2)
+
+def typeStep (amap : AliasMap) (acc : DtTables) : TypeDefinition → DtTables
+  | .Datatype dt => dt.constructors.foldl (ctorStep amap dt) acc
+  | _ => acc
+
+def datatypeTables (amap : AliasMap) (types : List TypeDefinition) : DtTables :=
+  types.foldl (typeStep amap) ({}, {}, {})
+
+def nonAliasTypes (ts : List TypeDefinition) : List TypeDefinition :=
+  ts.filter fun | .Alias _ => false | _ => true
+
+/-- How many composite types `types` declares: the depth bound for walking the hierarchy. -/
+def compositeCount (types : List TypeDefinition) : Nat :=
+  (types.filterMap fun t => match t with
+    | .Composite ct => some ct
+    | _ => none).length
+
+def constraintChain (amap : AliasMap) (constrained : Std.HashMap String ConstrainedType) :
+    Nat → ConstrainedType → List ConstrainedType
+  | k + 1, c => match unaliasWith amap c.base.val with
+    | .UserDefined n => match constrained[n.text]? with
+      | some b => c :: constraintChain amap constrained k b
+      | none => [c]
+    | _ => [c]
+  | 0, c => [c]
+
 def buildIndex (p : LaurelProgram) : ProgramIndex :=
+  let aliasMap := buildAliasMap p.types
   let composites : Std.HashMap String CompositeType :=
     p.types.foldl (init := {}) fun acc t =>
       match t with
       | .Composite ct => acc.insert ct.name.text ct
       | _ => acc
-  let staticProcs := p.staticProcedures.map fun pr =>
+  let staticProcs := (p.staticFunctions ++ p.staticProcedures).map fun pr =>
     if pr.is_coroutine then liftCoroutineYields pr else pr
   let procs := staticProcs.foldl (init := {}) fun acc pr =>
     acc.insert pr.name.text pr
@@ -1024,19 +1310,32 @@ def buildIndex (p : LaurelProgram) : ProgramIndex :=
     match pr.name.uniqueId with
     | some id => acc.insert id pr
     | none => acc
-  let overloaded := (p.staticProcedures.foldl (init := ({} : Std.HashMap String Nat)) fun acc pr =>
+  let overloaded := ((p.staticFunctions ++ p.staticProcedures).foldl (init := ({} : Std.HashMap String Nat)) fun acc pr =>
       acc.insert pr.name.text (acc.getD pr.name.text 0 + 1)).fold (init := {}) fun acc n k =>
     if k > 1 then acc.insert n else acc
   let procsNamed := staticProcs.foldl (init := {}) fun acc pr =>
     acc.insert pr.name.text ((acc.getD pr.name.text []) ++ [pr])
-  let methods := composites.fold (init := {}) fun acc n ct =>
-    acc.insert n (ct.instanceProcedures.foldl (init := {}) fun m pr => m.insert pr.name.text pr)
-  let compositeFields := composites.fold (init := {}) fun acc n _ =>
-    acc.insert n (collectFields composites n)
-  let typeAliases := p.types.foldl (init := {}) fun acc t =>
+  let compositeList : List CompositeType := p.types.filterMap fun t =>
     match t with
-    | .Alias a => acc.insert a.name.text a.target.val
-    | _ => acc
+    | .Composite ct => some ct
+    | _ => none
+  let depth := compositeCount p.types + 1
+  let methods := compositeList.foldl (init := {}) fun acc ct =>
+    acc.insert ct.name.text (ct.instanceProcedures.foldl (init := {}) fun m pr => m.insert pr.name.text pr)
+  let methodsById := compositeList.foldl (init := {}) fun acc ct =>
+    ct.instanceProcedures.foldl (init := acc) fun m pr =>
+      match pr.name.uniqueId with
+      | some id => m.insert id pr
+      | none => m
+  let methodOwner := compositeList.foldl (init := {}) fun acc ct =>
+    ct.instanceProcedures.foldl (init := acc) fun m pr =>
+      match pr.name.uniqueId with
+      | some id => m.insert id ct.name.text
+      | none => m
+  let methodLists := compositeList.foldl (init := {}) fun acc ct =>
+    acc.insert ct.name.text ct.instanceProcedures
+  let compositeFields := compositeList.foldl (init := {}) fun acc ct =>
+    acc.insert ct.name.text (collectFields composites ct.name.text depth)
   let witnesses := p.types.foldl (init := {}) fun acc t =>
     match t with
     | .Constrained c =>
@@ -1044,30 +1343,25 @@ def buildIndex (p : LaurelProgram) : ProgramIndex :=
       | some v => acc.insert c.name.text v
       | none => acc
     | _ => acc
-  let ancestors := composites.fold (init := {}) fun acc n _ =>
-    acc.insert n (collectAncestors composites n)
-  let (ctors, testers, destructors) :=
-    p.types.foldl (init := ({}, {}, {})) fun (cs, ts, ds) t =>
-      match t with
-      | .Datatype dt =>
-        dt.constructors.foldl (init := (cs, ts, ds)) fun (cs, ts, ds) ctor =>
-          let fieldNames := ctor.args.map (·.name.text)
-          let ds := ctor.args.zipIdx.foldl (init := ds) fun ds (arg, i) =>
-            let base := dt.destructorName arg
-            (ds.insert base (ctor.name.text, i, arg.type.val)).insert (base ++ "!")
-              (ctor.name.text, i, arg.type.val)
-          (cs.insert ctor.name.text fieldNames,
-           ts.insert (dt.testerName ctor) ctor.name.text,
-           ds)
-      | _ => (cs, ts, ds)
+  let constrained : Std.HashMap String ConstrainedType :=
+    p.types.foldl (init := {}) fun acc t => match t with
+      | .Constrained c => acc.insert c.name.text c
+      | _ => acc
+  let exceptionBases := p.types.foldl (init := {}) fun acc t =>
+    match t with
+    | .Constrained c =>
+      let last := (constraintChain aliasMap constrained (nonAliasTypes p.types).length c).getLast?.getD c
+      acc.insert c.name.text (unaliasWith aliasMap last.base.val)
+    | _ => acc
+  let ancestors := compositeList.foldl (init := {}) fun acc ct =>
+    acc.insert ct.name.text (collectAncestors composites ct.name.text depth)
+  let (ctors, testers, destructors) := datatypeTables aliasMap p.types
+  let constants := p.constants.foldl (init := {}) fun acc c =>
+    acc.insert c.name.text c
   let heapFields := p.heapFields.foldl (init := {}) fun acc f =>
     acc.insert f.name.text (f.location.text, f.type.val)
-  let constants := p.constants.foldl (init := {}) fun acc c =>
-    match c.initializer with
-    | some init => acc.insert c.name.text init
-    | none => acc
-  { procs, procsById, methods, overloaded, procsNamed, compositeFields, typeAliases, witnesses,
-    ancestors, ctors, testers, destructors, heapFields, constants }
+  { procs, procsById, methods, methodsById, methodOwner, methodLists, overloaded, procsNamed, compositeFields, aliasMap, witnesses,
+    exceptionBases, ancestors, ctors, testers, destructors, constants, heapFields }
 
 /-- The value a variable of type `t` holds before it is first assigned. Laurel gives
     it an arbitrary value, and the interpreter runs one execution, so it picks a
@@ -1075,7 +1369,7 @@ def buildIndex (p : LaurelProgram) : ProgramIndex :=
     that is a literal, and is otherwise `unset`; an alias starts at its target's
     default. A type with no such value (a composite, a datatype, a type
     variable) starts `unset`. -/
-partial def defaultValue (index : ProgramIndex) (t : HighType) (depth : Nat := 16) : Value :=
+def defaultValueU (index : ProgramIndex) (t : HighType) (depth : Nat) : Value :=
   match depth, t with
   | 0, _ => .unset
   | _, .TBool => .bool ⟨false⟩
@@ -1083,28 +1377,27 @@ partial def defaultValue (index : ProgramIndex) (t : HighType) (depth : Nat := 1
   | _, .TReal | _, .TFloat64 => .real 0
   | _, .TString => .string ⟨""⟩
   | _, .TBv n => .bv n 0
-  | d + 1, .TMap _ v => .map [] (defaultValue index v.val d)
-  | d + 1, .UserDefined n =>
+  | d + 1, .TMap _ v => .map [] (defaultValueU index v.val d)
+  | _ + 1, .UserDefined n =>
     match n.text with
     | "Sequence" => .seq #[]
     | "Map" => .map [] .unset
     | other => match index.witnesses[other]? with
       | some w => w
-      | none => match index.typeAliases[other]? with
-        | some target => defaultValue index target d
-        | none => .unset
+      | none => .unset
   | d + 1, .Applied base args =>
     match base.val with
     | .UserDefined n =>
       match n.text, args with
       | "Sequence", _ => .seq #[]
-      | "Map", [_, v] => .map [] (defaultValue index v.val d)
+      | "Map", [_, v] => .map [] (defaultValueU index v.val d)
       | "Map", _ => .map [] .unset
-      | other, _ => match index.typeAliases[other]? with
-        | some target => defaultValue index target d
-        | none => .unset
+      | _, _ => .unset
     | _ => .unset
   | _, _ => .unset
+
+def defaultValue (index : ProgramIndex) (t : HighType) (depth : Nat := 16) : Value :=
+  defaultValueU index (index.unalias t) depth
 
 private def EvalState.toDisplay (s : EvalState) : DisplayEvalState :=
   { stack := (s.stack.filter fun k _ =>
@@ -1128,7 +1421,7 @@ body can be resumed into.
     construct whose children are being walked under the pending `seek`.
     A remainder of `some []` is the arrival marker (see `EvalState.seek`); no
     pending seek means start at child 0 with nothing to fast-forward. -/
-private def seekEntry : Option (List Nat) → Nat × Option (List Nat)
+def seekEntry : Option (List Nat) → Nat × Option (List Nat)
   | some (i :: rest) => (i, some rest)
   | _ => (0, none)
 
@@ -1136,8 +1429,8 @@ private def seekEntry : Option (List Nat) → Nat × Option (List Nat)
     `childSeek` (the remainder from `seekEntry` for the child being
     fast-forwarded into, `none` for every other child — a sibling after the
     suspension point runs normally). -/
-private def enterChild (base : List Nat) (k : Nat) (childSeek : Option (List Nat))
-    : EvalM Unit :=
+def enterChild (base : List Nat) (k : Nat) (childSeek : Option (List Nat))
+    : EvalM m Unit :=
   modify fun s => { s with cursor := base ++ [k], seek := childSeek }
 
 /-- The reserved procedure name that reads a coroutine's completion value:
@@ -1152,17 +1445,19 @@ def coroCompletionName : String := "coroCompletion"
     shadows, inside the frame itself so that a coroutine suspended in its scope
     carries it across the suspension. A stack, because scopes nest. A leading `$`
     cannot clash with a user name. -/
-private def shadowKey (name : String) : String := "$shadowed$" ++ name
+def shadowKey (name : String) : String := "$shadowed$" ++ name
 
-private def absentMarker : Value := .data "$absent" #[]
+def savedPrior (prior : Option Value) : Value :=
+  match prior with
+  | some w => .seq #[w]
+  | none => .seq #[]
 
 /-- Bind a `catch` clause's name to `v`, saving whatever it shadowed. -/
 def bindCatch (frame : StackFrame) (name : String) (v : Value) : StackFrame :=
   let saved := match frame[shadowKey name]? with
     | some (.seq q) => q
     | _ => #[]
-  let prior := frame[name]?.getD absentMarker
-  (frame.insert (shadowKey name) (.seq (saved.push prior))).insert name v
+  (frame.insert (shadowKey name) (.seq (saved.push (savedPrior frame[name]?)))).insert name v
 
 /-- How many shadowed values `name` currently has saved. -/
 def shadowDepth (frame : StackFrame) (name : String) : Nat :=
@@ -1186,19 +1481,23 @@ def unbindCatch (frame : StackFrame) (name : String) : StackFrame :=
       let frame := if q.size == 1 then frame.erase (shadowKey name)
         else frame.insert (shadowKey name) (.seq q.pop)
       match prior with
-      | .data c _ => if c == "$absent" then frame.erase name else frame.insert name prior
+      | .seq a =>
+        match a[0]? with
+        | some w => frame.insert name w
+        | none => frame.erase name
       | _ => frame.insert name prior
   | _ => frame
 
+def popShadowsGo (name : String) (depth : Nat) : Nat → StackFrame → StackFrame
+  | 0, f => f
+  | k + 1, f => if shadowDepth f name > depth then popShadowsGo name depth k (unbindCatch f name) else f
+
 /-- Undo saves of `name` until only `depth` remain, restoring as it goes. -/
 def popShadowsTo (frame : StackFrame) (name : String) (depth : Nat) : StackFrame :=
-  let rec go : Nat → StackFrame → StackFrame
-    | 0, f => f
-    | k + 1, f => if shadowDepth f name > depth then go k (unbindCatch f name) else f
-  go (shadowDepth frame name) frame
+  popShadowsGo name depth (shadowDepth frame name) frame
 
 /-- The names a block's own statements declare (not those of nested blocks). -/
-private def blockDeclarations (stmts : List StmtExprMd) : List String :=
+def blockDeclarations (stmts : List StmtExprMd) : List String :=
   stmts.flatMap fun s => match s.val with
     | .Var (.Declare p) => [p.name.text]
     | .Assign targets _ => targets.filterMap fun t => match t.val with
@@ -1211,8 +1510,6 @@ private def blockDeclarations (stmts : List StmtExprMd) : List String :=
 def lookupCallee (index : ProgramIndex) (callee : Identifier) : Option Procedure :=
   (callee.uniqueId.bind index.procsById.get?) <|> index.procs[callee.text]?
 
-mutual
-
 /-- Run `act` as the body of a block whose statements are `stmts`: a name the block
     declares is visible inside it only. Each declaration saves the local it shadows
     (`declareLocal`), and on the way out the block pops those saves back to the depth
@@ -1221,7 +1518,7 @@ mutual
     entry depth lives in the frame, keyed by the block's position, so a resume back
     into the block finds the depth of the original entry. A suspension leaves
     everything in place, since the block is paused rather than left. -/
-partial def withBlockScope (stmts : List StmtExprMd) (act : EvalM α) : EvalM α := do
+def withBlockScope (stmts : List StmtExprMd) (act : EvalM m α) : EvalM m α := do
   let names := blockDeclarations stmts
   if names.isEmpty then act else
   let st ← get
@@ -1239,7 +1536,7 @@ partial def withBlockScope (stmts : List StmtExprMd) (act : EvalM α) : EvalM α
       if inCoro then acc.erase (depthKey nd.1) else acc
   if inCoro then
     modify fun s => { s with stack := record s.stack }
-  let restore : EvalM Unit := modify fun s => { s with stack := unwind s.stack }
+  let restore : EvalM m Unit := modify fun s => { s with stack := unwind s.stack }
   let r ← tryCatch act fun sig => do
     match sig with
     | .suspended => pure ()
@@ -1248,10 +1545,51 @@ partial def withBlockScope (stmts : List StmtExprMd) (act : EvalM α) : EvalM α
   restore
   pure r
 
-/-- Run a statement that is the body of an `if` arm or a loop. One that is not a
-    block is still a scope of its own, so a declaration it makes is undone when it
-    finishes, as it would be inside braces. -/
-partial def popOperand : EvalM Value := do
+
+/-- Run `act` with the labels open on entry replaced by `f` of them. The labels open on entry are
+    restored on the way out, whether `act` finished or left by a signal. -/
+def withLabels (f : List String → List String) (act : EvalM m α) : EvalM m α := do
+  let saved := (← get).openLabels
+  modify fun s => { s with openLabels := f saved }
+  let r ← tryCatch act fun sig => do
+    modify fun s => { s with openLabels := saved }
+    throw sig
+  modify fun s => { s with openLabels := saved }
+  pure r
+
+/-- Run `act` with the labelled block `label` open: a jump to it from inside `act` leaves or
+    restarts it rather than being a non-enclosing jump. -/
+def withOpenLabel (label : String) (act : EvalM m α) : EvalM m α :=
+  withLabels (label :: ·) act
+
+/-- Fail with `msg`, naming the procedures that led here. -/
+def evalError (msg : String) : EvalM m α := do
+  let st ← get
+  let where_ :=
+    if st.callStack.isEmpty then ""
+    else s!" [in {String.intercalate " <- " (st.callStack.take 8)}]"
+  (hostFail ( (msg ++ where_)))
+
+/-- Run `act`, turning a `jump_` that escapes it into the error of a jump with no block
+    to land in. A jump only ever lands in the procedure body it is in, and a jump inside
+    an expression only ever leaves or restarts an enclosing block, so a call and an
+    expression are boundaries a `jump_` does not cross. -/
+def jumpBoundary (act : EvalM m α) : EvalM m α :=
+  tryCatch act fun
+    | .jump_ l _ => evalError s!"no block labelled '{l}' to jump to"
+    | c => throw c
+
+/-- Refuse with `msg` (`Control.refused`), naming the procedures that led here. -/
+def refuse (msg : String) : EvalM m α := do
+  let st ← get
+  let where_ :=
+    if st.callStack.isEmpty then ""
+    else s!" [in {String.intercalate " <- " (st.callStack.take 8)}]"
+  throw (.refused (msg ++ where_))
+
+def stuckError (msg : String) : EvalM m α := liftM (InterpHost.stuck msg : m α)
+
+def popOperand : EvalM m Value := do
   let s ← get
   match s.operandWindow with
   | some (v :: rest) =>
@@ -1264,370 +1602,75 @@ partial def popOperand : EvalM Value := do
       pure v
     | [] => evalError "this reads more stack values than were pushed"
 
-partial def withOperandWindow (stmt : StmtExprMd) (act : EvalM α) : EvalM α := do
+def withOperandWindow (stmt : StmtExprMd) (act : EvalM m α) : EvalM m α := do
   let s ← get
-  if !s.usesStack then return ← act
-  let saved := s.operandWindow
-  match saved with
-  | some (_ :: _) => act
+  match s.operands with
+  | [] => act
   | _ =>
-    let n := stackWindowReads stmt
-    if s.operands.length < n then
-      evalError "this reads more stack values than were pushed"
-    set { s with operandWindow := some (s.operands.take n).reverse, operands := s.operands.drop n }
-    let r ← tryCatch act fun e => do
+    let saved := s.operandWindow
+    match saved with
+    | some (_ :: _) => act
+    | _ =>
+      let n := stackWindowReads stmt
+      if s.operands.length < n then
+        evalError "this reads more stack values than were pushed"
+      set { s with operandWindow := some (s.operands.take n).reverse, operands := s.operands.drop n }
+      let r ← tryCatch act fun e => do
+        modify fun st => { st with operandWindow := saved }
+        throw e
       modify fun st => { st with operandWindow := saved }
-      throw e
-    modify fun st => { st with operandWindow := saved }
-    pure r
+      pure r
 
-partial def evalScopedStmt (cfg : ExternalBackend) (s : StmtExprMd) : EvalM Unit :=
-  match s.val with
-  | .Block .. => evalStmt cfg s
-  | _ => withBlockScope [s] (withOperandWindow s (evalStmt cfg s))
-
-/-- `evalExpr` on a node, recording a call's own source range in
-    `EvalState.callSite` first so the call can report a violated precondition
-    there. Only calls pay for the write. -/
-partial def evalExprMd (cfg : ExternalBackend) (e : StmtExprMd) : EvalM Value := do
-  match e.val with
-  | .Call none .. | .Call (some _) .. =>
-      modify fun s => { s with callSite := e.source }
-      evalExpr cfg e.val
-  -- An `assert` in expression position is checked as the statement it is, at its
-  -- own range, and its value is unused.
-  | .Assert .. => do
-      evalStmt cfg e
-      pure default
-  | _ => evalExpr cfg e.val
-
-/-- Evaluate a Laurel expression to a `Value`. Mutually recursive with
-    `evalStmt` (procedure bodies contain statements) and `invokeProc`
-    (`StaticCall` invokes another procedure). -/
-partial def evalExpr (cfg : ExternalBackend) : StmtExpr → EvalM Value
-  | .LiteralBool b   => pure (.bool ⟨b⟩)
-  | .LiteralInt n    => pure (.int ⟨n⟩)
-  | .LiteralString s => pure (.string ⟨s⟩)
-  | .Var (Variable.Local name) => do
-      let s ← get
-      match s.stack[name.text]? with
-      | some v => pure v
-      | none =>
-          -- Not a local of this frame, so it may be a file-scope global: resolution
-          -- leaves both as `Variable.Local` and records the difference in its model.
-          match s.globals[name.text]? with
-          | some v => pure v
-          | none =>
-            liftM (m := IO) (throw (IO.userError s!"undefined identifier '{name.text}'"))
-  | .Var (Variable.Stack _) => popOperand
-  | .LiteralDecimal d => pure (.real (StrataDDM.Decimal.toRat d))
-  -- A hole stands for an unconstrained value. Concretely there is nothing to choose,
-  -- so it evaluates to `unset`, and USING one is an error -- which is the useful
-  -- reading: Laurel makes a composite-typed file-scope global use a hole (`new` is not
-  -- effect-free, and omitting the initializer is rejected), so the hole means
-  -- "assigned before anything uses it" and an early use should say so.
-  | .Hole _ ty => do
-      match ty with
-      | some t => pure (defaultValue (← get).index t.val)
-      | none => pure .unset
-  -- A conditional in EXPRESSION position (`var x := if c then a else b`). Laurel
-  -- has one statement-expression type, so the same node appears in both
-  -- positions; only the branch taken is evaluated.
-  | .IfThenElse cond thenB elseB => do
-      -- An arm is a scope of its own, as it is in statement position.
-      let arm (b : StmtExprMd) : EvalM Value := match b.val with
-        | .Block .. => evalExprMd cfg b
-        | _ => withBlockScope [b] (evalExprMd cfg b)
-      let c ← evalExprMd cfg cond
-      if ← liftM (isTrue cfg c) then arm thenB
-      else match elseB with
-        | some e => arm e
-        | none => pure default
-  -- A block in expression position evaluates to its last statement's value, so a
-  -- `{ lemma(x); e }` yields `e`.
-  | .Block stmts none _ _ => withBlockScope stmts (evalStmtList cfg stmts (asExpr := true))
-  | .Var (Variable.Field target field) => do
-      let tv ← evalExprMd cfg target
-      readField tv field.text
-  | .New ref _ => do
-      let st ← get
-      let fields := st.index.compositeFields[ref.text]?.getD []
-      -- A field with no initializer starts at its type's default.
-      let addr := st.heap.size
-      let obj : HeapObject := { typeName := ref.text, fields := {} }
-      modify fun s => { s with heap := s.heap.push obj }
-      for (fname, fty, init?) in fields do
-        let v ← match init? with
-          | some e => evalExprMd cfg e
-          | none => pure (defaultValue st.index fty)
-        writeField (.ref addr) fname v
-      pure (.ref addr)
-  | .IsType target ty => do
-      let tv ← evalExprMd cfg target
-      let st ← get
-      match tv, highTypeName? ty.val with
-      | .ref a, some tn =>
-        let some obj := st.heap[a]?
-          | liftM (m := IO) (throw (IO.userError s!"dangling reference #{a}"))
-        pure (.bool ⟨(st.index.ancestors[obj.typeName]?.getD [obj.typeName]).contains tn⟩)
-      -- A non-reference is not an instance of any composite; this is how PyDyn's
-      -- `x is PyAbsent` answers `false` for a primitive.
-      | _, _ => pure (.bool ⟨false⟩)
-  -- A cast is a checked no-op: the value already carries its runtime type, and
-  -- `is` is what a program uses to guard the cast.
-  | .AsType target _ => evalExprMd cfg target
-  | .ReferenceEquals lhs rhs => do
-      let a ← evalExprMd cfg lhs
-      let b ← evalExprMd cfg rhs
-      pure (.bool ⟨Value.eq a b⟩)
-  -- `yield`, `resume(co[, v])` and `has_next(co)` are all dual-position, and this
-  -- is the position that keeps their value: `z := yield` reads what the resume
-  -- sent in, `v := resume(co)` reads the next yielded payload. The statement
-  -- forms in `evalStmt` run these and drop the value.
-  | .Yield => evalError
-      "`yield` inside this expression is not supported: the construct around it has no lifting into statements (see `liftCoroutineYields`)"
-  | .Resume target value? => do
-      let tv ← evalExprMd cfg target
-      let sent ← match value? with
-        | some e => evalExprMd cfg e
-        | none => pure .unset
-      resumeCoroutine cfg tv sent
-  | .HasNext target => do
-      let tv ← evalExprMd cfg target
-      let (_, co) ← coroInstance tv "has_next"
-      pure (.bool ⟨!co.finished⟩)
-  | .ContractOf .Precondition ⟨.Call none callee args _, _⟩ => do
-      let argVals ← args.mapM (evalExprMd cfg)
-      match lookupCallee (← get).index callee with
-      | some proc => preconditionValue cfg proc argVals
-      | none => evalError s!"unknown procedure '{callee.text}'"
-  | .ContractOf .Precondition ⟨.Call (some target) callee args _, _⟩ => do
-      let tv ← evalExprMd cfg target
-      let argVals ← args.mapM (evalExprMd cfg)
-      let proc ← resolveMethod tv callee.text
-      preconditionValue cfg proc (tv :: argVals)
-  | .Call none callee args typeArgs => do
-      let site := (← get).callSite
-      -- `coroCompletion(co)`: the reserved reader for a coroutine's completion
-      -- value, recognized before operators, builtins and procedures alike (see
-      -- `coroCompletionName`).
-      if callee.text == coroCompletionName then
-        match args with
-        | [t] =>
-            let tv ← evalExprMd cfg t
-            let (_, co) ← coroInstance tv coroCompletionName
-            if !co.finished then
-              evalError s!"'{coroCompletionName}' on coroutine '{co.proc}', which has not finished"
-            return co.completed
-        | _ => evalError s!"'{coroCompletionName}' expects 1 argument, got {args.length}"
-      match Operation.ofProcName? callee.text with
-      | some .AndThen =>
-          match args with
-          | [a, b] => do
-            let va ← evalExprMd cfg a
-            if ← liftM (isTrue cfg va) then
-              let vb ← evalExprMd cfg b
-              pure (.bool ⟨← liftM (isTrue cfg vb)⟩)
-            else
-              pure (.bool ⟨false⟩)
-          | _ => liftM (m := IO) (throw (IO.userError "andThen expects exactly 2 arguments"))
-      | some .OrElse =>
-          match args with
-          | [a, b] => do
-            let va ← evalExprMd cfg a
-            if ← liftM (isTrue cfg va) then
-              pure (.bool ⟨true⟩)
-            else
-              let vb ← evalExprMd cfg b
-              pure (.bool ⟨← liftM (isTrue cfg vb)⟩)
-          | _ => liftM (m := IO) (throw (IO.userError "orElse expects exactly 2 arguments"))
-      | some .Implies =>
-          match args with
-          | [a, b] => do
-            let va ← evalExprMd cfg a
-            if ← liftM (isTrue cfg va) then
-              let vb ← evalExprMd cfg b
-              pure (.bool ⟨← liftM (isTrue cfg vb)⟩)
-            else
-              pure (.bool ⟨true⟩)
-          | _ => liftM (m := IO) (throw (IO.userError "implies expects exactly 2 arguments"))
-      | some op => do
-          let argVals ← args.mapM (evalExprMd cfg)
-          -- Only the partial operators have a `requires` on their prelude wrapper,
-          -- so only they pay for looking it up.
-          match op with
-          | .Div | .Mod | .DivT | .ModT =>
-            -- Reported on the enclosing statement, as Core places the check.
-            match lookupCallee (← get).index callee with
-            | some proc => checkPreconditions cfg (← get).stmtSite proc argVals
-            | none => missingPrelude callee.text argVals
-          | _ => pure ()
-          -- A bitvector comparison is signed, as the lowering to Core makes it.
-          let bvCmp : Option String := match op, argVals with
-            | .Lt, [.bv w _, .bv _ _] => some s!"$bv{w}SLt"
-            | .Leq, [.bv w _, .bv _ _] => some s!"$bv{w}SLe"
-            | .Gt, [.bv w _, .bv _ _] => some s!"$bv{w}SGt"
-            | .Geq, [.bv w _, .bv _ _] => some s!"$bv{w}SGe"
-            | _, _ => none
-          match bvCmp >>= (bvBuiltin? · argVals) with
-          | some act => liftM act
-          | none => liftM (evalOp cfg op argVals)
-      | none => do
-          let argVals ← args.mapM (evalExprMd cfg)
-          let st ← get
-          let name := callee.text
-          -- Order matters only in that all four are disjoint name spaces; a
-          -- builtin is checked first because it is the hottest path.
-          -- `mapEmpty<K, V>`'s second type argument is the value type whose default
-          -- the new map answers for an absent key; resolution records it on the
-          -- call, since no argument determines it.
-          let absent := match typeArgs with
-            | [_, v] => defaultValue st.index v.val
-            | _ => .unset
-          -- The partial sequence operations carry a `requires` on their prelude
-          -- declaration, checked on the enclosing statement, as Core places it.
-          if name == "seqSelect" || name == "seqUpdate" || name == "seqTake" || name == "seqDrop" then
-            match lookupCallee st.index callee with
-            | some proc => checkPreconditions cfg st.stmtSite proc argVals
-            | none => missingPrelude name argVals
-          if name == allocateProcName && argVals.isEmpty then
-            return ← allocateObject
-          match callBuiltin name argVals absent with
-          | some act => liftM act
-          | none =>
-            if let some fieldNames := st.index.ctors[name]? then
-              if fieldNames.length != argVals.length then
-                liftM (m := IO) (throw (IO.userError
-                  s!"constructor '{name}' expects {fieldNames.length} args, got {argVals.length}"))
-              else pure (.data name argVals.toArray)
-            else if let some ctor := st.index.testers[name]? then
-              match argVals with
-              | [.data c _] => pure (.bool ⟨c == ctor⟩)
-              | _ => liftM (m := IO) (throw (IO.userError
-                  s!"tester '{name}' applied to {argVals.map reprVariant}"))
-            else if let some (ctor, i, fty) := st.index.destructors[name]? then
-              match argVals with
-              | [.data c as_] =>
-                if c != ctor then do
-                  -- The safe destructor's precondition is that the value was built by
-                  -- its constructor; Core checks it as an assertion on the statement.
-                  -- Either way the field read is unconstrained, so it answers the
-                  -- field type's default.
-                  unless name.endsWith "!" do
-                    let failure := Strata.Message.withRange st.stmtSite "assertion does not hold"
-                    modify fun s => { s with assertFailures := s.assertFailures.push failure }
-                  pure (defaultValue st.index fty)
-                else match as_[i]? with
-                  | some v => pure v
-                  | none => liftM (m := IO) (throw (IO.userError
-                      s!"destructor '{name}': no argument {i}"))
-              | _ => liftM (m := IO) (throw (IO.userError
-                  s!"destructor '{name}' applied to {argVals.map reprVariant}"))
-            else do
-              let outs ← invokeCallee cfg site callee argVals
-              pure (outs[0]?.getD default)
-  | .Assert cond summary => do
-      -- An `assert` in expression position: same check, and its value is unused.
-      evalStmt cfg ⟨.Assert cond summary, .unknown⟩
-      pure default
-  | .Assume _ => pure default
-  | .LiteralBv value width => pure (.bv width (value % 2 ^ width))
-  | .Old value none => do
-      let st ← get
-      let some (heap, globals, inouts) := st.entryState
-        | evalError "`old` outside a postcondition"
-      let restore : EvalM Unit := modify fun s =>
-        { s with heap := st.heap, globals := st.globals, stack := st.stack, inOld := st.inOld }
-      let stack := inouts.fold (init := st.stack) fun acc k v => acc.insert k v
-      modify fun s => { s with heap, globals, stack, inOld := true }
-      let v ← tryCatch (evalExprMd cfg value) fun sig => do restore; throw sig
-      -- The entry heap is discarded afterwards, so an object allocated in here
-      -- would leave a reference into a heap that no longer exists.
-      if (← get).heap.size != heap.size then
+/-- What a procedure's `return` hands back: nothing for a bare `return`, its value for a
+    single one. A multi-value return writes each output, so the outputs are read back out
+    of the frame exactly as when they are assigned by name. -/
+def returnedValues (proc : Procedure) (restore : EvalM m Unit) : List Value → EvalM m (Option Value)
+  | [] => pure none
+  | [v] => pure (some v)
+  | vs =>
+      if vs.length != proc.outputs.length then do
         restore
-        evalError "`old(...)` allocates an object, which does not outlive it"
-      restore
-      pure v
-  -- An assignment in expression position yields the value it assigned, so
-  -- `var z: int := y := y + 1` binds `z` to the new `y`.
-  | .Assign targets value => do
-      match targets with
-      | [t] => do
-          let write ← assignTarget cfg t.val
-          let v ← evalExprMd cfg value
-          write v
-          pure v
-      | _ => do
-          evalStmt cfg ⟨.Assign targets value, value.source⟩
-          pure default
-  -- The target is evaluated once: `a#f++` reads and writes the field of the one
-  -- object `a` denotes.
-  | .IncrDecr mode op target => do
-      let (old, write) ← readForUpdate cfg target.val
-      let new ← liftM (evalOp cfg (if op == .Incr then .Add else .Sub) [old, .int ⟨1⟩])
-      write new
-      pure (if mode == .Pre then new else old)
-  | .CompoundAssign op target rhs => do
-      let (old, write) ← readForUpdate cfg target.val
-      let r ← evalExprMd cfg rhs
-      -- `x /= d` is `x := x / d`, so it carries the operator's precondition.
-      match op with
-      | .Div | .Mod | .DivT | .ModT =>
-        let st ← get
-        -- `$div` is overloaded on `int` and `real`; the operands' shape picks one.
-        let fits (pr : Procedure) : Bool := pr.inputs.all fun i => match i.type.val, old with
-          | .TInt, .int _ | .TReal, .real _ => true
-          | _, _ => false
-        match (st.index.procsNamed[op.procName]?.getD []).find? fits with
-        | some proc => checkPreconditions cfg st.stmtSite proc [old, r]
-        | none => missingPrelude op.procName [old, r]
-      | _ => pure ()
-      let new ← liftM (evalOp cfg op [old, r])
-      write new
-      pure new
-  | .Call (some target) callee args _ => do
-      let site := (← get).callSite
-      let tv ← evalExprMd cfg target
-      let argVals ← args.mapM (evalExprMd cfg)
-      let proc ← resolveMethod tv callee.text
-      let outs ← invokeProc cfg site proc (tv :: argVals)
-      pure (outs[0]?.getD default)
-  | e => evalError s!"unsupported expression: {e.constrName}"
+        hostFail s!"return supplies {vs.length} values but '{proc.name.text}' has {proc.outputs.length} outputs"
+      else do
+        modify fun st =>
+          let stack := (proc.outputs.zip vs).foldl
+            (fun acc (o, v) => acc.insert o.name.text v) st.stack
+          { st with stack }
+        pure none
 
-/-- `msg`, naming the procedures that led here. -/
-partial def withCallStack (msg : String) : EvalM String := do
-  let st ← get
-  if st.callStack.isEmpty then return msg
-  return msg ++ s!" [in {String.intercalate " <- " (st.callStack.take 8)}]"
-
-/-- Fail with `msg`, naming the procedures that led here. -/
-partial def evalError (msg : String) : EvalM α := do
-  liftM (m := IO) (throw (IO.userError (← withCallStack msg)))
-
-/-- Refuse with `msg` (`Control.refused`), naming the procedures that led here. -/
-partial def refuse (msg : String) : EvalM α := do
-  throw (.refused (← withCallStack msg))
 
 /-- A partial operation whose prelude declaration is not in the program, so its
     `requires` cannot be reported: a violation is an error rather than a silent
     continuation. -/
-partial def missingPrelude (name : String) (args : List Value) : EvalM Unit := do
+def missingPrelude (name : String) (args : List Value) : EvalM m Unit := do
   if partialOpFails name args then
     evalError s!"'{name}' applied outside its precondition, and the program has no prelude declaration to report it"
 
-partial def allocateObject : EvalM Value := do
+def noFitPrelude (index : ProgramIndex) (op : Operation) (args : List Value) : EvalM m Unit :=
+  if (index.procsNamed[op.procName]?.getD []).isEmpty then missingPrelude op.procName args
+  else stuckError s!"no overload of '{op.procName}' takes {args.map reprVariant}"
+
+
+/-- Read field `name` off a composite reference. -/
+def strictField (cfg : ExternalBackendM m) (target : Value) (field : Identifier) : EvalM m Unit := do
+  if let some sr := cfg.strict then
+    if let .ref a _ := target then
+      if let some obj := (← get).heap[a]? then
+        unless sr.fieldOK obj.typeName field do
+          hostFail s!"strict: field '{field.text}' does not belong to {obj.typeName}"
+
+def allocateObject : EvalM m Value := do
   let addr := (← get).heap.size
   modify fun s => { s with heap := s.heap.push { typeName := "", fields := {} } }
   return .int ⟨Int.ofNat addr⟩
 
-/-- Read field `name` off a composite reference. -/
-partial def readField (target : Value) (name : String) : EvalM Value := do
+def readField (target : Value) (name : String) : EvalM m Value := do
   match target with
-  | .ref a => do
+  | .ref a _ => do
     let st ← get
     let some obj := st.heap[a]?
       | if st.inOld then evalError "`old(...)` reads an object allocated after the procedure was entered"
-        else liftM (m := IO) (throw (IO.userError s!"dangling reference #{a}"))
+        else (hostFail ( s!"dangling reference #{a}"))
     match obj.fields[name]? with
     | some v => pure v
     | none => evalError s!"no field '{name}' on {obj.typeName}"
@@ -1635,7 +1678,7 @@ partial def readField (target : Value) (name : String) : EvalM Value := do
     let st ← get
     let some obj := (if i < 0 then none else st.heap[i.toNat]?)
       | if st.inOld then evalError "`old(...)` reads an object allocated after the procedure was entered"
-        else liftM (m := IO) (throw (IO.userError s!"dangling reference #{i}"))
+        else (hostFail ( s!"dangling reference #{i}"))
     match st.index.heapFields[name]? with
     | some (location, t) => match obj.fields[location]? with
       | some v => pure v
@@ -1645,179 +1688,754 @@ partial def readField (target : Value) (name : String) : EvalM Value := do
       | none => evalError s!"no heap field '{name}'"
   | v => evalError s!"field read '{name}' on a non-composite {reprVariant v}"
 
+
 /-- Write field `name` on a composite reference, in place. Every alias of the
     object observes it, which is what makes a Laurel composite a reference type. -/
-partial def writeField (target : Value) (name : String) (v : Value) : EvalM Unit := do
+def writeField (target : Value) (name : String) (v : Value) : EvalM m Unit := do
   match target with
-  | .ref a => do
+  | .ref a _ => do
     let st ← get
     let some obj := st.heap[a]?
-      | liftM (m := IO) (throw (IO.userError s!"dangling reference #{a}"))
+      | (hostFail ( s!"dangling reference #{a}"))
     modify fun s => { s with heap := s.heap.set! a { obj with fields := obj.fields.insert name v } }
   | .int ⟨i⟩ => do
     let st ← get
     let some obj := (if i < 0 then none else st.heap[i.toNat]?)
-      | liftM (m := IO) (throw (IO.userError s!"dangling reference #{i}"))
+      | (hostFail ( s!"dangling reference #{i}"))
     let location := (st.index.heapFields[name]?.map (·.1)).getD name
     modify fun s => { s with heap := s.heap.set! i.toNat { obj with fields := obj.fields.insert location v } }
-  | v' => liftM (m := IO) (throw (IO.userError
+  | v' => (hostFail (
       s!"field write '{name}' on a non-composite {reprVariant v'}"))
+
+
+def methodOf (index : ProgramIndex) (typeName name : String) : Option Procedure :=
+  let chain := index.ancestors[typeName]?.getD [typeName]
+  let declarers := chain.filter fun t => (index.methods[t]? >>= (·[name]?)).isSome
+  let mostDerived := declarers.find? fun t =>
+    declarers.all fun d => d == t || !((index.ancestors[d]?.getD [d]).contains t)
+  mostDerived >>= (fun t => index.methods[t]? >>= (·[name]?))
+
+def overrideOf (index : ProgramIndex) (typeName : String) (static : Procedure) : Option Procedure :=
+  let chain := index.ancestors[typeName]?.getD [typeName]
+  let declOf (t : String) : Option Procedure := (index.methodLists[t]?.getD []).find? (isOverrideOf static ·)
+  let declarers := chain.filter fun t => (declOf t).isSome
+  let mostDerived := declarers.find? fun t =>
+    declarers.all fun d => d == t || !((index.ancestors[d]?.getD [d]).contains t)
+  mostDerived >>= declOf
+
+def resolveOverride (target : Value) (id : Nat) (static : Procedure) : EvalM m Procedure := do
+  match target with
+  | .ref _ tn => do
+    let st ← get
+    let some owner := st.index.methodOwner[id]?
+      | stuckError s!"instance procedure '{static.name.text}' has no declaring type"
+    unless (st.index.ancestors[tn]?.getD [tn]).contains owner do
+      stuckError s!"instance call '{static.name.text}' on a {tn}, which is not a {owner}"
+    match overrideOf st.index tn static with
+    | some proc => pure proc
+    | none => stuckError s!"no override of '{static.name.text}' on {tn}"
+  | v => stuckError s!"instance call '{static.name.text}' on a non-composite {reprVariant v}"
+
+/-- The instance procedure `name` that a receiver dispatches to: its runtime
+    type's own, else the nearest ancestor's. -/
+def resolveMethod (target : Value) (name : String) : EvalM m Procedure := do
+  match target with
+  | .ref _ tn => do
+    let st ← get
+    match methodOf st.index tn name with
+    | some proc => pure proc
+    | none => stuckError s!"no instance procedure '{name}' on {tn}"
+  | v => stuckError s!"instance call '{name}' on a non-composite {reprVariant v}"
+
+
+/-- The coroutine instance a value denotes, with the address it is keyed by (the
+    same address the `Value.ref` carries). `what` names the operation for the
+    error message, since every way of failing here is a client mistake: a
+    `resume` / `has_next` / `coroCompletion` applied to something that is not a
+    coroutine. -/
+def coroInstance (v : Value) (what : String) : EvalM m (Nat × CoroState) := do
+  match v with
+  | .ref addr _ => do
+      let st ← get
+      match st.coros[addr]? with
+      | some co => pure (addr, co)
+      | none => evalError s!"'{what}' on #{addr}, which is not a coroutine instance"
+  | _ => evalError s!"'{what}' on a non-coroutine {reprVariant v}"
+
+
+/-- `yield`: suspend the coroutine body that is running, or — when this is the
+    suspension point the current resume is fast-forwarding to — deliver the value
+    that resume sent in and carry on.
+
+    The suspension path and the frame are written into the instance here, rather
+    than where `Control.suspended` is caught, because `EvalState.cursor` names the
+    yield's own position only at the yield itself. -/
+def evalYield : EvalM m Value := do
+  let st ← get
+  let some addr := st.coroSelf
+    | evalError "`yield` outside a coroutine body"
+  let some co := st.coros[addr]?
+    | evalError s!"`yield` in a coroutine whose instance #{addr} is gone"
+  match st.seek with
+  | some [] => do
+      -- The arrival marker: this `yield` already suspended, in the step that led
+      -- here. It does not suspend again; it hands the body the resumed value and
+      -- the fast-forward is over.
+      modify fun s => { s with seek := none }
+      pure co.sent
+  | _ => do
+      modify fun s =>
+        let suspended := { co with resumePt := some s.cursor, frame := s.stack }
+        { s with coros := s.coros.insert addr suspended }
+      throw .suspended
+
+
+def isPartialOp : Operation → Bool
+  | .Div | .Mod | .DivT | .ModT => true
+  | _ => false
+
+def isPartialSeqOp (name : String) : Bool :=
+  name == "seqSelect" || name == "seqUpdate" || name == "seqTake" || name == "seqDrop"
+
+def bvCmpName (op : Operation) (argVals : List Value) : Option String :=
+  match op, argVals with
+  | .Lt, [.bv w _, .bv _ _] => some s!"$bv{w}SLt"
+  | .Leq, [.bv w _, .bv _ _] => some s!"$bv{w}SLe"
+  | .Gt, [.bv w _, .bv _ _] => some s!"$bv{w}SGt"
+  | .Geq, [.bv w _, .bv _ _] => some s!"$bv{w}SGe"
+  | _, _ => none
+
+def opCall (cfg : ExternalBackendM m) (op : Operation) (argVals : List Value) : m Value :=
+  match bvCmpName op argVals >>= (bvBuiltin? (m := m) · argVals) with
+  | some act => act
+  | none => evalOp cfg op argVals
+
+inductive DatatypeResult where
+  | ok (v : Value)
+  | error (msg : String)
+  | badCtor (fieldType : HighType)
+
+def datatypeOp? (index : ProgramIndex) (name : String) (argVals : List Value) :
+    Option DatatypeResult :=
+  if let some fieldNames := index.ctors[name]? then
+    if fieldNames.length != argVals.length then
+      some (.error s!"constructor '{name}' expects {fieldNames.length} args, got {argVals.length}")
+    else some (.ok (.data name argVals.toArray))
+  else if let some ctor := index.testers[name]? then
+    match argVals with
+    | [.data c _] => some (.ok (.bool ⟨c == ctor⟩))
+    | _ => some (.error s!"tester '{name}' applied to {argVals.map reprVariant}")
+  else if let some (ctor, i, fty) := index.destructors[name]? then
+    match argVals with
+    | [.data c as_] =>
+      if c != ctor then some (.badCtor fty)
+      else match as_[i]? with
+        | some v => some (.ok v)
+        | none => some (.error s!"destructor '{name}': no argument {i}")
+    | _ => some (.error s!"destructor '{name}' applied to {argVals.map reprVariant}")
+  else none
+
+def lookupVar (s : EvalState) (name : String) : Option Value :=
+  s.stack[name]? <|> s.globals[name]?
+
+def isInstance (st : EvalState) (tv : Value) (ty : HighType) : Except String Value :=
+  match tv, highTypeName? (st.index.unalias ty) with
+  | .ref _ tag, some tn => .ok (.bool ⟨(st.index.ancestors[tag]?.getD [tag]).contains tn⟩)
+  | _, _ => .ok (.bool ⟨false⟩)
+
+/-- Whether `v` is an instance of the exception type `ty`. Only a user-defined `ty` constrains
+    a thrown value; any other type is not checked. -/
+def ProgramIndex.exceptionBase (ix : ProgramIndex) (ty : HighType) : HighType :=
+  match ix.unalias ty with
+  | .UserDefined n => ix.exceptionBases[n.text]?.getD (.UserDefined n)
+  | t => t
+
+def excTypeOK (st : EvalState) (v : Value) (ty : HighType) : Bool :=
+  match st.index.exceptionBase ty, v with
+  | .UserDefined n, .ref _ tag => (st.index.ancestors[tag]?.getD [tag]).contains n.text
+  | .UserDefined n, .data c _ => st.index.testers[s!"{n.text}..is{c}"]? == some c
+  | .UserDefined _, _ => false
+  | _, _ => true
+
+/-- A thrown value that typing says cannot reach here gets the run stuck: well-typed programs
+    never take this path, and the exception lowering relies on it. -/
+def checkExcType (ty : HighType) (v : Value) : EvalM m Unit := do
+  if excTypeOK (← get) v ty then pure ()
+  else stuckError s!"exception {v.display} is not a '{toString (formatHighTypeVal ty)}'"
+
+/-- The type check a `throw_` reaching a `try` with `catch` clauses gets: the clauses' binding
+    type is the join of what the body throws, and an `Unknown` join means the body throws nothing. -/
+def checkCaught (catches : List CatchClause) (v : Value) : EvalM m Unit :=
+  match catches with
+  | [] => pure ()
+  | c :: _ => do
+    match (← get).index.unalias c.bindingType.val with
+    | .Unknown => stuckError s!"exception {v.display} reaches a `try` whose body throws nothing"
+    | _ => checkExcType c.bindingType.val v
+
+def escapeSig {α : Type} (proc : Procedure) (c : Control) : EvalM m α :=
+  match c with
+  | .throw_ v =>
+      if proc.throwsType.isNone then do
+        let failure := escapeMsg proc v
+        let st ← get
+        emitEvent (.check .assert none failure false
+          { st with stack := {}, cursor := [], seek := none, coroSelf := none, entryState := none })
+        modify fun s => { s with assertFailures := s.assertFailures.push failure }
+        throw .infeasible
+      else do
+        if let some t := proc.throwsType then checkExcType t.val v
+        throw c
+  | _ => throw c
+
+def divProc? (index : ProgramIndex) (op : Operation) (old : Value) : Option Procedure :=
+  let fits (pr : Procedure) : Bool := pr.inputs.all fun i => match index.unalias i.type.val, old with
+    | .TInt, .int _ | .TReal, .real _ => true
+    | _, _ => false
+  (index.procsNamed[op.procName]?.getD []).find? fits
+
+def missingWitness (index : ProgramIndex) (t : Option HighType) : Option String :=
+  match t.map index.unalias with
+  | some (.UserDefined n) => if index.noWitness.contains n.text then some n.text else none
+  | _ => none
+
+def defaultOf (index : ProgramIndex) : Option HighType → Value
+  | some t => defaultValue index t
+  | none => .unset
+
+def absentOf (index : ProgramIndex) (typeArgs : List HighTypeMd) : Value :=
+  match typeArgs with
+  | [_, v] => defaultValue index v.val
+  | _ => .unset
+
+def undeterminedOf (proc : Procedure) (b : Body) : Option String :=
+  (proc.outputs.head?.map fun o => s!"its output '{o.name.text}'") <|>
+  (if (bodyModifies b).any (!·.targets.isEmpty) then
+    some "the state its `modifies` clause names" else none) <|>
+  (proc.writesGlobals.head?.map fun g => s!"the global '{g.text}' it writes") <|>
+  (if proc.throwsType.isSome then some "whether it throws" else none)
+
+/-- Assign `v` to the local or global `name`. A local always wins; otherwise a known
+    global is updated in place. An unknown name goes to `stack`, which is what the
+    assign-before-declare shapes the front ends emit rely on. -/
+def assignLocal (name : Identifier) (v : Value) : EvalM m Unit := modify fun s =>
+  if s.stack.contains name.text then { s with stack := s.stack.insert name.text v }
+  else if s.globals.contains name.text then
+    { s with globals := s.globals.insert name.text v }
+  else { s with stack := s.stack.insert name.text v }
+
+inductive UpdateTarget where
+  | local (name : Identifier)
+  | field (target : Value) (field : String)
+  | declare (name : String)
+  | stack
+
+def writeUpdate : UpdateTarget → Value → EvalM m Unit
+  | .local name, nv => assignLocal name nv
+  | .field tv field, nv => writeField tv field nv
+  | .declare name, nv => modify fun s => { s with stack := declareLocal s.stack name nv }
+  | .stack, nv => modify fun s => { s with operands := nv :: s.operands }
+
+def postOutputs (proc : Procedure) (returned : Option Value) (exitFrame : StackFrame) : StackFrame :=
+  match returned, proc.outputs with
+  | some v, [o] => ({} : StackFrame).insert o.name.text v
+  | _, _ => proc.outputs.foldl (init := {}) fun acc o =>
+      acc.insert o.name.text (exitFrame[o.name.text]?.getD .unset)
+
+def strictRef (st : EvalState) : Value → Bool
+  | .ref a _ => decide (a < st.heap.size)
+  | _ => false
+
+def compositeTy (index : ProgramIndex) : HighType → Bool
+  | .UserDefined n => index.ancestors.contains n.text
+  | _ => false
+
+def strictParamsOK (st : EvalState) (ps : List Parameter) (vs : List Value) : Bool :=
+  (ps.zip vs).all fun (p, v) => !compositeTy st.index p.type.val || strictRef st v
+
+def strictOutputsOK (st : EvalState) (proc : Procedure) (returned : Option Value) (exitFrame : StackFrame) : Bool :=
+  let outs := postOutputs proc returned exitFrame
+  strictParamsOK st proc.outputs (proc.outputs.map fun o => outs[o.name.text]?.getD .unset)
+
+def coverOf : Value → Option String → List (Nat × Option String)
+  | .ref a _, f => [(a, f)]
+  | _, _ => []
+
+def frameHolds (pre post : Array HeapObject) (cov : List (Nat × Option String)) : Bool :=
+  (List.range pre.size).all fun a => cov.contains (a, none) ||
+    match pre[a]?, post[a]? with
+    | some o, some o' => o.fields.toList.all fun (f, v) => cov.contains (a, some f) ||
+        match o'.fields[f]? with
+        | some w => Value.eq v w
+        | none => false
+    | _, _ => true
+
+def entrySnapshot (skip : Bool) (s : EvalState) : Array HeapObject × Std.HashMap String Value :=
+  if skip then (#[], {}) else (s.heap, s.globals)
+
+def procFrames (proc : Procedure) : List ModifiesGroup :=
+  match proc.body with
+  | .Opaque _ (some _) ms => ms.filter fun g => !hasModifiesWildcard g.targets
+  | _ => []
+
+def preconditionValue (cfg : ExternalBackendM m) (ev : StmtExprMd → EvalM m Value)
+    (proc : Procedure) (argVals : List Value) : EvalM m Value := do
+  let caller ← get
+  let restore : EvalM m Unit := modify fun st =>
+    { st with stack := caller.stack, cursor := caller.cursor, seek := caller.seek,
+              coroSelf := caller.coroSelf }
+  let frame : StackFrame :=
+    (proc.inputs.zip argVals).foldl (fun acc (param, v) => acc.insert param.name.text v) {}
+  modify fun st => { st with stack := frame, cursor := [], seek := none, coroSelf := none }
+  tryCatch
+    (do
+      let mut holds := true
+      for c in proc.preconditions.filter (·.mode.doesAssert) do
+        if holds then
+          let v ← ev c.condition
+          holds ← liftM (isTrue cfg v)
+      restore
+      pure (.bool ⟨holds⟩))
+    fun sig => do restore; throw sig
+
+mutual
+/-- Run a statement that is the body of an `if` arm or a loop. One that is not a
+    block is still a scope of its own, so a declaration it makes is undone when it
+    finishes, as it would be inside braces. -/
+def evalScopedStmt (cfg : ExternalBackendM m) (fuel : Nat) (s : StmtExprMd) : EvalM m Unit :=
+  match fuel with
+  | 0 => throw .outOfFuel
+  | fuel + 1 =>
+    match s.val with
+    | .Block .. => evalStmt cfg fuel s
+    | _ => withBlockScope [s] (withOperandWindow s (evalStmt cfg fuel s))
+
+/-- `evalExpr` on a node, recording a call's own source range in
+    `EvalState.callSite` first so the call can report a violated precondition
+    there. Only calls pay for the write. -/
+def evalExprMd (cfg : ExternalBackendM m) (fuel : Nat) (e : StmtExprMd) : EvalM m Value :=
+  match fuel with
+  | 0 => throw .outOfFuel
+  | fuel + 1 => jumpBoundary do
+    match e.val with
+    | .Call none .. | .Call (some _) .. =>
+        modify fun s => { s with callSite := e.source }
+        evalExpr cfg fuel e.val
+    -- An `assert` in expression position is checked as the statement it is, at its
+    -- own range, and its value is unused.
+    | .Assert .. => do
+        evalStmt cfg fuel e
+        pure default
+    | _ => evalExpr cfg fuel e.val
+
+/-- Evaluate a Laurel expression to a `Value`. Mutually recursive with
+    `evalStmt` (procedure bodies contain statements) and `invokeProc`
+    (`StaticCall` invokes another procedure). -/
+def evalExpr (cfg : ExternalBackendM m) : Nat → StmtExpr → EvalM m Value
+  | 0, _ => throw .outOfFuel
+  | _ + 1, .LiteralBool b   => pure (.bool ⟨b⟩)
+  | _ + 1, .LiteralInt n    => pure (.int ⟨n⟩)
+  | _ + 1, .LiteralString s => pure (.string ⟨s⟩)
+  | _ + 1, .Var (Variable.Local name) => do
+      match lookupVar (← get) name.text with
+      | some v => pure v
+      | none => stuckError s!"undefined identifier '{name.text}'"
+  | _ + 1, .Var (Variable.Stack _) => popOperand
+  | _ + 1, .LiteralDecimal d => pure (.real (StrataDDM.Decimal.toRat d))
+  -- A hole stands for an unconstrained value. Concretely there is nothing to choose,
+  -- so it evaluates to `unset`, and USING one is an error -- which is the useful
+  -- reading: Laurel makes a composite-typed file-scope global use a hole (`new` is not
+  -- effect-free, and omitting the initializer is rejected), so the hole means
+  -- "assigned before anything uses it" and an early use should say so.
+  | _ + 1, .Hole _ ty => do
+      match ty with
+      | some t => do
+          let index := (← get).index
+          chooseValue (some (index.unalias t.val)) (defaultValue index t.val)
+      | none => chooseValue none .unset
+  -- A conditional in EXPRESSION position (`var x := if c then a else b`). Laurel
+  -- has one statement-expression type, so the same node appears in both
+  -- positions; only the branch taken is evaluated.
+  | fuel + 1, .IfThenElse cond thenB elseB => do
+      -- An arm is a scope of its own, as it is in statement position.
+      let arm (b : StmtExprMd) : EvalM m Value := withBlockScope [b] (evalExprMd cfg fuel b)
+      let c ← evalExprMd cfg fuel cond
+      if ← liftM (isTrue cfg c) then arm thenB
+      else match elseB with
+        | some e => arm e
+        | none => pure default
+  -- A block in expression position evaluates to its last statement's value, so a
+  -- `{ lemma(x); e }` yields `e`.
+  | fuel + 1, .Block stmts none _ _ => withBlockScope stmts (evalStmtList cfg fuel stmts (asExpr := true))
+  | fuel + 1, .Var (Variable.Field target field) => do
+      let tv ← evalExprMd cfg fuel target
+      strictField cfg tv field
+      readField tv field.text
+  | fuel + 1, .New ref0 typeArgs => do
+      let st ← get
+      let ref := st.index.allocName ref0 typeArgs
+      if let some sr := cfg.strict then
+        if sr.heapBound ≤ st.heap.size then hostFail "strict: heap bound reached"
+      let fields := st.index.compositeFields[ref.text]?.getD []
+      -- A field with no initializer starts at its type's default.
+      let addr := st.heap.size
+      let obj : HeapObject := { typeName := ref.text, fields := {} }
+      modify fun s => { s with heap := s.heap.push obj }
+      for (fname, fty, init?) in fields do
+        let v ← match init? with
+          | some e => evalExprMd cfg fuel e
+          | none => pure (defaultValue st.index fty)
+        writeField (.ref addr ref.text) fname v
+      pure (.ref addr ref.text)
+  | fuel + 1, .IsType target ty => do
+      let tv ← evalExprMd cfg fuel target
+      if cfg.strict.isSome && !strictRef (← get) tv then hostFail "strict: `is` on a non-reference"
+      liftM (hostOfExcept (isInstance (← get) tv ty.val) : m Value)
+  -- A cast is checked as an `assert (target is ty)` would be, and yields the target's
+  -- value: the value already carries its runtime type.
+  | fuel + 1, .AsType target ty => do
+      let tv ← evalExprMd cfg fuel target
+      let st ← get
+      if cfg.strict.isSome && !strictRef st tv then hostFail "strict: `as` on a non-reference"
+      let r ← liftM (hostOfExcept (isInstance st tv ty.val) : m Value)
+      let holds ← liftM (isTrue cfg r)
+      let failure := Strata.Message.withRange st.stmtSite "cast does not hold"
+      unless st.muted do
+        emitEvent (.check .assert none failure holds st)
+        unless holds do
+          modify fun (s : EvalState) => { s with assertFailures := s.assertFailures.push failure }
+      pure tv
+  | fuel + 1, .ReferenceEquals lhs rhs => do
+      let a ← evalExprMd cfg fuel lhs
+      let b ← evalExprMd cfg fuel rhs
+      pure (.bool ⟨Value.eq a b⟩)
+  -- `yield`, `resume(co[, v])` and `has_next(co)` are all dual-position, and this
+  -- is the position that keeps their value: `z := yield` reads what the resume
+  -- sent in, `v := resume(co)` reads the next yielded payload. The statement
+  -- forms in `evalStmt` run these and drop the value.
+  | _ + 1, .Yield => evalError
+      "`yield` inside this expression is not supported: the construct around it has no lifting into statements (see `liftCoroutineYields`)"
+  | fuel + 1, .Resume target value? => do
+      let tv ← evalExprMd cfg fuel target
+      let sent ← match value? with
+        | some e => evalExprMd cfg fuel e
+        | none => pure .unset
+      resumeCoroutine cfg fuel tv sent
+  | fuel + 1, .HasNext target => do
+      let tv ← evalExprMd cfg fuel target
+      let (_, co) ← coroInstance tv "has_next"
+      pure (.bool ⟨!co.finished⟩)
+  | fuel + 1, .ContractOf .Precondition ⟨.Call none callee args _, _⟩ => do
+      let argVals ← args.mapM (evalExprMd cfg fuel)
+      match lookupCallee (← get).index callee with
+      | some proc => preconditionValue cfg (evalExprMd cfg fuel) proc argVals
+      | none => evalError s!"unknown procedure '{callee.text}'"
+  | fuel + 1, .ContractOf .Precondition ⟨.Call (some target) callee args _, _⟩ => do
+      let tv ← evalExprMd cfg fuel target
+      let argVals ← args.mapM (evalExprMd cfg fuel)
+      let proc ← resolveMethod tv callee.text
+      preconditionValue cfg (evalExprMd cfg fuel) proc (tv :: argVals)
+  | fuel + 1, .Call none callee args typeArgs => do
+      let site := (← get).callSite
+      -- `coroCompletion(co)`: the reserved reader for a coroutine's completion
+      -- value, recognized before operators, builtins and procedures alike (see
+      -- `coroCompletionName`).
+      if callee.text == coroCompletionName then
+        match args with
+        | [t] =>
+            let tv ← evalExprMd cfg fuel t
+            let (_, co) ← coroInstance tv coroCompletionName
+            if !co.finished then
+              evalError s!"'{coroCompletionName}' on coroutine '{co.proc}', which has not finished"
+            return co.completed
+        | _ => evalError s!"'{coroCompletionName}' expects 1 argument, got {args.length}"
+      match opOf? callee.text with
+      | some .AndThen =>
+          match args with
+          | [a, b] => do
+            let va ← evalExprMd cfg fuel a
+            if ← liftM (isTrue cfg va) then
+              let vb ← evalExprMd cfg fuel b
+              pure (.bool ⟨← liftM (isTrue cfg vb)⟩)
+            else
+              pure (.bool ⟨false⟩)
+          | _ => (hostFail ( "andThen expects exactly 2 arguments"))
+      | some .OrElse =>
+          match args with
+          | [a, b] => do
+            let va ← evalExprMd cfg fuel a
+            if ← liftM (isTrue cfg va) then
+              pure (.bool ⟨true⟩)
+            else
+              let vb ← evalExprMd cfg fuel b
+              pure (.bool ⟨← liftM (isTrue cfg vb)⟩)
+          | _ => (hostFail ( "orElse expects exactly 2 arguments"))
+      | some .Implies =>
+          match args with
+          | [a, b] => do
+            let va ← evalExprMd cfg fuel a
+            if ← liftM (isTrue cfg va) then
+              let vb ← evalExprMd cfg fuel b
+              pure (.bool ⟨← liftM (isTrue cfg vb)⟩)
+            else
+              pure (.bool ⟨true⟩)
+          | _ => (hostFail ( "implies expects exactly 2 arguments"))
+      | some op => do
+          let argVals ← args.mapM (evalExprMd cfg fuel)
+          if let some sr := cfg.strict then
+            if sr.refEq (.Call none callee args typeArgs) && !argVals.all (strictRef (← get)) then
+              hostFail "strict: reference comparison on a non-reference"
+          -- Only the partial operators have a `requires` on their prelude wrapper,
+          -- so only they pay for looking it up.
+          if isPartialOp op then
+            -- Reported on the enclosing statement, as Core places the check.
+            let st ← get
+            match lookupCallee st.index callee with
+            | some proc => checkPreconditions cfg fuel st.stmtSite proc argVals
+            | none => missingPrelude callee.text argVals
+          liftM (opCall cfg op argVals)
+      | none => do
+          let argVals ← args.mapM (evalExprMd cfg fuel)
+          let st ← get
+          let name := callee.text
+          -- Order matters only in that all four are disjoint name spaces; a
+          -- builtin is checked first because it is the hottest path.
+          -- `mapEmpty<K, V>`'s second type argument is the value type whose default
+          -- the new map answers for an absent key; resolution records it on the
+          -- call, since no argument determines it.
+          let absent := absentOf st.index typeArgs
+          -- The partial sequence operations carry a `requires` on their prelude
+          -- declaration, checked on the enclosing statement, as Core places it.
+          if isPartialSeqOp name then
+            match lookupCallee st.index callee with
+            | some proc => checkPreconditions cfg fuel st.stmtSite proc argVals
+            | none => missingPrelude name argVals
+          if cfg.strict.isSome && isMapBuiltin name && argVals.any Value.hasRef then
+            hostFail s!"strict: map operation '{name}' on a value holding a reference"
+          if name == allocateProcName && argVals.isEmpty then
+            return ← allocateObject
+          match callBuiltin (m := m) name argVals absent with
+          | some act => liftM act
+          | none =>
+            match datatypeOp? st.index name argVals with
+            | some (.ok v) => pure v
+            | some (.error msg) => hostFail msg
+            | some (.badCtor fty) => do
+                unless name.endsWith "!" do
+                  let failure := Strata.Message.withRange st.stmtSite "assertion does not hold"
+                  emitEvent (.check .destructor none failure false (← get))
+                  modify fun (s : EvalState) => { s with assertFailures := s.assertFailures.push failure }
+                pure (defaultValueU st.index fty 16)
+            | none => do
+              let outs ← invokeCallee cfg fuel site callee argVals
+              pure (outs[0]?.getD default)
+  | fuel + 1, .Assert cond summary => do
+      -- An `assert` in expression position: same check, and its value is unused.
+      evalStmt cfg fuel ⟨.Assert cond summary, .unknown⟩
+      pure default
+  | fuel + 1, .Assume cond => do
+      evalStmt cfg fuel ⟨.Assume cond, .unknown⟩
+      pure default
+  | _ + 1, .LiteralBv value width => pure (.bv width (value % 2 ^ width))
+  | fuel + 1, .Old value none => do
+      let st ← get
+      let some (heap, globals, inouts) := st.entryState
+        | evalError "`old` outside a postcondition"
+      let restore : EvalM m Unit := modify fun s =>
+        { s with heap := st.heap, globals := st.globals, stack := st.stack, inOld := st.inOld }
+      let stack := inouts.fold (init := st.stack) fun acc k v => acc.insert k v
+      if cfg.strict.isSome && !(stack.toList.all fun kv => kv.2.closedBelow heap.size) then
+        hostFail "strict: `old` sees a reference allocated after entry"
+      modify fun s => { s with heap, globals, stack, inOld := true }
+      let v ← tryCatch (evalExprMd cfg fuel value) fun sig => do restore; throw sig
+      -- The entry heap is discarded afterwards, so an object allocated in here
+      -- would leave a reference into a heap that no longer exists.
+      if (← get).heap.size != heap.size then
+        restore
+        evalError "`old(...)` allocates an object, which does not outlive it"
+      restore
+      pure v
+  -- An assignment in expression position yields the value it assigned, so
+  -- `var z: int := y := y + 1` binds `z` to the new `y`.
+  | fuel + 1, .Assign targets value => do
+      match targets with
+      | [t] => do
+          let write ← assignTarget cfg fuel t.val
+          let v ← evalExprMd cfg fuel value
+          writeUpdate write v
+          pure v
+      | _ => do
+          evalStmt cfg fuel ⟨.Assign targets value, value.source⟩
+          pure default
+  -- The target is evaluated once: `a#f++` reads and writes the field of the one
+  -- object `a` denotes.
+  | fuel + 1, .IncrDecr mode op target => do
+      let (old, write) ← readForUpdate cfg fuel target.val
+      let new ← liftM (evalOp cfg (if op == .Incr then .Add else .Sub) [old, .int ⟨1⟩])
+      writeUpdate write new
+      pure (if mode == .Pre then new else old)
+  | fuel + 1, .CompoundAssign op target rhs => do
+      let (old, write) ← readForUpdate cfg fuel target.val
+      let r ← evalExprMd cfg fuel rhs
+      -- `x /= d` is `x := x / d`, so it carries the operator's precondition.
+      match op with
+      | .Div | .Mod | .DivT | .ModT =>
+        let st ← get
+        match divProc? st.index op old with
+        | some proc => checkPreconditions cfg fuel st.stmtSite proc [old, r]
+        | none => noFitPrelude st.index op [old, r]
+      | _ => pure ()
+      let new ← liftM (evalOp cfg op [old, r])
+      writeUpdate write new
+      pure new
+  | fuel + 1, .Call (some target) callee args _ => do
+      let site := (← get).callSite
+      let tv ← evalExprMd cfg fuel target
+      let argVals ← args.mapM (evalExprMd cfg fuel)
+      let outs ← if cfg.modular then do
+          let index := (← get).index
+          match callee.uniqueId with
+          | some id =>
+            match index.methodsById[id]? with
+            | some static => do
+              checkPreconditions cfg fuel site static (tv :: argVals)
+              muteE do
+                let proc ← resolveOverride tv id static
+                invokeProc cfg fuel site proc (tv :: argVals)
+            | none => stuckError s!"instance call '{callee.text}' does not name an instance procedure"
+          | none => stuckError s!"instance call '{callee.text}' is unresolved"
+        else do
+          let proc ← resolveMethod tv callee.text
+          invokeProc cfg fuel site proc (tv :: argVals)
+      pure (outs[0]?.getD default)
+  | fuel + 1, .Quantifier mode param _ body => do
+      let ty := (← get).index.unalias param.type.val
+      unless cfg.canEnumerate do
+        refuse s!"cannot enumerate the values of a quantifier over {toString (formatHighTypeVal ty)}"
+      let vals ← liftM (cfg.enumerate ty)
+      let name := param.name.text
+      let mut acc := mode == .Forall
+      for v in vals do
+        modify fun s => { s with stack := bindCatch s.stack name v }
+        let b ← tryCatch (do let r ← evalExprMd cfg fuel body; liftM (isTrue cfg r)) fun sig => do
+          modify fun s => { s with stack := unbindCatch s.stack name }
+          throw sig
+        modify fun s => { s with stack := unbindCatch s.stack name }
+        acc := if mode == .Forall then acc && b else acc || b
+      pure (.bool ⟨acc⟩)
+  | fuel + 1, .Return value? => do
+      evalStmt cfg fuel ⟨.Return value?, .unknown⟩
+      pure default
+  | fuel + 1, .Goto target dest => do
+      evalStmt cfg fuel ⟨.Goto target dest, .unknown⟩
+      pure default
+  | _ + 1, e => evalError s!"unsupported expression: {e.constrName}"
 
 /-- How to assign to one target, whichever kind it is. A field target's receiver
     is evaluated here, so a caller evaluates the targets before the value: Laurel
     evaluates left to right. -/
-partial def assignTarget (cfg : ExternalBackend) (target : Variable) : EvalM (Value → EvalM Unit) := do
-  match target with
-  | .Declare param =>
-      pure fun v => modify fun s => { s with stack := declareLocal s.stack param.name.text v }
-  | .Local name => pure fun v => modify fun s =>
-      -- A local always wins; otherwise a known global is updated in place. An
-      -- unknown name goes to `stack`, which is what the assign-before-declare
-      -- shapes the front ends emit rely on.
-      if s.stack.contains name.text then { s with stack := s.stack.insert name.text v }
-      else if s.globals.contains name.text then
-        { s with globals := s.globals.insert name.text v }
-      else { s with stack := s.stack.insert name.text v }
-  | .Field tgt field => do
-      let tv ← evalExprMd cfg tgt
-      pure fun v => writeField tv field.text v
-  | .Stack _ => pure fun v => modify fun s => { s with operands := v :: s.operands }
+def assignTarget (cfg : ExternalBackendM m) (fuel : Nat) (target : Variable) : EvalM m UpdateTarget :=
+  match fuel with
+  | 0 => throw .outOfFuel
+  | fuel + 1 => do
+    match target with
+    | .Declare param => pure (.declare param.name.text)
+    | .Local name => pure (.local name)
+    | .Field tgt field => do
+        let tv ← evalExprMd cfg fuel tgt
+        strictField cfg tv field
+        pure (.field tv field.text)
+    | .Stack _ => pure .stack
 
 /-- The current value of an update target, and how to write it back, with any
     receiver evaluated exactly once. -/
-partial def readForUpdate (cfg : ExternalBackend) (target : Variable)
-    : EvalM (Value × (Value → EvalM Unit)) := do
-  match target with
-  | .Local name => do
-      let v ← evalExpr cfg (.Var (.Local name))
-      pure (v, ← assignTarget cfg (.Local name))
-  | .Field tgt field => do
-      let tv ← evalExprMd cfg tgt
-      let v ← readField tv field.text
-      pure (v, fun nv => writeField tv field.text nv)
-  | .Declare param => evalError s!"cannot update the declaration of '{param.name.text}'"
-  | .Stack _ => evalError "a stack value cannot be updated in place"
-
-/-- The instance procedure `name` that a receiver dispatches to: its runtime
-    type's own, else the nearest ancestor's. -/
-partial def resolveMethod (target : Value) (name : String) : EvalM Procedure := do
-  match target with
-  | .ref a => do
-    let st ← get
-    let some obj := st.heap[a]?
-      | evalError s!"dangling reference #{a}"
-    let chain := st.index.ancestors[obj.typeName]?.getD [obj.typeName]
-    -- The declarers of `name` among the receiver's ancestors; the one that
-    -- dispatches is the most derived, i.e. the declarer no other declarer
-    -- extends. Taking the first one in ancestor order would let an earlier
-    -- parent's inherited copy win over a later parent's own override.
-    let declarers := chain.filter fun t => (st.index.methods[t]? >>= (·[name]?)).isSome
-    let mostDerived := declarers.find? fun t =>
-      declarers.all fun d => d == t || !((st.index.ancestors[d]?.getD [d]).contains t)
-    match mostDerived >>= (fun t => st.index.methods[t]? >>= (·[name]?)) with
-    | some proc => pure proc
-    | none => evalError s!"no instance procedure '{name}' on {obj.typeName}"
-  | v => evalError s!"instance call '{name}' on a non-composite {reprVariant v}"
+def readForUpdate (cfg : ExternalBackendM m) (fuel : Nat) (target : Variable)
+    : EvalM m (Value × UpdateTarget) :=
+  match fuel with
+  | 0 => throw .outOfFuel
+  | fuel + 1 => do
+    match target with
+    | .Local name => do
+        let v ← evalExpr cfg fuel (.Var (.Local name))
+        pure (v, .local name)
+    | .Field tgt field => do
+        let tv ← evalExprMd cfg fuel tgt
+        let v ← readField tv field.text
+        pure (v, .field tv field.text)
+    | .Declare param => evalError s!"cannot update the declaration of '{param.name.text}'"
+    | .Stack _ => evalError "a stack value cannot be updated in place"
 
 /-- Evaluate a Laurel statement for its side effects on the eval state. May
     throw `Control.return_` to unwind to the nearest `invokeProc`. -/
-partial def evalStmt (cfg : ExternalBackend) : Strata.Laurel.StmtExprMd → EvalM Unit
-  | ⟨.Block stmts none _ _, _⟩ => do
-      -- The step budget is charged per statement, which is enough to stop a
-      -- divergent loop without paying for a counter on every expression node.
-      -- It is also what makes a non-terminating generator come back as
-      -- `outOfFuel`: every resume of its body re-enters this block.
-      let st ← get
-      if st.fuel == 0 then throw .outOfFuel
-      modify fun s => { s with fuel := s.fuel - 1 }
-      let _ ← withBlockScope stmts (evalStmtList cfg stmts (asExpr := false))
-  | ⟨.Block stmts (some label) invariants _, _⟩ => do
-      -- A labelled block is the target of `exit label` and `goto label`: those
-      -- signals unwind to here and no further, which is how Laurel spells
-      -- `break`/`continue`. An `exit` leaves the block; a `goto` runs it again
-      -- from the start, re-checking its invariants as a loop head does. The
-      -- termination measure is a proof obligation only and is not run.
+def evalStmt (cfg : ExternalBackendM m) : Nat → Strata.Laurel.StmtExprMd → EvalM m Unit
+  | 0, _ => throw .outOfFuel
+  | fuel + 1, ⟨.Block stmts none _ _, _⟩ => do
+      chargeStep
+      let _ ← withBlockScope stmts (evalStmtList cfg fuel stmts (asExpr := false))
+  | fuel + 1, ⟨.Block stmts (some label) invariants _, _⟩ => do
       let base := (← get).cursor
-      let rec blockLoop : Nat → EvalM Unit
-        | 0 => throw .outOfFuel
-        | n + 1 => do
-          for inv in invariants do
-            evalStmt cfg ⟨.Assert inv none, inv.source⟩
-          let again ← tryCatch (do
-              let _ ← withBlockScope stmts (evalStmtList cfg stmts (asExpr := false))
-              pure false) fun
-            | .exit_ l =>
-                if l == label then do
-                  -- The jump skipped the walk's own position bookkeeping, so
-                  -- restore this block's position before execution continues.
-                  modify fun s => { s with cursor := base, seek := none }
-                  pure false
-                else throw (.exit_ l)
-            | .goto_ l =>
-                if l == label then do
-                  modify fun s => { s with cursor := base, seek := none }
-                  pure true
-                else throw (.goto_ l)
-            | other => throw other
-          -- Only a jump back to the start is charged to the shared step budget,
-          -- so a divergent goto-loop stops on it like a `while` does, while a
-          -- block that is merely a `break`/`continue` target costs nothing extra.
-          if again then do
-            if (← get).fuel == 0 then throw .outOfFuel
-            modify fun s => { s with fuel := s.fuel - 1 }
-            blockLoop n
-      blockLoop ((← get).fuel + 1)
-  | ⟨.Goto target .blockEnd, _⟩ => throw (.exit_ target)
-  | ⟨.Goto target .blockStart, _⟩ => throw (.goto_ target)
-  | ⟨.Assign targets value, _⟩ => do
+      withOpenLabel label (do
+        for inv in invariants do
+          evalStmt cfg fuel ⟨.Assert inv none, inv.source⟩
+        tryCatch (do let _ ← withBlockScope stmts (evalStmtList cfg fuel stmts (asExpr := false))) fun
+          | .exit_ l =>
+              if l == label then
+                modify fun s => { s with cursor := base, seek := none }
+              else throw (.exit_ l)
+          | .goto_ l =>
+              if l == label then do
+                modify fun s => { s with cursor := base, seek := none }
+                chargeStep
+                evalBlockLoop cfg fuel stmts label invariants base
+              else throw (.goto_ l)
+          | other => throw other)
+  | _ + 1, ⟨.Goto target destination, _⟩ => do
+      if (← get).openLabels.contains target then
+        match destination with
+        | .blockEnd => throw (.exit_ target)
+        | .blockStart => throw (.goto_ target)
+      else throw (.jump_ target destination)
+  | fuel + 1, ⟨.Assign targets value, _⟩ => do
+      match (if isStackPushTarget targets then stackPermutation targets value else none) with
+      | some order => do
+        let vals ← match value.val with
+          | .Call none _ args _ => args.mapM (evalExprMd cfg fuel)
+          | _ => pure []
+        for (t, i) in targets.zip order do
+          writeUpdate (← assignTarget cfg fuel t.val) (vals.getD i .unset)
+      | none =>
       match targets with
       | [t] => do
-          if let some order := stackPermutation targets value then
-            let vals ← match value.val with
-              | .Call none _ args _ => args.mapM (evalExprMd cfg)
-              | _ => pure []
-            (← assignTarget cfg t.val) (vals.getD (order.headD 0) .unset)
-            return
-          let write ← assignTarget cfg t.val
+          let write ← assignTarget cfg fuel t.val
           let v ← match value.val with
             | .Yield => evalYield
-            | _ => evalExprMd cfg value
-          write v
+            | _ => evalExprMd cfg fuel value
+          writeUpdate write v
       | _ => do
-          if let some order := stackPermutation targets value then
-            let vals ← match value.val with
-              | .Call none _ args _ => args.mapM (evalExprMd cfg)
-              | _ => pure []
-            for (t, i) in targets.zip order do
-              (← assignTarget cfg t.val) (vals.getD i .unset)
-          else
-            -- Multiple targets only arise from a call with multiple outputs, so the
-            -- right-hand side is evaluated once and its outputs distributed.
-            let writes ← targets.mapM (assignTarget cfg ·.val)
-            modify fun s => { s with callSite := value.source }
-            let outs ← evalCallOutputs cfg value.val
-            if outs.size != targets.length then
-              liftM (m := IO) (throw (IO.userError
-                s!"assignment expects {targets.length} values, call produced {outs.size}"))
-            for (write, v) in writes.zip outs.toList do
-              write v
+          -- Multiple targets only arise from a call with multiple outputs, so the
+          -- right-hand side is evaluated once and its outputs distributed.
+          let writes ← targets.mapM (assignTarget cfg fuel ·.val)
+          modify fun s => { s with callSite := value.source }
+          let outs ← evalCallOutputs cfg fuel value.val
+          if outs.size != targets.length then
+            (hostFail (
+              s!"assignment expects {targets.length} values, call produced {outs.size}"))
+          for (write, v) in writes.zip outs.toList do
+            writeUpdate write v
   -- A bare declaration with no initializer.
-  | ⟨.Var (Variable.Declare param), _⟩ => do
-      if let some ⟨.UserDefined n, _⟩ := param.type then
-        if (← get).index.noWitness.contains n.text then
-          evalError s!"'{param.name.text}' has no starting value: the witness of '{n.text}' could not be evaluated"
-      modify fun s =>
-        let v := match param.type with
-          | some t => defaultValue s.index t.val
-          | none => .unset
-        { s with stack := declareLocal s.stack param.name.text v }
-  | ⟨.IfThenElse cond thenB elseB, _⟩ => do
+  | _ + 1, ⟨.Var (Variable.Declare param), _⟩ => do
+      if let some n := missingWitness (← get).index (param.type.map (·.val)) then
+        evalError s!"'{param.name.text}' has no starting value: the witness of '{n}' could not be evaluated"
+      let s ← get
+      let v ← chooseValue (param.type.map (s.index.unalias ·.val)) (defaultOf s.index (param.type.map (·.val)))
+      modify fun s => { s with stack := declareLocal s.stack param.name.text v }
+  | fuel + 1, ⟨.IfThenElse cond thenB elseB, _⟩ => do
       let st ← get
       if st.coroSelf.isNone then
-        let c ← evalExprMd cfg cond
-        if ← liftM (isTrue cfg c) then evalScopedStmt cfg thenB
+        let c ← evalExprMd cfg fuel cond
+        if ← liftM (isTrue cfg c) then evalScopedStmt cfg fuel thenB
         else match elseB with
-          | some e => evalScopedStmt cfg e
+          | some e => evalScopedStmt cfg fuel e
           | none => pure ()
       else
         -- Inside a coroutine the branch taken is part of the suspension path
@@ -1830,62 +2448,51 @@ partial def evalStmt (cfg : ExternalBackend) : Strata.Laurel.StmtExprMd → Eval
         | some (branch :: rest) => do
             enterChild base branch (some rest)
             match branch, elseB with
-            | 0, _ => evalScopedStmt cfg thenB
-            | 1, some e => evalScopedStmt cfg e
+            | 0, _ => evalScopedStmt cfg fuel thenB
+            | 1, some e => evalScopedStmt cfg fuel e
             | _, _ => evalError s!"resumed into `if` branch {branch}, which is not there"
         | _ => do
-            let c ← evalExprMd cfg cond
+            let c ← evalExprMd cfg fuel cond
             if ← liftM (isTrue cfg c) then do
               enterChild base 0 none
-              evalScopedStmt cfg thenB
+              evalScopedStmt cfg fuel thenB
             else match elseB with
               | some e => do
                   enterChild base 1 none
-                  evalScopedStmt cfg e
+                  evalScopedStmt cfg fuel e
               | none => pure ()
         modify fun s => { s with cursor := base, seek := none }
-  | ⟨.While cond invariants _ body postTest, _⟩ => do
+  | fuel + 1, ⟨.While cond invariants _ body postTest, _⟩ => do
       -- Each invariant is checked at the loop head and a false one is reported at
       -- the invariant as a failing assertion, as the verifier reports one that
       -- fails on entry. For a `while` the head follows the condition, which may
       -- have effects, and is reached on the way out too; for a `do`/`while` it
       -- precedes every run of the body. The
       -- termination measure is a proof obligation only and is not run.
-      let checkInvariants : EvalM Unit :=
+      let checkInvariants : EvalM m Unit :=
         for inv in invariants do
-          evalStmt cfg ⟨.Assert inv none, inv.source⟩
+          evalStmt cfg fuel ⟨.Assert inv none, inv.source⟩
       let st ← get
       -- The body is the loop's only child, so it shares the loop's own position
       -- and needs no index. It IS re-entered per iteration though, so its
       -- position is re-established absolutely each time rather than inherited
       -- from wherever the previous iteration left off.
       let base := st.cursor
-      let enterBody : EvalM Unit :=
-        if st.coroSelf.isSome then modify fun s => { s with cursor := base } else pure ()
       -- A pending seek means the coroutine suspended *inside* the body, so the
       -- resumed iteration runs without testing the condition: the body was
       -- already entered, in a step that has gone.
       if postTest && st.seek.isNone then do
         checkInvariants
-        evalScopedStmt cfg body
+        evalScopedStmt cfg fuel body
       else if st.seek.isSome then do
-        evalScopedStmt cfg body
-      let rec loop : Nat → EvalM Unit
-        | 0 => throw .outOfFuel
-        | n + 1 => do
-          enterBody
-          let c ← evalExprMd cfg cond
-          unless postTest do checkInvariants
-          if ← liftM (isTrue cfg c) then do
-            if postTest then checkInvariants
-            evalScopedStmt cfg body
-            loop n
-          else pure ()
-      loop st.fuel
-  | ⟨.Throw value, _⟩ => do
-      let v ← evalExprMd cfg value
+        evalScopedStmt cfg fuel body
+      let enterBody : EvalM m Unit :=
+        if st.coroSelf.isSome then modify fun s => { s with cursor := base } else pure ()
+      evalWhileIter cfg cond body postTest checkInvariants enterBody fuel
+  | fuel + 1, ⟨.Throw value, _⟩ => do
+      let v ← evalExprMd cfg fuel value
       throw (.throw_ v)
-  | ⟨.Try body catches finally?, _⟩ => do
+  | fuel + 1, ⟨.Try body catches finally?, _⟩ => do
       let st ← get
       let inCoro := st.coroSelf.isSome
       -- Each arm of a `try` is a child of its own (0 is the body, `k + 1` is
@@ -1901,7 +2508,7 @@ partial def evalStmt (cfg : ExternalBackend) : Strata.Laurel.StmtExprMd → Eval
       -- directly. This is what lets `yield` sit inside an `except` clause, which
       -- Python allows and a generator holding state across a handler needs.
       let base := st.cursor
-      let enterArm (k : Nat) (childSeek : Option (List Nat)) : EvalM Unit :=
+      let enterArm (k : Nat) (childSeek : Option (List Nat)) : EvalM m Unit :=
         if inCoro then enterChild base k childSeek else pure ()
       let armSeek := if inCoro then st.seek else none
       -- Arm 0 is the body; arms 1..n are the catch clauses; `n + 1` is the `finally`,
@@ -1923,24 +2530,9 @@ partial def evalStmt (cfg : ExternalBackend) : Strata.Laurel.StmtExprMd → Eval
         | _ => none
       -- `finally` runs on every exit path, including an unwinding one, so the
       -- signal is re-thrown only after it has run.
-      let runFinally : EvalM Unit := match finally? with
-        | some f => do
-            enterArm (catches.length + 1) none
-            evalScopedStmt cfg f
-        | none => pure ()
-      -- Run a handler, then unbind its clause and run the `finally` exactly once,
-      -- whether the handler finished or left by a signal. A signal raised by the
-      -- `finally` itself therefore leaves without running it again.
-      let finishClause (c : CatchClause) : EvalM Unit := do
-        let handled ← tryCatch (do evalScopedStmt cfg c.body; pure (none : Option Control)) fun sig =>
-          match sig with
-          -- As in the body arm: a suspension pauses the handler, it does not leave
-          -- the `try`, and a refusal ends the run, so `finally` must not run.
-          | .suspended | .refused _ => throw sig
-          | _ => pure (some sig)
-        modify fun s => { s with stack := unbindCatch s.stack c.binding.text }
-        runFinally
-        if let some sig := handled then throw sig
+      let runFinally : EvalM m Unit := runTryFinally cfg fuel finally? inCoro base catches.length
+      let finishClause (c : CatchClause) : EvalM m Unit :=
+        finishCatchClause cfg fuel finally? inCoro base catches.length c
       if let some (k, c, rest) := resumeClause? then
         -- Straight back into the handler that was running. The `try` body is NOT
         -- re-executed: it already ran, and re-running it would repeat its effects.
@@ -1948,8 +2540,15 @@ partial def evalStmt (cfg : ExternalBackend) : Strata.Laurel.StmtExprMd → Eval
         finishClause c
       else do
       enterArm 0 bodySeek
-      let outcome ← tryCatch (do evalScopedStmt cfg body; pure (none : Option Control)) fun
+      -- Running out of fuel skips the `finally`. A handler that ran on it could turn
+      -- `outOfFuel` into another outcome, so a run's result would depend on how much
+      -- fuel it was given, and fuel monotonicity, which the pass proofs rest on, would
+      -- be false.
+      let outcome ← tryCatch (do evalScopedStmt cfg fuel body; pure (none : Option Control)) fun
         | .throw_ v => pure (some (.throw_ v))
+        | .outOfFuel => throw .outOfFuel
+        | .infeasible => throw .infeasible
+        | .refused r => throw (.refused r)
         | other => pure (some other)
       match outcome with
       | none => runFinally
@@ -1964,75 +2563,256 @@ partial def evalStmt (cfg : ExternalBackend) : Strata.Laurel.StmtExprMd → Eval
           -- `k` is the clause's own index, so `enterArm (k + 1)` names this arm in the
           -- path a `yield` inside the handler reifies -- which is what makes the
           -- resume above able to come back to it.
-          let rec tryClauses : Nat → List CatchClause → EvalM Unit
-            | _, [] => do runFinally; throw (.throw_ v)
-            | k, c :: rest => do
-              -- The binding is scoped to its clause, so a same-named local of the
-              -- enclosing procedure is put back once the clause is done with it.
-              let name := c.binding.text
-              let unbind : EvalM Unit := modify fun s =>
-                { s with stack := unbindCatch s.stack name }
-              modify fun s => { s with stack := bindCatch s.stack name v }
-              let clauseMatches ← match c.predicate with
-                | none => pure true
-                | some pred => do
-                    let pv ← tryCatch (evalExprMd cfg pred) fun sig => do
-                      unbind
-                      unless sig matches .refused _ do runFinally
-                      throw sig
-                    liftM (isTrue cfg pv)
-              if clauseMatches then do
-                enterArm (k + 1) none
-                -- A `yield` inside the handler pauses it, so `finishClause` does not
-                -- run the `finally` then. Otherwise it would fire once per
-                -- suspension: a handler that yields twice would run it twice, and
-                -- anything the `finally` was balancing -- a pushed exception, an
-                -- acquired resource -- would be released while the handler is live.
-                finishClause c
-              else do
-                unbind
-                tryClauses (k + 1) rest
-          tryClauses 0 catches
+          checkCaught catches v
+          tryCatchClauses cfg fuel finally? inCoro base catches.length v 0 catches
       | some other => do runFinally; throw other
-  | ⟨.Assume _, _⟩ =>
-      -- An `assume` constrains the verifier's state space and has no runtime
-      -- effect, so the interpreter ignores it -- matching the Core interpreter's
-      -- `ignoreAssumes`.
-      pure ()
-  | ⟨.Assert cond summary, stmtSource⟩ => do
-      let v ← evalExprMd cfg cond
-      if (← liftM (isTrue cfg v)) then
-        unless (← get).quiet do
-          let exprText := toString (Strata.Laurel.formatStmtExpr cond)
-          liftM (m := IO) (IO.println s!"· PASS assert {exprText}")
-      else
-        -- Use `stmtSource` (the whole `assert` statement's range, not just the
-        -- condition's) so the inline `// ^^^` annotations match both interpreters.
-        let summaryText := summary.getD "assertion"
-        let failure := Strata.Message.withRange stmtSource s!"{summaryText} does not hold"
+  | fuel + 1, ⟨.Assume cond, source⟩ => do
+      emitEvent (.assume cond source (← get))
+      let v ← evalExprMd cfg fuel cond
+      unless ← liftM (isTrue cfg v) do throw .infeasible
+  | fuel + 1, ⟨.Assert cond summary, stmtSource⟩ => do
+      let before ← get
+      let v ← evalExprMd cfg fuel cond
+      -- Use `stmtSource` (the whole `assert` statement's range, not just the
+      -- condition's) so the inline `// ^^^` annotations match both interpreters.
+      let summaryText := summary.getD "assertion"
+      let failure := Strata.Message.withRange stmtSource s!"{summaryText} does not hold"
+      let holds ← liftM (isTrue cfg v)
+      emitEvent (.check .assert (some cond) failure holds before)
+      unless holds do
         modify fun s => { s with assertFailures := s.assertFailures.push failure }
-  | ⟨.Return values, _⟩ => do
+  | fuel + 1, ⟨.Return values, _⟩ => do
       -- Every value is evaluated before any output is written, so `return q, p` on
       -- outputs `(p, q)` swaps them rather than reading an overwritten `p`.
-      let vs ← values.mapM (evalExprMd cfg)
+      let vs ← values.mapM (evalExprMd cfg fuel)
       throw (.return_ vs)
-  | stmt@⟨.Call none .., _⟩ => do
+  | fuel + 1, stmt@⟨.Call none .., _⟩ => do
       -- Bare `foo(args)` as a statement — discard the return value.
-      let _ ← evalExprMd cfg stmt
+      let _ ← evalExprMd cfg fuel stmt
       pure ()
-  | ⟨.Yield, _⟩ => do
+  | _ + 1, ⟨.Yield, _⟩ => do
       let _ ← evalYield
       pure ()
-  | ⟨s@(.Resume ..), _⟩ | ⟨s@(.HasNext ..), _⟩ => do
+  | fuel + 1, ⟨s@(.Resume ..), _⟩ | fuel + 1, ⟨s@(.HasNext ..), _⟩ => do
       -- Statement position drops the value: a bare `yield` ignores what the next
       -- resume sends in, and a bare `resume(co)` ignores the yielded payload.
-      let _ ← evalExpr cfg s
+      let _ ← evalExpr cfg fuel s
       pure ()
   -- Any other expression in statement position (`x++`, `x += e`, `o#m()`, a bare
   -- trailing `x`) runs for its effects and its value is dropped.
-  | stmt => do
-      let _ ← evalExprMd cfg stmt
+  | fuel + 1, stmt => do
+      let _ ← evalExprMd cfg fuel stmt
       pure ()
+
+/-- One iteration of a loop, and the rest of the loop after it. The invariant check
+    and the body entry are closure arguments rather than inlined, so that the
+    recursive call stays a tail call; otherwise a long-running loop overflows the
+    stack. -/
+def evalWhileIter (cfg : ExternalBackendM m) (cond : StmtExprMd) (body : StmtExprMd)
+    (postTest : Bool) (checkInvariants enterBody : EvalM m Unit) : Nat → EvalM m Unit
+  | 0 => throw .outOfFuel
+  | n + 1 => do
+    chargeIteration body
+    enterBody
+    let c ← evalExprMd cfg n cond
+    unless postTest do checkInvariants
+    if ← liftM (isTrue cfg c) then do
+      if postTest then checkInvariants
+      evalScopedStmt cfg n body
+      evalWhileIter cfg cond body postTest checkInvariants enterBody n
+    else pure ()
+termination_by structural n => n
+
+def evalBlockLoop (cfg : ExternalBackendM m) (fuel : Nat) (stmts : List StmtExprMd) (label : String)
+    (invariants : List StmtExprMd) (base : List Nat) : EvalM m Unit :=
+  match fuel with
+  | 0 => throw .outOfFuel
+  | fuel + 1 => do
+    for inv in invariants do
+      evalStmt cfg fuel ⟨.Assert inv none, inv.source⟩
+    tryCatch (do let _ ← withBlockScope stmts (evalStmtList cfg fuel stmts (asExpr := false))) fun
+      | .exit_ l =>
+          if l == label then
+            modify fun s => { s with cursor := base, seek := none }
+          else throw (.exit_ l)
+      | .goto_ l =>
+          if l == label then do
+            modify fun s => { s with cursor := base, seek := none }
+            chargeStep
+            evalBlockLoop cfg fuel stmts label invariants base
+          else throw (.goto_ l)
+      | other => throw other
+termination_by structural fuel
+
+/-- Run the statements of the block `bl`, landed in at the statement `k`, as `stmts` and
+    carry on from there. `bl` is open while they run; a jump out of the block or back to
+    its start is caught as it would be by the block run from the top, but its invariants
+    are not checked on the way in, since they belong to the block's start. -/
+def evalBlockFrom (cfg : ExternalBackendM m) (fuel : Nat) (stmts : List StmtExprMd) (bl : String)
+    (invariants : List StmtExprMd) (k : Nat) (label : String) (destination : GotoDestination) :
+    EvalM m Unit :=
+  match fuel with
+  | 0 => throw .outOfFuel
+  | fuel + 1 => do
+    let base := (← get).cursor
+    withOpenLabel bl (tryCatch (withBlockScope stmts (runFrom cfg fuel stmts k label destination)) fun
+      | .exit_ l =>
+          if l == bl then
+            modify fun s => { s with cursor := base, seek := none }
+          else throw (.exit_ l)
+      | .goto_ l =>
+          if l == bl then do
+            modify fun s => { s with cursor := base, seek := none }
+            chargeStep
+            evalBlockLoop cfg fuel stmts bl invariants base
+          else throw (.goto_ l)
+      | other => throw other)
+termination_by structural fuel
+
+/-- Run `s` from the labelled block `label` nested in it, landing at its start or just past
+    its end: the statements before it in each enclosing statement list are skipped, those
+    after it run as usual. -/
+def evalStmtFrom (cfg : ExternalBackendM m) (fuel : Nat) (s : StmtExprMd) (label : String)
+    (destination : GotoDestination) : EvalM m Unit :=
+  match fuel with
+  | 0 => throw .outOfFuel
+  | fuel + 1 =>
+    match s.val with
+    | .Block stmts bl invariants _ =>
+      if bl == some label then
+        match destination with
+        | .blockStart => evalStmt cfg fuel s
+        | .blockEnd => pure ()
+      else
+        let k := stmts.findIdx (fun t => (statementLabels t).contains label)
+        match bl with
+        | some bl => evalBlockFrom cfg fuel stmts bl invariants k label destination
+        | none => withBlockScope stmts (runFrom cfg fuel stmts k label destination)
+    | .IfThenElse _ th el =>
+      if (statementLabels th).contains label then evalStmtFrom cfg fuel th label destination
+      else
+        match el with
+        | some e => evalStmtFrom cfg fuel e label destination
+        | none => evalError s!"no block labelled '{label}' to jump to"
+    | _ => evalError s!"no block labelled '{label}' to jump to"
+termination_by structural fuel
+
+/-- Run `stmts` from index `k`, entering that statement at the jump target `label` and
+    running the ones after it as usual. A jump to a block held by one of `stmts` that does
+    not enclose the jump lands here and carries on from that statement. Landing is charged
+    to the step budget and uses one unit of fuel. -/
+def runFrom (cfg : ExternalBackendM m) (fuel : Nat) (stmts : List StmtExprMd) (k : Nat)
+    (label : String) (destination : GotoDestination) : EvalM m Unit :=
+  match fuel with
+  | 0 => throw .outOfFuel
+  | fuel + 1 => do
+    let landed ← tryCatch (do
+        match stmts.drop k with
+        | [] => pure ()
+        | s :: rest => do
+            modify fun st => { st with stmtSite := s.source }
+            evalStmtFrom cfg fuel s label destination
+            rest.forM fun s => do
+              modify fun st => { st with stmtSite := s.source }
+              if (stackAnnotation? s).isNone then withOperandWindow s (evalStmt cfg fuel s)
+        pure (none : Option (Nat × String × GotoDestination))) fun
+      | .jump_ l d =>
+          match stmts.findIdx? (fun t => (statementLabels t).contains l) with
+          | some j => pure (some (j, l, d))
+          | none => throw (.jump_ l d)
+      | other => throw other
+    match landed with
+    | none => pure ()
+    | some (j, l, d) => do
+      chargeStep
+      runFrom cfg fuel stmts j l d
+termination_by structural fuel
+
+/-- `finally` runs on every exit path, including an unwinding one, so the signal is
+    re-thrown only after it has run. -/
+def runTryFinally (cfg : ExternalBackendM m) (fuel : Nat) (finally? : Option StmtExprMd)
+    (inCoro : Bool) (base : List Nat) (nCatches : Nat) : EvalM m Unit :=
+  match fuel with
+  | 0 => throw .outOfFuel
+  | fuel + 1 =>
+    match finally? with
+    | some f => do
+        if inCoro then enterChild base (nCatches + 1) none
+        evalScopedStmt cfg fuel f
+    | none => pure ()
+termination_by structural fuel
+
+/-- Run a handler, then unbind its clause and run the `finally` exactly once, whether
+    the handler finished or left by a signal. A signal raised by the `finally` itself
+    therefore leaves without running it again. -/
+def finishCatchClause (cfg : ExternalBackendM m) (fuel : Nat) (finally? : Option StmtExprMd)
+    (inCoro : Bool) (base : List Nat) (nCatches : Nat) (c : CatchClause) : EvalM m Unit :=
+  match fuel with
+  | 0 => throw .outOfFuel
+  | fuel + 1 => do
+    let handled ← tryCatch (do evalScopedStmt cfg fuel c.body; pure (none : Option Control)) fun sig =>
+      match sig with
+      | .suspended => throw .suspended
+      | .outOfFuel => throw .outOfFuel
+      | .infeasible => throw .infeasible
+      | .refused r => throw (.refused r)
+      | _ => pure (some sig)
+    modify fun s => { s with stack := unbindCatch s.stack c.binding.text }
+    runTryFinally cfg fuel finally? inCoro base nCatches
+    if let some sig := handled then throw sig
+termination_by structural fuel
+
+/-- Try `v` against catch clauses `k` onwards: first match wins, and an unmatched value
+    keeps unwinding so an outer handler still sees it. -/
+def tryCatchClauses (cfg : ExternalBackendM m) (fuel : Nat) (finally? : Option StmtExprMd)
+    (inCoro : Bool) (base : List Nat) (nCatches : Nat) (v : Value) (k : Nat)
+    (clauses : List CatchClause) : EvalM m Unit :=
+  match fuel, clauses with
+  | 0, _ => throw .outOfFuel
+  | fuel + 1, [] => do
+    runTryFinally cfg fuel finally? inCoro base nCatches
+    throw (.throw_ v)
+  | fuel + 1, c :: rest => do
+    let name := c.binding.text
+    let unbind : EvalM m Unit := modify fun s =>
+      { s with stack := unbindCatch s.stack name }
+    modify fun s => { s with stack := bindCatch s.stack name v }
+    let clauseMatches ← match c.predicate with
+      | none => pure true
+      | some pred => do
+          let pv ← tryCatch (evalExprMd cfg fuel pred) fun sig => do
+            unless sig matches .outOfFuel | .refused _ | .infeasible | .suspended do
+              unbind; runTryFinally cfg fuel finally? inCoro base nCatches
+            throw sig
+          liftM (isTrue cfg pv)
+    if clauseMatches then do
+      if inCoro then enterChild base (k + 1) none
+      finishCatchClause cfg fuel finally? inCoro base nCatches c
+    else do
+      unbind
+      tryCatchClauses cfg fuel finally? inCoro base nCatches v (k + 1) rest
+termination_by structural fuel
+
+def evalStmtListGo (cfg : ExternalBackendM m) (fuel : Nat) (asExpr : Bool) (base : List Nat)
+    (start : Nat) (inner : Option (List Nat)) (k : Nat) (stmts : List StmtExprMd) :
+    EvalM m Value :=
+  match fuel, stmts with
+  | 0, _ => throw .outOfFuel
+  | _ + 1, [] => pure default
+  | fuel + 1, s :: rest => do
+    enterChild base k (if k == start then inner else none)
+    if rest.isEmpty then do
+      let v ← if asExpr then withOperandWindow s (evalExprMd cfg fuel s) else do
+        modify fun st => { st with stmtSite := s.source }
+        withOperandWindow s (evalStmt cfg fuel s)
+        pure default
+      modify fun s' => { s' with cursor := base, seek := none }
+      pure v
+    else do
+      modify fun st => { st with stmtSite := s.source }
+      withOperandWindow s (evalStmt cfg fuel s)
+      evalStmtListGo cfg fuel asExpr base start inner (k + 1) rest
+termination_by structural fuel
 
 /-- Run a statement list, maintaining the coroutine position and honouring a
     pending fast-forward.
@@ -2042,83 +2822,50 @@ partial def evalStmt (cfg : ExternalBackend) : Strata.Laurel.StmtExprMd → Eval
     it says `some (i :: rest)` the statements before index `i` are skipped —
     they ran in an earlier step — statement `i` is entered with `rest`, and
     everything after it runs normally. Outside a coroutine body neither the
-    position nor the seek means anything, and the walk is a plain `forM`.
+    position nor the seek means anything, and the walk is a plain `forM`, except that
+    in statement position a jump to a labelled block held by one of the statements, from
+    one that does not enclose it, lands in that statement and carries on from there
+    (`runFrom`). A stack annotation (`stackAnnotation?`) is skipped, not run.
 
     `asExpr` selects the value: with `asExpr := true` the trailing statement is
     evaluated as an expression and its value returned, which is what a
     `{ lemma(x); e }` block in expression position evaluates to. -/
-partial def evalStmtList (cfg : ExternalBackend) (stmts : List Strata.Laurel.StmtExprMd)
-    (asExpr : Bool) : EvalM Value := do
-  let runStmt (s : Strata.Laurel.StmtExprMd) : EvalM Unit := do
-    modify fun st => { st with stmtSite := s.source }
-    withOperandWindow s (evalStmt cfg s)
-  let st ← get
-  if st.coroSelf.isNone then
-    if asExpr then
-      match stmts.reverse with
-      | [] => pure default
-      | last :: earlier => do
-          earlier.reverse.forM (fun s => runStmt s)
-          modify fun s => { s with stmtSite := last.source }
-          withOperandWindow last (evalExprMd cfg last)
-    else do
-      stmts.forM (fun s => runStmt s)
-      pure default
-  else
-    let base := st.cursor
-    let (start, inner) := seekEntry st.seek
-    let rec go : Nat → List Strata.Laurel.StmtExprMd → EvalM Value
-      | _, [] => pure default
-      | k, s :: rest => do
-        enterChild base k (if k == start then inner else none)
-        if rest.isEmpty then do
-          let v ← if asExpr then withOperandWindow s (evalExprMd cfg s) else do runStmt s; pure default
-          modify fun s' => { s' with cursor := base, seek := none }
-          pure v
-        else do
-          runStmt s
-          go (k + 1) rest
-    go start (stmts.drop start)
-
-/-- The coroutine instance a value denotes, with the address it is keyed by (the
-    same address the `Value.ref` carries). `what` names the operation for the
-    error message, since every way of failing here is a client mistake: a
-    `resume` / `has_next` / `coroCompletion` applied to something that is not a
-    coroutine. -/
-partial def coroInstance (v : Value) (what : String) : EvalM (Nat × CoroState) := do
-  match v with
-  | .ref addr => do
-      let st ← get
-      match st.coros[addr]? with
-      | some co => pure (addr, co)
-      | none => evalError s!"'{what}' on #{addr}, which is not a coroutine instance"
-  | _ => evalError s!"'{what}' on a non-coroutine {reprVariant v}"
-
-/-- `yield`: suspend the coroutine body that is running, or — when this is the
-    suspension point the current resume is fast-forwarding to — deliver the value
-    that resume sent in and carry on.
-
-    The suspension path and the frame are written into the instance here, rather
-    than where `Control.suspended` is caught, because `EvalState.cursor` names the
-    yield's own position only at the yield itself. -/
-partial def evalYield : EvalM Value := do
-  let st ← get
-  let some addr := st.coroSelf
-    | evalError "`yield` outside a coroutine body"
-  let some co := st.coros[addr]?
-    | evalError s!"`yield` in a coroutine whose instance #{addr} is gone"
-  match st.seek with
-  | some [] => do
-      -- The arrival marker: this `yield` already suspended, in the step that led
-      -- here. It does not suspend again; it hands the body the resumed value and
-      -- the fast-forward is over.
-      modify fun s => { s with seek := none }
-      pure co.sent
-  | _ => do
-      modify fun s =>
-        let suspended := { co with resumePt := some s.cursor, frame := s.stack }
-        { s with coros := s.coros.insert addr suspended }
-      throw .suspended
+def evalStmtList (cfg : ExternalBackendM m) (fuel : Nat) (stmts : List Strata.Laurel.StmtExprMd)
+    (asExpr : Bool) : EvalM m Value :=
+  match fuel with
+  | 0 => throw .outOfFuel
+  | fuel + 1 => do
+    let runStmt (s : Strata.Laurel.StmtExprMd) : EvalM m Unit := do
+      modify fun st => { st with stmtSite := s.source }
+      if (stackAnnotation? s).isNone then withOperandWindow s (evalStmt cfg fuel s)
+    let st ← get
+    if st.coroSelf.isNone then
+      if asExpr then
+        match stmts.reverse with
+        | [] => pure default
+        | last :: earlier => do
+            earlier.reverse.forM (fun s => runStmt s)
+            modify fun s => { s with stmtSite := last.source }
+            withOperandWindow last (evalExprMd cfg fuel last)
+      else do
+        let landed ← tryCatch (do
+            stmts.forM (fun s => runStmt s)
+            pure (none : Option (Nat × String × GotoDestination))) fun
+          | .jump_ l d =>
+              match stmts.findIdx? (fun t => (statementLabels t).contains l) with
+              | some j => pure (some (j, l, d))
+              | none => throw (.jump_ l d)
+          | other => throw other
+        match landed with
+        | none => pure default
+        | some (j, l, d) => do
+            chargeStep
+            runFrom cfg fuel stmts j l d
+            pure default
+    else
+      let base := st.cursor
+      let (start, inner) := seekEntry st.seek
+      evalStmtListGo cfg fuel asExpr base start inner start (stmts.drop start)
 
 /-- `resume(co, v)`: run the coroutine instance `target` denotes until it next
     suspends or finishes, and evaluate to the value it yields.
@@ -2130,95 +2877,112 @@ partial def evalYield : EvalM Value := do
     saved and restored by absolute value: a suspension leaves through the
     exception channel, so a restore expressed as an undo would be skipped exactly
     when it is needed. -/
-partial def resumeCoroutine (cfg : ExternalBackend) (target : Value) (sent : Value)
-    : EvalM Value := do
-  let (addr, co) ← coroInstance target "resume"
-  if co.finished then
-    evalError s!"'resume' of coroutine '{co.proc}' after it ran to completion"
-  if co.running then
-    evalError s!"'resume' of coroutine '{co.proc}' from inside its own body"
-  let st ← get
-  let some proc := st.index.procs[co.proc]?
-    | evalError s!"unknown coroutine '{co.proc}'"
-  let some body := proc.body.implementation
-    | evalError s!"coroutine '{co.proc}' has no body to run"
-  let restoreCaller : EvalM Unit := modify fun s =>
-    { s with stack := st.stack, callStack := st.callStack, cursor := st.cursor,
-             seek := st.seek, coroSelf := st.coroSelf, stmtSite := st.stmtSite,
-             callSite := st.callSite }
-  modify fun s =>
-    { s with stack := co.frame, callStack := co.proc :: s.callStack, cursor := [],
-             seek := co.resumePt, coroSelf := some addr,
-             coros := s.coros.insert addr { co with sent, running := true } }
-  let stopped : EvalM Unit := modify fun s =>
-    match s.coros[addr]? with
-    | some c => { s with coros := s.coros.insert addr { c with running := false } }
-    | none => s
-  let signal ← tryCatch (do evalStmt cfg body; pure (none : Option Control)) fun
-    | .suspended     => pure (some .suspended)
-    | .return_ value => pure (some (.return_ value))
-    | other => do
-        -- A signal escaping the body ends the coroutine: resuming it again would
-        -- re-run the statements after its last suspension.
-        modify fun s =>
-          let done := { (s.coros[addr]?.getD co) with resumePt := none, finished := true }
-          { s with coros := s.coros.insert addr done }
-        stopped
-        restoreCaller
-        throw other
-  let yielded ←
-    match signal with
-    | some .suspended =>
-        -- `yield` saved the frame and the path; the resume's value is the
-        -- coroutine's `yields` binding as of that frame.
-        let s ← get
-        match proc.yields.head? with
-        | none => pure .unset
-        | some p => pure ((s.coros[addr]?.bind (·.frame[p.name.text]?)).getD .unset)
-    | _ => do
-        -- The body returned or fell off its end. Its completion value is the
-        -- `return`'s payload, and there is no yielded value for this step: a
-        -- client is expected to have checked `has_next(co)`.
-        let finalFrame := (← get).stack
-        let completed := match signal with
-          | some (.return_ [v]) => v
-          | _ => .unset
-        modify fun s =>
-          let done := { (s.coros[addr]?.getD co) with
-            frame := finalFrame, resumePt := none, finished := true, completed }
-          { s with coros := s.coros.insert addr done }
-        pure .unset
-  stopped
-  restoreCaller
-  pure yielded
+def resumeCoroutine (cfg : ExternalBackendM m) (fuel : Nat) (target : Value) (sent : Value)
+    : EvalM m Value :=
+  match fuel with
+  | 0 => throw .outOfFuel
+  | fuel + 1 => do
+    let (addr, co) ← coroInstance target "resume"
+    if co.finished then
+      evalError s!"'resume' of coroutine '{co.proc}' after it ran to completion"
+    if co.running then
+      evalError s!"'resume' of coroutine '{co.proc}' from inside its own body"
+    let st ← get
+    let some proc := st.index.procs[co.proc]?
+      | evalError s!"unknown coroutine '{co.proc}'"
+    let some body := proc.body.implementation
+      | evalError s!"coroutine '{co.proc}' has no body to run"
+    let restoreCaller : EvalM m Unit := modify fun s =>
+      { s with stack := st.stack, callStack := st.callStack, cursor := st.cursor,
+               seek := st.seek, coroSelf := st.coroSelf, stmtSite := st.stmtSite,
+               callSite := st.callSite }
+    modify fun s =>
+      { s with stack := co.frame, callStack := co.proc :: s.callStack, cursor := [],
+               seek := co.resumePt, coroSelf := some addr,
+               coros := s.coros.insert addr { co with sent, running := true } }
+    let stopped : EvalM m Unit := modify fun s =>
+      match s.coros[addr]? with
+      | some c => { s with coros := s.coros.insert addr { c with running := false } }
+      | none => s
+    let signal ← tryCatch (do evalStmt cfg fuel body; pure (none : Option Control)) fun
+      | .suspended     => pure (some .suspended)
+      | .return_ value => pure (some (.return_ value))
+      | other => do
+          -- A signal escaping the body ends the coroutine: resuming it again would
+          -- re-run the statements after its last suspension.
+          modify fun s =>
+            let done := { (s.coros[addr]?.getD co) with resumePt := none, finished := true }
+            { s with coros := s.coros.insert addr done }
+          stopped
+          restoreCaller
+          throw other
+    let yielded ←
+      match signal with
+      | some .suspended =>
+          -- `yield` saved the frame and the path; the resume's value is the
+          -- coroutine's `yields` binding as of that frame.
+          let s ← get
+          match proc.yields.head? with
+          | none => pure .unset
+          | some p => pure ((s.coros[addr]?.bind (·.frame[p.name.text]?)).getD .unset)
+      | _ => do
+          -- The body returned or fell off its end. Its completion value is the
+          -- `return`'s payload, and there is no yielded value for this step: a
+          -- client is expected to have checked `has_next(co)`.
+          let finalFrame := (← get).stack
+          let completed := match signal with
+            | some (.return_ [v]) => v
+            | _ => .unset
+          modify fun s =>
+            let done := { (s.coros[addr]?.getD co) with
+              frame := finalFrame, resumePt := none, finished := true, completed }
+            { s with coros := s.coros.insert addr done }
+          pure .unset
+    stopped
+    restoreCaller
+    pure yielded
 
 /-- Evaluate a call in a position that wants ALL of its outputs. Only a
     `StaticCall` can produce more than one, so anything else yields a singleton. -/
-partial def evalCallOutputs (cfg : ExternalBackend) (e : StmtExpr) : EvalM (Array Value) := do
-  match e with
-  | .Call none callee args typeArgs =>
-    match Operation.ofProcName? callee.text with
-    | some _ => do let v ← evalExpr cfg e; pure #[v]
-    | none => do
+def evalCallOutputs (cfg : ExternalBackendM m) (fuel : Nat) (e : StmtExpr) : EvalM m (Array Value) :=
+  match fuel with
+  | 0 => throw .outOfFuel
+  | fuel + 1 => do
+    match e with
+    | .Call none callee args typeArgs =>
+      match opOf? callee.text with
+      | some _ => do let v ← evalExpr cfg fuel e; pure #[v]
+      | none => do
+        let site := (← get).callSite
+        let st ← get
+        if (lookupCallee st.index callee).isNone then
+          let v ← evalExpr cfg fuel e
+          return #[v]
+        let argVals ← args.mapM (evalExprMd cfg fuel)
+        let absent := absentOf st.index typeArgs
+        match callBuiltin (m := m) callee.text argVals absent with
+        | some act => do let v ← liftM act; pure #[v]
+        | none => invokeCallee cfg fuel site callee argVals
+    | .Call (some target) callee args _ => do
       let site := (← get).callSite
-      let st ← get
-      if (lookupCallee st.index callee).isNone then
-        let v ← evalExpr cfg e
-        return #[v]
-      let argVals ← args.mapM (evalExprMd cfg)
-      let absent := match typeArgs with
-        | [_, v] => defaultValue st.index v.val
-        | _ => .unset
-      match callBuiltin callee.text argVals absent with
-      | some act => do let v ← liftM act; pure #[v]
-      | none => invokeCallee cfg site callee argVals
-  | .Call (some target) callee args _ => do
-    let site := (← get).callSite
-    let tv ← evalExprMd cfg target
-    let argVals ← args.mapM (evalExprMd cfg)
-    let proc ← resolveMethod tv callee.text
-    invokeProc cfg site proc (tv :: argVals)
-  | _ => do let v ← evalExpr cfg e; pure #[v]
+      let tv ← evalExprMd cfg fuel target
+      let argVals ← args.mapM (evalExprMd cfg fuel)
+      if cfg.modular then do
+        let index := (← get).index
+        match callee.uniqueId with
+        | some id =>
+          match index.methodsById[id]? with
+          | some static => do
+            checkPreconditions cfg fuel site static (tv :: argVals)
+            muteE do
+              let proc ← resolveOverride tv id static
+              invokeProc cfg fuel site proc (tv :: argVals)
+          | none => stuckError s!"instance call '{callee.text}' does not name an instance procedure"
+        | none => stuckError s!"instance call '{callee.text}' is unresolved"
+      else do
+        let proc ← resolveMethod tv callee.text
+        invokeProc cfg fuel site proc (tv :: argVals)
+    | _ => do let v ← evalExpr cfg fuel e; pure #[v]
 
 /-- Invoke a static (top-level) procedure by name with already-evaluated
     arguments, returning its outputs in declaration order.
@@ -2232,226 +2996,261 @@ partial def evalCallOutputs (cfg : ExternalBackend) (e : StmtExpr) : EvalM (Arra
     `return_` is caught here; `throw_` and `exit_` are not. A thrown value has to
     cross the call boundary to reach an enclosing `catch`, and that asymmetry is
     the whole difference between Laurel's two non-local exits. -/
-partial def invokeCallee (cfg : ExternalBackend) (site : FileRange) (callee : Identifier)
-    (argVals : List Value) : EvalM (Array Value) := do
-  let index := (← get).index
-  if callee.uniqueId.isNone && index.overloaded.contains callee.text then
-    evalError s!"call to overloaded '{callee.text}' was not resolved, so its overload is unknown"
-  if callee.text == allocateProcName && argVals.isEmpty then
-    return #[← allocateObject]
-  match lookupCallee index callee with
-  | some proc => invokeProc cfg site proc argVals
-  | none =>
-    match argVals, index.constants[callee.text]? with
-    | [], some init => do let v ← evalExprMd cfg init; pure #[v]
-    | _, _ => evalError s!"unknown procedure '{callee.text}'"
-
-partial def preconditionValue (cfg : ExternalBackend) (proc : Procedure) (argVals : List Value) :
-    EvalM Value := do
-  let caller ← get
-  let restore : EvalM Unit := modify fun st =>
-    { st with stack := caller.stack, cursor := caller.cursor, seek := caller.seek,
-              coroSelf := caller.coroSelf }
-  let frame : StackFrame :=
-    (proc.inputs.zip argVals).foldl (fun acc (param, v) => acc.insert param.name.text v) {}
-  modify fun st => { st with stack := frame, cursor := [], seek := none, coroSelf := none }
-  tryCatch
-    (do
-      let mut holds := true
-      for c in proc.preconditions.filter (·.mode.doesAssert) do
-        if holds then
-          let v ← evalExprMd cfg c.condition
-          holds ← liftM (isTrue cfg v)
-      restore
-      pure (.bool ⟨holds⟩))
-    fun sig => do restore; throw sig
+def invokeCallee (cfg : ExternalBackendM m) (fuel : Nat) (site : FileRange) (callee : Identifier)
+    (argVals : List Value) : EvalM m (Array Value) :=
+  match fuel with
+  | 0 => throw .outOfFuel
+  | fuel + 1 => do
+    let index := (← get).index
+    if callee.uniqueId.isNone && index.overloaded.contains callee.text then
+      evalError s!"call to overloaded '{callee.text}' was not resolved, so its overload is unknown"
+    if callee.text == allocateProcName && argVals.isEmpty then
+      return #[← allocateObject]
+    match lookupCallee index callee with
+    | some proc => invokeProc cfg fuel site proc argVals
+    | none =>
+      match index.constants[callee.text]? with
+      | some { initializer := some init, .. } => do
+        let caller ← get
+        let restore : EvalM m Unit := modify fun st =>
+          { st with stack := caller.stack, globals := caller.globals, cursor := caller.cursor,
+                    seek := caller.seek, coroSelf := caller.coroSelf, entryState := caller.entryState }
+        modify fun st => { st with stack := {}, cursor := [], seek := none, coroSelf := none, entryState := none }
+        let v ← tryCatch (evalExprMd cfg fuel init) fun sig => do restore; throw sig
+        restore
+        pure #[v]
+      | _ => evalError s!"unknown procedure '{callee.text}'"
 
 /-- Check `proc`'s call-site preconditions against `argVals`, recording each one
-    that is false at `site` and carrying on, as a failing `assert` does. A free
-    precondition is assumed by the callee and not checked. -/
-partial def checkPreconditions (cfg : ExternalBackend) (site : FileRange) (proc : Procedure)
-    (argVals : List Value) : EvalM Unit := do
-  let checked := proc.preconditions.filter (·.mode.doesAssert)
-  if checked.isEmpty then return
-  let caller ← get
-  let restore : EvalM Unit := modify fun st =>
-    { st with stack := caller.stack, cursor := caller.cursor, seek := caller.seek,
-              coroSelf := caller.coroSelf }
-  let frame : StackFrame :=
-    (proc.inputs.zip argVals).foldl (fun acc (param, v) => acc.insert param.name.text v) {}
-  modify fun st => { st with stack := frame, cursor := [], seek := none, coroSelf := none }
-  tryCatch
-    (for c in checked do
-      let v ← evalExprMd cfg c.condition
-      unless ← liftM (isTrue cfg v) do
-        let failure := Strata.Message.withRange site
-          s!"{c.summary.getD "precondition"} does not hold"
-        modify fun st => { st with assertFailures := st.assertFailures.push failure })
-    fun sig => do restore; throw sig
-  restore
+    that is false at `site` and carrying on, as a failing `assert` does. -/
+def checkPreconditions (cfg : ExternalBackendM m) (fuel : Nat) (site : FileRange) (proc : Procedure)
+    (argVals : List Value) : EvalM m Unit :=
+  match fuel with
+  | 0 => throw .outOfFuel
+  | fuel + 1 => do
+    let checked := proc.preconditions
+    if checked.isEmpty then return
+    let caller ← get
+    if caller.muted then pure () else do
+      let restore : EvalM m Unit := modify fun st =>
+        { st with stack := caller.stack, globals := caller.globals, cursor := caller.cursor,
+                  seek := caller.seek, coroSelf := caller.coroSelf, entryState := caller.entryState,
+                  operands := caller.operands, operandWindow := caller.operandWindow }
+      let frame : StackFrame :=
+        (proc.inputs.zip argVals).foldl (fun acc (param, v) => acc.insert param.name.text v) {}
+      modify fun st =>
+        { st with stack := frame, cursor := [], seek := none, coroSelf := none, entryState := none,
+                  operands := [], operandWindow := none }
+      tryCatch
+        (for c in checked do
+          if c.mode.doesAssert then
+            let before ← get
+            let v ← evalExprMd cfg fuel c.condition
+            let failure := Strata.Message.withRange site
+              s!"{c.summary.getD "precondition"} does not hold"
+            let holds ← liftM (isTrue cfg v)
+            emitEvent (.check .precondition (some c.condition) failure holds before)
+            unless holds do
+              modify fun st => { st with assertFailures := st.assertFailures.push failure })
+        fun sig => do restore; throw sig
+      restore
+
+def assumePreconditions (cfg : ExternalBackendM m) (fuel : Nat) (proc : Procedure)
+    (argVals : List Value) : EvalM m Unit :=
+  match fuel with
+  | 0 => throw .outOfFuel
+  | fuel + 1 => do
+    let caller ← get
+    let restore : EvalM m Unit := modify fun st =>
+      { st with stack := caller.stack, globals := caller.globals, cursor := caller.cursor,
+                seek := caller.seek, coroSelf := caller.coroSelf, entryState := caller.entryState }
+    let frame : StackFrame :=
+      (proc.inputs.zip argVals).foldl (fun acc (param, v) => acc.insert param.name.text v) {}
+    modify fun st =>
+      { st with stack := frame, cursor := [], seek := none, coroSelf := none, entryState := none }
+    tryCatch
+      (for c in proc.preconditions do
+        if c.mode.doesAssume then
+          emitEvent (.assume c.condition c.condition.source (← get))
+          let v ← evalExprMd cfg fuel c.condition
+          unless ← liftM (isTrue cfg v) do throw .infeasible)
+      fun sig => do restore; throw sig
+    restore
 
 /-- Check `posts` on exit from `proc`: inputs at their entry values, outputs at
     their final ones (a `return e` supplies the single output), and `old(e)`
     against the entry heap, globals and in-out parameters. A false one is recorded at its own source, as the
     verifier and the Core interpreter report it. Runs in the callee's context, so
     the caller restores its own frame afterwards. -/
-partial def checkPostconditions (cfg : ExternalBackend) (proc : Procedure)
-    (posts : List Condition) (entryFrame : StackFrame)
+def checkPostconditions (cfg : ExternalBackendM m) (fuel : Nat) (proc : Procedure)
+    (posts : List Condition) (frames : List ModifiesGroup) (entryFrame : StackFrame)
     (entry : Array HeapObject × Std.HashMap String Value)
-    (exitFrame : StackFrame) (returned : Option Value) : EvalM Unit := do
-  let outputs : StackFrame := match returned, proc.outputs with
-    | some v, [o] => ({} : StackFrame).insert o.name.text v
-    | _, _ => proc.outputs.foldl (init := {}) fun acc o =>
-        acc.insert o.name.text (exitFrame[o.name.text]?.getD .unset)
-  let frame := outputs.fold (init := entryFrame) fun acc k v => acc.insert k v
-  let inouts : StackFrame := proc.outputs.foldl (init := {}) fun acc o =>
-    if proc.inputs.any (·.name.text == o.name.text) then
-      match entryFrame[o.name.text]? with
-      | some v => acc.insert o.name.text v
-      | none => acc
-    else acc
-  let enclosing := (← get).entryState
-  modify fun st => { st with stack := frame, entryState := some (entry.1, entry.2, inouts) }
-  tryCatch
-    (for c in posts do
-      let v ← evalExprMd cfg c.condition
-      unless ← liftM (isTrue cfg v) do
-        let failure := Strata.Message.withRange c.condition.source
-          s!"{c.summary.getD "postcondition"} does not hold"
-        modify fun st => { st with assertFailures := st.assertFailures.push failure })
-    fun sig => do
-      modify fun st => { st with entryState := enclosing }
-      throw sig
-  modify fun st => { st with entryState := enclosing }
+    (exitFrame : StackFrame) (returned : Option Value) : EvalM m Unit :=
+  match fuel with
+  | 0 => throw .outOfFuel
+  | fuel + 1 => do
+    let outputs : StackFrame := postOutputs proc returned exitFrame
+    let frame := outputs.fold (init := entryFrame) fun acc k v => acc.insert k v
+    let inouts : StackFrame := proc.outputs.foldl (init := {}) fun acc o =>
+      if proc.inputs.any (·.name.text == o.name.text) then
+        match entryFrame[o.name.text]? with
+        | some v => acc.insert o.name.text v
+        | none => acc
+      else acc
+    let enclosing := (← get).entryState
+    modify fun st => { st with stack := frame, entryState := some (entry.1, entry.2, inouts) }
+    tryCatch
+      (do
+        for c in posts do
+          if c.mode.doesAssert then
+            let before ← get
+            let v ← evalExprMd cfg fuel c.condition
+            let failure := Strata.Message.withRange c.condition.source
+              s!"{c.summary.getD "postcondition"} does not hold"
+            let holds ← liftM (isTrue cfg v)
+            emitEvent (.check .postcondition (some c.condition) failure holds before)
+            unless holds do
+              modify fun st => { st with assertFailures := st.assertFailures.push failure }
+        for g in frames do
+          let applies ← match g.guard with
+            | some e => do
+              let v ← evalExprMd cfg fuel e
+              liftM (isTrue cfg v)
+            | none => pure true
+          if applies then
+            let covs ← g.targets.mapM fun t => match t.val with
+              | .Var (.Field o f) => do
+                let v ← evalExprMd cfg fuel o
+                strictField cfg v f
+                pure (coverOf v (some f.text))
+              | _ => do
+                let v ← evalExprMd cfg fuel t
+                pure (coverOf v none)
+            let st ← get
+            let holds := frameHolds entry.1 st.heap covs.flatten
+            let failure := Strata.Message.withRange proc.name.source
+              s!"{g.summary.getD "modifies clause"} does not hold"
+            emitEvent (.check .postcondition none failure holds st)
+            unless holds do
+              modify fun st => { st with assertFailures := st.assertFailures.push failure })
+      fun sig => do
+        modify fun st => { st with entryState := enclosing }
+        throw sig
+    modify fun st => { st with entryState := enclosing }
 
-partial def invokeProc (cfg : ExternalBackend) (site : FileRange) (proc : Procedure)
-    (argVals : List Value) : EvalM (Array Value) := do
-  let s ← get
-  if !s.usesStack then return ← invokeProcBody cfg site proc argVals
-  let saved := (s.operands, s.operandWindow)
-  set { s with operands := [], operandWindow := none }
-  let restore : EvalM Unit := modify fun st => { st with operands := saved.1, operandWindow := saved.2 }
-  let r ← tryCatch (invokeProcBody cfg site proc argVals) fun e => do restore; throw e
-  restore
-  pure r
-
-partial def invokeProcBody (cfg : ExternalBackend) (site : FileRange) (proc : Procedure)
-    (argVals : List Value) : EvalM (Array Value) := do
-  let name := proc.name.text
-  if argVals.length != proc.inputs.length then
-    liftM (m := IO) (throw (IO.userError
-      s!"arity mismatch calling '{proc.name.text}': expected {proc.inputs.length} args, got {argVals.length}"))
-  checkPreconditions cfg site proc argVals
-  -- Calling a `coroutine` SPAWNS an instance instead of running it — the body
-  -- only ever runs under `resume`. The instance is a heap object so that an
-  -- ordinary `Value.ref` denotes it, with the coroutine's own frame and
-  -- suspension point held alongside in `EvalState.coros` (see `CoroState`). The
-  -- frame captures the arguments now, so later mutation of the caller's variables
-  -- is not visible to the coroutine.
-  if proc.is_coroutine then
-    let withInputs : StackFrame :=
-      (proc.inputs.zip argVals).foldl
-        (fun acc (param, v) => acc.insert param.name.text v) {}
-    -- The `yields` / `resumes` bindings are the coroutine's own locals; they start
-    -- at their type's default, as any declared local does.
-    let index := (← get).index
-    let frame : StackFrame :=
-      (proc.yields ++ proc.resumes).foldl
-        (fun acc p => acc.insert p.name.text (defaultValue index p.type.val)) withInputs
-    let addr := (← get).heap.size
-    let spawned : CoroState := { proc := name, frame, resumePt := none }
-    let obj : HeapObject := { typeName := name, fields := {} }
-    modify fun st =>
-      { st with heap := st.heap.push obj, coros := st.coros.insert addr spawned }
-    return #[.ref addr]
-  -- `.External` short-circuits to the host language: no Laurel body, so no frame
-  -- swap and no return-control to catch.
-  let body ← match proc.body with
-    | .External         => do
-        let ext ← liftM (cfg.callExternal proc.name.text argVals)
-        return #[.external ext]
-    | b => match b.implementation with
-      | some body => pure body
-      | none => do
-          -- The procedure stands for code outside the program, so whatever a call to it
-          -- could change is that code's to determine, not this interpreter's to pick as it
-          -- picks an unassigned local.
-          let undetermined :=
-            (proc.outputs.head?.map fun o => s!"its output '{o.name.text}'") <|>
-            (if (bodyModifies b).any (!·.targets.isEmpty) then
-              some "the state its `modifies` clause names" else none) <|>
-            (proc.writesGlobals.head?.map fun g => s!"the global '{g.text}' it writes") <|>
-            (if proc.throwsType.isSome then some "whether it throws" else none)
-          if let some what := undetermined then
-            refuse s!"procedure '{proc.name.text}' has no implementation, so {what} is \
-                      undetermined"
-          return #[]
-  let withParams : StackFrame :=
-    (proc.inputs.zip argVals).foldl
-      (fun acc (param, v) => acc.insert param.name.text v) {}
-  -- An output that is also an input is an in-out parameter and keeps its argument.
-  let index := (← get).index
-  let calleeStack : StackFrame :=
-    proc.outputs.foldl (init := withParams) fun acc o =>
-      if acc.contains o.name.text then acc
-      else acc.insert o.name.text (defaultValue index o.type.val)
-  let caller ← get
-  let saved := caller.stack
-  let savedCalls := caller.callStack
-  let restoreCaller : EvalM Unit := modify fun st =>
-    { st with stack := saved, callStack := savedCalls, cursor := caller.cursor,
-              seek := caller.seek, coroSelf := caller.coroSelf, stmtSite := caller.stmtSite,
-              callSite := caller.callSite }
-  -- A `yield` suspends the coroutine whose body lexically contains it, so a
-  -- procedure called *from* a coroutine body is not part of that coroutine:
-  -- clearing `coroSelf` turns a `yield` in the callee into a reported error
-  -- instead of a suspension recorded against a position in the wrong body. It
-  -- also switches the callee's position bookkeeping off, which is what keeps the
-  -- ordinary (coroutine-free) call path free of it.
-  modify fun st => { st with stack := calleeStack, callStack := name :: st.callStack,
-                             cursor := [], seek := none, coroSelf := none }
-  let posts := proc.body.postconditions.filter (·.mode.doesAssert)
-  -- Holding the entry heap keeps it shared, so the callee's first write copies
-  -- it; only a procedure with postconditions pays for that.
-  let cur ← get
-  let entry := if posts.isEmpty then (#[], {}) else (cur.heap, cur.globals)
-  let returned : Option Value ←
-    tryCatch (do evalStmt cfg body; pure none) fun
-      | .return_ [] => pure none
-      | .return_ [v] => pure (some v)
-      | .return_ vs => do
-          -- A multi-value return writes each output, so the outputs are read back
-          -- out of the frame below exactly as when they are assigned by name.
-          if vs.length != proc.outputs.length then
-            restoreCaller
-            liftM (m := IO) (throw (IO.userError
-              s!"return supplies {vs.length} values but '{name}' has {proc.outputs.length} outputs"))
-          modify fun st =>
-            let stack := (proc.outputs.zip vs).foldl
-              (fun acc (o, v) => acc.insert o.name.text v) st.stack
-            { st with stack }
-          pure none
-      | other => do
-          -- Restore the caller's frame before the signal leaves, or an enclosing
-          -- `catch` would run against the callee's locals.
-          restoreCaller
-          throw other
-  let calleeFrame := (← get).stack
-  unless posts.isEmpty do
-    tryCatch (checkPostconditions cfg proc posts calleeStack entry calleeFrame returned)
-      fun sig => do restoreCaller; throw sig
-  restoreCaller
-  match returned with
-  | some v =>
-      -- `return e` in a single-output procedure supplies the value directly.
-      pure #[v]
-  | none =>
-      -- Otherwise the outputs were assigned by name. A void procedure has none,
-      -- and an output the body never assigned is arbitrary, so it comes back
-      -- `unset` and only a use of it is an error.
-      pure (proc.outputs.toArray.map fun o => calleeFrame[o.name.text]?.getD .unset)
+def invokeProc (cfg : ExternalBackendM m) (fuel : Nat) (site : FileRange) (proc : Procedure)
+    (argVals : List Value) (top : Bool := false) : EvalM m (Array Value) :=
+  match fuel with
+  | 0 => throw .outOfFuel
+  | fuel + 1 => jumpBoundary do
+    let name := proc.name.text
+    if argVals.length != proc.inputs.length then
+      (hostFail (
+        s!"arity mismatch calling '{proc.name.text}': expected {proc.inputs.length} args, got {argVals.length}"))
+    if cfg.strict.isSome && !strictParamsOK (← get) proc.inputs argVals then
+      hostFail s!"strict: '{proc.name.text}' called with a non-reference composite argument"
+    checkPreconditions cfg fuel site proc argVals
+    (if cfg.modular && !top then muteE else id) <| (tryCatch · (escapeSig proc)) <| do
+      -- Calling a `coroutine` SPAWNS an instance instead of running it — the body
+      -- only ever runs under `resume`. The instance is a heap object so that an
+      -- ordinary `Value.ref` denotes it, with the coroutine's own frame and
+      -- suspension point held alongside in `EvalState.coros` (see `CoroState`). The
+      -- frame captures the arguments now, so later mutation of the caller's variables
+      -- is not visible to the coroutine.
+      if proc.is_coroutine then
+        let withInputs : StackFrame :=
+          (proc.inputs.zip argVals).foldl
+            (fun acc (param, v) => acc.insert param.name.text v) {}
+        -- The `yields` / `resumes` bindings are the coroutine's own locals; they start
+        -- at their type's default, as any declared local does.
+        let index := (← get).index
+        let frame : StackFrame :=
+          (proc.yields ++ proc.resumes).foldl
+            (fun acc p => acc.insert p.name.text (defaultValue index p.type.val)) withInputs
+        let addr := (← get).heap.size
+        let spawned : CoroState := { proc := name, frame, resumePt := none }
+        let obj : HeapObject := { typeName := name, fields := {} }
+        modify fun st =>
+          { st with heap := st.heap.push obj, coros := st.coros.insert addr spawned }
+        return #[.ref addr name]
+      -- `.External` short-circuits to the host language: no Laurel body, so no frame
+      -- swap and no return-control to catch.
+      let body ← match proc.body with
+        | .External         => do
+            let ext ← liftM (cfg.callExternal proc.name.text argVals)
+            return #[.external ext]
+        | b => match b.implementation with
+          | some body => pure body
+          | none => do
+              if let some what := undeterminedOf proc b then
+                refuse s!"procedure '{proc.name.text}' has no implementation, so {what} is \
+                          undetermined"
+              let index := (← get).index
+              let outs ← proc.outputs.toArray.mapM fun o =>
+                chooseValue (some (index.unalias o.type.val)) (defaultValue index o.type.val)
+              return outs
+      let withParams : StackFrame :=
+        (proc.inputs.zip argVals).foldl
+          (fun acc (param, v) => acc.insert param.name.text v) {}
+      -- An output that is also an input is an in-out parameter and keeps its argument.
+      let index := (← get).index
+      let calleeStack : StackFrame :=
+        proc.outputs.foldl (init := withParams) fun acc o =>
+          if acc.contains o.name.text then acc
+          else acc.insert o.name.text (defaultValue index o.type.val)
+      withLabels (fun _ => []) do
+        let caller ← get
+        let saved := caller.stack
+        let savedCalls := caller.callStack
+        let restoreCaller : EvalM m Unit := modify fun st =>
+          { st with stack := saved, callStack := savedCalls, cursor := caller.cursor,
+                    seek := caller.seek, coroSelf := caller.coroSelf, stmtSite := caller.stmtSite,
+                    callSite := caller.callSite, entryState := caller.entryState,
+                    operands := caller.operands, operandWindow := caller.operandWindow }
+        -- A `yield` suspends the coroutine whose body lexically contains it, so a
+        -- procedure called *from* a coroutine body is not part of that coroutine:
+        -- clearing `coroSelf` turns a `yield` in the callee into a reported error
+        -- instead of a suspension recorded against a position in the wrong body. It
+        -- also switches the callee's position bookkeeping off, which is what keeps the
+        -- ordinary (coroutine-free) call path free of it.
+        modify fun st => { st with stack := calleeStack, callStack := name :: st.callStack,
+                                   cursor := [], seek := none, coroSelf := none, entryState := none,
+                                   operands := [], operandWindow := none }
+        let posts := proc.body.postconditions
+        -- Holding the entry heap keeps it shared, so the callee's first write copies
+        -- it; only a procedure with postconditions pays for that.
+        let cur ← get
+        let frames := procFrames proc
+        let skip := (cfg.modular && !top) || (posts.isEmpty && frames.isEmpty)
+        let entry := entrySnapshot skip cur
+        let returned : Option Value ←
+          tryCatch (do evalStmt cfg fuel body; pure none) fun
+            | .return_ vs => returnedValues proc restoreCaller vs
+            | other => do
+                -- Restore the caller's frame before the signal leaves, or an enclosing
+                -- `catch` would run against the callee's locals.
+                restoreCaller
+                throw other
+        let calleeFrame := (← get).stack
+        if cfg.strict.isSome && !strictOutputsOK (← get) proc returned calleeFrame then
+          hostFail s!"strict: '{proc.name.text}' returns a non-reference composite output"
+        unless skip do
+          tryCatch (checkPostconditions cfg fuel proc posts frames calleeStack entry calleeFrame returned)
+            fun sig => do restoreCaller; throw sig
+        restoreCaller
+        match returned with
+        | some v =>
+            -- `return e` in a single-output procedure supplies the value directly.
+            pure #[v]
+        | none =>
+            -- Otherwise the outputs were assigned by name. A void procedure has none,
+            -- and an output the body never assigned is arbitrary, so it comes back
+            -- `unset` and only a use of it is an error.
+            pure (proc.outputs.toArray.map fun o => calleeFrame[o.name.text]?.getD .unset)
 
 end
+
+end Host
 
 /-- What an entry-point run produced beyond its assertion failures. -/
 inductive Outcome where
@@ -2461,130 +3260,175 @@ inductive Outcome where
   | escaped (value : Value)
   /-- The step budget ran out; the program under test may not terminate. -/
   | outOfFuel
+  | infeasible
   /-- The interpreter refused a call (`Control.refused`), for the reason given. -/
   | refused (reason : String)
   deriving Inhabited
 
+section Entry
+
+variable {m : Type → Type} [Monad m] [InterpHost m]
+
+def attemptEval (act : EvalM m Value) : EvalM m (Option Value) := do
+  let before ← get
+  let restore : EvalM m Unit := modify fun st =>
+    { st with stack := before.stack, callStack := before.callStack,
+              steps := before.steps, cursor := before.cursor, seek := before.seek }
+  let caught : EvalM m (Option Value) :=
+    tryCatch (do let v ← act; pure (some v)) fun
+      | .outOfFuel => throw .outOfFuel
+      | .infeasible => throw .infeasible
+      | .refused r => throw (.refused r)
+      | _ => do restore; pure none
+  fun s => InterpHost.recover (caught s) ((do restore; pure none : EvalM m (Option Value)) s)
+
+def entryInitState (opts : Options) (p : LaurelProgram) : EvalState :=
+  { stack := {}, program := p, index := buildIndex p
+    quiet := !opts.printAsserts, steps := if opts.limitSteps then some opts.fuel else none }
+
+def entryStart (opts : Options) (p : LaurelProgram) (mainProc : Procedure) : EvalState :=
+  let initState := entryInitState opts p
+  let withOutputs := mainProc.outputs.foldl
+    (fun (acc : StackFrame) o => acc.insert o.name.text (defaultValue initState.index o.type.val)) {}
+  { initState with stack := withOutputs }
+
+def initEntry (cfg : ExternalBackendM m) (opts : Options) (p : LaurelProgram)
+    (mainProc : Procedure) (fromOracle : Bool := false) : EvalM m Unit := do
+  let constrained : Std.HashMap String ConstrainedType :=
+    p.types.foldl (init := {}) fun acc t => match t with
+      | .Constrained c => acc.insert c.name.text c
+      | _ => acc
+  let report (c : ConstrainedType) (msg : String) : EvalM m Unit := do
+    let failure := Strata.Message.withRange c.witness.source msg
+    emitEvent (.check .constraint none failure false (← get))
+    modify fun st => { st with assertFailures := st.assertFailures.push failure }
+  for t in p.types do
+    if let .Constrained c := t then
+      modify fun st => { st with stmtSite := c.witness.source }
+      let v? ← match (← get).index.witnesses[c.name.text]? with
+        | some v => pure (some v)
+        | none => attemptEval (evalExprMd cfg opts.fuel c.witness)
+      match v? with
+      | none => do
+        report c s!"witness of '{c.name.text}' could not be evaluated"
+        modify fun st => { st with index := { st.index with
+          noWitness := st.index.noWitness.insert c.name.text } }
+      | some v =>
+        modify fun st =>
+          { st with index := { st.index with
+              witnesses := st.index.witnesses.insert c.name.text v } }
+        for k in constraintChain (buildAliasMap p.types) constrained (nonAliasTypes p.types).length c do
+          let saved := (← get).stack
+          modify fun st => { st with stack := st.stack.insert k.valueName.text v }
+          let r? ← attemptEval (evalExprMd cfg opts.fuel k.constraint)
+          modify fun st => { st with stack := saved }
+          match r? with
+          | some r => unless ← liftM (isTrue cfg r) do report c "assertion does not hold"
+          | none => report c s!"constraint of '{k.name.text}' could not be evaluated on the witness"
+  modify fun st => { st with stmtSite := .unknown }
+  for o in mainProc.outputs do
+    modify fun st =>
+      { st with stack := st.stack.insert o.name.text (defaultValue st.index o.type.val) }
+  if fromOracle then
+    let h ← liftM (InterpHost.chooseHeap (← get).heap : m (Array HeapObject))
+    modify fun st => { st with heap := h }
+    for f in p.staticFields do
+      let index := (← get).index
+      let v ← liftM (InterpHost.chooseInit f.name.text (some (index.unalias f.type.val))
+        (defaultValue index f.type.val) : m Value)
+      modify fun st => { st with globals := st.globals.insert f.name.text v }
+  else
+    for f in p.staticFields do
+      match f.initializer with
+      | some e => do
+          modify fun st => { st with stmtSite := e.source }
+          let v ← evalExprMd cfg opts.fuel e
+          modify fun st => { st with globals := st.globals.insert f.name.text v }
+      | none =>
+          modify fun st =>
+            { st with globals := st.globals.insert f.name.text (defaultValue st.index f.type.val) }
+
+def runEntry (cfg : ExternalBackendM m) (opts : Options) (p : LaurelProgram)
+    : m (Outcome × EvalState) := do
+  let initState := entryInitState opts p
+  match p.staticProcedures.find? (·.name.text == opts.entryProcedure) with
+  | none => InterpHost.fail s!"no `{opts.entryProcedure}` procedure"
+  | some mainProc =>
+    match mainProc.body.implementation with
+    | some body =>
+        let start := entryStart opts p mainProc
+        let start ← match ← ((initEntry cfg opts p mainProc).run.run start) with
+          | (.ok (), s') => pure s'
+          | (.error .outOfFuel, s') => return (Outcome.outOfFuel, s')
+          | (.error .infeasible, s') => return (Outcome.infeasible, s')
+          | (.error (.refused r), s') => return (Outcome.refused r, s')
+          | (.error (.throw_ v), _) =>
+              InterpHost.fail s!"uncaught throw of {v.display} initialising file-scope globals"
+          | (.error _, _) => InterpHost.fail "unexpected control flow initialising file-scope globals"
+        let res ← (tryCatch (evalStmt cfg opts.fuel body) (escapeSig mainProc)).run.run start
+        match res with
+        | (.ok (),                s') => pure (Outcome.completed, s')
+        | (.error (.return_ _),    s') => pure (Outcome.completed, s')
+        | (.error (.throw_ v),     s') => pure (Outcome.escaped v, s')
+        | (.error .outOfFuel,      s') => pure (Outcome.outOfFuel, s')
+        | (.error .infeasible,     s') => pure (Outcome.infeasible, s')
+        | (.error (.refused r),     s') => pure (Outcome.refused r, s')
+        | (.error (.exit_ l),      _)  =>
+            InterpHost.fail s!"`exit {l}` with no enclosing block labelled '{l}'"
+        | (.error (.goto_ l),      _)  =>
+            InterpHost.fail s!"`goto {l}` with no enclosing block labelled '{l}'"
+        | (.error (.jump_ l _),    _)  =>
+            InterpHost.fail s!"no block labelled '{l}' to jump to"
+        | (.error .suspended,      _)  =>
+            InterpHost.fail "`yield` with no coroutine to suspend"
+    | none => pure (Outcome.completed, initState)
+
+def runProcAt (cfg : ExternalBackendM m) (opts : Options) (p : LaurelProgram) (proc : Procedure)
+    : m (Outcome × EvalState) := do
+  let start := entryStart opts p proc
+  let start ← match ← ((initEntry cfg opts p proc cfg.modular).run.run start) with
+    | (.ok (), s') => pure s'
+    | (.error .outOfFuel, s') => return (Outcome.outOfFuel, s')
+    | (.error .infeasible, s') => return (Outcome.infeasible, s')
+    | (.error (.refused r), s') => return (Outcome.refused r, s')
+    | (.error (.throw_ v), _) =>
+        InterpHost.fail s!"uncaught throw of {v.display} initialising file-scope globals"
+    | (.error _, _) => InterpHost.fail "unexpected control flow initialising file-scope globals"
+  let act : EvalM m (Array Value) := do
+    let index := (← get).index
+    let args ← proc.inputs.mapM fun i => liftM (InterpHost.chooseInit i.name.text
+      (some (index.unalias i.type.val)) (defaultValue index i.type.val) : m Value)
+    assumePreconditions cfg opts.fuel proc args
+    invokeProc cfg opts.fuel proc.name.source { proc with preconditions := [] } args (top := true)
+  let res ← (act.run.run start)
+  match res with
+  | (.ok _,                 s') => pure (Outcome.completed, s')
+  | (.error (.return_ _),    s') => pure (Outcome.completed, s')
+  | (.error (.throw_ v),     s') => pure (Outcome.escaped v, s')
+  | (.error .outOfFuel,      s') => pure (Outcome.outOfFuel, s')
+  | (.error .infeasible,     s') => pure (Outcome.infeasible, s')
+  | (.error (.refused r),     s') => pure (Outcome.refused r, s')
+  | (.error (.exit_ l),      _)  =>
+      InterpHost.fail s!"`exit {l}` with no enclosing block labelled '{l}'"
+  | (.error (.goto_ l),      _)  =>
+      InterpHost.fail s!"`goto {l}` with no enclosing block labelled '{l}'"
+  | (.error (.jump_ l _),    _)  =>
+      InterpHost.fail s!"no block labelled '{l}' to jump to"
+  | (.error .suspended,      _)  =>
+      InterpHost.fail "`yield` with no coroutine to suspend"
+
+end Entry
+
 /-- Entry point: locate and run the single procedure named by
-    `opts.entryProcedure`, then return the final stack as a displayable snapshot
-    paired with any runtime assertion failures collected during the run. A
-    top-level `return` is treated as a clean exit just like falling off the end;
-    accumulated failures survive it. Runs exactly one entry — the test harness
-    iterates over `entry`-marked procedures and calls this once per entry. -/
+    `opts.entryProcedure` (see `runEntry`), then return the final stack as a
+    displayable snapshot paired with any runtime assertion failures collected
+    during the run. Runs exactly one entry — the test harness iterates over
+    `entry`-marked procedures and calls this once per entry. -/
 def evalProgramWithOutcome (cfg : ExternalBackend) (opts : Options) (p : LaurelProgram)
     : IO (DisplayEvalState × Array Strata.Message × Outcome) := do
   let p := if programReadsStackUnderOld p || programUsesStackInQuantifier p then (eliminateStack p).1 else p
   try
-    let initState : EvalState :=
-      { stack := {}, program := p, index := buildIndex p
-        fuel := opts.fuel, quiet := !opts.printAsserts, usesStack := programTouchesStack p }
-    let (outcome, finalState) ←
-      match p.staticProcedures.find? (·.name.text == opts.entryProcedure) with
-      | none => throw (IO.userError s!"no `{opts.entryProcedure}` procedure")
-      | some mainProc =>
-        -- Run the body's implementation for both `transparent` and `opaque`
-        -- procedures (an `opaque` body carries its statements under
-        -- `implementation`); a bodiless `opaque`/`abstract`/`external` entry has
-        -- nothing to run.
-        match mainProc.body.implementation with
-        | some body =>
-            -- Outputs are pre-declared so an entry that assigns them by name can
-            -- run, exactly as at a call boundary.
-            let withOutputs := mainProc.outputs.foldl
-              (fun (acc : StackFrame) o => acc.insert o.name.text (defaultValue initState.index o.type.val)) {}
-            -- File-scope globals are initialised BEFORE the entry runs, in
-            -- declaration order so a later initialiser can read an earlier global.
-            -- An initialiser is an ordinary expression and may call a procedure, so
-            -- this runs through the evaluator rather than a constant folder -- which
-            -- is what lets a language runtime build its own interpreter state in one.
-            -- A global with no initialiser starts at its type's default, as a
-            -- composite field does.
-            -- Each constrained type's witness is evaluated once, before anything
-            -- starts at the type's default (the outputs above are re-defaulted for
-            -- that reason), and checked against the type's constraint and those of
-            -- the constrained types it refines, as the verifier checks the
-            -- definition. Failures are reported at the witness. A witness that
-            -- cannot be evaluated leaves its type without a default rather than
-            -- stopping a run that may never use the type.
-            let constrained : Std.HashMap String ConstrainedType :=
-              p.types.foldl (init := {}) fun acc t => match t with
-                | .Constrained c => acc.insert c.name.text c
-                | _ => acc
-            let attempt (act : EvalM Value) : EvalM (Option Value) := do
-              let before ← get
-              let restore : EvalM Unit := modify fun st =>
-                { st with stack := before.stack, callStack := before.callStack,
-                          fuel := before.fuel, cursor := before.cursor, seek := before.seek }
-              tryCatchThe IO.Error
-                (tryCatch (some <$> act) (fun _ => do restore; pure none))
-                (fun _ => do restore; pure none)
-            let report (c : ConstrainedType) (msg : String) : EvalM Unit := do
-              let failure := Strata.Message.withRange c.witness.source msg
-              modify fun st => { st with assertFailures := st.assertFailures.push failure }
-            let rec constraintChain (fuel : Nat) (c : ConstrainedType) : List ConstrainedType :=
-              match fuel, c.base.val with
-              | k + 1, .UserDefined n => match constrained[n.text]? with
-                | some b => c :: constraintChain k b
-                | none => [c]
-              | _, _ => [c]
-            let initGlobals : EvalM Unit := do
-              for t in p.types do
-                if let .Constrained c := t then
-                  modify fun st => { st with stmtSite := c.witness.source }
-                  let v? ← match (← get).index.witnesses[c.name.text]? with
-                    | some v => pure (some v)
-                    | none => attempt (evalExprMd cfg c.witness)
-                  match v? with
-                  | none => do
-                    report c s!"witness of '{c.name.text}' could not be evaluated"
-                    modify fun st => { st with index := { st.index with
-                      noWitness := st.index.noWitness.insert c.name.text } }
-                  | some v =>
-                    modify fun st =>
-                      { st with index := { st.index with
-                          witnesses := st.index.witnesses.insert c.name.text v } }
-                    for k in constraintChain constrained.size c do
-                      let saved := (← get).stack
-                      modify fun st => { st with stack := st.stack.insert k.valueName.text v }
-                      let r? ← attempt (evalExprMd cfg k.constraint)
-                      modify fun st => { st with stack := saved }
-                      match r? with
-                      | some r => unless ← liftM (isTrue cfg r) do report c "assertion does not hold"
-                      | none => report c s!"constraint of '{k.name.text}' could not be evaluated on the witness"
-              modify fun st => { st with stmtSite := .unknown }
-              for o in mainProc.outputs do
-                modify fun st =>
-                  { st with stack := st.stack.insert o.name.text (defaultValue st.index o.type.val) }
-              for f in p.staticFields do
-                match f.initializer with
-                | some e => do
-                    modify fun st => { st with stmtSite := e.source }
-                    let v ← evalExprMd cfg e
-                    modify fun st => { st with globals := st.globals.insert f.name.text v }
-                | none =>
-                    modify fun st =>
-                      { st with globals := st.globals.insert f.name.text (defaultValue st.index f.type.val) }
-            let start := { initState with stack := withOutputs }
-            let res ← match ← (initGlobals.run.run start) with
-              | (.ok (), s') => (evalStmt cfg body).run.run s'
-              | refused@(.error (.refused _), _) => pure refused
-              | (.error .outOfFuel, _) => throw (IO.userError "out of fuel initialising file-scope globals")
-              | (.error (.throw_ v), _) =>
-                  throw (IO.userError s!"uncaught throw of {v.display} initialising file-scope globals")
-              | (.error _, _) => throw (IO.userError "unexpected control flow initialising file-scope globals")
-            match res with
-            | (.ok (),                s') => pure (Outcome.completed, s')
-            | (.error (.return_ _),    s') => pure (Outcome.completed, s')
-            | (.error (.throw_ v),     s') => pure (Outcome.escaped v, s')
-            | (.error .outOfFuel,      s') => pure (Outcome.outOfFuel, s')
-            | (.error (.refused r),    s') => pure (Outcome.refused r, s')
-            | (.error (.exit_ l),      _)  =>
-                throw (IO.userError s!"`exit {l}` with no enclosing block labelled '{l}'")
-            | (.error (.goto_ l),      _)  =>
-                throw (IO.userError s!"`goto {l}` with no enclosing block labelled '{l}'")
-            | (.error .suspended,      _)  =>
-                throw (IO.userError "`yield` with no coroutine to suspend")
-        | none => pure (Outcome.completed, initState)
+    let (outcome, finalState) ← runEntry cfg opts p
     let display := finalState.toDisplay
     if opts.dumpState then
       IO.println display.format
@@ -2592,17 +3436,25 @@ def evalProgramWithOutcome (cfg : ExternalBackend) (opts : Options) (p : LaurelP
   finally
     cfg.cleanup
 
-/-- `evalProgramWithOutcome`, dropping the outcome: an escaping `throw`,
-    exhausted fuel or a refused call becomes an `IO` error, and only the display
+/-- The error a run with this outcome reports, or `none` when it completed. Shared by
+    `evalProgram` and the `laurelInterpret --interpreter laurel` command, so both report
+    the same thing. -/
+def Outcome.errorMessage? : Outcome → Option String
+  | .completed => none
+  | .infeasible => some "the run stopped on an infeasible path (a false `assume` or an undeclared `throw`), so the rest was not run"
+  | .escaped v => some s!"uncaught throw of {v.display}"
+  | .outOfFuel => some "out of fuel"
+  | .refused r => some r
+
+/-- `evalProgramWithOutcome`, dropping the outcome: an infeasible run, an escaping
+    `throw`, exhausted fuel or a refused call becomes an `IO` error, and only the display
     state and assertion failures are returned. -/
 def evalProgram (cfg : ExternalBackend) (opts : Options) (p : LaurelProgram)
     : IO (DisplayEvalState × Array Strata.Message) := do
   let (display, failures, outcome) ← evalProgramWithOutcome cfg opts p
-  match outcome with
-  | .completed => pure (display, failures)
-  | .escaped v => throw (IO.userError s!"uncaught throw of {v.display}")
-  | .outOfFuel => throw (IO.userError "out of fuel")
-  | .refused r => throw (IO.userError r)
+  match outcome.errorMessage? with
+  | none => pure (display, failures)
+  | some msg => throw (IO.userError msg)
 
 def runInternalLaurel (opts : Options) (filePath : String) : IO Unit := do
   let path : System.FilePath := filePath

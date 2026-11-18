@@ -31,13 +31,13 @@ namespace Strata.Laurel
 
 open Strata
 
-abbrev ConstrainedTypeMap := Std.HashMap String ConstrainedType
+public abbrev ConstrainedTypeMap := Std.HashMap String ConstrainedType
 
-def buildConstrainedTypeMap (types : List TypeDefinition) : ConstrainedTypeMap :=
+public def buildConstrainedTypeMap (types : List TypeDefinition) : ConstrainedTypeMap :=
   types.foldl (init := {}) fun m td =>
     match td with | .Constrained ct => m.insert ct.name.text ct | _ => m
 
-partial def resolveBaseType (ptMap : ConstrainedTypeMap) (ty : HighType) : HighType :=
+public partial def resolveBaseType (ptMap : ConstrainedTypeMap) (ty : HighType) : HighType :=
   -- Resolve every constrained `UserDefined` type to its base, recursing through
   -- all component types via the generic `HighType.mapType` traversal.
   ty.mapType fun

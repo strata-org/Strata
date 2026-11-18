@@ -23,10 +23,9 @@ Every case pairs a use through the alias with a claim about the value, and each 
 false twin — an alias that expanded to something unconstrained would let the true claim pass
 vacuously.
 
-Every block but one marks an `entry`, so the expansion is checked by execution as well as by
-the verifier: a concrete run observes the expanded program, so an expansion that produced the
-wrong target shows up as a runtime failure rather than only as a proof obligation. The one
-exception names its reason at the block.
+Every block marks an `entry`, so the expansion is checked by execution as well as by the
+verifier: a concrete run observes the expanded program, so an expansion that produced the
+wrong target shows up as a runtime failure rather than only as a proof obligation.
 
 NB: there is no `;` after an alias declaration — the following keyword delimits it.
 -/
@@ -169,22 +168,20 @@ procedure genericAliasPreservesOrder()
 #end
 
 -- SOUNDNESS twin: the substituted map is a real `TotalMap int bool`, so a false read fails.
--- Verification-only, and the reason is a wording mismatch rather than anything about aliases:
--- the verifier reports this assert as "could not be proved", while BOTH interpreters render a
--- concretely-failed assert as "does not hold". The annotation can only match one of the two,
--- so an `entry` here would make the interpreter paths fail on an un-fired annotation.
--- (See the "wording must agree across both paths" note on `testLaurelExecution`.)
-#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
+-- The read is of a map literal, so the verifier evaluates the assert to `false` and reports it
+-- as "does not hold", the wording both interpreters use for a concretely-failed assert.
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 type MyPair<A, B> = TotalMap A B
 
 procedure genericAliasSubstitutesFalse()
+  entry
   opaque
 {
   var m: MyPair<int, bool> := mapConst(false);
   assert select(m, 9) == true
-//^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion could not be proved
+//^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
 };
 #end
 
@@ -338,3 +335,56 @@ procedure aliasInParent()
   assert b#val == 1
 };
 #end
+
+/-! ## Allocating through a composite alias
+
+`new A` with `A` an alias of `C` allocates a `C`: the object carries `C`'s tag, so `is C`
+holds, and `C`'s field is there to write and read back. Resolution rejects `new` of an alias,
+so the program is handed to the Laurel interpreter unresolved; the false twin's failure shows
+the asserts are evaluated. -/
+
+private def runUnresolved (program : StrataDDM.Program) (entry : String) : IO Unit := do
+  let laurel ← match Laurel.TransM.run (Strata.Uri.file "<#strata>") (Laurel.parseProgram program) with
+    | .error e => throw (IO.userError s!"parse failed: {e}")
+    | .ok p => pure p
+  let (_, failures) ← Strata.Laurel.Interpreter.evalProgram
+    ({} : Strata.Laurel.Interpreter.ExternalBackend)
+    { entryProcedure := entry, dumpState := false, printAsserts := false, fuel := 100000 }
+    (withBuiltins laurel)
+  IO.println s!"failures: {failures.size}"
+
+def newThroughAliasProgram : StrataDDM.Program :=
+#strata
+program Laurel;
+composite C { var f: int }
+type A = C
+
+procedure newThroughAlias()
+  entry
+  opaque
+  modifies *
+{
+  var a: C := new A;
+  assert a is C;
+  a#f := 4;
+  assert a#f == 4
+};
+
+procedure newThroughAliasFalse()
+  entry
+  opaque
+  modifies *
+{
+  var a: C := new A;
+  a#f := 4;
+  assert a#f == 5
+};
+#end
+
+/-- info: failures: 0 -/
+#guard_msgs in
+#eval runUnresolved newThroughAliasProgram "newThroughAlias"
+
+/-- info: failures: 1 -/
+#guard_msgs in
+#eval runUnresolved newThroughAliasProgram "newThroughAliasFalse"

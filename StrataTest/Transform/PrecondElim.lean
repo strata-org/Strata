@@ -10,6 +10,7 @@ meta import Strata.Languages.Core
 meta import Strata.Languages.Core.DDMTransform.Translate
 meta import Strata.Languages.Core.ProgramType
 meta import Strata.Transform.PrecondElim
+meta import Strata.Transform.GenOpaqueTypeParams
 
 meta section
 
@@ -32,11 +33,15 @@ def translate (t : StrataDDM.Program) : Core.Program :=
 private def translationErrors (t : StrataDDM.Program) : Array String :=
   (TransM.run Inhabited.default (translateProgram t)).snd
 
+/-- The empty transform state with the Core factory. -/
+private def coreFactoryState : Core.Transform.CoreTransformState :=
+  { Core.Transform.CoreTransformState.emp with factory := Core.Factory }
+
 def transformProgram (t : StrataDDM.Program) : Core.Program :=
   let program := translate t
-  match Core.Transform.run program PrecondElim.precondElim { Core.Transform.CoreTransformState.emp with factory := Core.Factory } with
+  match Core.Transform.run program PrecondElim.precondElim coreFactoryState with
   | .error e => panic! s!"PrecondElim failed: {e}"
-  | .ok (_changed, program) =>
+  | .ok (_, program) =>
     match Core.typeCheck Core.VerifyOptions.default program with
     | .error e => panic! s!"Type check failed: {Std.format e}"
     | .ok program => program.stripMetaData
@@ -50,9 +55,10 @@ def transformProgram (t : StrataDDM.Program) : Core.Program :=
     field of `LFunc` except `concreteEval` — via decidable equality. -/
 def factoryRestored (t : StrataDDM.Program) : Bool :=
   let program := translate t
-  let initState := { Core.Transform.CoreTransformState.emp with factory := Core.Factory }
-  let (_result, finalState) := Core.Transform.runWith program PrecondElim.precondElim initState
-  decide (finalState.factory.toArray.map (·.toFunc) = initState.factory.toArray.map (·.toFunc))
+  let (_, finalState) :=
+    Core.Transform.runWith program PrecondElim.precondElim coreFactoryState
+  decide (finalState.factory.toArray.map (·.toFunc) =
+    coreFactoryState.factory.toArray.map (·.toFunc))
 
 /-! ### Test 1: Procedure body with div call gets assert for y != 0 -/
 
@@ -519,9 +525,9 @@ the initialization site, and the pass reports `changed := true`. -/
     errors). -/
 private def transformChanged (t : StrataDDM.Program) : Option Bool :=
   let program := translate t
-  match Core.Transform.run program PrecondElim.precondElim { Core.Transform.CoreTransformState.emp with factory := Core.Factory } with
+  match Core.Transform.run program PrecondElim.precondElim coreFactoryState with
   | .error _ => none
-  | .ok (changed, _program) => some changed
+  | .ok (changed, _) => some changed
 
 private def nestedFuncCallsPartialPgm :=
 #strata
@@ -552,6 +558,277 @@ procedure P0 ()
 -/
 #guard_msgs in
 #eval (Std.format (transformProgram nestedFuncCallsPartialPgm))
+
+/-! ### Test: polymorphic calls inside a polymorphic procedure
+
+A procedure with type variable `tv` calls `g<a, b>` and `Sequence.select` at
+instances that mention `tv`. -/
+
+section PolyCallerTypeVars
+
+open Lambda
+
+/-- `g<a, b>(x : a, y : b) : bool`, uninterpreted, requires `y == y`. -/
+private def gFunc : Core.Function :=
+  { name := ⟨"g", ()⟩
+    typeArgs := ["a", "b"]
+    inputs := [(⟨"x", ()⟩, .ftvar "a"), (⟨"y", ()⟩, .ftvar "b")]
+    output := .bool
+    preconditions :=
+      [⟨.eq Core.coreLoc (.fvar Core.coreLoc ⟨"y", ()⟩ none) (.fvar Core.coreLoc ⟨"y", ()⟩ none),
+        Core.coreLoc⟩] }
+
+/-- `assert g(true, x)` with `x : tv`. -/
+private def callG (tv : String) : Core.Statement :=
+  Core.Statement.assert "callG"
+    (LExpr.mkApp Core.coreLoc (.op Core.coreLoc ⟨"g", ()⟩ none)
+      [.boolConst Core.coreLoc true, .fvar Core.coreLoc ⟨"x", ()⟩ (some (.ftvar tv))]) .empty
+
+/-- `var t : Sequence tv := Sequence.select(s, 0)` with
+    `s : Sequence (Sequence tv)`. -/
+private def selectHead (tv : String) : Core.Statement :=
+  Core.Statement.init ⟨"t", ()⟩ (.forAll [] (Core.seqTy (.ftvar tv)))
+    (.det (LExpr.mkApp Core.coreLoc (.op Core.coreLoc ⟨"Sequence.select", ()⟩ none)
+      [.fvar Core.coreLoc ⟨"s", ()⟩ (some (Core.seqTy (Core.seqTy (.ftvar tv)))),
+       .intConst Core.coreLoc 0])) .empty
+
+/-- `g` and `procedure P<tv>(s : Sequence (Sequence tv), x : tv)` with body
+    `body`. -/
+private def polyCallerPgm (tv : String) (body : List Core.Statement) :
+    Core.Program :=
+  { decls := [
+    .func gFunc .empty,
+    .proc { header := { name := ⟨"P", ()⟩
+                        typeArgs := [tv]
+                        inputs :=
+                          [(⟨"s", ()⟩, Core.seqTy (Core.seqTy (.ftvar tv))),
+                           (⟨"x", ()⟩, .ftvar tv)]
+                        outputs := [] }
+            spec := { preconditions := [], postconditions := [] }
+            body := .structured body }
+      .empty] }
+
+/-- Run `precondElim` and `genOpaqueTypeParams`, then type check; show the
+    program or the error. -/
+private def precondElimThenCheck (p : Core.Program) : Std.Format :=
+  let passes := fun p => do
+    let (_, p) ← PrecondElim.precondElim p
+    Core.genOpaqueTypeParams p
+  match Core.Transform.run p passes coreFactoryState with
+  | .error e => f!"transform failed: {e}"
+  | .ok (_, p) =>
+    match Core.typeCheck Core.VerifyOptions.default p with
+    | .error e => f!"type error: {Std.format e}"
+    | .ok p => Std.format p.stripMetaData
+
+-- `g(true, x)` in `P<a>`: `g`'s `a` is `bool` and its `b` is `P`'s `a`.
+/--
+info: [Strata.Core] Type checking succeeded.
+
+---
+info: program Core;
+
+function g<a, b> (x : a, y : b) : bool;
+type $__opaque_P_a_0;
+procedure P (s : Sequence (Sequence $__opaque_P_a_0), x : $__opaque_P_a_0)
+{
+  assert [assert_callG_calls_g_0]: x == x;
+  assert [callG]: g(true, x);
+};
+-/
+#guard_msgs in
+#eval precondElimThenCheck (polyCallerPgm "a" [callG "a"])
+
+-- `Sequence.select(s, 0)` in `P<a>`: `Sequence.select`'s `a` is `Sequence a`.
+/--
+info: [Strata.Core] Type checking succeeded.
+
+---
+info: program Core;
+
+function g<a, b> (x : a, y : b) : bool;
+type $__opaque_P_a_0;
+procedure P (s : Sequence (Sequence $__opaque_P_a_0), x : $__opaque_P_a_0)
+{
+  assert [init_calls_Sequence.select_0]: int.le(0, 0) && int.lt(0, Sequence.length(s));
+  var t : Sequence $__opaque_P_a_0 := Sequence.select(s, 0);
+};
+-/
+#guard_msgs in
+#eval precondElimThenCheck (polyCallerPgm "a" [selectHead "a"])
+
+-- Both calls in `P<c>`, whose type variable is named unlike any of the
+-- callees'.
+/--
+info: [Strata.Core] Type checking succeeded.
+
+---
+info: program Core;
+
+function g<a, b> (x : a, y : b) : bool;
+type $__opaque_P_c_0;
+procedure P (s : Sequence (Sequence $__opaque_P_c_0), x : $__opaque_P_c_0)
+{
+  assert [assert_callG_calls_g_0]: x == x;
+  assert [callG]: g(true, x);
+  assert [init_calls_Sequence.select_0]: int.le(0, 0) && int.lt(0, Sequence.length(s));
+  var t : Sequence $__opaque_P_c_0 := Sequence.select(s, 0);
+};
+-/
+#guard_msgs in
+#eval precondElimThenCheck (polyCallerPgm "c" [callG "c", selectHead "c"])
+
+/-- `k<c>(z : c) : bool`, uninterpreted. -/
+private def kFunc : Core.Function :=
+  { name := ⟨"k", ()⟩
+    typeArgs := ["c"]
+    inputs := [(⟨"z", ()⟩, .ftvar "c")]
+    output := .bool }
+
+/-- `h<a, b>(x : a, y : b) : bool`, uninterpreted, requires `k(y)`. -/
+private def hFunc : Core.Function :=
+  { name := ⟨"h", ()⟩
+    typeArgs := ["a", "b"]
+    inputs := [(⟨"x", ()⟩, .ftvar "a"), (⟨"y", ()⟩, .ftvar "b")]
+    output := .bool
+    preconditions :=
+      [⟨.app Core.coreLoc (.op Core.coreLoc ⟨"k", ()⟩ (some (.arrow (LMonoTy.ftvar "b") .bool)))
+          (.fvar Core.coreLoc ⟨"y", ()⟩ none), Core.coreLoc⟩] }
+
+/-- `k`, `h` and `procedure P<tv>(x : tv)` with body
+    `assert forall y : int :: h(x, y)`, where `y` carries no annotation. -/
+private def forallHPgm (tv : String) : Core.Program :=
+  let callH := LExpr.mkApp Core.coreLoc (.op Core.coreLoc ⟨"h", ()⟩ none)
+    [.fvar Core.coreLoc ⟨"x", ()⟩ (some (LMonoTy.ftvar tv)), .bvar Core.coreLoc 0]
+  { decls := [
+    .func kFunc .empty,
+    .func hFunc .empty,
+    .proc { header := { name := ⟨"P", ()⟩
+                        typeArgs := [tv]
+                        inputs := [(⟨"x", ()⟩, .ftvar tv)]
+                        outputs := [] }
+            spec := { preconditions := [], postconditions := [] }
+            body := .structured
+              [Core.Statement.assert "forallH" (LExpr.all Core.coreLoc "y" (some .int) callH)
+                .empty] }
+      .empty] }
+
+-- `h(x, y)` in `P<b>` with `y : int` bound by the quantifier: `h`'s `b` is
+-- instantiated at `int`, not at the caller's `b`, so the inlined precondition
+-- is `forall y : int :: k(y)`.
+/--
+info: [Strata.Core] Type checking succeeded.
+
+---
+info: program Core;
+
+function k<c> (z : c) : bool;
+function h<a, b> (x : a, y : b) : bool;
+type $__opaque_P_b_0;
+procedure P (x : $__opaque_P_b_0)
+{
+  assert [assert_forallH_calls_h_0]: forall y : int :: k(y);
+  assert [forallH]: forall y : int :: h(x, y);
+};
+-/
+#guard_msgs in
+#eval precondElimThenCheck (forallHPgm "b")
+
+-- The same program with the caller's type parameter named `$__precond_1`, which has a reserved
+-- prefix: type checking, which runs before this pass, renames it, so no type variable the pass
+-- generates captures it.
+/--
+info: [Strata.Core] Type checking succeeded.
+
+---
+info: program Core;
+
+function k<c> (z : c) : bool;
+function h<a, b> (x : a, y : b) : bool;
+type $__opaque_P_a_0;
+procedure P (x : $__opaque_P_a_0)
+{
+  assert [assert_forallH_calls_h_0]: forall y : int :: k(y);
+  assert [forallH]: forall y : int :: h(x, y);
+};
+-/
+#guard_msgs in
+#eval match Core.typeCheck .quiet (forallHPgm "$__precond_1") with
+  | .ok p => precondElimThenCheck p
+  | .error e => f!"type error: {Std.format e}"
+
+/-- `f<a>(x : int) : a`, uninterpreted, requires `forall y : a :: k(y)`. -/
+private def fResFunc : Core.Function :=
+  { name := ⟨"f", ()⟩
+    typeArgs := ["a"]
+    inputs := [(⟨"x", ()⟩, .int)]
+    output := .ftvar "a"
+    preconditions :=
+      [⟨LExpr.all Core.coreLoc "y" (some (.ftvar "a"))
+          (.app Core.coreLoc (.op Core.coreLoc ⟨"k", ()⟩ none) (.bvar Core.coreLoc 0)),
+              Core.coreLoc⟩] }
+
+/-- `k`, `f` and `procedure P<tv>()` with body `var t : tv := f(0)`. -/
+private def fResPgm (tv : String) : Core.Program :=
+  { decls := [
+    .func kFunc .empty,
+    .func fResFunc .empty,
+    .proc { header := { name := ⟨"P", ()⟩, typeArgs := [tv], inputs := [], outputs := [] }
+            spec := { preconditions := [], postconditions := [] }
+            body := .structured
+              [Core.Statement.init ⟨"t", ()⟩ (.forAll [] (.ftvar tv))
+                (.det (.app Core.coreLoc (.op Core.coreLoc ⟨"f", ()⟩ none)
+                       (.intConst Core.coreLoc 0))) .empty] }
+      .empty] }
+
+/-- Type check, then run `precondElim`; show the program or the error. -/
+private def checkThenPrecondElim (p : Core.Program) : Std.Format :=
+  match Core.typeCheck Core.VerifyOptions.default p with
+  | .error e => f!"type error: {Std.format e}"
+  | .ok p =>
+    match Core.Transform.run p PrecondElim.precondElim coreFactoryState with
+    | .error e => f!"transform failed: {e}"
+    | .ok (_, p) => Std.format p.stripMetaData
+
+-- `f(0)` in `P<a>`, annotated by the type check at `int → a`, `f`'s declared
+-- type: `f`'s `a` is `P`'s `a`.
+/--
+info: [Strata.Core] Type checking succeeded.
+
+---
+info: program Core;
+
+function k<c> (z : c) : bool;
+function f<a> (x : int) : a;
+procedure P<a> ()
+{
+  assert [init_calls_f_0]: forall y : (a) :: k(y);
+  var t : a := f(0);
+};
+-/
+#guard_msgs in
+#eval checkThenPrecondElim (fResPgm "a")
+
+-- The same program with `P`'s type parameter named `c`: the same output with
+-- `a` renamed to `c`.
+/--
+info: [Strata.Core] Type checking succeeded.
+
+---
+info: program Core;
+
+function k<c> (z : c) : bool;
+function f<a> (x : int) : a;
+procedure P<c> ()
+{
+  assert [init_calls_f_0]: forall y : (c) :: k(y);
+  var t : c := f(0);
+};
+-/
+#guard_msgs in
+#eval checkThenPrecondElim (fResPgm "c")
+
+end PolyCallerTypeVars
 
 /-! ### Nested calls to a recursive block
 
@@ -595,13 +872,10 @@ rec function nest (@[cases] xs : IntList, acc : int) : int
 
 /-! ### Identical polymorphic calls at different instantiations
 
-The two calls `g(Nil())` stand at `MyList int` and `MyList bool`. Each gets its
-own variable for `g`, with its own type parameter, so the lemmas type check.
-In `g`'s own lemma, the element type of `ys`, which stands for `g`'s type
-parameter `b`, is still a type variable after type checking, since this test
-runs no pass that replaces it. Like every type variable a lemma still has, it
-becomes a fresh opaque type declared just before the lemma, and the lemma no
-longer has type parameters. -/
+The two calls `g(Nil())` stand at `MyList int` and `MyList bool`. The program is
+type checked first, so each call is annotated at its instantiation, and each
+gets its own variable for `g` of that type. `g`'s own lemma keeps `g`'s type
+parameter `b`. -/
 
 def polymorphicCallsAtTwoTypesPgm :=
 #strata
@@ -633,8 +907,7 @@ datatype MyList (a : Type) {
   Cons(hd : a, tl : MyList a)
 };
 lemma [f_body_calls_MyList..tl_0] (xs : (MyList int), g_fn : (MyList bool -> MyList bool), g_fn_1 : (MyList int -> MyList int)): g_fn(Nil) == Cons(true, Nil) ==> g_fn_1(Nil) == Cons(1, Nil) ==> !(MyList..isNil(xs)) ==> MyList..isCons(xs);
-type $__free_g_body_calls_MyList..tl_0_0;
-lemma [g_body_calls_MyList..tl_0] (ys : (MyList $__free_g_body_calls_MyList..tl_0_0), f_fn : (MyList int -> int)): !(int.lt(f_fn(Nil), 0)) ==> !(MyList..isNil(ys)) ==> MyList..isCons(ys);
+lemma [g_body_calls_MyList..tl_0] <b>(ys : (MyList b), f_fn : (MyList int -> int)): !(int.lt(f_fn(Nil), 0)) ==> !(MyList..isNil(ys)) ==> MyList..isCons(ys);
 rec function f (@[cases] xs : MyList int) : int
 {
   if MyList..isNil(xs) then 0 else if g(Nil) == Cons(1, Nil) then if g(Nil) == Cons(true, Nil) then f(MyList..tl(xs)) else 1 else 2
@@ -645,7 +918,56 @@ function g<b> (@[cases] ys : MyList b) : MyList b
 };
 -/
 #guard_msgs in
-#eval (Std.format (transformProgram polymorphicCallsAtTwoTypesPgm))
+#eval checkThenPrecondElim (translate polymorphicCallsAtTwoTypesPgm)
+
+/-! ### Partial functions in a CFG body
+
+A call in a block command gets its precondition check right before the command; a call in a
+branch condition gets its check after the block's last command. The contract's
+well-formedness lemma is generated as for a structured body. -/
+
+private def divInCFGPgm :=
+#strata
+program Core;
+
+procedure test(a : int, b : int, out r : int)
+spec { requires [b_ok]: int.gt(int.safeDiv(10, b), 0); }
+cfg entry {
+  entry: { r := int.safeDiv(10, a);
+    branch (int.gt(int.safeDiv(r, b), 0)) goto pos else goto done; }
+  pos: { r := int.add(r, 1); goto done; }
+  done: { return; }
+};
+
+#end
+
+/--
+info: [Strata.Core] Type checking succeeded.
+
+program Core;
+
+lemma [test_pre_b_ok_calls_Int.SafeDiv_0] (a : int, b : int, r : int): !(b == 0);
+procedure test (a : int, b : int, out r : int)
+spec {
+  requires [b_ok]: int.gt(int.safeDiv(10, b), 0);
+  } cfg entry {
+  entry: {
+    assert [set_r_calls_Int.SafeDiv_0]: !(a == 0);
+    r := int.safeDiv(10, a);
+    assert [branch_cond_calls_Int.SafeDiv_0]: !(b == 0);
+    branch (int.gt(int.safeDiv(r, b), 0)) goto pos else goto done;
+  }
+  pos: {
+    r := int.add(r, 1);
+    goto done;
+  }
+  done: {
+    return;
+  }
+};
+-/
+#guard_msgs (whitespace := lax) in
+#eval IO.println ((Std.format (transformProgram divInCFGPgm)).pretty 96)
 
 end PrecondElimTests
 end

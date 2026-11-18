@@ -125,7 +125,8 @@ namespace NondetElim
 open Imperative Lambda
 
 /-- Rewrite one declaration for nondeterminism elimination. Non-procedure
-declarations pass through unchanged; CFG procedure bodies are rejected. -/
+declarations and CFG procedure bodies pass through unchanged: a CFG branch condition is
+deterministic. -/
 def nondetElimDecl (d : Decl) : Except Strata.Message (Decl × Bool) :=
   match d with
   | .proc proc md =>
@@ -133,32 +134,26 @@ def nondetElimDecl (d : Decl) : Except Strata.Message (Decl × Bool) :=
     | .structured ss =>
       let ss' := Block.nondetElim ss
       pure (Decl.proc { proc with body := .structured ss' } md, ss' != ss)
-    | .cfg _ =>
-      throw (Strata.Message.fromString
-        s!"nondetElim: CFG procedure bodies are not supported \
-           (procedure '{proc.header.name.1}'); nondetElim expects structured bodies.")
+    | .cfg _ => pure (d, false)
   | _ => pure (d, false)
 
-/-- Nondet-elimination pass for Core: run `Imperative.Block.nondetElim` on every
-structured procedure body. The returned flag is true exactly when at least one
-body changes. Raises a failure on a CFG procedure body, since this
-statement-level rewrite cannot express CFGs and silently skipping one would let
-a nondeterministic guard survive into symbolic evaluation. -/
+/-- Nondet-elimination pass for Core: `nondetElimDecl` on every declaration. The returned flag
+is true exactly when at least one body changes. -/
 def nondetElim (p : Program) : Transform.CoreTransformM (Bool × Program) := do
   let results ← liftExcept (p.decls.mapM nondetElimDecl)
   return (results.any (·.2), { decls := results.map (·.1) })
 
 /-- Nondet-elimination pipeline phase. Model-preserving: havoc'ing a fresh
     boolean and branching on it realizes exactly the nondeterministic choice it
-    replaces, introducing no over-approximation. Requires call-free structured
-    bodies, which the correctness proof's base-command bridge needs. It keeps every
+    replaces, introducing no over-approximation. Requires call-free bodies, which the
+    correctness proof's base-command bridge needs. It keeps every
     block, `exit` and branch and adds only commands, so an `exit` covered by an
     enclosing block stays covered (`Block.nondetElim_exitsCoveredByBlocks`). -/
 def nondetElimPipelinePhase : PipelinePhase :=
   -- `staticSingleAssignment` is not claimed because the loop case `havoc`s the
   -- fresh boolean at the end of the body.
   modelPreservingPipelinePhase "nondetElim" nondetElim
-    (requires := factSet![.noCFGBodies, .noCalls])
+    (requires := factSet![.noCalls, .typeAnnotated])
     (establishes := factSet![.noNondetGuards])
     (preserves := factSet![.noCFGBodies, .noCalls, .noLoops, .noLoopInvariants,
                          .noLoopMeasures, .noBetaRedexes, .noPrecondsFromFuncs,

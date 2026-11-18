@@ -1518,13 +1518,13 @@ private theorem runStmtsRec_insert_aux : ∀ (fuel : Nat) (ss : List Statement) 
       GenLe γ γ' ∧ PassPost ss γ r γ'
   | 0, _, _, h => absurd h (Nat.not_lt_zero _)
   | _ + 1, [], γ, _ => by
-    simp only [Transform.runStmtsRec]
+    rw [Transform.runStmtsRec_eq]
     exact Transform.PostGen.pure fun _ h => h ▸ ⟨GenLe.refl _, fun _ =>
       ⟨.nil, Nat.le_refl _, by simp, fun _ => rfl⟩⟩
   | fuel + 1, s :: rest, γ, hsz => by
     have ih := runStmtsRec_insert_aux fuel
     simp only [List.cons.sizeOf_spec] at hsz
-    rw [Transform.runStmtsRec.eq_def]
+    rw [Transform.runStmtsRec_eq]
     dsimp only
     refine Transform.PostGen.bind (Q₁ := fun r γ₁ => GenLe γ γ₁ ∧ (γ.WF →
         StmtRelStep (Drawn γ) (Drawn γ₁) s r.2 ∧
@@ -1693,7 +1693,7 @@ private theorem declStep_iter {γ γ' : CoreGenState} (hwf : γ.WF) (hle : GenLe
     cases hb : proc₀.body
     · simp only [Core.LoopElim.DeclBodyRel, hb] at h₁ ⊢
       obtain ⟨ss₁, hrel, rfl⟩ := h₁
-      obtain ⟨ss, ss', hss, hq, hr⟩ := h₂
+      obtain ⟨ss, ss', hss, hq, hr⟩ := Or.resolve_right h₂ fun ⟨_, hg, _⟩ => by cases hg
       obtain rfl : ss₁ = ss := Body.structured.inj hss
       obtain ⟨hstep, hle', hlt, hz⟩ := hq hwf
       obtain ⟨c, d'⟩ := r
@@ -1706,12 +1706,14 @@ private theorem declStep_iter {γ γ' : CoreGenState} (hwf : γ.WF) (hle : GenLe
           hstep, rfl⟩, ?_, fun _ => ?_, nofun⟩ <;> simp only [declNumChecked]
         · exact Nat.le_of_lt (hlt rfl)
         · exact hlt rfl
-    · -- `runProgram` rejects a CFG body.
+    · -- A CFG body is kept.
       simp only [Core.LoopElim.DeclBodyRel, hb] at h₁
       subst h₁
-      obtain ⟨ss, -, hss, -⟩ := h₂
-      rw [hb] at hss
-      cases hss
+      rcases h₂ with ⟨ss, -, hss, -⟩ | ⟨-, -, rfl⟩
+      · rw [hb] at hss
+        cases hss
+      · refine ⟨by simp only [Core.LoopElim.DeclBodyRel, hb], Nat.le_refl _, nofun, fun _ => ?_⟩
+        simp [declNumChecked, hb]
   all_goals
     obtain rfl := h₁
     obtain rfl := h₂
@@ -1754,12 +1756,14 @@ private theorem rel₂_declStep_iter {γ γ' : CoreGenState} (hwf : γ.WF) (hle 
     removing some loops carrying invariants or a measure when it reports a change and leaving
     none when it reports none. -/
 private theorem runProgram_insert (p q : Program) :
-    Transform.PostGen (IterInv p q) (Transform.runProgram insertInvariantAsserts q)
+    Transform.PostGen (IterInv p q)
+      (Transform.runProgram insertInvariantAsserts q (cfgCmd := some fun _ => pure none))
       fun r γ' => IterInv p r.2 γ' ∧ (r.1 = Bool.true → numChecked r.2 < numChecked q) ∧
         (r.1 = Bool.false → numChecked r.2 = 0) := by
   refine Transform.PostGen.of_forall fun γ ⟨hwf, hrel⟩ => ?_
   refine (Transform.runProgram_postGen (Q := PassPost) GenLe.refl GenLe.trans PassPost.widen
-    runStmtsRec_insert q γ).mono (fun _ h => h) fun r γ' ⟨hle, rs, hrs, hdecls, hc⟩ => ?_
+    runStmtsRec_insert (fun _ hh g γ => by cases hh; exact Transform.runCFGCmds_keep g γ)
+    (fun _ hh => by cases hh) q γ).mono (fun _ h => h) fun r γ' ⟨hle, rs, hrs, hdecls, hc⟩ => ?_
   obtain ⟨hrel', -, hlt, hz⟩ := rel₂_declStep_iter hwf hle hrel hrs
   simp only [numChecked]
   rw [hdecls, hc]

@@ -42,3 +42,9 @@ maps index `i` to `a`. -/
   | .nil, ys => ys
   | .cons x xs, ys => .cons x (HList.append xs ys)
 
+/-- Every component of a heterogeneous list satisfies the predicate `P`, which
+may depend on the component's index entry. -/
+@[expose] def HList.All {α : Type} {f : α → Type} (P : (a : α) → f a → Prop) :
+    {as : List α} → HList f as → Prop
+  | _, .nil => True
+  | _, .cons x xs => P _ x ∧ HList.All P xs

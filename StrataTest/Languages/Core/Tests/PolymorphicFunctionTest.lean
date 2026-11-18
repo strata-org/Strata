@@ -209,7 +209,7 @@ spec {
 #end
 
 /--
-info: error: (4582-4605) Impossible to unify (arrow int bool) with (arrow bool $__ty5).
+info: error: (4582-4605) Procedure 'TestEqTypeMismatch': Impossible to unify (arrow int bool) with (arrow bool _).
 First mismatch: int with bool.
 -/
 #guard_msgs in

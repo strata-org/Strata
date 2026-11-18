@@ -23,14 +23,13 @@ public section
 /-!
 # `noOldFvars` for successfully type-checked preconditions
 
-A precondition is resolved against `envWithInputs` (`Procedure.typeCheck`:
-`pushEmptyContext` + inputs); the corresponding well-formedness field
-`WFPreProp.noOldFvars` inspects `getFvars` of the STORED (unresolved) expression.
+A precondition is resolved against an input environment; the corresponding
+well-formedness field `WFPreProp.noOldFvars` inspects `getFvars` of the STORED
+(unresolved) expression.
 
 ### Key definitions
-* `ResolvesInOrder` — inductive predicate capturing the env-threading shape of the
-  `typeCheckConditions` fold (each condition resolves against the previous one's
-  output env, `Env₀ → … → Envₙ`).
+* `ResolvesInOrder` — inductive predicate for a list of expressions resolved in
+  sequence (each resolves against the previous one's output env, `Env₀ → … → Envₙ`).
 
 ### Key results
 * `env_no_pred_precond_no_pred` — conditional core (arbitrary predicate `P`): if
@@ -58,14 +57,9 @@ The chain assembled here, in detail:
 * `env_no_pred_preserved_by_resolve` — TRANSPORT STEP. `resolve` never adds a new
   known var to its output context (`resolve_knownVars_subset`), so the abstract
   "no known var satisfies `P`" invariant survives a successful `resolve` call.
-  This is what lets the atomic result above apply to EVERY precondition typed
-  by the fold in `typeCheckConditions`, not only the first: precondition `i+1`
-  resolves against the previous call's output env, and the invariant it needs
-  is exactly the invariant propagated by this transport step from precondition
-  `i`.
 
 * `noOldFvars_of_resolve_in_inputEnv` — the top-level bridge for a SINGLE
-  expression resolved against `envWithInputs` directly (the shape the FIRST
+  expression resolved against `envWithInputs` directly (the shape every
   precondition takes). The statement is generic — nothing constrains the
   expression to be syntactically a precondition — so the name reflects the env,
   not the caller. Its env hypothesis is discharged by splitting
@@ -78,15 +72,11 @@ The chain assembled here, in detail:
   fold.
 
 * `noOldFvars_of_resolvesInOrder` — the FOLD-LEVEL result over a whole
-  `ResolvesInOrder` chain (a list of expressions resolved in sequence — the
-  abstract shape of the `typeCheckConditions` env-threading fold). Proved by
+  `ResolvesInOrder` chain (a list of expressions resolved in sequence). Proved by
   list induction: the atomic `env_no_pred_precond_no_pred` (at
   `P := CoreIdent.isOldIdent`) discharges each head, and
   the three fold invariants (no-`old`-known-var, `TEnvWF`, `context.types ≠ []`)
-  advance across each step via the transport lemmas above. This is the statement
-  a `WFPreProp.noOldFvars` construction site consumes for a full precondition
-  list; connecting `ResolvesInOrder` to the `private`, `for`-loop-shaped
-  `typeCheckConditions` is left as a follow-up.
+  advance across each step via the transport lemmas above.
 -/
 
 namespace Core
@@ -110,16 +100,13 @@ theorem env_no_pred_precond_no_pred
   intro id hid
   simp only [HasFvars.getFvars] at hid
   rw [getVars_unresolved] at hid
-  exact h_env_no id (resolve_getVars_mem_knownVars C Env Env' e et h h_envwf h_ne h_fwf id hid)
+  exact h_env_no id
+    (resolve_getVars_mem_knownVars C Env Env' e et h h_envwf h_ne h_fwf id hid)
 
 /-- The abstract "no known var satisfies `P`" invariant survives a successful
     `resolve` call: `resolve` never adds a new known var (`resolve_knownVars_subset`),
     so any predicate that holds for all knowns of the input env holds for all
-    knowns of the output env.  This is the transport step that lifts the atomic
-    `env_no_pred_precond_no_pred` from the FIRST resolve call in a fold to every
-    subsequent call: precondition `i+1` in `typeCheckConditions` resolves
-    against the previous call's output env, and its no-`P`-known-var hypothesis
-    is exactly what this step delivers from the previous iteration's. -/
+    knowns of the output env. -/
 theorem env_no_pred_preserved_by_resolve
     (C : Core.Expression.TyContext) (Env Env' : Core.Expression.TyEnv)
     (e : Core.Expression.Expr) (et : Lambda.LExprT Core.CoreLParams.mono)
@@ -154,9 +141,7 @@ private theorem env_no_pred_of_split
     (unresolved) form, provided the known vars split into input names (not `old`)
     and outer scopes (carried as `h_outer_no_old`; no well-formedness invariant
     currently forbids an `old`-named outer/global binding).  The statement is
-    generic in the expression — the intended instantiation is the FIRST
-    precondition, which `typeCheckConditions` resolves against `envWithInputs`
-    (the inputs-only pre-state env, before any `old` binding is introduced). -/
+    generic in the expression. -/
 theorem noOldFvars_of_resolve_in_inputEnv
     (C : Core.Expression.TyContext) (envWithInputs Env' : Core.Expression.TyEnv)
     (precond : Core.Expression.Expr) (et : Lambda.LExprT Core.CoreLParams.mono)
@@ -178,15 +163,7 @@ theorem noOldFvars_of_resolve_in_inputEnv
   exact env_no_pred_precond_no_pred C envWithInputs Env' precond et
     (fun id => CoreIdent.isOldIdent id) h_env_no_old h_resolve h_envwf h_ne h_fwf
 
-/-- The precondition list resolves in sequence: each condition is resolved
-    against the previous one's output env, threading `Env₀ → … → Envₙ`.  This is
-    the abstract shape of the `typeCheckConditions` fold
-    (`ProcedureType.lean`, which threads `currentEnv := newEnv` through
-    `proc.spec.preconditions`); stating it inductively lets the fold-level
-    `noOldFvars` result below be proved by list induction.  Wiring this predicate
-    to the (`private`, `for`-loop-shaped) `typeCheckConditions` itself — so a
-    `WFPreProp` constructor can discharge it for a fully type-checked procedure —
-    is left as a follow-up. -/
+/-- A list of expressions resolves in sequence, each against the previous one's output env. -/
 inductive ResolvesInOrder (C : Core.Expression.TyContext) :
     List Core.Expression.Expr → List (Lambda.LExprT Core.CoreLParams.mono) →
     Core.Expression.TyEnv → Core.Expression.TyEnv → Prop where
@@ -203,9 +180,7 @@ inductive ResolvesInOrder (C : Core.Expression.TyContext) :
     `old`-prefixed identifier, then EVERY expression in a `ResolvesInOrder` chain
     (not only the first) carries no `old`-prefixed free variable in its STORED
     (unresolved) form.  Stated generically over a list of expressions resolved in
-    sequence; the intended instantiation is a full precondition list, so this is
-    the statement `WFPreProp.noOldFvars` construction sites consume.  The
-    induction advances three invariants across each fold step: the
+    sequence.  The induction advances three invariants across each fold step: the
     no-`old`-known-var hypothesis via `env_no_pred_preserved_by_resolve`, `TEnvWF`
     via `resolve_TEnvWF`, and `context.types ≠ []` via `resolve_preserves_context`
     + `TContext.Equiv.types_ne_nil`; the head is discharged by the atomic

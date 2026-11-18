@@ -13,7 +13,6 @@ public import Strata.Languages.Core.Verifier
 public import Strata.Languages.Core.IncrementalSolve
 public import Strata.Languages.Core.SarifOutput
 public import Strata.Pipeline.Context
-public import Strata.Languages.B3.Verifier.Program
 public import Strata.Transform.ProcedureInlining
 public import Strata.Backends.CBMC.GOTO.CoreToCProverGOTO
 public import StrataDDM.Util.IO
@@ -23,7 +22,6 @@ public meta import Strata.Cli.Framework
 public meta import Strata.Cli.VerifyOptions
 public meta import Strata.Cli.DialectCommands
 public meta import Strata.Languages.Core
-public meta import Strata.Languages.B3.DDMTransform.ParseCST
 public meta import Strata.DL.SMT.DDMTransform.Parse
 
 public section
@@ -207,8 +205,10 @@ def transformCommand (dialects : LoadedDialects) : Command where
     | .error msg =>
       exitFailure msg
     | .ok initProgram =>
-      -- Validate and convert pass configs to TransformPass values.
-      let mut passes : List Core.PipelinePhase := []
+      -- Validate and convert pass configs to TransformPass values. The program is
+      -- type-checked first: every pass relies on its annotations.
+      let mut passes : List Core.PipelinePhase :=
+        [Strata.Core.passTypeCheck Core.VerifyOptions.quiet]
       for pc in passConfigs do
         if pc.name == inlineProceduresPass then
           if pc.procedures.isEmpty then
@@ -286,7 +286,7 @@ def verifyCommand (dialects : LoadedDialects)
     { name := "parse-only", help := "Exit after DDM parsing and type checking." },
     { name := "output-format", help := "Output format (only 'sarif' supported).", takesArg := .arg "format" },
     { name := "procedures", help := "Verify only the specified procedures (comma-separated).", takesArg := .arg "procs" }]
-  help := "Verify a Strata program file (.core.st or .b3.st)."
+  help := "Verify a Strata program file (.core.st)."
   -- Both answer without a file to verify: one lists the phases, the other checks an order.
   reportFlags :=
     [("display-phases", fun pflags => do
@@ -348,20 +348,8 @@ def verifyCommand (dialects : LoadedDialects)
           ++ "pipeline: the supplied pipeline is run exactly as given, so the procedure "
           ++ "filter would be silently dropped. Omit --procedures, or run the default "
           ++ "pipeline, which applies it."
-    -- Only the Core path takes a pipeline: a B3 program never reaches the Core phases.
-    -- Accepting a phase list for B3 would run something other than what the caller asked for.
-    if pipeline.isSome && (file.endsWith ".b3.st" || file.endsWith ".b3cst.st") then
-      exitUserError <|
-        s!"The selected pipeline applies to Core programs only, and {file} is not one."
-    -- Print notes only after the Core-only check above, so a rejected run prints nothing.
+    -- Print notes only after the checks above, so a rejected run prints nothing.
     choice.notes.forM IO.println
-    -- `--keep-all-files` has no effect for B3 files: the B3 pipeline runs no
-    -- Core transform phases, so there are no intermediate programs to emit.
-    -- Reject it up front — before the parse-only / type-check-only early
-    -- returns below, which would otherwise silently ignore the flag — and exit
-    -- with the user-error code (1), not internal-error (3).
-    if (file.endsWith ".b3.st" || file.endsWith ".b3cst.st") && opts.keepAllFilesPrefix.isSome then
-      exitUserError "--keep-all-files is not supported for B3 files (.b3.st/.b3cst.st)."
     let fm ← pflags.buildDialectFileMap dialects
     let mode := if opts.profile then Strata.Pipeline.OutputMode.profile else .quiet
     let pctx ← Strata.Pipeline.PipelineContext.create (outputMode := mode)
@@ -379,26 +367,7 @@ def verifyCommand (dialects : LoadedDialects)
           return
       -- Full verification
       let vcResults ← try
-        if file.endsWith ".b3.st" || file.endsWith ".b3cst.st" then
-          let ast ← match B3.Verifier.programToB3AST pgm with
-            | Except.error msg => throw (IO.userError s!"Failed to convert to B3 AST: {msg}")
-            | Except.ok ast => pure ast
-          let solver ← B3.Verifier.createInteractiveSolver opts.solver
-          let reports ← B3.Verifier.programToSMT ast solver
-          for report in reports do
-            IO.println s!"\nProcedure: {report.procedureName}"
-            for (result, _) in report.results do
-              let marker := if result.result.isError then "✗" else "✓"
-              let desc := match result.result with
-                | .error .counterexample => "counterexample found"
-                | .error .unknown => "unknown"
-                | .error .refuted => "refuted"
-                | .success .verified => "verified"
-                | .success .reachable => "reachable"
-                | .success .reachabilityUnknown => "reachability unknown"
-              IO.println s!"  {marker} {desc}"
-          pure #[]
-        else if pgm.dialect == "Boole" then
+        if pgm.dialect == "Boole" then
           throw <| IO.Error.userError "Boole dialect support requires the StrataBoole package"
         else
           Strata.Core.verify pgm inputCtx opts
@@ -492,7 +461,6 @@ private def foreignBackendFlagIssues (backends : List SolverBackend) (solver : S
 def baseDialects : LoadedDialects :=
   StrataDDM.Elab.LoadedDialects.builtin
     |>.addDialect! Strata.Core
-    |>.addDialect! B3CST
     |>.addDialect! Strata.smtReservedKeywordsDialect
     |>.addDialect! Strata.SMTCore
     |>.addDialect! Strata.SMT

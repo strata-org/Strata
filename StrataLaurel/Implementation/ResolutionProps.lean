@@ -460,17 +460,27 @@ theorem clean_declare_annotated (name : Identifier) (ty : HighTypeMd)
 
 theorem varDeclare_clean (param : Parameter?) (source : Strata.FileRange) :
     PostM (Check.varDeclare param source) Clean := by
-  unfold Check.varDeclare
+  unfold Check.varDeclare declareLocal
   cases param.type with
   | some ty =>
     exact postM_bind_any fun ty' =>
       postM_bind_any fun name' => postM_pure (clean_declare_annotated name' ty' source)
   | none =>
+    refine postM_bind_any fun name' => ?_
     refine postM_bind_any fun (_ : Unit) => ?_
-    refine postM_bind_any fun (ty' : HighTypeMd) => ?_
-    simp only []
-    exact postM_bind_any fun name' =>
-      postM_pure (clean_declare_annotated name' ty' source)
+    exact postM_pure (clean_declare_annotated name' _ source)
+
+/-- Writing inferred types into a Clean body's declarations keeps it Clean: the
+    rewrite is kept only when no declaration is left unannotated. -/
+private theorem finishUntypedDecls_clean {b : StmtExprMd} (hb : Clean b) :
+    PostM (finishUntypedDecls b) Clean := by
+  unfold finishUntypedDecls
+  refine postM_bind_any fun _ => ?_
+  refine postM_bind_any fun _ => ?_
+  refine postM_bind_any fun _ => postM_pure ?_
+  split
+  · next h => exact List.isEmpty_iff.mp h
+  · exact hb
 
 
 end ResolutionClean
@@ -602,6 +612,18 @@ theorem resolveModifies_clean (mods : List ModifiesGroup) :
       masterCheck c { val := .TBool, source := c.source })) fun gd hgd => postM_pure ?_
   exact ⟨hts, hgd⟩
 
+/-- Running an action with a body's labels in scope (`withBodyLabels`) keeps
+    every postcondition the action establishes of its result: the label
+    bookkeeping around it only touches the resolution state. -/
+private theorem postM_withBodyLabels {α : Type} {body : Body} {a : ResolveM α} {P : α → Prop}
+    (h : PostM a P) : PostM (withBodyLabels body a) P := by
+  unfold withBodyLabels
+  exact postM_bind_any fun _ =>
+    postM_bind_any fun _ =>
+    postM_bind h fun result hres =>
+    postM_bind_any fun _ =>
+    postM_pure hres
+
 include masterSynth masterCheck in
 /-- A statement in effect position (`Check.statement`) is Clean: it is either
     checked against `TVoid` or synthesized with its type dropped. -/
@@ -617,15 +639,17 @@ include masterSynth masterCheck in
 theorem resolveBody_clean (body : Body) :
     PostM (resolveBody body) CleanBody := by
   unfold resolveBody
+  refine postM_withBodyLabels ?_
   split
   · -- Transparent
-    exact postM_bind (statement_clean masterSynth masterCheck _) fun b hb => postM_pure hb
+    exact postM_bind (statement_clean masterSynth masterCheck _) fun b hb => finishUntypedDecls_clean hb
   · -- Opaque
     refine postM_bind (postM_mapM _ _ (fun c _ =>
         condition_mapM_clean c _
           (fun e => masterCheck e { val := .TBool, source := e.source })))
       fun posts' hposts => ?_
-    refine postM_bind (postM_option_mapM _ _ (fun e => statement_clean masterSynth masterCheck e))
+    refine postM_bind (postM_option_mapM _ _ (fun e =>
+        postM_bind (statement_clean masterSynth masterCheck e) fun b hb => finishUntypedDecls_clean hb))
       fun impl' himpl => ?_
     refine postM_bind (resolveModifies_clean masterSynth masterCheck _)
       fun mods' hmods => postM_pure ?_

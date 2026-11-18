@@ -19,9 +19,8 @@ namespace Strata
 Core-to-Core transforms that replace function calls with their bodies.
 
 Uses the same inlining logic as `LExprEval.eval`: `Factory.callOfLFunc`
-to decompose applications, `LFunc.computeTypeSubst` + `LExpr.applyTypeSubst`
-for polymorphic type instantiation, and `substFvarsLifting` for
-capture-safe substitution under binders.
+to decompose applications and `LFunc.instantiateBody?` for polymorphic type
+instantiation and capture-safe substitution under binders.
 
 Unlike the attribute-gated inlining inside `LExprEval.eval` (which inlines
 only `.inline`-attributed, non-recursive functions during evaluation), these
@@ -44,12 +43,7 @@ public section
     : Option (Lambda.LExpr Core.CoreLParams.mono) :=
   match lfunc.body with
   | none => none
-  | some body =>
-    match Lambda.LFunc.computeTypeSubst lfunc op_expr args with
-    | none => none
-    | some tySubst =>
-      let body := body.applyTypeSubst tySubst
-      some (Lambda.LExpr.substFvarsLifting body (lfunc.inputs.keys.zip args))
+  | some body => lfunc.instantiateBody? body op_expr args
 
 /-- Try to inline a single function call. Returns `some result` if the
     function has a body and is fully applied; `none` otherwise.
@@ -201,7 +195,7 @@ end FunctionInlining
     function's precondition would be raised as an obligation. -/
 def functionInliningPipelinePhase (maxDepth : Option Nat := none) : PipelinePhase :=
   modelPreservingPipelinePhase "functionInlining"
-    (requires := factSet![.noPrecondsFromFuncs])
+    (requires := factSet![.noPrecondsFromFuncs, .typeAnnotated])
     (preserves := factSet![.noCFGBodies, .noCalls, .noLoops, .noLoopInvariants,
                          .noLoopMeasures, .staticSingleAssignment, .noPrecondsFromFuncs,
                          .noNondetGuards, .hasObligationForm, .noProcedureContracts,

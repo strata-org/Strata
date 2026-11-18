@@ -26,11 +26,13 @@ import Strata.DL.Lambda.Denote.LExprSemanticsConsistent
 import Strata.Languages.Core.Procedure
 import Strata.Languages.Core.Program
 import Strata.Languages.Core.StatementSemantics
-import Strata.Languages.Core.CommandTypeSpec
-import Strata.Languages.Core.DatatypeTypeSpec
-import Strata.Languages.Core.FunctionTypeSpec
-import Strata.Languages.Core.ProcedureTypeSpec
-import Strata.Languages.Core.ProgramTypeSpec
+import Strata.Languages.Core.Typing.Spec.CommandTypeSpec
+import Strata.Languages.Core.Typing.Spec.DatatypeTypeSpec
+import Strata.Languages.Core.Typing.Spec.FunctionTypeSpec
+import Strata.Languages.Core.Typing.Spec.ProcedureTypeSpec
+import Strata.Languages.Core.Typing.Spec.ProgramTypeSpec
+import Strata.Languages.Core.Typing.Spec.TypingSpec
+import Strata.Languages.Core.Typing.Spec.NamesWF
 import Strata.DL.Imperative.Logic.LangDef
 import Strata.DL.Imperative.Logic.TraceInterp
 import Strata.DL.Imperative.Logic.TraceInterpProps
@@ -327,38 +329,70 @@ Strata Core's expressions are `Lambda` expressions and its statements are
 
 ## Type System
 
-Core's well-typedness is specified declaratively, with one judgment per
-syntactic category. Every judgment is parameterized by the `ExprTypingSpec`
-typeclass, so each instantiates to both the polymorphic `HasType` and the
-annotated `HasTypeA` expression relations of the Lambda type system above. The
-judgments layer up from commands to the whole program.
+Core's well-typedness is specified declaratively, in three parts.
+
+The typechecker spec describes the program as the user wrote it. Its judgments,
+one per syntactic category, type expressions with the polymorphic `HasType`
+relation of the Lambda type system above. They accept written type variables
+and type aliases, and layer up from commands to the whole program
+({name Core.TypeSpec.ProgramHasType}`ProgramHasType`). The type of a declared
+variable may use only type variables the user can write: not the checker's
+generated names (prefix `$__ty`) nor reserved rigid names. Functions, procedures
+and lemmas are typed up to a renaming of their type parameters that start with a
+reserved prefix.
+
+The typing relation describes the programs the checker is meant to output. Its
+judgments, such as {name Core.TypeSpec.ProgramWellTyped}`ProgramWellTyped`,
+state the same rules over variable type scopes, without aliases or written type
+variables, with expressions typed by `HasTypeA` and fully annotated.
+
+The name conditions, such as {name Core.TypeSpec.ProgramNamesWF}`ProgramNamesWF`,
+state what the typing relation leaves out about the names a program uses:
+program-wide distinctness and clashes between variables and functions. The
+checker is meant to produce programs that satisfy both the typing relation and
+the name conditions.
 
 ### Commands
 
-Core's commands are the imperative commands plus a procedure `call`, typed by
-{name Core.TypeSpec.CmdExtHasType'}`CmdExtHasType'`.
+Core's commands are the imperative commands plus a procedure `call`. Procedure
+bodies are typed by
+{name Core.TypeSpec.CmdExtHasTypeΔ'}`CmdExtHasTypeΔ'`, which extends the
+imperative commands' relation {name Core.TypeSpec.CmdHasTypeΔ'}`CmdHasTypeΔ'`
+with `call`. Both relations read each expression's annotations through the
+environment of written type variables in scope. A type variable written in a
+variable declaration's type denotes one type until the end of its block, branch
+or loop body: after `var x : a := …`, a later annotation `a` in the same block
+means the same type.
 
-{docstring Core.TypeSpec.CmdExtHasType'}
+{docstring Core.TypeSpec.CmdExtHasTypeΔ'}
+
+{docstring Core.TypeSpec.CmdHasTypeΔ'}
 
 ### Datatypes
 
-A mutual datatype declaration is well-typed when registering its block with
-`LContext.addMutualBlock` succeeds
-({name Core.TypeSpec.DeclHasType'.type_data}`DeclHasType'.type_data`).
+A mutual datatype declaration is well-typed when registering an alias-equivalent
+copy of the block with `LContext.addMutualBlock` succeeds. The registered block
+is compatible with the written one
+({name Core.TypeSpec.DeclHasType.type_data}`DeclHasType.type_data`).
 
 {docstring Core.TypeSpec.MutualADTWF}
 
 ### Functions
 
 Function declarations (recursive or not) are governed by
-{name Core.TypeSpec.FuncHasType'}`FuncHasType'`.
+{name Core.TypeSpec.FuncHasType'}`FuncHasType'`, applied to a renaming of their
+reserved type parameters
+({name Core.TypeSpec.FuncAlphaVariant}`FuncAlphaVariant`).
 
 {docstring Core.TypeSpec.FuncHasType'}
 
 ### Procedures
 
-Procedure declarations are governed by {name Core.TypeSpec.ProcHasType'}`ProcHasType'`;
-its `bodyTyped` field defers to {name Core.TypeSpec.ProcBodyHasType'}`ProcBodyHasType'`,
+Procedure declarations are governed by
+{name Core.TypeSpec.ProcHasType'}`ProcHasType'`, applied to a renaming of their
+reserved type parameters
+({name Core.TypeSpec.ProcAlphaVariant}`ProcAlphaVariant`); its `bodyTyped` field
+defers to {name Core.TypeSpec.ProcBodyHasType'}`ProcBodyHasType'`,
 which accepts only structured bodies (CFG bodies carry no typing obligation).
 
 {docstring Core.TypeSpec.ProcHasType'}
@@ -366,16 +400,16 @@ which accepts only structured bodies (CFG bodies carry no typing obligation).
 ### Programs
 
 Program typing is layered: a single declaration
-({name Core.TypeSpec.DeclHasType'}`DeclHasType'`), the declaration list
-({name Core.TypeSpec.DeclsHasType'}`DeclsHasType'`, which threads the context so
+({name Core.TypeSpec.DeclHasType}`DeclHasType`), the declaration list
+({name Core.TypeSpec.DeclsHasType}`DeclsHasType`, which threads the context so
 each declaration is checked against those before it), and the whole program
-({name Core.TypeSpec.ProgramHasType'}`ProgramHasType'`).
+({name Core.TypeSpec.ProgramHasType}`ProgramHasType`).
 
-{docstring Core.TypeSpec.DeclHasType'}
+{docstring Core.TypeSpec.DeclHasType}
 
-{docstring Core.TypeSpec.DeclsHasType'}
+{docstring Core.TypeSpec.DeclsHasType}
 
-{docstring Core.TypeSpec.ProgramHasType'}
+{docstring Core.TypeSpec.ProgramHasType}
 
 ## Procedure Calls
 
@@ -558,8 +592,14 @@ over the body — the `requires` clauses (including `free` ones, which the calle
 guarantees) as precondition, and the checked, non-`free` `ensures` clauses as
 postcondition (`free` postconditions are assumed at call sites, not proved by the
 body) — so that "this procedure meets its contract" is a single Hoare judgement.
+The precondition also assumes the axioms and `distinct` declarations that precede
+the procedure, as the entry environments of `ProcedureAssertsValidOnTraces` do, and
+a proved `Procedure.contractTriple` gives the contract part of that property
+(`contract_of_contractTriple`).
 `StrataTest/Languages/Core/Tests/Logic/Hoare.lean` has examples of Hoare triples
-derived from procedure contracts and their proofs.
+derived from procedure contracts and their proofs, and
+`StrataTest/Languages/Core/Tests/Logic/HoareAxioms.lean` has contracts that rest on
+an axiom or a `distinct` declaration.
 
 ## Satisfiability and Validity of Assertions
 

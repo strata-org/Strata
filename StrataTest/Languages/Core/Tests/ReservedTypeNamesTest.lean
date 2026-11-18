@@ -6,7 +6,13 @@
 module
 
 meta import Strata.Languages.Core
+meta import Strata.Transform.CallElim
+meta import Strata.Transform.ProcedureInlining
+meta import Strata.Transform.TerminationCheck
+meta import Strata.Transform.GenOpaqueTypeParams
+meta import Strata.Languages.Core.AbstractCalls
 import StrataDDM.Integration.Lean.HashCommands
+meta import StrataTest.Languages.Core.Tests.TestUtil
 
 /-! # Program names with reserved prefixes
 
@@ -19,18 +25,44 @@ name is taken for a generated one.
 -/
 
 meta section
+
+/-- The name, type parameters and signature of `f`. -/
+def Core.ReservedTypeNamesTest.funcSig (f : Core.Function) : Std.Format :=
+  f!"{f.name}<{f.typeArgs}> : {f.inputs.values} → {f.output}"
+
+/-- Print each function (`funcSig`) and the name, type parameters and
+    proposition of each lemma that `Core.typeCheck` with quiet options returns,
+    or its error message. -/
+def Core.ReservedTypeNamesTest.printChecked (p : Core.Program) : IO Unit :=
+  match Core.typeCheck .quiet p with
+  | .ok p =>
+    for d in p.decls do
+      match d with
+      | .func f _ => IO.println (funcSig f)
+      | .lemma l _ => IO.println f!"{l.name}<{l.typeArgs}> : {l.e}"
+      | _ => pure ()
+  | .error e => IO.println e.message
+
 namespace Strata.ReservedTypeNamesTest
 
-def typeCheckMessage (p : Core.Program) : String :=
-  match _root_.Core.typeCheck .quiet p with
-  | .ok _ => "ok"
-  | .error e => e.message
+open Core.ReservedTypeNamesTest (funcSig printChecked)
+open Core.TestUtil (coreVerdict firstLineOf)
+
+/-! The prefixes the Core passes generate are copied into `Lambda.reservedNamePrefixes`,
+which cannot import those passes; these checks keep the copies in sync. -/
+
+#guard Lambda.reservedNamePrefixes.contains Core.CallElim.callElimTyPrefix
+#guard Lambda.reservedNamePrefixes.contains Core.ProcedureInlining.inlineTyPrefix
+#guard Lambda.reservedNamePrefixes.contains Core.TermCheck.termTyVarPrefix
+#guard Lambda.reservedNamePrefixes.contains Core.GenOpaqueTypeParams.freeTyPrefix
+#guard Lambda.reservedNamePrefixes.contains Core.abstractTyPrefix
 
 /-! A declared type named like the opaque type that closes a lemma's free type
-variable is not taken for it. Here the axiom makes that type a singleton, under
-which the lemma would hold; the lemma is false, so it must not verify. -/
+variable must not be taken for it: the axiom makes that type a singleton, under
+which the false lemma would hold. Type checking rejects the lemma, so the
+program is never verified. -/
 
-def capturedLemmaType :=
+def reservedNamedSingleton :=
 #strata
 program Core;
 datatype MyList (a : Type) { Nil(), Cons(hd: a, tl: MyList a) };
@@ -41,28 +73,16 @@ axiom [single]: forall x : $__free_nil_refl_0, y : $__free_nil_refl_0 :: x == y;
 lemma [nil_refl]: first(Nil()) == second(Nil());
 #end
 
+-- Type checking rejects the lemma: it is typed at a generated type variable it
+-- does not declare.
 /--
-info:
-Obligation: nil_refl
-Property: assert
-Result: ❓ unknown
+error: ❌ Type checking error.
+Lemma 'nil_refl' is typed at a generated type variable that is not declared
 -/
 #guard_msgs in
-#eval Core.verify capturedLemmaType (options := .quiet)
+#eval Core.verify reservedNamedSingleton (options := .quiet)
 
-/-! The lemma's free type is closed with a type of its own, not the declared
-one. -/
-
-/-- info: [MyList, $__free_nil_refl_0, $__free_nil_refl_0_1] -/
-#guard_msgs in
-#eval match _root_.Core.typeCheck .quiet (Core.getProgram capturedLemmaType).fst with
-  | .ok p => IO.println (p.decls.filterMap fun (d : Core.Decl) =>
-      d.getTypeDecl?.map fun (td : Core.TypeDecl) => td.name.name)
-  | .error e => IO.println e.message
-
-/-! The verdict is the one the same program gets with an unreserved type name:
-the solver's counterexample cannot be checked against the quantified axiom, so
-the result is unknown rather than a failure, and it is not a proof. -/
+/-! The same program with an unreserved type name gets the same rejection. -/
 
 def unreservedSingleton :=
 #strata
@@ -76,10 +96,8 @@ lemma [nil_refl]: first(Nil()) == second(Nil());
 #end
 
 /--
-info:
-Obligation: nil_refl
-Property: assert
-Result: ❓ unknown
+error: ❌ Type checking error.
+Lemma 'nil_refl' is typed at a generated type variable that is not declared
 -/
 #guard_msgs in
 #eval Core.verify unreservedSingleton (options := .quiet)
@@ -116,9 +134,9 @@ type $__rigid_bad_a := int;
 lemma [bad] <a> (x : a): x == 0;
 #end
 
-/-- info: "Impossible to unify $__rigid_bad_a_1 with int." -/
+/-- info: REJECTED: Error in lemma bad: Rigid type variable 'a' was refined to 'int' -/
 #guard_msgs in
-#eval typeCheckMessage (Core.getProgram declaredRigidName).fst
+#eval coreVerdict (Core.getProgram declaredRigidName).fst
 
 /-! A function type parameter with a reserved prefix is renamed, so the
 function type checks and keeps its meaning. -/
@@ -141,23 +159,114 @@ Result: ✅ pass
 #guard_msgs in
 #eval Core.verify reservedTypeParam (options := .quiet)
 
-/-! The new name of a renamed type parameter avoids the function's other type
-variables, including undeclared ones, so an undeclared `a` is still reported.
-The parser rejects such a function, so it is built directly, as a front end
-would. -/
+/-! Type checking returns `id` with its type parameter renamed to `a` throughout. -/
 
-def renamedAvoidsUndeclared : Core.Decl :=
+/-- info: id<[a]> : [a] → a -/
+#guard_msgs in
+#eval printChecked (Core.getProgram reservedTypeParam).fst
+
+/-! A renamed type parameter also avoids the type variables in scope where
+the function is checked: with `a` in scope, `f<$__ty0>` becomes `f<a_1>`. -/
+
+/-- `function f<$__ty0> (x : $__ty0) : $__ty0`, without a body. -/
+def reservedIdF : Core.Function :=
+  { name := ⟨"f", ()⟩, typeArgs := ["$__ty0"],
+    inputs := [(⟨"x", ()⟩, .ftvar "$__ty0")], output := .ftvar "$__ty0" }
+
+/-- The signature (`funcSig`) of `reservedIdF` checked by `Function.typeCheck`
+    in `C` and `Env`, or the error message. -/
+def checkedIdF (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv) :
+    Std.Format :=
+  match Core.Function.typeCheck C Env reservedIdF with
+  | .ok (f, _) => funcSig f
+  | .error e => e
+
+-- `a` is a rigid type variable of the context.
+/-- info: f<[a_1]> : [a_1] → a_1 -/
+#guard_msgs in
+#eval checkedIdF { Core.initTyContext with rigidTypeVars := ["a"] }
+  Lambda.TEnv.default
+
+-- `a` is the type of the variable `y` in scope.
+/-- info: f<[a_1]> : [a_1] → a_1 -/
+#guard_msgs in
+#eval checkedIdF Core.initTyContext
+  (Lambda.TEnv.default.pushEmptyContext.addInNewestContext
+    (T := Core.CoreLParams)
+    (Strata.Util.HMap.ofList [(⟨"y", ()⟩, .forAll [] (.ftvar "a"))]))
+
+/-! A procedure or lemma type parameter with a reserved prefix is renamed the same
+way. -/
+
+def reservedProcLemmaTypeParam :=
+#strata
+program Core;
+procedure P<$__ty0> (x : $__ty0) {
+  assert [refl]: (x == x);
+};
+lemma [l_refl] <$__ty0> (x : $__ty0): x == x;
+#end
+
+/--
+info:
+Obligation: refl
+Property: assert
+Result: ✅ pass
+
+Obligation: l_refl
+Property: assert
+Result: ✅ pass
+-/
+#guard_msgs in
+#eval Core.verify reservedProcLemmaTypeParam (options := .quiet)
+
+/-! Type checking returns the lemma `l_refl<$__ty0>` with its type parameter
+renamed to `a` throughout. -/
+
+/-- info: l_refl<[a]> : forall x : (a) :: x == x -/
+#guard_msgs in
+#eval printChecked
+  { decls := [.lemma { name := "l_refl", typeArgs := ["$__ty0"],
+                       e := Lambda.LExpr.all Core.coreLoc "x" (some (.ftvar "$__ty0"))
+                              (.eq Core.coreLoc (.bvar Core.coreLoc 0) (.bvar Core.coreLoc 0)) }
+                                  .empty] }
+
+/-! A type with a reserved prefix that a procedure body declares is shown by its
+name in a message from the body. -/
+
+def bodyReservedType :=
+#strata
+program Core;
+procedure P<a> (x : a) {
+  type $__T;
+  var y : $__T;
+  y := x;
+};
+#end
+
+/-- info: REJECTED: Procedure 'P': Rigid type variable 'a' was refined to '$__T' -/
+#guard_msgs in
+#eval coreVerdict (Core.getProgram bodyReservedType).fst
+
+/-! An undeclared type variable is reported with the type parameters as
+written, including one with a reserved prefix. The parser rejects such a
+function, so it is built directly, as a front end would. -/
+
+def undeclaredWithReservedParam : Core.Decl :=
   .func { name := ⟨"f", ()⟩, typeArgs := ["$__ty0"],
           inputs := [(⟨"x", ()⟩, .ftvar "$__ty0")], output := .ftvar "a" } .empty
 
-/-- info: "Function 'f': type variables [a] appear in the signature but are not declared in typeArgs [a_1]" -/
-#guard_msgs in
-#eval typeCheckMessage { decls := [renamedAvoidsUndeclared] }
+/--
+info: REJECTED: Function 'f': type variables [a] appear in the signature but are
+not declared in typeArgs [$__ty0]
+-/
+#guard_msgs (whitespace := lax) in
+#eval coreVerdict { decls := [undeclaredWithReservedParam] }
 
-/-! The generated types do not stop a program from type checking again. Here
-the opaque-type pass, type checking (which closes the lemma's free element type
-of `Nil()` with a generated type), monomorphization and simplification run first,
-then type checking again. -/
+/-! The generated types do not stop a program from type checking. Here the
+opaque-type pass (which also closes the lemma's free element type of `Nil()` with
+a generated type), monomorphization and simplification run first, then type
+checking. -/
 
 def polyProgram :=
 #strata
@@ -170,7 +279,7 @@ procedure P<a> (x : a) {
 #end
 
 def typeCheckAfterPipeline (p : Core.Program) : IO String := do
-  let phases := Core.preSymbolicEvalPipelinePhases .quiet ++ [Core.typeCheckPipelinePhase .quiet]
+  let phases := Core.preSymbolicEvalPipelinePhases ++ [Core.typeCheckPipelinePhase .quiet]
   match ← (Core.runTransforms p phases).toBaseIO with
   | .ok (p, _) =>
     return toString (p.decls.filterMap fun (d : Core.Decl) =>
@@ -181,6 +290,21 @@ def typeCheckAfterPipeline (p : Core.Program) : IO String := do
 #guard_msgs in
 #eval typeCheckAfterPipeline (Core.getProgram polyProgram).fst
 
+/-! Closing a lemma's free type variable skips a declared type named like the
+type that closes it. -/
+
+def declaredFreeName :=
+#strata
+program Core;
+datatype MyList (a : Type) { Nil(), Cons(hd: a, tl: MyList a) };
+type $__free_nil_refl_0;
+lemma [nil_refl]: Nil() == Nil();
+#end
+
+/-- info: "[MyList, $__free_nil_refl_0, $__free_nil_refl_0_1]" -/
+#guard_msgs in
+#eval typeCheckAfterPipeline (Core.getProgram declaredFreeName).fst
+
 /-! A type declared twice is rejected, whatever kinds the two declarations
 have. The parser already rejects a source program that does this, so these
 programs are built directly, as a front end or a pass would. -/
@@ -188,17 +312,398 @@ programs are built directly, as a front end or a pass would. -/
 def fooCon : Core.Decl := .type (.con { name := "Foo", params := [] }) .empty
 def fooSyn : Core.Decl := .type (.syn { name := "Foo", typeArgs := [], type := .int }) .empty
 
-/-- info: "Error in type Foo: a declaration of this name already exists." -/
+/-- info: REJECTED: Error in type Foo: a declaration of this name already exists. -/
 #guard_msgs in
-#eval typeCheckMessage { decls := [fooCon, fooCon] }
+#eval coreVerdict { decls := [fooCon, fooCon] }
 
-/-- info: "Error in type Foo: a declaration of this name already exists." -/
+/-- info: REJECTED: Error in type Foo: a declaration of this name already exists. -/
 #guard_msgs in
-#eval typeCheckMessage { decls := [fooCon, fooSyn] }
+#eval coreVerdict { decls := [fooCon, fooSyn] }
 
-/-- info: "Error in type Foo: a declaration of this name already exists." -/
+/-- info: REJECTED: Error in type Foo: a declaration of this name already exists. -/
 #guard_msgs in
-#eval typeCheckMessage { decls := [fooSyn, fooCon] }
+#eval coreVerdict { decls := [fooSyn, fooCon] }
+
+/-! A rigid type stands for a type parameter while it is checked, and is chosen
+to differ from every type name in scope: a synonym named like it does not make
+the parameter `int`, for a function or a procedure. -/
+
+def declaredRigidFunc :=
+#strata
+program Core;
+type $__rigid_f_a := int;
+function f<a> (x : a) : int { x }
+#end
+
+/-- info: REJECTED: Rigid type variable 'a' was refined to 'int' -/
+#guard_msgs in
+#eval coreVerdict (Core.getProgram declaredRigidFunc).fst
+
+def declaredRigidProc :=
+#strata
+program Core;
+type $__rigid_P_a := int;
+procedure P<a> (x : a) {
+  assert [z]: (x == 0);
+};
+#end
+
+/-- info: REJECTED: Procedure 'P': Rigid type variable 'a' was refined to 'int' -/
+#guard_msgs in
+#eval coreVerdict (Core.getProgram declaredRigidProc).fst
+
+/-! A declared type named like a rigid type is a different type from the
+parameter, so a body of that type does not have the parameter's type. -/
+
+def declaredRigidOpaque :=
+#strata
+program Core;
+type $__rigid_g_a;
+function g<a> (x : a, y : $__rigid_g_a) : a { y }
+#end
+
+/-- info: REJECTED: Rigid type variable 'a' was refined to '$__rigid_g_a' -/
+#guard_msgs in
+#eval coreVerdict (Core.getProgram declaredRigidOpaque).fst
+
+/-! A synonym named like a rigid type is avoided even when declarations of
+other kinds come between it and the declaration it would affect. These
+programs are built directly as abstract syntax. -/
+
+/-- A synonym of `int` named like the rigid type for parameter `a` of `name`. -/
+def rigidAlias (name : String) : Core.Decl :=
+  .type (.syn { name := s!"$__rigid_{name}_a", typeArgs := [], type := .int }) .empty
+
+/-- The declaration of an opaque type named `$__rigid_{name}_a`. -/
+def rigidDeclared (name : String) : Core.Decl :=
+  .type (.con { name := s!"$__rigid_{name}_a", params := [] }) .empty
+
+/-- A function, a datatype and a procedure, none of them polymorphic. -/
+def otherDecls : List Core.Decl :=
+  [.func { name := ⟨"g", ()⟩, inputs := [(⟨"y", ()⟩, .int)],
+           output := .int } .empty,
+   .type (.data [{ name := "MyUnit", typeArgs := [],
+                   constrs := [{ name := ⟨"MkU", ()⟩, args := [] }],
+                   constrs_ne := rfl }]) .empty,
+   .proc { header := { name := ⟨"Q", ()⟩, typeArgs := [], inputs := [],
+                       outputs := [] },
+           spec := { preconditions := [], postconditions := [] },
+           body := .structured [] } .empty]
+
+/-- `function f<a> (x : a) : int { x }`, recursive when `isRecursive`. -/
+def rigidF (isRecursive : Bool) : Core.Function :=
+  { name := ⟨"f", ()⟩, typeArgs := ["a"], isRecursive,
+    inputs := [(⟨"x", ()⟩, .ftvar "a")], output := .int,
+    body := some (.fvar Core.coreLoc ⟨"x", ()⟩ none) }
+
+-- A synonym `$__rigid_f_a` before other declarations does not make `a` `int`.
+/-- info: REJECTED: Rigid type variable 'a' was refined to 'int' -/
+#guard_msgs in
+#eval coreVerdict
+  { decls := rigidAlias "f" :: otherDecls ++ [.func (rigidF false) .empty] }
+
+-- The same holds for `f` in a recursive function block.
+/-- info: REJECTED: Rigid type variable 'a' was refined to 'int' -/
+#guard_msgs in
+#eval coreVerdict
+  { decls := rigidAlias "f" :: otherDecls ++ [.recFuncBlock [rigidF true] .empty] }
+
+-- The same holds for a lemma `bad<a>`.
+/-- info: REJECTED: Error in lemma bad: Rigid type variable 'a' was refined to 'int' -/
+#guard_msgs in
+#eval coreVerdict
+  { decls := rigidAlias "bad" :: otherDecls ++
+      [.lemma { name := "bad", typeArgs := ["a"],
+                e := Lambda.LExpr.all Core.coreLoc "x" (some (.ftvar "a"))
+                       (.eq Core.coreLoc (.bvar Core.coreLoc 0) (.intConst Core.coreLoc 0)) }
+                           .empty] }
+
+/-! A rigid type also avoids the type names its own declaration writes, so
+such a name stays an unregistered type, or the type the body declares. -/
+
+/-- The type `$__rigid_P_a`, named like the rigid type for `a` of `P`. -/
+def rigidPA : Lambda.LMonoTy := .tcons "$__rigid_P_a" []
+
+-- A function body annotated `$__rigid_f_a` is not taken for the type of `a`.
+/--
+info: REJECTED: Type $__rigid_f_a is not an instance of a previously registered type!
+-/
+#guard_msgs in
+#eval firstLineOf <| coreVerdict
+  { decls := [.func { rigidF false with
+      output := .ftvar "a",
+      body := some (.fvar Core.coreLoc ⟨"x", ()⟩ (some (.tcons "$__rigid_f_a" []))) }
+    .empty] }
+
+/-- `procedure P<a> (x : a)` with no conditions and an empty body. -/
+def rigidP : Core.Procedure :=
+  { header := { name := ⟨"P", ()⟩, typeArgs := ["a"],
+                inputs := [(⟨"x", ()⟩, .ftvar "a")], outputs := [] },
+    spec := { preconditions := [], postconditions := [] },
+    body := .structured [] }
+
+-- A type `$__rigid_P_a` the body declares differs from the rigid type of `a`.
+/-- info: REJECTED: Procedure 'P': Rigid type variable 'a' was refined to '$__rigid_P_a' -/
+#guard_msgs in
+#eval coreVerdict
+  { decls := [.proc { rigidP with
+      body := .structured [
+        .typeDecl { name := "$__rigid_P_a", params := [] } .empty,
+        Core.Statement.init ⟨"y", ()⟩ (.forAll [] rigidPA) .nondet .empty,
+        Core.Statement.set ⟨"y", ()⟩ (.fvar Core.coreLoc ⟨"x", ()⟩ none) .empty] }
+      .empty] }
+
+-- A type `$__rigid_P_a` the body declares is not taken for the rigid type of
+-- `a`.
+/-- info: ACCEPTED -/
+#guard_msgs in
+#eval coreVerdict
+  { decls := [.proc { rigidP with
+      body := .structured
+        [.typeDecl { name := "$__rigid_P_a", params := [] } .empty] }
+      .empty] }
+
+-- A precondition annotated `$__rigid_P_a` is not taken for the type of `a`.
+/--
+info: REJECTED: Procedure 'P', condition 'p': Type $__rigid_P_a is not an
+instance of a previously registered type!
+-/
+#guard_msgs (whitespace := lax) in
+#eval firstLineOf <| coreVerdict
+  { decls := [.proc { rigidP with
+      spec := { preconditions := [("p",
+                  ⟨.eq Core.coreLoc (.fvar Core.coreLoc ⟨"x", ()⟩ (some rigidPA))
+                     (.fvar Core.coreLoc ⟨"x", ()⟩ none), .Default, #[]⟩)],
+                postconditions := [] } } .empty] }
+
+-- A lemma binder annotated `$__rigid_bad_a` is not taken for the type of `a`.
+/--
+info: REJECTED: Error in lemma bad: Type $__rigid_bad_a is not an instance of a
+previously registered type!
+-/
+#guard_msgs (whitespace := lax) in
+#eval firstLineOf <| coreVerdict
+  { decls := [.lemma { name := "bad", typeArgs := ["a"],
+                       e := Lambda.LExpr.all Core.coreLoc "x" (some (.ftvar "a"))
+                              (.all Core.coreLoc "y" (some (.tcons "$__rigid_bad_a" []))
+                                (.eq Core.coreLoc (.bvar Core.coreLoc 1) (.bvar Core.coreLoc 0))) }
+                                    .empty] }
+
+-- A map literal over the sort `$__rigid_f_a` is not taken for a map over the
+-- type of `a`.
+/--
+info: REJECTED: The type (Map $__rigid_f_a int) of the literal {_ ↦ 0} uses a
+type constructor that is not registered in the known types.
+-/
+#guard_msgs (whitespace := lax) in
+#eval firstLineOf <| coreVerdict
+  { decls := [.func { rigidF false with
+      inputs := [], output := .tcons "Map" [.ftvar "a", .int],
+      body := some (.const Core.coreLoc
+        (.mapConst (Lambda.LSort.tcons "$__rigid_f_a" []) Lambda.LSort.int
+          (Lambda.LConst.intConst 0) #[])) }
+    .empty] }
+
+/-- The map literal `{_ ↦ 0}` whose key sort is `$__rigid_{name}_a`. -/
+def rigidLit (name : String) : Core.Expression.Expr :=
+  .const Core.coreLoc (.mapConst (Lambda.LSort.tcons s!"$__rigid_{name}_a" [])
+    Lambda.LSort.int (Lambda.LConst.intConst 0) #[])
+
+/-- The proposition `{_ ↦ 0} == {_ ↦ 0}` over `rigidLit name`. -/
+def rigidLitProp (name : String) : Core.Expression.Expr :=
+  .eq Core.coreLoc (rigidLit name) (rigidLit name)
+
+-- A literal over an undeclared rigid-looking sort is rejected.
+/--
+info: REJECTED: Procedure 'P', condition 'p': The type (Map $__rigid_P_a int)
+of the literal {_ ↦ 0} uses a type constructor that is not registered in the
+known types.
+-/
+#guard_msgs (whitespace := lax) in
+#eval firstLineOf <| coreVerdict
+  { decls := [.proc { rigidP with
+      spec := { preconditions := [("p", ⟨rigidLitProp "P", .Default, #[]⟩)],
+                postconditions := [] } } .empty] }
+
+-- A literal over an undeclared rigid-looking sort is rejected in a body.
+/--
+info: REJECTED: Procedure 'P': The type (Map $__rigid_P_a int) of the literal {_ ↦ 0} uses a
+type constructor that is not registered in the known types.
+-/
+#guard_msgs (whitespace := lax) in
+#eval firstLineOf <| coreVerdict
+  { decls := [.proc { rigidP with
+      body := .structured
+        [Core.Statement.assert "a" (rigidLitProp "P") .empty] }
+    .empty] }
+
+-- A literal over an undeclared rigid-looking sort is rejected in a lemma.
+/--
+info: REJECTED: Error in lemma l: The type (Map $__rigid_l_a int) of the
+literal {_ ↦ 0} uses a type constructor that is not
+registered in the known types.
+-/
+#guard_msgs (whitespace := lax) in
+#eval firstLineOf <| coreVerdict
+  { decls := [.lemma { name := "l", typeArgs := ["a"],
+                       e := rigidLitProp "l" } .empty] }
+
+-- A declared literal sort is accepted: the rigid type avoids its name.
+/-- info: ACCEPTED -/
+#guard_msgs (whitespace := lax) in
+#eval coreVerdict
+  { decls := [rigidDeclared "P",
+    .proc { rigidP with
+      spec := { preconditions := [("p", ⟨rigidLitProp "P", .Default, #[]⟩)],
+                postconditions := [] } } .empty] }
+
+-- The same holds for a literal in an assertion of the body.
+/-- info: ACCEPTED -/
+#guard_msgs (whitespace := lax) in
+#eval coreVerdict
+  { decls := [rigidDeclared "P",
+    .proc { rigidP with
+      body := .structured
+        [Core.Statement.assert "a" (rigidLitProp "P") .empty] }
+    .empty] }
+
+-- The same holds for a literal in a lemma.
+/-- info: ACCEPTED -/
+#guard_msgs (whitespace := lax) in
+#eval coreVerdict
+  { decls := [rigidDeclared "l",
+    .lemma { name := "l", typeArgs := ["a"], e := rigidLitProp "l" } .empty] }
+
+/-- The type `Map a int` over the type parameter `a`. -/
+def mapAInt : Lambda.LMonoTy := .tcons "Map" [.ftvar "a", .int]
+
+/-- `rigidP` with the input `m : Map a int` and no other change. -/
+def rigidPMap : Core.Procedure :=
+  { rigidP with
+    header := { rigidP.header with inputs := [(⟨"m", ()⟩, mapAInt)] } }
+
+-- A declared sort named like the rigid type is not the type of `a`.
+/--
+info: REJECTED: Procedure 'P', condition 'p': Rigid type variable 'a' was
+refined to '$__rigid_P_a'
+-/
+#guard_msgs (whitespace := lax) in
+#eval firstLineOf <| coreVerdict
+  { decls := [rigidDeclared "P",
+    .proc { rigidPMap with
+      spec := { preconditions :=
+                  [("p", ⟨.eq Core.coreLoc (.fvar Core.coreLoc ⟨"m", ()⟩ none) (rigidLit "P"),
+                    .Default, #[]⟩)],
+                postconditions := [] } } .empty] }
+
+-- The same holds for an assertion of the body.
+/-- info: REJECTED: Procedure 'P': Rigid type variable 'a' was refined to '$__rigid_P_a' -/
+#guard_msgs (whitespace := lax) in
+#eval firstLineOf <| coreVerdict
+  { decls := [rigidDeclared "P",
+    .proc { rigidPMap with
+      body := .structured [Core.Statement.assert "a"
+        (.eq Core.coreLoc (.fvar Core.coreLoc ⟨"m", ()⟩ none) (rigidLit "P")) .empty] }
+    .empty] }
+
+-- The same holds for a lemma over a map bound at the type of `a`.
+/--
+info: REJECTED: Error in lemma l: Rigid type variable 'a' was refined to
+'$__rigid_l_a'
+-/
+#guard_msgs (whitespace := lax) in
+#eval firstLineOf <| coreVerdict
+  { decls := [rigidDeclared "l",
+    .lemma { name := "l", typeArgs := ["a"],
+             e := .all Core.coreLoc "m" (some mapAInt)
+                    (.eq Core.coreLoc (.bvar Core.coreLoc 0) (rigidLit "l")) } .empty] }
+
+/-! A supplied factory is used as given, so a function in it whose type
+parameter has a reserved prefix is rejected. -/
+
+/-- `base` with the function `f` added, or `base` if `f` cannot be added. -/
+def factoryWith (base : Lambda.Factory Core.CoreLParams) (f : Core.Function) :
+    Lambda.Factory Core.CoreLParams :=
+  match base.tryPush f.toLFunc with
+  | .ok fac => fac
+  | .error _ => base
+
+/-- The default factory with the function `idf<$__ty0>` added. -/
+def reservedFactory : Lambda.Factory Core.CoreLParams :=
+  factoryWith Lambda.Factory.default
+    { name := ⟨"idf", ()⟩, typeArgs := ["$__ty0"],
+      inputs := [(⟨"x", ()⟩, .ftvar "$__ty0")], output := .ftvar "$__ty0" }
+
+/-- info: REJECTED: Factory function 'idf': type parameter '$__ty0' is a reserved name -/
+#guard_msgs in
+#eval coreVerdict { decls := [] } (factory := some reservedFactory)
+
+/-! The rigid type names chosen for the type parameters of a procedure `P`. -/
+
+/-- The checking context with `names` registered as nullary types. -/
+def contextKnowing (names : List String) : Core.Expression.TyContext :=
+  { Core.initTyContext with
+    knownTypes := names.foldl (fun ks n => ks.insert n 0)
+      Core.initTyContext.knownTypes }
+
+/-- The rigid names for the type parameters `typeArgs` of a definition named
+    `P` that mentions no type names, checked in `C` and `Env`. -/
+def rigidNamesOfP (C : Core.Expression.TyContext) (typeArgs : List String)
+    (Env : Core.Expression.TyEnv := Lambda.TEnv.default) : Core.RigidNames :=
+  Core.rigidNamesAvoiding C (Core.scopeTyNameThunk C Env) (Thunk.pure ∅) "P" (fun _ => [])
+    typeArgs
+
+-- A registered `$__rigid_P_a` makes `a` take the next variant.
+/-- info: [("a", "$__rigid_P_a_1")] -/
+#guard_msgs in
+#eval rigidNamesOfP (contextKnowing ["$__rigid_P_a"]) ["a"]
+
+-- A registered `$__rigid_P_a_1` as well makes `a` take the one after.
+/-- info: [("a", "$__rigid_P_a_2")] -/
+#guard_msgs in
+#eval rigidNamesOfP (contextKnowing ["$__rigid_P_a", "$__rigid_P_a_1"]) ["a"]
+
+-- Each parameter's name also differs from the names chosen before it.
+/-- info: [("a", "$__rigid_P_a_1"), ("a_1", "$__rigid_P_a_1_1")] -/
+#guard_msgs in
+#eval rigidNamesOfP (contextKnowing ["$__rigid_P_a"]) ["a", "a_1"]
+
+-- A declaration without type parameters gets no rigid names.
+/-- info: [] -/
+#guard_msgs in
+#eval rigidNamesOfP (contextKnowing ["$__rigid_P_a"]) []
+
+-- A type name in a factory signature is avoided even when it is not registered.
+/-- info: [("a", "$__rigid_P_a_1")] -/
+#guard_msgs in
+#eval rigidNamesOfP { Core.initTyContext with
+  functions := factoryWith Core.Factory
+    { name := ⟨"h", ()⟩, inputs := [(⟨"x", ()⟩, rigidPA)], output := .int } }
+  ["a"]
+
+-- The same holds for the output type of a factory function.
+/-- info: [("a", "$__rigid_P_a_1")] -/
+#guard_msgs in
+#eval rigidNamesOfP { Core.initTyContext with
+  functions := factoryWith Core.Factory
+    { name := ⟨"h", ()⟩, inputs := [], output := rigidPA } }
+  ["a"]
+
+-- The type of a variable in scope is avoided.
+/-- info: [("a", "$__rigid_P_a_1")] -/
+#guard_msgs in
+#eval rigidNamesOfP Core.initTyContext ["a"]
+  (Lambda.TEnv.default.pushEmptyContext.addInNewestContext
+    (T := Core.CoreLParams)
+    (Strata.Util.HMap.ofList [(⟨"y", ()⟩, .forAll [] rigidPA)]))
+
+-- The body of a type synonym in scope is avoided.
+/-- info: [("a", "$__rigid_P_a_1")] -/
+#guard_msgs in
+#eval rigidNamesOfP Core.initTyContext ["a"]
+  (Lambda.TEnv.default.updateContext { Lambda.TEnv.default.context with
+    aliases := [{ name := "S", typeArgs := [], type := rigidPA }] })
 
 end Strata.ReservedTypeNamesTest
+
 end

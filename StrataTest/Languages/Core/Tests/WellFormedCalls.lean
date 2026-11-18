@@ -20,8 +20,8 @@ A call is well-formed (`WF.WFcallProp`, decided by `callError?`) when it names a
 declared procedure, its arguments match that procedure's signature
 (`WF.ArgsMatchSignature`: as many input arguments as input formals, as many result
 variables as output formals, and an argument of the formal's mode at each position),
-and its result variables are distinct. `assertWellFormedCalls`, the first phase of every
-registered pipeline, refuses any other call as a user error. Every component that
+and its result variables are distinct. The type check at the start of every registered
+pipeline refuses any other call as a user error. Every component that
 checks a call refuses it too, with the same explanation. -/
 
 meta section
@@ -74,7 +74,7 @@ private def interpretResult (p : StrataDDM.SourcedProgram) : String :=
 /-- The verifier's program transforms under `options`: `ok`, or the located error
     and its category. -/
 private def pipelineResult (p : StrataDDM.SourcedProgram)
-    (options : VerifyOptions := .default) : IO String := do
+    (options : VerifyOptions := .quiet) : IO String := do
   match ← (runTransforms (translate p) (transformPipelinePhases options)).toBaseIO with
   | .ok _ => pure "ok"
   | .error e => pure s!"{located p e} ({e.kind})"
@@ -101,7 +101,7 @@ procedure caller() {
 };
 #end
 
-/-- info: "at `call two(out x, out x);`: ❌ Ill-formed call: the call to two passes the variable x for more than one out parameter; the results of a call must be distinct variables (userError)" -/
+/-- info: "at `call two(out x, out x);`: ❌ Type checking error.\nProcedure 'caller': [call two(out x, out x);]: Ill-formed call: the call to two passes the variable x for more than one out parameter; the results of a call must be distinct variables (userError)" -/
 #guard_msgs in
 #eval pipelineResult twoOuts
 
@@ -109,7 +109,7 @@ procedure caller() {
 #guard_msgs in
 #eval callElimResult twoOuts
 
-/-- info: "at `call two(out x, out x);`: [call two(out x, out x);]: Ill-formed call: the call to two passes the variable x for more than one out parameter; the results of a call must be distinct variables" -/
+/-- info: "at `call two(out x, out x);`: Procedure 'caller': [call two(out x, out x);]: Ill-formed call: the call to two passes the variable x for more than one out parameter; the results of a call must be distinct variables" -/
 #guard_msgs in
 #eval typeCheckResult twoOuts
 
@@ -135,7 +135,7 @@ procedure caller() {
 };
 #end
 
-/-- info: "at `call p(inout g, out g);`: [call p(inout g, out g);]: Ill-formed call: the call to p passes the inout argument g for more than one inout or out parameter; an inout argument must not alias another result of the call" -/
+/-- info: "at `call p(inout g, out g);`: Procedure 'caller': [call p(inout g, out g);]: Ill-formed call: the call to p passes the inout argument g for more than one inout or out parameter; an inout argument must not alias another result of the call" -/
 #guard_msgs in
 #eval typeCheckResult inoutAndOut
 
@@ -160,7 +160,7 @@ procedure caller() {
 };
 #end
 
-/-- info: "at `call inc(5, out a);`: ❌ Ill-formed call: the call to inc passes an input value for y, which is an inout parameter and must be passed as inout (userError)" -/
+/-- info: "at `call inc(5, out a);`: ❌ Type checking error.\nProcedure 'caller': [call inc(5, out a);]: Ill-formed call: the call to inc passes an input value for y, which is an inout parameter and must be passed as inout (userError)" -/
 #guard_msgs in
 #eval pipelineResult splitInout
 
@@ -168,7 +168,7 @@ procedure caller() {
 #guard_msgs in
 #eval callElimResult splitInout
 
-/-- info: "at `call inc(5, out a);`: [call inc(5, out a);]: Ill-formed call: the call to inc passes an input value for y, which is an inout parameter and must be passed as inout" -/
+/-- info: "at `call inc(5, out a);`: Procedure 'caller': [call inc(5, out a);]: Ill-formed call: the call to inc passes an input value for y, which is an inout parameter and must be passed as inout" -/
 #guard_msgs in
 #eval typeCheckResult splitInout
 
@@ -242,7 +242,7 @@ procedure caller() {
 };
 #end
 
-/-- info: "at `call missing(out x);`: [call missing(out x);]: Ill-formed call: no procedure named missing is declared" -/
+/-- info: "at `call missing(out x);`: Procedure 'caller': [call missing(out x);]: Ill-formed call: no procedure named missing is declared" -/
 #guard_msgs in
 #eval typeCheckResult undeclared
 
@@ -259,7 +259,7 @@ procedure caller() {
 };
 #end
 
-/-- info: "at `call addTo(inout a);`: [call addTo(inout a);]: Ill-formed call: the call to addTo passes 1 input argument, but addTo has 2 input parameters (y, d)" -/
+/-- info: "at `call addTo(inout a);`: Procedure 'caller': [call addTo(inout a);]: Ill-formed call: the call to addTo passes 1 input argument, but addTo has 2 input parameters (y, d)" -/
 #guard_msgs in
 #eval typeCheckResult tooFewInputs
 
@@ -279,7 +279,7 @@ procedure caller() {
 };
 #end
 
-/-- info: "at `call addTo(5, inout a);`: [call addTo(5, inout a);]: Ill-formed call: the call to addTo passes an input value for y, which is an inout parameter and must be passed as inout" -/
+/-- info: "at `call addTo(5, inout a);`: Procedure 'caller': [call addTo(5, inout a);]: Ill-formed call: the call to addTo passes an input value for y, which is an inout parameter and must be passed as inout" -/
 #guard_msgs in
 #eval typeCheckResult modeMismatch
 
@@ -299,7 +299,7 @@ procedure caller() {
 };
 #end
 
-/-- info: "at `call split(out w, inout a);`: [call split(out w, inout a);]: Ill-formed call: the call to split passes inout a for y, but the result of y goes to w; the inout and out arguments must follow the order of split's outputs" -/
+/-- info: "at `call split(out w, inout a);`: Procedure 'caller': [call split(out w, inout a);]: Ill-formed call: the call to split passes inout a for y, but the result of y goes to w; the inout and out arguments must follow the order of split's outputs" -/
 #guard_msgs in
 #eval typeCheckResult inoutOutOfOrder
 
@@ -316,7 +316,7 @@ procedure caller() {
 };
 #end
 
-/-- info: "at `call two(out x);`: [call two(out x);]: Ill-formed call: the call to two passes 1 result variable, but two has 2 output parameters (x, y)" -/
+/-- info: "at `call two(out x);`: Procedure 'caller': [call two(out x);]: Ill-formed call: the call to two passes 1 result variable, but two has 2 output parameters (x, y)" -/
 #guard_msgs in
 #eval typeCheckResult tooFewResults
 
@@ -336,7 +336,7 @@ procedure caller() {
 };
 #end
 
-/-- info: "at `call p(out a, inout a);`: [call p(out a, inout a);]: Ill-formed call: the call to p passes out a for y, which is an inout parameter and must be passed as inout" -/
+/-- info: "at `call p(out a, inout a);`: Procedure 'caller': [call p(out a, inout a);]: Ill-formed call: the call to p passes out a for y, which is an inout parameter and must be passed as inout" -/
 #guard_msgs in
 #eval typeCheckResult outForInout
 
@@ -353,13 +353,13 @@ procedure caller() {
 };
 #end
 
-/-- info: "at `call p(inout a, out a);`: [call p(inout a, out a);]: Ill-formed call: the call to p passes inout a for z, which is an output-only parameter and must be passed as out" -/
+/-- info: "at `call p(inout a, out a);`: Procedure 'caller': [call p(inout a, out a);]: Ill-formed call: the call to p passes inout a for z, which is an output-only parameter and must be passed as out" -/
 #guard_msgs in
 #eval typeCheckResult inoutForOutputOnly
 
-/-! ## The phase checks every procedure
+/-! ## Every procedure is checked
 
-`assertWellFormedCalls` runs before the procedure filter, so a procedure that
+The type check runs before the procedure filter, so a procedure that
 `--procedures` leaves out is checked too. -/
 
 private def excludedIllFormed :=
@@ -378,10 +378,82 @@ procedure other() {
 };
 #end
 
-/-- info: "at `call two(out x, out x);`: ❌ Ill-formed call: the call to two passes the variable x for more than one out parameter; the results of a call must be distinct variables (userError)" -/
+/-- info: "at `call two(out x, out x);`: ❌ Type checking error.\nProcedure 'other': [call two(out x, out x);]: Ill-formed call: the call to two passes the variable x for more than one out parameter; the results of a call must be distinct variables (userError)" -/
 #guard_msgs in
 #eval pipelineResult excludedIllFormed
-  { VerifyOptions.default with proceduresToVerify := some ["caller"] }
+  { VerifyOptions.quiet with proceduresToVerify := some ["caller"] }
+
+/-! ## Calls in control-flow graph bodies
+
+The type checker rejects an ill-formed call in a CFG block with the same message as in a
+structured body. -/
+
+private def cfgTooFewInputs :=
+#strata
+program Core;
+procedure addTo(inout y : int, d : int)
+spec {
+  ensures (y == int.add(old y, d));
+};
+procedure caller(inout a : int)
+cfg entry {
+  entry: {
+    call addTo(inout a);
+    return;
+  }
+};
+#end
+
+/-- info: "at `call addTo(inout a);`: Procedure 'caller': [call addTo(inout a);]: Ill-formed call: the call to addTo passes 1 input argument, but addTo has 2 input parameters (y, d)" -/
+#guard_msgs in
+#eval typeCheckResult cfgTooFewInputs
+
+private def cfgUndeclared :=
+#strata
+program Core;
+procedure caller(out x : int)
+cfg entry {
+  entry: {
+    call missing(out x);
+    return;
+  }
+};
+#end
+
+/-- info: "at `call missing(out x);`: Procedure 'caller': [call missing(out x);]: Ill-formed call: no procedure named missing is declared" -/
+#guard_msgs in
+#eval typeCheckResult cfgUndeclared
+
+private def cfgWellFormed :=
+#strata
+program Core;
+procedure addTo(inout y : int, d : int)
+spec {
+  ensures (y == int.add(old y, d));
+};
+procedure caller(inout a : int)
+cfg entry {
+  entry: {
+    call addTo(inout a, 1);
+    return;
+  }
+};
+#end
+
+/-- info: "ok" -/
+#guard_msgs in
+#eval typeCheckResult cfgWellFormed
+
+#guard match Core.typeCheck .quiet (translate cfgWellFormed) with
+  | .ok q => illFormedCalls q == []
+  | .error _ => false
+
+-- The pipeline checks calls before the filter, so an ill-formed call in a CFG procedure that
+-- `--procedures` leaves out is reported too.
+/-- info: "at `call addTo(inout a);`: ❌ Type checking error.\nProcedure 'caller': [call addTo(inout a);]: Ill-formed call: the call to addTo passes 1 input argument, but addTo has 2 input parameters (y, d) (userError)" -/
+#guard_msgs in
+#eval pipelineResult cfgTooFewInputs
+  { VerifyOptions.quiet with proceduresToVerify := some ["addTo"] }
 
 /-! ## Phases that claim to preserve the fact keep it -/
 

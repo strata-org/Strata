@@ -467,6 +467,26 @@ def LConst.wtElems (s : LSort) : List LConst → Bool
   | a :: rest => a.wt && decide (a.sort = s) && LConst.wtElems s rest
 end
 
+mutual
+/-- The number of constants a constant is built from: itself and, for a collection literal,
+those of its default, keys, values and elements. -/
+@[expose]
+def LConst.size : LConst → Nat
+  | .intConst _ | .strConst _ | .rationalConst _ | .bitvecConst _ _ | .boolConst _ => 1
+  | .mapConst _ _ d ⟨es⟩ => 1 + d.size + LConst.sizeEntries es
+  | .sequenceConst _ ⟨es⟩ => 1 + LConst.sizeElems es
+/-- The number of constants the keys and values of map entries are built from. -/
+@[expose]
+def LConst.sizeEntries : List (LConst × LConst) → Nat
+  | [] => 0
+  | (a, b) :: rest => a.size + b.size + LConst.sizeEntries rest
+/-- The number of constants the elements of a sequence are built from. -/
+@[expose]
+def LConst.sizeElems : List LConst → Nat
+  | [] => 0
+  | a :: rest => a.size + LConst.sizeElems rest
+end
+
 /--
 Get type of a constant `c`.
 
@@ -671,6 +691,12 @@ def isConst {T : LExprParamsT} (e : LExpr T) : Bool :=
   match e with
   | .const _ _ => true
   | _ => false
+
+/-- The literals of `args`, when every argument is a constant. -/
+@[expose] def constArgs? {T : LExprParamsT} : List (LExpr T) → Option (List LConst)
+  | [] => some []
+  | .const _ c :: rest => (constArgs? rest).map (c :: ·)
+  | _ :: _ => none
 
 def isOp (e : LExpr T) : Bool :=
   match e with
@@ -968,6 +994,44 @@ def size (T : LExprParamsT) (e : LExpr T) : Nat :=
   | .ite _ c t f => 1 + size T c + size T t + size T f
   | .eq _ e1 e2 => 1 + size T e1 + size T e2
 
+section
+open Strata.PtrCache
+
+/-- Pointer-address-memoized `size`: the tree size of `e`, computed visiting each physically
+    distinct subterm once (`PtrCache`), so in time proportional to the number of distinct DAG
+    nodes. The returned `Result (size T) e` carries a proof that the value equals `size T e`. -/
+def sizePtrCache {T : LExprParamsT} : (e : LExpr T) → PtrCacheM (size T) e
+  | .const _ _ => pure ⟨1, by simp only [size]⟩
+  | .op _ _ _ => pure ⟨1, by simp only [size]⟩
+  | .bvar _ _ => pure ⟨1, by simp only [size]⟩
+  | .fvar _ _ _ => pure ⟨1, by simp only [size]⟩
+  | .abs _ _ _ body => do
+    let rb ← evalPtrCache body (sizePtrCache body)
+    pure ⟨1 + rb.output, by simp only [size, rb.h]⟩
+  | .quant _ _ _ _ _ body => do
+    let rb ← evalPtrCache body (sizePtrCache body)
+    pure ⟨1 + rb.output, by simp only [size, rb.h]⟩
+  | .app _ e1 e2 => do
+    let r1 ← evalPtrCache e1 (sizePtrCache e1)
+    let r2 ← evalPtrCache e2 (sizePtrCache e2)
+    pure ⟨1 + r1.output + r2.output, by simp only [size, r1.h, r2.h]⟩
+  | .ite _ c t f => do
+    let rc ← evalPtrCache c (sizePtrCache c)
+    let rt ← evalPtrCache t (sizePtrCache t)
+    let rf ← evalPtrCache f (sizePtrCache f)
+    pure ⟨1 + rc.output + rt.output + rf.output, by simp only [size, rc.h, rt.h, rf.h]⟩
+  | .eq _ e1 e2 => do
+    let r1 ← evalPtrCache e1 (sizePtrCache e1)
+    let r2 ← evalPtrCache e2 (sizePtrCache e2)
+    pure ⟨1 + r1.output + r2.output, by simp only [size, r1.h, r2.h]⟩
+
+/-- Run the pointer-address-memoized `size` on `e`; the result equals `size T e`
+    (`sizeCached_eq`). -/
+def sizeCached {T : LExprParamsT} (e : LExpr T) : Nat :=
+  ((sizePtrCache e).run' PtrCache.empty).output
+
+end
+
 /--
 Erase all type annotations from `e` except the bound variables of abstractions
 and quantified expressions.
@@ -1100,7 +1164,8 @@ private def formatLExpr (T : LExprParamsT) [ToFormat T.base.IDMeta] [ToFormat T.
   | .eq _ e1 e2 => Format.paren (formatLExpr T e1 ++ " == " ++ formatLExpr T e2)
   termination_by sizeOf e
 
-instance (T : LExprParamsT) [ToFormat T.base.IDMeta] [ToFormat T.TypeType] : ToFormat (LExpr T) where
+instance instToFormatLExpr (T : LExprParamsT) [ToFormat T.base.IDMeta] [ToFormat T.TypeType] :
+    ToFormat (LExpr T) where
   format := private formatLExpr T
 
 /-

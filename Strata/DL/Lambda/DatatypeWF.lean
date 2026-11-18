@@ -15,7 +15,8 @@ argument types are well-formed: `TyNameAppears`, `UniformOccur`, `NotNested`,
 `ConstrInhab`.
 
 These are `Lambda`-level (`LMonoTy` / `MutualDatatype` / `TypeFactory`); the
-Core-facing bundle `MutualADTWF` lives in `Strata.Languages.Core.DatatypeTypeSpec`.
+Core-facing bundle `MutualADTWF` lives in
+`Strata.Languages.Core.Typing.Spec.DatatypeTypeSpec`.
 
 Since `LMonoTy.arrow t1 t2` is definitionally `LMonoTy.tcons "arrow" [t1, t2]`, the
 general `.tcons` cases below are guarded with `¬ IsBinaryArrow` so an arrow is

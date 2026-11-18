@@ -47,6 +47,259 @@ open Strata.Util (HMap HMaps)
 
 public section
 
+/-! ### Basic substitution and constraint lemmas -/
+
+@[simp]
+theorem Subst.hasEmptyScopes_empty : Subst.hasEmptyScopes Subst.empty := by
+  simp [Subst.hasEmptyScopes, Subst.empty]
+
+theorem Subst.find?_singleton_self
+    (tv : TyIdentifier) (ty : LMonoTy) :
+    HMaps.find? (Subst.singleton tv ty) tv = some ty := by
+  simp [Subst.singleton, HMaps.find?, HMap.find?_single_self]
+
+/-- If `xty` is free in `remove S id`, it is free in `S`. -/
+theorem Subst.mem_freeVars_of_mem_freeVars_remove
+    (S : Subst) (id : TyIdentifier)
+    (h : xty ∈ Subst.freeVars (HMaps.remove S id)) :
+    xty ∈ Subst.freeVars S := by
+  simp only [Subst.freeVars, List.mem_flatMap] at h ⊢
+  obtain ⟨aty, h1, h2⟩ := h
+  exact ⟨aty, HMaps.values_remove_subset S id aty h1, h2⟩
+
+/-- Removing a key preserves well-formedness. Discharges the map-shaped obligation
+    inside `resolveAux`'s `app` case. -/
+theorem SubstWF_of_remove
+    (id : TyIdentifier) (h : SubstWF S) :
+    SubstWF (HMaps.remove S id) := by
+  simp only [SubstWF, List.all_eq_true, decide_eq_true_eq] at h ⊢
+  intro xty h_xty_in_keys h_xty_in_fvs
+  have h_xty_in_s_keys := HMaps.keys_remove_subset S id xty h_xty_in_keys
+  have h_xty_not_in_fvs := h xty h_xty_in_s_keys
+  exact h_xty_not_in_fvs (Subst.mem_freeVars_of_mem_freeVars_remove S id h_xty_in_fvs)
+
+theorem LMonoTys.subst_nil (S : Subst) : LMonoTys.subst S [] = [] := by
+  simp only [LMonoTys.subst]; split <;> rfl
+
+/-- `subst` distributes over `mkArrow'`. -/
+theorem subst_mkArrow' (S : Subst) (ret : LMonoTy) (ins : List LMonoTy) :
+    LMonoTy.subst S (LMonoTy.mkArrow' ret ins) =
+    LMonoTy.mkArrow' (LMonoTy.subst S ret) (ins.map (LMonoTy.subst S)) := by
+  induction ins with
+  | nil => rfl
+  | cons t ts ih =>
+    simp only [LMonoTy.mkArrow'_cons, List.map]
+    rw [LMonoTy.subst_unfold]
+    simp only [LMonoTy.arrow, List.map]
+    rw [ih]
+
+/-! ## Type substitution agreement lemmas
+
+These lemmas establish that if two substitutions produce the same result on a
+type, they must agree on all free variables of that type — and conversely, if
+they agree on all free variables, they produce the same result. -/
+
+/-- If two substitutions produce the same result on a type `ty`, then they
+agree on every free variable of `ty` (in the sense of producing the same
+substitution result on that variable). -/
+theorem subst_eq_implies_agree_on_freeVars
+    {S₁ S₂ : Subst}
+    {ty : LMonoTy}
+    (h : LMonoTy.subst S₁ ty = LMonoTy.subst S₂ ty)
+    (v : TyIdentifier)
+    (hv : v ∈ LMonoTy.freeVars ty)
+    : LMonoTy.subst S₁ (.ftvar v) = LMonoTy.subst S₂ (.ftvar v) := by
+  induction ty with
+  | ftvar x =>
+    simp only [LMonoTy.freeVars, List.mem_singleton] at hv
+    subst hv; exact h
+  | bitvec n =>
+    simp [LMonoTy.freeVars] at hv
+  | tcons name args ih =>
+    simp only [LMonoTy.subst_unfold] at h
+    simp only [LMonoTy.freeVars] at hv
+    have h_args := LMonoTy.tcons.inj h |>.2
+    -- v ∈ freeVars of some ty ∈ args; find it and apply IH
+    have h_map_eq := List.map_eq_map_iff.mp h_args
+    have ⟨ty, ht, hv_ty⟩ := LMonoTys.freeVars_exists hv
+    exact ih ty ht (h_map_eq ty ht) hv_ty
+
+/-- If two substitutions agree on all free variables of `ty` (in the sense of
+producing the same substitution result), then they produce the same result
+on `ty`. -/
+theorem agree_on_freeVars_implies_subst_eq
+    {S₁ S₂ : Subst}
+    {ty : LMonoTy}
+    (h : ∀ v, v ∈ LMonoTy.freeVars ty →
+      LMonoTy.subst S₁ (.ftvar v) = LMonoTy.subst S₂ (.ftvar v))
+    : LMonoTy.subst S₁ ty = LMonoTy.subst S₂ ty := by
+  induction ty with
+  | ftvar v =>
+    exact h v (by simp [LMonoTy.freeVars])
+  | bitvec n =>
+    simp only [LMonoTy.subst_unfold]
+  | tcons name args ih =>
+    simp only [LMonoTy.subst_unfold]
+    congr 1
+    simp only [LMonoTy.freeVars] at h
+    exact List.map_eq_map_iff.mpr fun ty ht =>
+      ih ty ht fun v hv => h v (LMonoTys.freeVars_mem_subset ht hv)
+
+/-- List version: if two substitutions agree on all free variables of every
+type in a list, then mapping `subst` over the list produces the same result. -/
+theorem agree_on_freeVars_implies_subst_eq_list
+    {S₁ S₂ : Subst}
+    {tys : List LMonoTy}
+    (h : ∀ v, v ∈ LMonoTys.freeVars tys →
+      LMonoTy.subst S₁ (.ftvar v) = LMonoTy.subst S₂ (.ftvar v))
+    : tys.map (LMonoTy.subst S₁) = tys.map (LMonoTy.subst S₂) :=
+  List.map_eq_map_iff.mpr fun _ ht =>
+    agree_on_freeVars_implies_subst_eq fun v hv =>
+      h v (LMonoTys.freeVars_mem_subset ht hv)
+
+/-- `find?` after `apply` maps the value through `subst [new]`. -/
+theorem Subst.find?_apply
+    (new : SubstOne) (S : Subst) (x : TyIdentifier) :
+    HMaps.find? (Subst.apply new S) x = (HMaps.find? S x).map (LMonoTy.subst [new]) :=
+  HMaps.find?_mapValues _ S x
+
+/-- Substitution on `LMonoTy.bool` is the identity (ground type). -/
+theorem LMonoTy.subst_bool (S : Subst) :
+    LMonoTy.subst S LMonoTy.bool = LMonoTy.bool := by
+  simp [LMonoTy.bool, LMonoTy.subst_unfold]
+
+/-- `subst` over the single empty scope is the identity, via `subst_unfold`. -/
+theorem LMonoTy.subst_single_empty (ann : LMonoTy) :
+    LMonoTy.subst [HMap.empty] ann = ann := by
+  induction ann with
+  | ftvar x =>
+    rw [LMonoTy.subst_unfold]
+    simp only [HMaps.find?_single_scope, HMap.find?_empty]
+  | bitvec n => rw [LMonoTy.subst_bitvec]
+  | tcons name args ih =>
+    rw [LMonoTy.subst_tcons, LMonoTys.subst_eq_map]
+    congr 1
+    rw [List.map_congr_left ih]; exact List.map_id_fun' ▸ rfl
+
+/-- `subst` distributes over a two-argument `tcons` (e.g. `arrow`). -/
+theorem LMonoTy.subst_tcons_pair (S : Subst) (name : String) (a b : LMonoTy) :
+    LMonoTy.subst S (.tcons name [a, b]) = .tcons name [LMonoTy.subst S a, LMonoTy.subst S b] := by
+  rw [LMonoTy.subst_tcons, LMonoTys.subst_eq_map]; simp
+
+/-- If no key of `S` appears in `freeVars mty`, then `subst S mty = mty`. -/
+theorem LMonoTy.subst_no_relevant_keys (S : Subst) (mty : LMonoTy)
+    (h : ∀ x, x ∈ LMonoTy.freeVars mty → x ∉ HMaps.keys S) :
+    LMonoTy.subst S mty = mty := by
+  induction mty with
+  | ftvar x =>
+    rw [LMonoTy.subst_unfold]
+    simp only [HMaps.not_mem_keys_find?_none S x (h x (by simp [LMonoTy.freeVars]))]
+  | bitvec n => rw [LMonoTy.subst_bitvec]
+  | tcons name args ih =>
+    rw [LMonoTy.subst_tcons, LMonoTys.subst_eq_map]
+    congr 1
+    have h_map : args.map (LMonoTy.subst S) = args.map id :=
+      List.map_congr_left (fun a ha => ih a ha (fun x hx =>
+        h x (by simp only [LMonoTy.freeVars]; exact LMonoTys.freeVars_mem_subset ha hx)))
+    rw [h_map, List.map_id]
+
+/-- Two `Subst` that agree on `find?` at every key produce the same substitution
+    result. Since `subst` reads `S` only through `find?`, find?-equivalent
+    substitutions are interchangeable. -/
+theorem LMonoTy.subst_find?_congr (S1 S2 : Subst) (mty : LMonoTy)
+    (h : ∀ k, HMaps.find? S1 k = HMaps.find? S2 k) :
+    LMonoTy.subst S1 mty = LMonoTy.subst S2 mty := by
+  induction mty with
+  | ftvar x => rw [LMonoTy.subst_unfold, LMonoTy.subst_unfold]; simp only [h x]
+  | bitvec n => rw [LMonoTy.subst_bitvec, LMonoTy.subst_bitvec]
+  | tcons name args ih =>
+    rw [LMonoTy.subst_tcons, LMonoTy.subst_tcons, LMonoTys.subst_eq_map, LMonoTys.subst_eq_map]
+    congr 1
+    exact List.map_congr_left (fun a ha => ih a ha)
+
+/-- Extensionality: substitutions agreeing on all free variables of `mty`
+    produce the same result. -/
+theorem LMonoTy.subst_ext (S1 S2 : Subst) (mty : LMonoTy)
+    (h : ∀ x, x ∈ LMonoTy.freeVars mty → HMaps.find? S1 x = HMaps.find? S2 x) :
+    LMonoTy.subst S1 mty = LMonoTy.subst S2 mty := by
+  induction mty with
+  | ftvar x =>
+    rw [LMonoTy.subst_unfold, LMonoTy.subst_unfold]
+    simp only [h x (by simp [LMonoTy.freeVars])]
+  | bitvec n => rw [LMonoTy.subst_bitvec, LMonoTy.subst_bitvec]
+  | tcons name args ih =>
+    rw [LMonoTy.subst_tcons, LMonoTy.subst_tcons, LMonoTys.subst_eq_map, LMonoTys.subst_eq_map]
+    congr 1
+    exact List.map_congr_left (fun a ha => ih a ha (fun x hx =>
+      h x (by simp only [LMonoTy.freeVars]; exact LMonoTys.freeVars_mem_subset ha hx)))
+
+/--
+If `t` is a value in a well-formed substitution `S` (i.e., `HMaps.find? S a = some t`),
+then `subst S t = t`. This is because `SubstWF` guarantees no key of `S` appears
+in the free variables of any value in `S`.
+-/
+theorem LMonoTy.subst_idempotent_value
+    (S : Subst) (a : TyIdentifier) (t : LMonoTy)
+    (h_find : HMaps.find? S a = some t) (h_wf : SubstWF S) :
+    LMonoTy.subst S t = t := by
+  apply LMonoTy.subst_no_relevant_keys
+  intro x hx
+  have h_x_in_fvs : x ∈ Subst.freeVars S := Subst.freeVars_of_find_subset S h_find hx
+  simp only [SubstWF, List.all_eq_true, decide_eq_true_eq] at h_wf
+  intro h_x_key
+  exact h_wf x h_x_key h_x_in_fvs
+
+/--
+If no key of a substitution `S` appears free in `ty`, then applying `S` to
+`ty` leaves it unchanged. This is the key lemma for proving idempotence.
+-/
+theorem LMonoTy.subst_no_key_free (S : Subst) (ty : LMonoTy)
+    (h : S.keys.all (fun k => k ∉ ty.freeVars)) :
+    LMonoTy.subst S ty = ty := by
+  apply LMonoTy.subst_no_relevant_keys
+  simp only [List.all_eq_true, decide_eq_true_eq] at h
+  exact fun x hx h_key => h x h_key hx
+
+/--
+Well-formed substitutions are idempotent: applying the substitution twice
+gives the same result as applying it once. Follows from `subst_no_key_free`
+and `subst_keys_not_in_substituted_type`.
+-/
+theorem LMonoTy.subst_idempotent
+    (S : Subst) (hWF : SubstWF S) (ty : LMonoTy) :
+    LMonoTy.subst S (LMonoTy.subst S ty) = LMonoTy.subst S ty :=
+  LMonoTy.subst_no_key_free S (LMonoTy.subst S ty)
+    (LMonoTy.subst_keys_not_in_substituted_type hWF ty)
+
+theorem Constraints.freeVars_length_cons :
+    (freeVars cs).length < (freeVars (c :: cs)).length ∨
+    (freeVars cs).length = (freeVars (c :: cs)).length := by
+  simp [freeVars, Constraint.freeVars]
+  omega
+
+theorem Constraints.freeVars_zip_dedup_length (h : args1.length = args2.length) :
+  (Constraints.freeVars (args1.zip args2)).uniq.length =
+  (LMonoTys.freeVars args1 ++ LMonoTys.freeVars args2).uniq.length := by
+  have h1 := @Constraints.freeVars_of_zip_superset args1 args2 h
+  have h2 := @Constraints.freeVars_of_zip_subset args1 args2
+  have h3 := @List.length_dedup_subset_eq _ _
+              (args1.freeVars ++ args2.freeVars) (freeVars (List.zip args1 args2)) h1 h2
+  exact id (Eq.symm h3)
+
+@[simp]
+theorem Constraint.size_gt_zero : 0 < Constraint.size c := by
+  simp_all [Constraint.size]
+  have := @LMonoTy.size_gt_zero c.fst
+  omega
+
+@[simp]
+theorem Constraints.size_append :
+    Constraints.size (xs ++ ys) = Constraints.size xs + Constraints.size ys := by
+  induction xs
+  case nil => simp_all [size]
+  case cons x xs ih =>
+    simp_all [size]; omega
+
 theorem SubstWF.not_mem_freeVars_of_find (S : Subst) (a : TyIdentifier) (t : LMonoTy)
     (h_find : HMaps.find? S a = some t) (h_wf : SubstWF S) :
     a ∉ LMonoTy.freeVars t := by
@@ -1422,6 +1675,41 @@ theorem LMonoTy.subst_ftvar_congr {S1 S2 : Subst} (x : TyIdentifier)
   | none => rw [LMonoTy.subst_ftvar_of_none hf, LMonoTy.subst_ftvar_of_none (h ▸ hf)]
   | some w => rw [LMonoTy.subst_ftvar_of_some hf, LMonoTy.subst_ftvar_of_some (h ▸ hf)]
 
+/-- Instantiating a type with a one-scope substitution gives the binding of a
+    type variable, or the variable itself when it is unbound. -/
+theorem LMonoTy.subst_one_ftvar (S : SubstOne) (a : TyIdentifier) :
+    LMonoTy.subst [S] (.ftvar a) =
+      match S.find? a with | some t => t | none => .ftvar a := by
+  rw [LMonoTy.subst_unfold]
+  simp only [HMaps.find?_single_scope]
+  rfl
+
+/-- If a map `S2` extends `S1`, binds only parameters beyond `S1`'s keys, and
+    `S1` binds every parameter occurring in `t`, then `S2` and `S1` instantiate
+    `t` alike. -/
+theorem LMonoTy.subst_one_extend (params : List TyIdentifier)
+    (S1 S2 : SubstOne) (t : LMonoTy)
+    (hext : ∀ a v, S1.find? a = some v → S2.find? a = some v)
+    (hnew : ∀ a, S1.find? a = none → S2.find? a ≠ none → a ∈ params)
+    (hbound : ∀ a ∈ t.freeVars, a ∈ params → ∃ v, S1.find? a = some v) :
+    LMonoTy.subst [S2] t = LMonoTy.subst [S1] t := by
+  apply LMonoTy.subst_ext
+  intro a ha
+  rw [HMaps.find?_single_scope, HMaps.find?_single_scope]
+  cases hf : S1.find? a with
+  | some v => exact hext a v hf
+  | none =>
+    cases hf2 : S2.find? a with
+    | none => rfl
+    | some w =>
+      have hne : S2.find? a ≠ none := by
+        rw [hf2]
+        exact Option.some_ne_none w
+      have hmem : a ∈ params := hnew a hf hne
+      obtain ⟨v, hv⟩ := hbound a ha hmem
+      rw [hf] at hv
+      cases hv
+
 /-- Substitution maps over constructor arguments. -/
 theorem LMonoTy.subst_tcons_map (S : Subst) (nm : String) (args : LMonoTys) :
     LMonoTy.subst S (.tcons nm args) = .tcons nm (args.map (LMonoTy.subst S)) := by
@@ -1693,8 +1981,7 @@ private theorem Constraint.unifyOne_ground_left_complete
     exact ⟨_, rfl, h_keys_rest, h_val_rest⟩
 
 /-- **Unifying a ground instance with its pattern succeeds**, in the orientation
-    `[(instance, pattern)]` that `LFunc.opTypeSubst` uses, and the result maps the pattern to
-    the instance. -/
+    `[(instance, pattern)]`, and the result maps the pattern to the instance. -/
 theorem Constraints_unify_ground_instance_complete
     (τ pat : LMonoTy) (S : Lambda.Subst) (hτ : τ.freeVars = [])
     (hmatch : LMonoTy.subst S pat = τ) :
@@ -1831,6 +2118,17 @@ theorem LTy.openFull_eq_subst_ofZip (vars : List TyIdentifier) (mty : LMonoTy)
     (vals : List LMonoTy) :
     LTy.openFull (.forAll vars mty) vals = LMonoTy.subst (Subst.ofZip vars vals) mty := by
   simp only [LTy.openFull, LTy.boundVars, LTy.toMonoTypeUnsafe, Subst.ofZip]
+
+/-- Every value of `Subst.ofNullaryConsts` is the nullary constant named by one of the pairs. -/
+theorem Subst.mem_values_ofNullaryConsts {pairs : List (TyIdentifier × String)}
+    {v : LMonoTy} (h : v ∈ HMaps.values (Subst.ofNullaryConsts pairs)) :
+    ∃ p ∈ pairs, v = LMonoTy.tcons p.2 [] := by
+  obtain ⟨m, hm, hvm⟩ := (HMaps.mem_values_iff_exists_scope _ v).mp h
+  simp only [Subst.ofNullaryConsts, List.mem_singleton] at hm
+  subst hm
+  obtain ⟨q, hq, hqv⟩ := List.mem_map.mp (HMap.mem_values_ofList _ v hvm)
+  obtain ⟨p, hp, hpq⟩ := List.mem_map.mp hq
+  exact ⟨p, List.mem_reverse.mp hp, by rw [← hqv, ← hpq]⟩
 
 /-- A lookup in `Subst.ofZip` is a lookup in the zipped list. -/
 private theorem Subst.find?_ofZip (vars : List TyIdentifier) (vals : List LMonoTy)
@@ -2864,6 +3162,15 @@ private theorem Subst.ofRenaming_WF (ρ : List (TyIdentifier × TyIdentifier))
   obtain ⟨q, hq, rfl⟩ := List.mem_map.mp (Subst.mem_freeVars_ofRenaming hkfv)
   exact h q hq (Subst.mem_keys_ofRenaming hk)
 
+/-- `ambientSubst` is `S` when there is no ambient key, and otherwise `S` renamed by
+    `ambientRenaming` with the keys `ambientReps` removed. -/
+theorem ambientSubst_eq (gen : TyIdentifier → Bool) (S : Subst) :
+    ambientSubst gen S =
+      if (ambientKeys gen S).isEmpty then S else
+        Subst.removeKeys (Subst.renameAfter S (ambientRenaming gen S)) (ambientReps gen S) := by
+  simp only [ambientSubst, ambientRenaming, ambientReps, ambientRenamingOf, ambientRepsOf,
+    ambientTargets]
+
 /-- The ambient renaming sends each target to its representative. -/
 private theorem find?_ambientRenaming {gen : TyIdentifier → Bool} {S : Subst} {g : TyIdentifier}
     (hg : g ∈ ambientTargets gen S) :
@@ -2878,7 +3185,8 @@ private theorem find?_ambientRenaming {gen : TyIdentifier → Bool} {S : Subst} 
 private theorem mem_freeVars_ambientRenaming {gen : TyIdentifier → Bool} {S : Subst}
     {x : TyIdentifier} (hx : x ∈ Subst.freeVars (ambientRenaming gen S)) :
     x ∈ ambientReps gen S := by
-  simpa only [ambientReps, List.map_map, Function.comp_def] using Subst.mem_freeVars_ofRenaming hx
+  simpa only [ambientReps, List.map_map, Function.comp_def] using
+    Subst.mem_freeVars_ofRenaming hx
 
 /-- Each representative is bound by `S` to a target the ambient renaming sends back to it. -/
 private theorem ambientRenaming_spec (gen : TyIdentifier → Bool) (S : Subst) :
@@ -2900,7 +3208,7 @@ private theorem ambientRenaming_WF (gen : TyIdentifier → Bool) (S : Subst) :
 /-- The ambient substitution is `S` followed by a renaming. -/
 private theorem ambientSubst_comp (gen : TyIdentifier → Bool) (S : Subst) :
     ∃ ρ, ∀ t, LMonoTy.subst (ambientSubst gen S) t = LMonoTy.subst ρ (LMonoTy.subst S t) := by
-  unfold ambientSubst
+  rw [ambientSubst_eq]
   split
   · exact ⟨[], fun t => (LMonoTy.subst_nil _).symm⟩
   · exact ⟨ambientRenaming gen S,
@@ -2915,7 +3223,7 @@ theorem ambientSubst_absorbs (gen : TyIdentifier → Bool) (S X : Subst)
 /-- The ambient substitution of a well-formed substitution is well formed. -/
 theorem ambientSubst_WF (gen : TyIdentifier → Bool) (S : Subst) (hS : SubstWF S) :
     SubstWF (ambientSubst gen S) := by
-  unfold ambientSubst
+  rw [ambientSubst_eq]
   split
   · exact hS
   · exact Subst.renameAfter_removeKeys_WF S _ _ hS (ambientRenaming_WF gen S)

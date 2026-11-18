@@ -10,6 +10,7 @@ import all Strata.DL.Lambda.LExprType
 public import Strata.Util.ListUtils
 public import Strata.DL.Lambda.TypeFactory
 import Strata.Util.ListUtilsProps
+import Strata.DL.Lambda.LTyUnifyProps
 
 /-!
 ## Properties of `Lambda.Factory`
@@ -58,6 +59,11 @@ function's instantiated type is its type under the substitution (`LFunc.instTy_e
 `applyTypeSubst` reduces to `replaceUserProvidedType`
 (`LExpr.applyTypeSubst_eq_replaceUserProvidedType`) and `computeTypeSubst` agrees with
 `opTypeSubst` whenever the latter succeeds (`LFunc.computeTypeSubst_of_opTypeSubst`).
+A call's instance of a function ignores operator metadata and depends on
+the arguments only through their types (`LFuncDefined.callInstance?_congr`).
+Instantiating a body at a call succeeds exactly when the type substitution
+exists (`LFunc.instantiateBody?_eq_some`) and fails exactly when it does not
+(`LFunc.instantiateBody?_eq_none`).
 
 ### Lookups across `Factory.push`
 `Factory.push` only accepts a function whose name is absent from the factory
@@ -191,8 +197,52 @@ theorem LFunc.computeTypeSubst_of_opTypeSubst {T : LExprParams}
     {fn : LFunc T} {callee : LExpr T.mono} {args : List (LExpr T.mono)} {s : Subst}
     (h : fn.opTypeSubst callee = some s)
     : fn.computeTypeSubst callee args = some s := by
+  unfold LFunc.opTypeSubst at h
   unfold LFunc.computeTypeSubst
-  rw [h]
+  by_cases h_mono : fn.typeArgs.isEmpty = true
+  · simp only [h_mono, ite_true] at h ⊢
+    exact h
+  · simp only [h_mono, Bool.false_eq_true, ite_false] at h ⊢
+    cases callee with
+    | op m name opTy =>
+      obtain ⟨σ, h_inst, h_s⟩ := Option.map_eq_some_iff.mp h
+      simp [LFuncDefined.callInstance?, h_inst, h_s]
+    | _ => simp at h
+
+/-- A call's instance of `fn` depends on the operator only up to metadata and on the arguments
+    only through the types `typeCheck` gives them. -/
+theorem LFuncDefined.callInstance?_congr {T : LExprParams} (fn : LFuncDefined T)
+    {op₁ op₂ : LExpr T.mono} {args₁ args₂ : List (LExpr T.mono)}
+    (h_op : op₁.eraseMetadata = op₂.eraseMetadata)
+    (h_tys : args₁.map (LExpr.typeCheck []) = args₂.map (LExpr.typeCheck [])) :
+    fn.callInstance? op₁ args₁ = fn.callInstance? op₂ args₂ := by
+  simp only [LFuncDefined.callInstance?, h_tys]
+  cases op₁ <;> cases op₂ <;>
+    simp only [LExpr.eraseMetadata, LExpr.replaceMetadata, LExpr.const.injEq,
+      LExpr.op.injEq, LExpr.bvar.injEq, LExpr.fvar.injEq, LExpr.abs.injEq, LExpr.quant.injEq,
+      LExpr.app.injEq, LExpr.ite.injEq, LExpr.eq.injEq, true_and, List.all_eq_true,
+      Option.isNone_iff_eq_none, Prod.forall, Option.orElse_eq_orElse, Option.orElse_eq_or,
+      Option.none_or, reduceCtorEq] at h_op ⊢
+  rename_i ty
+  cases ty <;> grind
+
+/-- Instantiating a body at a call succeeds exactly when the call's type substitution exists,
+    giving the body with its types instantiated and the arguments substituted for its parameters. -/
+theorem LFunc.instantiateBody?_eq_some {T : LExprParams} [DecidableEq T.IDMeta] {fn : LFunc T}
+    {body callee new_body : LExpr T.mono} {args : List (LExpr T.mono)} :
+    fn.instantiateBody? body callee args = some new_body ↔
+      ∃ tySubst, fn.computeTypeSubst callee args = some tySubst ∧
+        new_body =
+          LExpr.substFvarsLifting (body.applyTypeSubst tySubst) (fn.inputs.keys.zip args) := by
+  simp only [LFunc.instantiateBody?, Option.map_eq_some_iff]
+  constructor <;> rintro ⟨tySubst, h_ts, h_new⟩ <;> exact ⟨tySubst, h_ts, h_new.symm⟩
+
+/-- Instantiating a body at a call fails exactly when the call's type substitution does not
+    exist. -/
+theorem LFunc.instantiateBody?_eq_none {T : LExprParams} [DecidableEq T.IDMeta] {fn : LFunc T}
+    {body callee : LExpr T.mono} {args : List (LExpr T.mono)} :
+    fn.instantiateBody? body callee args = none ↔ fn.computeTypeSubst callee args = none := by
+  simp only [LFunc.instantiateBody?, Option.map_eq_none_iff]
 
 /-- `eraseMetadata` keeps the type annotation of an operator (`LExpr.opTy?`). -/
 theorem LExpr.opTy?_eraseMetadata {T : LExprParamsT} (e : LExpr T) :

@@ -163,3 +163,78 @@ procedure spin()
   }
 };
 #end
+
+/-- error: out of fuel
+-/
+#guard_msgs in
+#eval testLaurelExecution { skipVerification := true, skipCoreInterpreter := true } <|
+#strata
+program Laurel;
+procedure spinAroundInnerLoop()
+  entry
+  opaque
+{
+  var i: int := 0;
+  while (true) {
+    var j: int := 0;
+    while (j < 100) {
+      j := j + 1
+    };
+    i := i + 1
+  }
+};
+#end
+
+#eval testLaurelExecution { skipVerification := true, skipCoreInterpreter := true } <|
+#strata
+program Laurel;
+procedure longBracedLoop()
+  entry
+  opaque
+{
+  var i: int := 0;
+  while (i < 600000) {
+    i := i + 1
+  };
+  assert i == 600000
+};
+#end
+
+#eval testLaurelExecution { skipVerification := true, skipCoreInterpreter := true } <|
+#strata
+program Laurel;
+procedure longLabelledLoop()
+  entry
+  opaque
+{
+  var i: int := 0;
+  while (i < 600000) {
+    i := i + 1;
+    if (i == 0) then { exit next }
+  } next;
+  assert i == 600000
+};
+#end
+
+/-- error: out of fuel
+-/
+#guard_msgs in
+#eval testLaurelExecution { skipVerification := true, skipCoreInterpreter := true } <|
+#strata
+program Laurel;
+procedure labelledLoopsShareBudget()
+  entry
+  opaque
+{
+  var i: int := 0;
+  while (i < 600000) {
+    i := i + 1;
+    if (i == 0) then { exit first }
+  } first;
+  var j: int := 0;
+  while (j < 600000) {
+    j := j + 1;
+    if (j == 0) then { exit second }
+  } second
+};
+#end

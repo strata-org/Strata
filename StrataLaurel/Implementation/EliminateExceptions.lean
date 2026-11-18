@@ -9,6 +9,7 @@ public import StrataLaurel.Implementation.LaurelAST
 public import StrataLaurel.Implementation.LaurelPass
 public import StrataLaurel.Implementation.SemanticModel
 import StrataLaurel.Implementation.MapStmtExpr
+import StrataLaurel.Implementation.LabelledJumps
 import StrataLaurel.Implementation.LaurelTypes
 import StrataLaurel.Implementation.Grammar.AbstractToConcreteTreeTranslator
 import StrataLaurel.Implementation.HeapParameterization
@@ -443,6 +444,9 @@ private structure TryFrame where
       region's `$exc` (finally-only trys don't narrow it). `none` when no
       exception value is in play. -/
   exc : Option (String × HighTypeMd)
+  /-- The labels of the blocks in this region's arm, in statement positions: a jump
+      to one of them stays in the arm. -/
+  labels : List String := []
 
 /-- A lexical region the lowering is currently inside, innermost first. Labeled
     blocks are tracked alongside `try` regions because an `exit` needs to know
@@ -528,14 +532,19 @@ private def escapesBeyondCap (lattice : TypeLattice) (ctx : Ctx) (ty : HighTypeM
     opened inside the innermost one, or there is none — in which case the `exit`
     needs no unwinding and is emitted unchanged.
 
-    Walking outward and stopping at the target's own label is what distinguishes
-    the two cases; a `finally`-less `try` in between is skipped, since a jump out
-    of it has nothing to run (its enclosing `try` may still have an arm). -/
+    Walking outward and stopping at the target's own label, or at the `try` arm
+    holding a block the jump lands in, is what distinguishes the two cases; a
+    `finally`-less `try` in between is skipped, since a jump out of it has nothing
+    to run (its enclosing `try` may still have an arm). Resolution admits no jump
+    into an arm (`validateJumps`), so a target held by no frame lies outside every
+    `try` the walk passes. -/
 private def crossedFinallyOf (frames : List Frame) (target : String) : Option String :=
   match frames with
   | [] => none
   | .labeledBlock l :: rest => if l == target then none else crossedFinallyOf rest target
-  | .tryRegion f :: rest => if f.hasFinally then some f.finallyLabel else crossedFinallyOf rest target
+  | .tryRegion f :: rest =>
+    if f.labels.contains target then none
+    else if f.hasFinally then some f.finallyLabel else crossedFinallyOf rest target
 
 /-- Raise an exception of type `ty` at the throw site `src`: write `value` into the current
     region's `$exc` (a region with none -- a finally-only `try` in a procedure that
@@ -665,7 +674,8 @@ mutual
 /-- Lower a list of statements, concatenating the (possibly expanded) results.
     Statements after an unconditional terminator (`throw`/`return`/`exit`, which
     all lower to an `exit`) are unreachable and dropped, so re-resolution does
-    not flag dead code after the synthesized `exit`. -/
+    not flag dead code after the synthesized `exit` -- unless they hold a labelled
+    block, which a jump may reach. -/
 private def lowerStmts (ctx : Ctx) (stmts : List StmtExprMd) : EM (List StmtExprMd) := do
   match stmts with
   | [] => pure []
@@ -675,7 +685,9 @@ private def lowerStmts (ctx : Ctx) (stmts : List StmtExprMd) : EM (List StmtExpr
       match s.val with
       -- Unconditional terminator: everything after it is unreachable, so stop
       -- (rather than emitting dead code after the synthesized `exit`).
-      | .Throw _ | .Return _ | .Goto _ _ => pure s'
+      | .Throw _ | .Return _ | .Goto _ _ =>
+        if rest.any (fun r => !(statementLabels r).isEmpty) then pure (s' ++ (← lowerStmts ctx rest))
+        else pure s'
       | _ => pure (s' ++ (← lowerStmts ctx rest))
   termination_by sizeOf stmts
   decreasing_by
@@ -838,13 +850,15 @@ private def lowerTry (ctx : Ctx) (src : FileRange)
   -- Body phase: a `throw` enters the catch chain ($try); a `return` runs
   -- `finally` first ($tryfin).
   let bodyFrame : TryFrame :=
-    { throwLabel := tryLbl, finallyLabel := tryFinLbl, exc := thisExc, hasFinally }
+    { throwLabel := tryLbl, finallyLabel := tryFinLbl, exc := thisExc, hasFinally,
+      labels := statementLabels body }
   let bStmts := fillSrcs body.source
     (← lowerStmt { ctx with frames := .tryRegion bodyFrame :: saved, siteVar, assumeThrownType } body)
   -- Catch phase: a re-`throw` or `return` in a handler skips the (remaining)
   -- catch chain but still runs `finally` ($tryfin).
   let catchFrame : TryFrame :=
-    { throwLabel := tryFinLbl, finallyLabel := tryFinLbl, exc := thisExc, hasFinally }
+    { throwLabel := tryFinLbl, finallyLabel := tryFinLbl, exc := thisExc, hasFinally,
+      labels := catches.flatMap (statementLabels ·.body) }
   let catchCtx : Ctx :=
     { ctx with frames := .tryRegion catchFrame :: saved, siteVar, assumeThrownType }
   -- Map over the `catches` *parameter* (via `attach`, so each clause carries its
@@ -955,7 +969,9 @@ private def lowerTry (ctx : Ctx) (src : FileRange)
              setLocal exnReturningVar (localRef savReturning) ] ++ excRestore ++ exitRestore ++
            siteRestore)
   let fStmts ← match _hf : finally? with
-    | some f => do pure (fillSrcs f.source (← lowerStmt ctx f))
+    | some f => do
+      let finCtx := { ctx with frames := (statementLabels f).map Frame.labeledBlock ++ ctx.frames }
+      pure (fillSrcs f.source (← lowerStmt finCtx f))
     | none => pure []
   -- Re-dispatch: keep any pending exception/return unwinding outward. On the
   -- exception edge, copy this try's `$exc` into the enclosing region's `$exc`,

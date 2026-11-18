@@ -163,7 +163,7 @@ structure CProverGOTO.Context where
 
 open Lambda.LTy.Syntax in
 def transformToGoto (cprog : Core.Program) : Except Format CProverGOTO.Context := do
-  let Ctx := { Lambda.LContext.default with functions := Core.Factory, knownTypes := Core.KnownTypes }
+  let Ctx := Core.initTyContext
   let Env := Lambda.TEnv.default
   let (cprog, _Env) ← Core.Program.typeCheck Ctx Env cprog |>.mapError (fun dm => dm.format none)
   dbg_trace f!"[Strata.Core] Type Checking Succeeded!"

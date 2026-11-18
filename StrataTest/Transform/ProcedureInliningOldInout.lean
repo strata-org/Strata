@@ -10,6 +10,8 @@ meta import Strata.Languages.Core
 meta import Strata.Languages.Core.DDMTransform.Translate
 meta import Strata.Transform.CoreTransform
 meta import Strata.Transform.ProcedureInlining
+meta import StrataTest.Transform.CallFixtures
+meta import StrataTest.Languages.Core.Tests.TestUtil
 
 meta section
 
@@ -17,7 +19,9 @@ open Core
 open Core.Transform
 open ProcedureInlining
 open Strata
+open Core.TestUtil (translateWithMetaData)
 open Std
+open Core.CallFixtures (runInlineCall)
 
 /-! # Regression: `old` on inout parameters survives procedure inlining
 
@@ -27,19 +31,11 @@ the result type-checks (pinned via `#guard_msgs`).
 
 namespace Strata.ProcedureInliningOldInout
 
-private def translate (t : StrataDDM.Program) : Core.Program :=
-  (TransM.run Inhabited.default (translateProgram t)).fst
-
-private def runInlineCall (p : Core.Program) : Core.Program :=
-  match (runProgram (targetProcList := .none) inlineCallCmd p .emp) with
-  | ⟨.ok (_, res), _⟩ => res
-  | ⟨.error e, _⟩ => panic! (toString e) -- nopanic:ok
-
 /-- Type-check the result of inlining `p`. On success `Core.typeCheck` prints
     `ok: <program>`, so the pinned message both confirms type-checking and pins
     the exact inlined output. -/
 private def inlinedTypeCheck (p : StrataDDM.Program) :=
-  Core.typeCheck .quiet (runInlineCall (translate p))
+  Core.typeCheck .quiet (runInlineCall (translateWithMetaData p))
 
 -- A callee with an inout parameter `T` whose body asserts `old T`, inlined into
 -- a caller.
@@ -238,7 +234,7 @@ procedure PolyCaller()
 /--
 info: ok: program Core;
 
-procedure PolyCallee (inout T : $__ty0)
+procedure PolyCallee<a> (inout T : a)
 {
   assert [inner]: old T == T;
 };

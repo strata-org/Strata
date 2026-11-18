@@ -3372,9 +3372,9 @@ theorem LoopInitHoist.overapproximatesTraces {P : PureExpr}
       (· = ·)
       (EnvStoreAgree (P := P))
       (EventLang.imperativeBlockE P (Cmd P) (EvalCmdE P)
-        ⟨Imperative.Logic.InitEnvWFParams P, BlockInitEnvWF⟩)
+        BlockInitEnvWF)
       (EventLang.imperativeBlockE P (Cmd P) (EvalCmdE P)
-        ⟨Imperative.Logic.InitEnvWFParams P, BlockInitEnvWF⟩)
+        BlockInitEnvWF)
       (fun stmts => some (Block.hoistLoopPrefixInits stmts))
       (fun stmts => Block.uniqueInits stmts)
       params params := by

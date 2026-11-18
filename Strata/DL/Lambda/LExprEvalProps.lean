@@ -371,14 +371,16 @@ theorem eval_eraseMetadata_invariant
         · -- LHS inline condition holds
           rename_i h_inline₁
           split
-          · -- LHS: some tySubst (computeTypeSubst matched)
-            rename_i tySubst h_tySubst₁
+          · -- LHS: instantiateBody? = some new₁
+            rename_i new₁ h_inst₁
+            obtain ⟨tySubst, h_tySubst₁, rfl⟩ := LFunc.instantiateBody?_eq_some.mp h_inst₁
             split
             · -- RHS: inline condition true
-              -- Now split RHS computeTypeSubst
+              -- Now split RHS instantiateBody?
               split
               · -- RHS: some tySubst₂
-                rename_i tySubst₂ h_tySubst₂
+                rename_i new₂ h_inst₂
+                obtain ⟨tySubst₂, h_tySubst₂, rfl⟩ := LFunc.instantiateBody?_eq_some.mp h_inst₂
                 -- tySubst₁ = tySubst₂ via h_computeTypeSubst_eq
                 have h_eq : tySubst = tySubst₂ := by
                   have h := h_computeTypeSubst_eq; rw [h_tySubst₁, h_tySubst₂] at h
@@ -387,21 +389,24 @@ theorem eval_eraseMetadata_invariant
                 apply ih
                 exact substFvarsLifting_zip_eraseMetadata_congr _ _ _ _ h_eval_args_eM
               · -- RHS: none (impossible)
-                rename_i h_none₂
+                rename_i h_inst₂
                 exfalso
+                have h_none₂ := LFunc.instantiateBody?_eq_none.mp h_inst₂
                 have h := h_computeTypeSubst_eq; rw [h_tySubst₁, h_none₂] at h
                 exact absurd h (by simp)
             · -- RHS: inline condition false (contradicts h_inline₁ via h_inline_cond_eq)
               rename_i h_ninline₂
               exfalso; exact h_ninline₂ (h_inline_cond_eq.symm.trans h_inline₁)
-          · -- LHS: none (computeTypeSubst returned none)
-            rename_i h_none₁
+          · -- LHS: instantiateBody? = none
+            rename_i h_inst₁
+            have h_none₁ := LFunc.instantiateBody?_eq_none.mp h_inst₁
             -- Goal: (e₁, .nonvalue).eM = (if h:... then ... else ...).eM
             split
             · -- RHS: inline condition true
               split
               · -- RHS: some tySubst₂ (impossible since LHS was none)
-                rename_i tySubst₂ h_tySubst₂
+                rename_i new₂ h_inst₂
+                obtain ⟨tySubst₂, h_tySubst₂, -⟩ := LFunc.instantiateBody?_eq_some.mp h_inst₂
                 exfalso
                 have h := h_computeTypeSubst_eq; rw [h_none₁, h_tySubst₂] at h
                 exact absurd h (by simp)

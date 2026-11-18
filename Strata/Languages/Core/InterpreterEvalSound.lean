@@ -380,7 +380,7 @@ theorem userFuncWF_of_userFuncChecked {F : Lambda.Factory CoreLParams}
   obtain ⟨⟨hty, hann⟩, hops⟩ := hb
   refine ⟨LExpr.typeCheck_to_HasTypeA hty, fvars_annotated_by_of_fvarsAnnotatedBy _ hann,
     fun callee args S hS => ?_⟩
-  simp only [LFunc.computeTypeSubst, LFunc.opTypeSubst, hta, List.isEmpty_nil, ↓reduceIte,
+  simp only [LFunc.computeTypeSubst, hta, List.isEmpty_nil, ↓reduceIte,
     Option.some.injEq] at hS
   subst hS
   simp only [LExpr.applyTypeSubst, Subst.hasEmptyScopes_empty, ↓reduceIte]

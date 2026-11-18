@@ -259,23 +259,41 @@ procedure main()
 };
 #end
 
-/-! A witness the interpreter cannot evaluate, because it calls an external procedure,
-throws or does not terminate, is reported at the witness and leaves its type without a
-starting value; a run that never uses the type carries on. The verifier rejects or
-cannot prove these witnesses, so only the Laurel interpreter runs these blocks. -/
+/-! A witness the interpreter cannot evaluate, because it calls an external procedure
+or throws, is reported at the witness and leaves its type without a starting value; a
+run that never uses the type carries on. The verifier rejects or cannot prove these
+witnesses, so only the Laurel interpreter runs these blocks. A witness that does not
+terminate runs the interpreter out of fuel, as any other non-terminating code does. -/
 
 #eval testLaurelExecution { skipVerification := true, skipCoreInterpreter := true } <|
 #strata
 program Laurel;
 procedure mk() returns (r: int) external;
 procedure thr() returns (r: int) throws (e: int) opaque { throw 1 };
-procedure lp() returns (r: int) { var i: int := 0; while (true) invariant true { i := i + 1 }; return i };
 constrained ext = x: int where x > 0 witness mk()
 //                                           ^^^^ error: witness of 'ext' could not be evaluated
 constrained thrown = x: int where x > 0 witness thr()
 //                                              ^^^^^ error: witness of 'thrown' could not be evaluated
+procedure main()
+  entry
+  opaque
+{
+  var y: int := 1;
+  assert y == 1
+};
+#end
+
+/-! A witness that does not terminate runs the whole program out of fuel before `main`
+starts, even though `main` never uses the type. -/
+
+/-- error: out of fuel
+-/
+#guard_msgs in
+#eval testLaurelExecution { skipVerification := true, skipCoreInterpreter := true } <|
+#strata
+program Laurel;
+procedure lp() returns (r: int) { var i: int := 0; while (true) invariant true { i := i + 1 }; return i };
 constrained diverges = x: int where x > 0 witness lp()
-//                                                ^^^^ error: witness of 'diverges' could not be evaluated
 procedure main()
   entry
   opaque

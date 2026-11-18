@@ -197,7 +197,7 @@ b0:
   [blk "b0" [decl "t" 1, .init "o" (.named "Box") none (at_ 2), .init "c" .bool (some (.bool false)) (at_ 3),
              .call ["t"] "id" [v "x"] (at_ 4), .new "o" "Box" (at_ 5),
              .writeField (v "o") "Box" "val" (v "x") (at_ 6), .readField "t" (v "o") "Box" "val" (at_ 7),
-             .instanceOf "c" (v "o") "Box" (at_ 8),
+             .instanceOf "c" (v "o") (.named "Box") (at_ 8),
              .assert "positive" (.op "Int.Gt" [v "x", .int 0]) none (at_ 9),
              .assume "positive" (.op "Int.Gt" [v "x", .int 0]) (at_ 10)] (.finish (at_ 11))], idProc]
 
@@ -208,8 +208,8 @@ result is dead, and an element write. The dead `set` at offset 7 goes. -/
 info: procedure arrays(x: int) returns ()
 b0:
   var t: int := 0  @1
-  var a: Ints  @2
-  a := newArray Ints[x]  @3
+  var a: (Array int)  @2
+  a := newArray int[x]  @3
   a[0] := x : int  @4
   t := a[0] : int  @5
   t := length a  @6
@@ -217,10 +217,25 @@ b0:
 -/
 #guard_msgs in
 #eval show_ [proc "arrays" [("x", int)] []
-  [blk "b0" [decl "t" 1, .init "a" (.named "Ints") none (at_ 2),
-             .newArray "a" "Ints" (v "x") (at_ 3), .writeElem (v "a") (.int 0) (v "x") int (at_ 4),
+  [blk "b0" [decl "t" 1, .init "a" (ints) none (at_ 2),
+             .newArray "a" int (v "x") (at_ 3), .writeElem (v "a") (.int 0) (v "x") int (at_ 4),
              .readElem "t" (v "a") (.int 0) int (at_ 5), .arrayLength "t" (v "a") (at_ 6),
              .set "t" (some (.int 1)) (at_ 7)] (.finish (at_ 8))]]
+
+/-! An `instanceOfComponent` whose result is dead stays, since it stops a run on an array
+whose elements are not references. The dead `set` at offset 3 goes. -/
+
+/--
+info: procedure component(a: (Array Box), o: Box) returns ()
+b0:
+  var c: bool  @1
+  c := o instanceof component of a  @2
+  finish  @4
+-/
+#guard_msgs in
+#eval show_ [proc "component" [("a", boxes), ("o", .named "Box")] []
+  [blk "b0" [.init "c" .bool none (at_ 1), .instanceOfComponent "c" (v "o") (v "a") (at_ 2),
+             .set "c" (some (.bool true)) (at_ 3)] (.finish (at_ 4))]]
 
 /-! A dead store whose right-hand side has an operator with a precondition
 stays: evaluating `Int.SafeDiv(x, y)` checks that `y` is not zero. The dead

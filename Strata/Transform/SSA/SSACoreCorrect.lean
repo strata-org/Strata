@@ -16,6 +16,7 @@ import all Strata.Transform.SSA.SSACoreProgramProps
 import Strata.DL.Imperative.BigStep.Adequacy
 import Strata.Languages.Core.ProcedureProps
 import all Strata.Languages.Core.Verifier
+import all Strata.Transform.SSA.SSACoreProgram
 import all Strata.Languages.Core.PipelinePhase
 import all Strata.Transform.CoreTransform
 import Strata.Languages.Core.InstExprTyping

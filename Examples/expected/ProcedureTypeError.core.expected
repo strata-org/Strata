@@ -1,3 +1,4 @@
 Successfully parsed.
 ProcedureTypeError.core.st(21, (4-38)) ❌ Type checking error.
-[SumPositive:precond2]: Cannot find this fvar in the context! c
+Procedure 'SumPositive', condition 'precond2': [int.le(c, b)] No free variables are allowed here!
+Free Variables: [c]

@@ -46,11 +46,12 @@ def cortexStopMessage : StopReason → String
   | .calleeDidNotTerminate n => s!"callee {n} did not terminate"
   | .invalidDatatypes msg => s!"invalid datatypes: {msg}"
   | .notAnArray => "not an array"
-  | .unknownArrayType n => s!"unknown array type {n}"
   | .negativeArrayLength n => s!"array length {n} is negative"
   | .arrayLengthOverLimit n limit => s!"array length {n} is over the interpreter's limit of {limit}"
   | .indexOutOfRange i n => s!"index {i} is out of range for an array of length {n}"
-  | .elementTypeMismatch t a => s!"element type {Std.format (t : Lambda.LTy)} does not match array type {a}"
+  | .elementTypeMismatch t a =>
+    s!"array type {Std.format a} is not a subtype of (Array {Std.format (t : Lambda.LTy)})"
+  | .elementNotAReference a => s!"the elements of array type {Std.format a} are not references"
 
 /-- What running the `entry` procedures of a program on the Cortex interpreter
 produced. -/
@@ -87,7 +88,7 @@ def interpretProgram (m : Cortex.UnorderedProgram) (fuel : Nat) (cleanup : Bool 
       let msgs := match final with
         | .raised ρ v md =>
           let fallback := match dynType ρ.heap v with
-            | some ty => s!"uncaught exception '{ty}' is not thrown"
+            | some ty => s!"uncaught exception '{Std.format ty}' is not thrown"
             | none => "uncaught exception is not thrown"
           let summary := ((md : Cortex.MD).getPropertySummary).getD fallback
           match Imperative.getFileRange (md : Cortex.MD) with

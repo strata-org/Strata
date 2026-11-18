@@ -65,6 +65,18 @@ structure SourceTyWF (C : LContext T) (admissible : TyVarAdmissibility)
   hresolve : SourceTyResolves aliases ty resolved
   htype : ResolvedTyWF C admissible resolved
 
+/-- A written type is valid under `aliases`: alias resolution turns it into a well-formed
+    monotype, and any type variable may occur in it. -/
+abbrev ValidWrittenTy {T : LExprParams} (C : LContext T) (aliases : List TypeAlias)
+    (ty : LMonoTy) : Prop :=
+  ∃ r, SourceTyWF C TyVarAdmissibility.all aliases ty r
+
+/-- A declared type is valid under `aliases`: alias resolution turns it into a well-formed
+    monotype over user-writable type variables. -/
+abbrev ValidDeclaredTy {T : LExprParams} (C : LContext T) (aliases : List TypeAlias)
+    (ty : LMonoTy) : Prop :=
+  ∃ r, SourceTyWF C TyVarAdmissibility.notGeneratedOrRigid aliases ty r
+
 end
 
 end Lambda

@@ -41,6 +41,12 @@ open Strata (Message FileRange)
 open Strata.DL.Util (FuncAttr)
 open Core.Transform
 
+/-- Prefix of the type variables standing for a callee's type parameters that a call does not
+    determine, in a Core termination lemma.
+    Kept as a literal copy in `Lambda.reservedNamePrefixes`, so type checking still
+    rejects or renames program names that use it. -/
+@[expose] def termTyVarPrefix : String := "$__termty"
+
 /-- Statistics keys tracked by the termination checking transformation. -/
 inductive Stats where
   | termCheckLemmasGenerated
@@ -113,13 +119,14 @@ private def containsOpCall (e : Expression.Expr) (names : List String) : Bool :=
     in the obligation expression, mirroring `collectWFObligations`.
 
     `mkObligations` is called at each recursive call site with the callee's
-    name and the list of actual arguments. It returns the obligation
+    name, its operator annotation and the actual arguments. It returns the obligation
     expressions (e.g., adtRank decrease for structural, or nonNeg + decrease
     for int-valued). -/
 private def extractTermObligations
     (body : Expression.Expr)
     (recFuncNames : List String)
-    (mkObligations : String → List Expression.Expr → Except String (List Expression.Expr))
+    (mkObligations : String → Option LMonoTy → List Expression.Expr →
+      Except String (List Expression.Expr))
     : Except String (List Expression.Expr) :=
   go (LExpr.betaReduceRedexesPreservingArgs body) []
 where
@@ -138,9 +145,9 @@ where
       | (op, args) => do
         let argObs ← args.attach.flatMapM fun ⟨a, _⟩ => go a implications
         let callObs ← match op with
-          | .op _ opName _ =>
+          | .op _ opName opTy =>
             if opName.name ∈ recFuncNames then do
-              let obs ← mkObligations opName.name args
+              let obs ← mkObligations opName.name opTy args
               -- A conjunct of a condition under a binder of `body` may mention
               -- its bound variable, which the lemma's own binders would
               -- capture, turning `y == k + 1` into `k == k + 1` and the lemma
@@ -205,16 +212,20 @@ private def isRankZeroConstr (tf : @TypeFactory Unit) (dtName : String) (e : Exp
     | none => false
   | _, _ => false
 
-/-- Compute the call-site measure expression. For structural, wraps the
-    decreasing arg with adtRank, or is `0` when the arg is a constructor without
+/-- Compute the call-site measure expression at the call's type instance
+    `inst`. For structural, wraps the decreasing arg with adtRank, unannotated
+    when `inst` is unknown, or is `0` when the arg is a constructor without
     recursive fields (see `isRankZeroConstr`). For int-valued, substitutes
-    formals with actuals. -/
+    formals with actuals. On a type-checked program the instance is known; the
+    fallback for `none` serves callers that pass a program that was not
+    type-checked. -/
 private def computeCallMeasure
     (tf : @TypeFactory Unit)
     (calleeName : String)
     (calleeKind : DecreasesKind)
     (calleeFormals : List Expression.Ident)
     (calleeInputTys : List LMonoTy)
+    (inst : Option SubstOne)
     (callArgs : List Expression.Expr)
     : Except String Expression.Expr :=
   match calleeKind with
@@ -227,12 +238,21 @@ private def computeCallMeasure
       -- unproved termination lemma does not stop the function's definition
       -- from being assumed, which may then prove a false assertion.
       if !arg.hasBVar && isRankZeroConstr tf calleeDtName arg then .ok (LExpr.intConst coreLoc 0)
-      else .ok (LExpr.mkApp coreLoc (.op coreLoc (adtRankFuncName calleeDtName) (.some (.arrow calleeAdtTy .int))) [arg])
+      else
+        -- TODO: prove that the transformations preserve typing; then this branch is
+        -- provably unreachable on pipeline input.
+        let rankTy := inst.map fun σ => LMonoTy.subst [σ] (.arrow calleeAdtTy .int)
+        .ok (LExpr.mkApp coreLoc (.op coreLoc (adtRankFuncName calleeDtName) rankTy) [arg])
     | _, _ => .error s!"termination checking '{calleeName}': decreasing parameter index {calleeIdx} is out of range at call site"
   | .intValued calleeMeasure =>
     if calleeFormals.length != callArgs.length then
       .error s!"termination checking '{calleeName}': call has {callArgs.length} arguments but function expects {calleeFormals.length}"
     else
+      let calleeMeasure := match inst with
+        | some σ => calleeMeasure.applyTypeSubst [σ]
+        -- TODO: prove that the transformations preserve typing; then this branch is
+        -- provably unreachable on pipeline input.
+        | none => calleeMeasure
       .ok (LExpr.substFvarsLifting calleeMeasure (calleeFormals.zip callArgs))
 
 /-- Compute the caller's measure expression from its DecreasesKind. -/
@@ -262,7 +282,7 @@ private def mkTermCheckLemmas
     (func : Function)
     (block : List Function)
     (callerKind : DecreasesKind)
-    (funcKindMap : List (String × DecreasesKind × List Expression.Ident × List LMonoTy))
+    (funcKindMap : List (String × DecreasesKind × Function))
     (adtRankAxioms : List (String × Expression.Expr))
     (tf : @TypeFactory Unit)
     (md : Imperative.MetaData Expression)
@@ -274,11 +294,14 @@ private def mkTermCheckLemmas
   let needsNonNeg := match callerKind with
     | .intValued _ => true
     | .structural _ _ => false
-  let mkObligations (calleeName : String) (callArgs : List Expression.Expr)
-      : Except String (List Expression.Expr) := do
-    match funcKindMap.find? (fun (n, _, _, _) => n == calleeName) with
-    | some (_, calleeKind, calleeFormals, calleeInputTys) =>
-      match computeCallMeasure tf calleeName calleeKind calleeFormals calleeInputTys callArgs with
+  let mkObligations (calleeName : String) (opTy : Option LMonoTy)
+      (callArgs : List Expression.Expr) : Except String (List Expression.Expr) := do
+    match funcKindMap.find? (fun (n, _, _) => n == calleeName) with
+    | some (_, calleeKind, callee) =>
+      match computeCallMeasure tf calleeName calleeKind callee.inputs.keys
+          callee.inputs.values
+          ((LFuncDefined.opInstance? callee opTy).map
+            (SubstOne.completeParams callee.typeArgs termTyVarPrefix)) callArgs with
       | .ok callMeasure =>
         if callMeasure.hasBVar then
           .error s!"termination checking '{func.name.name}': decreasing argument contains a bound variable"
@@ -369,23 +392,23 @@ where
         -- poly members here also keeps `funcKindMap` complete, so a monomorphic
         -- member's recursive call to a polymorphic sibling still gets its
         -- decrease obligation.
-        let mut funcKindList : List (String × DecreasesKind × List Expression.Ident × List LMonoTy) := []
+        let mut funcKindList : List (String × DecreasesKind × Function) := []
         for func in funcs do
           match getDecreasesKind func tf with
           | .error msg => throwErr msg
           | .ok kind =>
-            funcKindList := (func.name.name, kind, func.inputs.keys, func.inputs.values) :: funcKindList
+            funcKindList := (func.name.name, kind, func) :: funcKindList
         let funcKindMap := funcKindList.reverse
         -- Reject mutual blocks that mix structural and int-valued measures.
-        let hasStructural := funcKindMap.any fun (_, k, _, _) => match k with
+        let hasStructural := funcKindMap.any fun (_, k, _) => match k with
           | .structural _ _ => true | .intValued _ => false
-        let hasIntValued := funcKindMap.any fun (_, k, _, _) => match k with
+        let hasIntValued := funcKindMap.any fun (_, k, _) => match k with
           | .intValued _ => true | .structural _ _ => false
         if hasStructural && hasIntValued then
           throwErr "mutual recursive block mixes structural and int-valued termination measures; all functions in a mutual block must use the same kind of measure"
         -- Step 2: Generate adtRank function declarations and per-constructor axioms
         -- for structural functions only.
-        let allAdtNames := funcKindMap.filterMap fun (_, kind, _, _) =>
+        let allAdtNames := funcKindMap.filterMap fun (_, kind, _) =>
           match kind with
           | .structural _ dtName => some dtName
           | .intValued _ => none
@@ -410,10 +433,10 @@ where
         -- lemma, gets a `_k` suffix; each chosen name is reserved at once.
         let mut revTermDeclss : List (List Decl) := []
         for func in funcs do
-          let callerKind := funcKindMap.find? (fun (n, _, _, _) => n == func.name.name)
+          let callerKind := funcKindMap.find? (fun (n, _, _) => n == func.name.name)
           let decls ← match callerKind with
             | none => pure []
-            | some (_, kind, _, _) =>
+            | some (_, kind, _) =>
               match mkTermCheckLemmas func funcs kind funcKindMap allAdtRank.axioms tf md with
               | .error msg => do throwErr msg; pure []
               | .ok r => pure r
@@ -444,17 +467,7 @@ where
       | .type (.data block) _md => do
         tf := tf.push block
         acc := acc.push d
-      | .proc proc _ => do
-        -- A CFG body is not walked here, and the recursive calls inside one
-        -- would go unchecked. `noCFGBodies` is declared as a requirement; this
-        -- is where it is enforced.
-        match proc.body with
-        | .cfg _ =>
-          throw (Strata.Message.fromFormat
-            f!"❌ TerminationCheck: procedure {proc.header.name.name} has a CFG body; \
-               termination is only checked on structured bodies.")
-        | .structured _ => acc := acc.push d
-      | .func _ _ | .ax _ _ | .lemma _ _ | .distinct _ _ _
+      | .proc _ _ | .func _ _ | .ax _ _ | .lemma _ _ | .distinct _ _ _
       | .type (.con _) _ | .type (.syn _) _ => do
         acc := acc.push d
       remaining := rest
@@ -464,17 +477,18 @@ end TermCheck
 
 /-- TermCheck pipeline phase: generates termination-checking lemmas for
     recursive functions. Model-preserving because it only adds new lemmas,
-    adtRank functions and their axioms. -/
+    adtRank functions and their axioms. It keeps every procedure as it is, whatever its
+    body. -/
 def termCheckPipelinePhase : PipelinePhase :=
   -- `noBetaRedexes` is not claimed because a call's measure is instantiated by
   -- substituting the call's arguments, and a function-typed parameter applied to
   -- an abstraction argument leaves a redex behind.
   modelPreservingPipelinePhase "termCheck"
-    (requires := factSet![.noCFGBodies])
+    (requires := factSet![.typeAnnotated])
     (preserves := factSet![.noCFGBodies, .noCalls, .noLoops, .noLoopInvariants,
                          .noLoopMeasures, .staticSingleAssignment,
                          .noPrecondsFromFuncs, .noNondetGuards, .noProcedureContracts,
-                         .noPolymorphicFunctions, .typeAnnotated, .noInits])
+                         .noPolymorphicFunctions, .typeAnnotated, .noInits, .exitsCovered])
     fun prog => do
       TermCheck.termCheck prog
 

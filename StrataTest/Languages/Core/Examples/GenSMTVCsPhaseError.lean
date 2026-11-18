@@ -35,7 +35,7 @@ procedure bad(out r : int)
 -- `(651-661)` below is the byte range of `r := true` in this file, so an edit
 -- above that line changes it.
 
-/-- info: "phase 'typeCheck' failed: (651-661) ❌ Type checking error.\nImpossible to unify int with bool." -/
+/-- info: "phase 'typeCheck' failed: (651-661) ❌ Type checking error.\nProcedure 'bad': Impossible to unify int with bool." -/
 #guard_msgs in
 #eval match genCoreVCsWithError illTypedPgm with
   | .ok _ => "unexpected success"
@@ -43,7 +43,7 @@ procedure bad(out r : int)
 
 /--
 error: gen_smt_vcs: failed to generate VCs: phase 'typeCheck' failed: (651-661) ❌ Type checking error.
-Impossible to unify int with bool.
+Procedure 'bad': Impossible to unify int with bool.
 -/
 #guard_msgs in
 example : smtVCsCorrect illTypedPgm := by

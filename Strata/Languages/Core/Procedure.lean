@@ -10,6 +10,7 @@ public import Strata.DL.Imperative.HasVars
 public import Strata.DL.Imperative.BasicBlock
 public import Strata.DL.Imperative.Procedure
 public import Strata.Languages.Core.Statement
+public import Strata.DL.Lambda.LTyMatch
 
 ---------------------------------------------------------------------
 
@@ -305,23 +306,38 @@ abbrev Procedure := Imperative.Procedure Expression Command Procedure.Header
       | .structured ss => .structured (Statements.mapExprs f ss)
       | .cfg c => .cfg c }
 
+section Collect
+
+variable {β : Type} (fe : Expression.Expr → List β) (ft : LMonoTy → List β)
+
+/-- What `fe` and `ft` collect from a procedure body, which is either a statement list or the
+    blocks of a control flow graph. -/
+def bodyCollect (body : Procedure.Body) : List β :=
+  match body with
+  | .structured ss => stmtsCollect fe ft ss
+  | .cfg c => c.blocks.flatMap fun (_, blk) =>
+      blk.cmds.flatMap (cmdCollect fe ft) ++
+        match blk.transfer with
+        | .condGoto g _ _ _ => fe g
+        | .finish _ => []
+
+/-- What `fe` and `ft` collect from a procedure's conditions and body. -/
+def procCollect (proc : Procedure) : List β :=
+  proc.spec.preconditions.values.flatMap (fun chk => fe chk.expr) ++
+    proc.spec.postconditions.values.flatMap (fun chk => fe chk.expr) ++
+    bodyCollect fe ft proc.body
+
+end Collect
+
 /-- Does every type annotation in a procedure body, including control-flow graph guards,
     satisfy `p`? -/
 def Procedure.allBodyTys (p : LMonoTy → Bool) (body : Procedure.Body) : Bool :=
-  match body with
-  | .structured ss => allStmtsTys p ss
-  | .cfg c => c.blocks.all fun (_, blk) =>
-      blk.cmds.all (allCmdTys p) &&
-      (match blk.transfer with
-       | .condGoto g _ _ _ => allExprTys p g
-       | .finish _ => true)
+  (bodyCollect exprAnnotTys ([·]) body).all p
 
 /-- Does every type annotation in a procedure's preconditions, postconditions, and body
     satisfy `p`? -/
 def Procedure.allTys (p : LMonoTy → Bool) (proc : Procedure) : Bool :=
-  proc.spec.preconditions.values.all (fun chk => allExprTys p chk.expr) &&
-  proc.spec.postconditions.values.all (fun chk => allExprTys p chk.expr) &&
-  Procedure.allBodyTys p proc.body
+  (procCollect exprAnnotTys ([·]) proc).all p
 
 ---------------------------------------------------------------------
 
@@ -332,12 +348,36 @@ instance : Imperative.ProcedureHeader Expression Procedure.Header where
   inputParams  h := h.inputs.keys
   outputParams h := h.outputs.keys
 
-def DetCFG.eraseTypes (cfg : DetCFG) : DetCFG :=
+/-- Apply `fc` to every command and `fe` to every branch guard of a control-flow graph,
+    keeping its labels and shape. -/
+def DetCFG.mapCmdsGuards (cfg : DetCFG) (fc : Command → Command)
+    (fe : Expression.Expr → Expression.Expr) : DetCFG :=
   { cfg with blocks := cfg.blocks.map fun (lbl, blk) =>
-      (lbl, { blk with cmds := blk.cmds.map Command.eraseTypes,
-                        transfer := match blk.transfer with
-                          | .condGoto p lt lf md => .condGoto p.eraseTypes lt lf md
-                          | .finish md => .finish md }) }
+      (lbl, { cmds := blk.cmds.map fc,
+              transfer := match blk.transfer with
+                | .condGoto p lt lf md => .condGoto (fe p) lt lf md
+                | .finish md => .finish md }) }
+
+def DetCFG.eraseTypes (cfg : DetCFG) : DetCFG :=
+  DetCFG.mapCmdsGuards cfg Command.eraseTypes (·.eraseTypes)
+
+/-- `proc` with its type parameters renamed by `ren` throughout, as
+    `renameTyArgList` does to the parameter list. -/
+def Procedure.renameTypeArgs (proc : Procedure) (ren : List (String × String)) :
+    Procedure :=
+  let f := LMonoTy.subst (Subst.ofRenaming ren)
+  let renameChecks (cs : ListMap CoreLabel Procedure.Check) :=
+    cs.map fun p => (p.1, { p.2 with expr := mapExprTys f p.2.expr })
+  { header := { proc.header with
+      typeArgs := renameTyArgList ren proc.header.typeArgs,
+      inputs := proc.header.inputs.map fun p => (p.1, f p.2),
+      outputs := proc.header.outputs.map fun p => (p.1, f p.2) },
+    spec := { proc.spec with
+      preconditions := renameChecks proc.spec.preconditions,
+      postconditions := renameChecks proc.spec.postconditions },
+    body := match proc.body with
+      | .structured ss => .structured (mapStmtsTys f ss)
+      | .cfg c => .cfg (DetCFG.mapCmdsGuards c (mapCmdTys f) (mapExprTys f)) }
 
 -- Only transfer metadata is stripped because command metadata (on assert,
 -- assume, init, set, cover) is not included in formatted output — formatCmd
@@ -366,6 +406,31 @@ def Procedure.callSites (p : Procedure) : List CallSite :=
   match p.body with
   | .structured ss => Statements.callSites ss
   | .cfg g => g.blocks.flatMap fun (_, blk) => blk.cmds.flatMap Command.callSites
+
+/-- The type arguments of `proc` at a call, matched one-way against the known types of the
+    call's inputs `inTys` and outputs `outTys`; `none` on a mismatch. -/
+def Procedure.matchCall? (proc : Procedure) (inTys outTys : List (Option LMonoTy)) :
+    Option SubstOne :=
+  LMonoTys.matchKnown? proc.header.typeArgs
+    (proc.header.inputs.values.zip inTys ++ proc.header.outputs.values.zip outTys)
+
+namespace Transform
+
+/-- A reference to the variable `ident`, annotated with `ty` when given. -/
+def createFvar (ident : Expression.Ident) (ty : Option Lambda.LMonoTy := none)
+  : Expression.Expr
+  := Lambda.LExpr.fvar (ExprSourceLoc.synthesized "transform") ident ty
+
+/-- The expressions a call passes for the callee inputs `inputs`, each `inout` variable annotated
+    with its input's type. -/
+def typedInputExprs (inputs : @Lambda.LMonoTySignature Unit)
+    (callArgs : List (Imperative.CallArg Expression)) : List Expression.Expr :=
+  ((Imperative.CallArg.inputArgs callArgs).zip inputs.values).filterMap fun
+    | (.inArg e, _) => some e
+    | (.inoutArg x, ty) => some (createFvar x (some ty))
+    | (.outArg _, _) => none
+
+end Transform
 
 /-! ## The variables of a procedure
 

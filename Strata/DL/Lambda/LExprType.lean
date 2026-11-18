@@ -7,6 +7,7 @@ module
 
 public import Strata.DL.Lambda.Factory
 import all Strata.DL.Lambda.Factory
+public import Strata.DL.Lambda.LTyMatch
 import Strata.Util.ListMapProps
 
 /-! ## Lambda Expression Typing -/
@@ -43,6 +44,49 @@ definition because this module has no companion `Props` file. -/
 theorem LFuncDefined.applyTypeSubst_inputs_keys {T : LExprParams} (f : LFuncDefined T)
     (S : Subst) : (LFuncDefined.applyTypeSubst f S).inputs.keys = f.inputs.keys :=
   ListMap.keys_map_values _ _
+
+/-- The type variables of the signature of `f`: its type parameters and the free type
+variables of its output and input types. -/
+def LFuncDefined.sigTyVars {T : LExprParams} (f : LFuncDefined T) : List String :=
+  f.typeArgs ++ f.output.freeVars ++ f.inputs.flatMap (fun (_, mty) => mty.freeVars)
+
+/-- The types written in the annotations of `f`'s expressions. -/
+def LFuncDefined.annotTys {T : LExprParams} (f : LFuncDefined T) :
+    List LMonoTy :=
+  f.exprs.flatMap exprAnnotTys
+
+/-- The type variables `f` mentions, given the types `annot` it writes:
+those of its signature (`sigTyVars`) and those of `annot`. -/
+def LFuncDefined.mentionedTyVarsIn {T : LExprParams} (f : LFuncDefined T)
+    (annot : List LMonoTy) : List String :=
+  f.sigTyVars ++ annot.flatMap LMonoTy.freeVars
+
+/-- The type variables `f` mentions in its signature and annotations. -/
+def LFuncDefined.mentionedTyVars {T : LExprParams} (f : LFuncDefined T) : List String :=
+  f.mentionedTyVarsIn f.annotTys
+
+/-- The type parameters `typeArgs` with `a` renamed to `n` for each pair `(a, n)` of `ren`; a
+parameter `ren` does not list keeps its name. -/
+def renameTyArgList (ren : List (String × String)) (typeArgs : List String) : List String :=
+  typeArgs.map fun a => (ren.lookup a).getD a
+
+/-- `f` with its type parameters renamed by `ren` throughout, as
+`renameTyArgList` does to the parameter list. -/
+def LFuncDefined.renameTypeArgs {T : LExprParams} (f : LFuncDefined T)
+    (ren : List (String × String)) : LFuncDefined T :=
+  { LFuncDefined.applyTypeSubst f (Subst.ofRenaming ren) with
+    typeArgs := renameTyArgList ren f.typeArgs }
+
+/-- Renaming type parameters keeps a function's name. -/
+theorem LFuncDefined.renameTypeArgs_name {T : LExprParams} (f : LFuncDefined T)
+    (ren : List (String × String)) : (f.renameTypeArgs ren).name = f.name := by
+  unfold LFuncDefined.renameTypeArgs LFuncDefined.applyTypeSubst
+  rfl
+
+/-- Renaming type parameters keeps a function's input names. -/
+theorem LFuncDefined.renameTypeArgs_inputs_keys {T : LExprParams} (f : LFuncDefined T)
+    (ren : List (String × String)) : (f.renameTypeArgs ren).inputs.keys = f.inputs.keys :=
+  LFuncDefined.applyTypeSubst_inputs_keys _ _
 
 /-- Typecheck an annotated `LExpr`, returning `some τ` if well-typed, `none`
 otherwise. `ctx` maps de Bruijn indices to their types from enclosing
@@ -144,53 +188,56 @@ theorem LExpr.typeCheck_eq {T : LExprParams} (ctx : List LMonoTy) (m : T.mono.ba
       let ty2 ← LExpr.typeCheck ctx e2
       LMonoTy.eqTy? ty1 ty2) := rfl
 
-/--
-Derive a type substitution from the `.op` type annotation alone, by unifying it
-against the function's generic type. On annotated terms (i.e., terms that have
-undergone type inference), the `.op` node always carries a type annotation, so
-this suffices.
+/-- The type arguments of `fn` bound by one-way matching its declared type against the annotation
+    `opTy`: empty when `fn` is monomorphic; `none` without one or on a mismatch. -/
+def LFuncDefined.opInstance? {T : LExprParams} (fn : LFuncDefined T)
+    (opTy : Option LMonoTy) : Option SubstOne := do
+  if fn.typeArgs.isEmpty then return Util.HMap.empty
+  let instTy ← opTy
+  let declTy := LMonoTy.mkArrow' fn.output fn.inputs.values
+  LMonoTy.matchTy? fn.typeArgs Util.HMap.empty declTy instTy
 
-Returns `some Subst.empty` when `fn.typeArgs` is empty (monomorphic — no-op).
-Returns `none` if the callee is not annotated or unification fails.
--/
+/-- The type arguments of `fn` at a call, matched one-way against the operator's annotation or
+    else the arguments' known types; `none` on a mismatch or when no type is known. On a
+    type-checked program the operator's annotation matches, so the fallback to the arguments'
+    types serves callers that pass a program that was not type-checked. -/
+def LFuncDefined.callInstance? {T : LExprParams} (fn : LFuncDefined T) (callee : LExpr T.mono)
+    (args : List (LExpr T.mono)) : Option SubstOne :=
+  let fromOp := match callee with
+    | .op _ _ opTy => fn.opInstance? opTy
+    | _ => none
+  let pairs := fn.inputs.values.zip (args.map (LExpr.typeCheck []))
+  fromOp <|> if pairs.all (·.2.isNone) then none else LMonoTys.matchKnown? fn.typeArgs pairs
+
+/-- The substitution instantiating `fn` by `σ`, with each type parameter `σ` leaves unbound
+    mapped to `callTyVarPrefix ++ toString i`, where `i` is its position. -/
+def LFunc.instanceSubst {T : LExprParams} (fn : LFunc T) (σ : SubstOne) :
+    Subst :=
+  [SubstOne.completeParams fn.typeArgs callTyVarPrefix σ]
+
+/-- The instance of `fn` at a call with operator `callee`, matched one-way against its annotation:
+    empty when `fn` is monomorphic; `none` without an annotation or on a mismatch. -/
 @[expose] def LFunc.opTypeSubst {T : LExprParams} (fn : LFunc T) (callee : LExpr T.mono)
     : Option Subst :=
   if fn.typeArgs.isEmpty then some Subst.empty
   else match callee with
-    | .op _ _ (some instTy) =>
-      let genericTy := LMonoTy.mkArrow' fn.output fn.inputs.values
-      match Constraints.unify [(instTy, genericTy)] SubstInfo.empty with
-      | .ok substInfo => some substInfo.subst
-      | .error _ => none
+    | .op _ _ opTy => (LFuncDefined.opInstance? fn.toFunc opTy).map fn.instanceSubst
     | _ => none
 
-/--
-Derive a type substitution by unifying the instantiated operator type against the
-function's generic type. Used when inlining a polymorphic function body to
-instantiate type variables.
-
-Prefers the `.op` annotation (via `opTypeSubst`). Falls back to a best-effort
-approach using argument types when the `.op` is not annotated. On annotated terms
-(after type inference), the `.op` always carries a type annotation, so the fallback
-is never needed.
-
-Returns `some Subst.empty` when `fn.typeArgs` is empty (monomorphic — no-op).
-Returns `none` if the type substitution cannot be derived.
--/
+/-- The instance of `fn` at a call with operator `callee` and arguments `args`, given by
+    `LFuncDefined.callInstance?`: empty when `fn` is monomorphic. -/
 @[expose] def LFunc.computeTypeSubst {T : LExprParams} (fn : LFunc T) (callee : LExpr T.mono)
     (args : List (LExpr T.mono)) : Option Subst :=
-  match fn.opTypeSubst callee with
-  | some s => some s
-  | none =>
-    -- Fallback: use argument types (best-effort, only when .op is unannotated)
-    if fn.typeArgs.isEmpty then some Subst.empty
-    else
-      let argConstraints := (args.zip fn.inputs.values).filterMap
-        (fun (arg, formal) => (LExpr.typeCheck [] arg).map (·, formal))
-      if argConstraints.isEmpty then none
-      else match Constraints.unify argConstraints SubstInfo.empty with
-        | .ok substInfo => some substInfo.subst
-        | .error _ => none
+  if fn.typeArgs.isEmpty then some Subst.empty
+  else (LFuncDefined.callInstance? fn.toFunc callee args).map fn.instanceSubst
+
+/-- `body` instantiated at a call of `fn`: its types by `fn.computeTypeSubst`, its parameters by
+    `args`. -/
+def LFunc.instantiateBody? {T : LExprParams} [DecidableEq T.IDMeta]
+    (fn : LFunc T) (body callee : LExpr T.mono) (args : List (LExpr T.mono)) :
+    Option (LExpr T.mono) :=
+  (fn.computeTypeSubst callee args).map fun tySubst =>
+    LExpr.substFvarsLifting (body.applyTypeSubst tySubst) (fn.inputs.keys.zip args)
 
 /--
 Check every operator annotation of `e` against the factory `F`: an `.op` naming
@@ -201,12 +248,11 @@ variables are not substituted. Operators that `F` does not define are not constr
 
 The check implies the declarative `OpsConsistentR` (`opsConsistent_sound`), but not
 `OpsConsistent`, which requires the annotation to equal the function's type under the
-substitution `LFunc.opTypeSubst` computes by two-way unification. That substitution can
-differ from the one-way match in two ways. When the annotation has type variables of its
-own, unification may bind those instead of the function's: `id : a → a` annotated `b → b`
-matches, but unification maps `b` to `a`, and `a → a` is not the annotation. And a
-function with no `typeArgs` gets the empty substitution, even when its type mentions a
-type variable that matching binds.
+substitution `LFunc.opTypeSubst`. That substitution differs from the one `matchSubst`
+finds in two ways. A function with no `typeArgs` gets the empty substitution, even when
+its type mentions a type variable that `matchSubst` binds. And `opTypeSubst` binds only
+the function's `typeArgs` and treats every other type variable as fixed, while
+`matchSubst` binds every type variable of the signature.
 -/
 @[expose]
 def LExpr.opsConsistent {T : LExprParams} (F : Factory T) : LExpr T.mono → Bool

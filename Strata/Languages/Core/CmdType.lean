@@ -8,7 +8,9 @@ public import Strata.Pipeline.Messages
 
 public import Strata.Languages.Core.Expressions
 public import Strata.DL.Imperative.TypeContext
-import Strata.DL.Lambda.LExprT
+public import Strata.DL.Lambda.LExprT
+import Strata.Languages.Core.TypeSkolem
+import Strata.DL.Lambda.LTyWF
 
 namespace Core
 open Lambda Imperative
@@ -26,8 +28,9 @@ def isBoolType (ty : LTy) : Bool :=
   | .forAll [] LMonoTy.bool => true
   | _ => false
 
+/-- The alias-resolved type scheme of `x`. -/
 def lookup (Env : TEnv Unit) (x : CoreIdent) : Option LTy :=
-  Env.context.types.find? x
+  (Env.context.types.find? x).map Env.context.resolveScheme
 
 def update (Env : TEnv Unit) (x : CoreIdent) (ty : LTy) : TEnv Unit :=
   Env.addInNewestContext (T := CoreLParams) (Strata.Util.HMap.ofList [(x, ty)])
@@ -42,8 +45,14 @@ Preprocess a user-facing type in Core amounts to converting a poly-type (i.e.,
 -/
 def preprocess (C: LContext CoreLParams) (Env : TEnv Unit) (ty : LTy) :
     Except Message (LTy × TEnv Unit) := do
-  let (mty, Env) ← ty.instantiateWithCheck C Env |>.mapError Message.fromFormat
-  return (.forAll [] mty, Env)
+  -- A declared type must be a monotype naming no checker-reserved type variable.
+  if h : ty.isMonoType then
+    let (mty, Env) ← (ty.toMonoType h).typeCheckSource C Env
+      TyVarAdmissibility.notGeneratedOrRigid |>.mapError Message.fromFormat
+    return (.forAll [] mty, Env)
+  else
+    throw <| Message.fromFormat f!"Local variable declaration has type {ty}. \
+      Polymorphic variable declarations are not allowed."
 
 def postprocess (_: LContext CoreLParams) (Env: TEnv Unit) (ty : LTy) :
     Except Message (LTy × TEnv Unit) := do
@@ -59,9 +68,8 @@ bound variables.
 -/
 def inferType (C: LContext CoreLParams) (Env: TEnv Unit) (c : Cmd Expression) (e : LExpr CoreLParams.mono) :
     Except Message ((LExpr CoreLParams.mono) × LTy × TEnv Unit) := do
-  let _ ← Env.freeVarCheck e (fun _ => f!"[{c}]") |>.mapError Message.fromFormat
-  let T := Env
-  let (ea, T) ← LExpr.resolve C T e |>.mapError Message.fromFormat
+  let (ea, T) ← SourceExpr.orFreeVarError (fun _ => Env.freeVarCheck e (fun _ => f!"[{c}]"))
+    (SourceExpr.resolve C Env e) |>.mapError Message.fromFormat
   let ety := ea.toLMonoTy
   return (ea.unresolved, (.forAll [] ety), T)
 
@@ -92,6 +100,11 @@ def unifyTypes (Env: TEnv Unit) (constraints : List (LTy × LTy)) :
   let Env := Env.updateSubst S
   return Env
 
+/-- Apply the environment's solved type substitution to `e`'s type annotations. -/
+def substExpr (_ : LContext CoreLParams) (Env : TEnv Unit) (e : LExpr CoreLParams.mono) :
+    LExpr CoreLParams.mono :=
+  LExpr.applyTypeSubst e Env.stateSubstInfo.subst
+
 def typeErrorFmt (e : Message) : Format :=
   e.format none
 
@@ -99,6 +112,7 @@ def typeErrorFmt (e : Message) : Format :=
 
 instance : Imperative.TypeContext Expression (LContext CoreLParams) (TEnv Unit) Message where
   isBoolType   := CmdType.isBoolType
+  isMonoType   := LTy.isMonoType
   freeVars     := CmdType.freeVars
   preprocess   := CmdType.preprocess
   postprocess  := CmdType.postprocess
@@ -106,6 +120,7 @@ instance : Imperative.TypeContext Expression (LContext CoreLParams) (TEnv Unit) 
   lookup       := CmdType.lookup
   inferType    := CmdType.inferType
   unifyTypes   := CmdType.unifyTypes
+  substExpr    := CmdType.substExpr
   typeErrorFmt := CmdType.typeErrorFmt
 
 end CmdType

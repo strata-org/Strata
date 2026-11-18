@@ -21,10 +21,11 @@ public section
 
 /-! # Core-Level Specification
 
-The entry conditions of a Core procedure: `ProcEnvWF`, the well-formed program
-state at its entry, and `AxiomsBeforeProcedureDecl`, the axioms and distincts
-visible to it. What it means for a procedure to be correct, and for Core's
-verifier to be correct, is in `Strata.Languages.Core.Analysis.ProcedureCorrectness`.
+The entry condition of a Core procedure: `ProcEnvWF`, the well-formed program
+state at its entry. The axioms and distincts visible to a procedure
+(`AxiomsBeforeProcedureDecl`), what it means for a procedure to be correct, and for
+Core's verifier to be correct, are in
+`Strata.Languages.Core.Analysis.ProcedureCorrectness`.
 The `EventLang` bundles themselves (`EventLang.core`, `EventLang.coreBlock`,
 `EventLang.coreCFG`) and their gates (`InitEnvWFParams`, `InitEnvWF`,
 `BlockInitEnvWF`, `CFGInitEnvWF`) live in `Strata.Languages.Core.Logic.LangDef`.
@@ -90,30 +91,5 @@ structure ProcEnvWF (params : InitEnvWFParams) (proc : Procedure)
     Core.Logic.BlockInitEnvWF params [Stmt.block "" ss #[]] ρ
   /-- A CFG body is well formed to run from `ρ`. -/
   cfgBodyWF : ∀ cfg, proc.body = .cfg cfg → Core.Logic.CFGInitEnvWF params cfg ρ
-
-/-! ## Axioms and distincts visible to a procedure
-
-A program also contains `axiom` declarations (boolean expressions that holds
-globally) and `distinct` declarations (lists of expressions whose values must differ).
-For verification, the initial environment of a procedure must satisfy the
-axioms and distincts that have been declared *before* the procedure in the
-program. -/
-
-/-- The initial environment `ρ₀` satisfies all axioms and `distinct`
-    declarations that appear in `p.decls` before the procedure named
-    `entryProcName`. -/
-@[expose] def AxiomsBeforeProcedureDecl
-    (entryProcName : String) (p : Program)
-    (ρ₀ : Imperative.Env Expression) : Prop :=
-  (p.declsBeforeProcedure entryProcName).foldr
-    (fun d acc =>
-      match d with
-      | .ax a _ =>
-          Expression.eval ρ₀.factory ρ₀.store a.e = some (HasBool.ttVal ρ₀.factory) ∧ acc
-      | .distinct _ es _ =>
-          List.Pairwise (fun e₁ e₂ =>
-            Expression.eval ρ₀.factory ρ₀.store e₁ ≠ Expression.eval ρ₀.factory ρ₀.store e₂) es ∧ acc
-      | _ => acc)
-    True
 
 end Core.Specification

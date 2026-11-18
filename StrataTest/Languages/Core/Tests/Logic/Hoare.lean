@@ -6,7 +6,8 @@
 
 import Strata.Languages.Core.Logic.ContractToHoareTripleProps
 import Strata.Languages.Core.ProgramProps
-import StrataTest.Languages.Core.Tests.Logic.HoareTestSupport
+import Strata.Languages.Core.Analysis.ProcedureCorrectnessProps
+import StrataTest.Languages.Core.Tests.Logic.HoareUtils
 import Strata.Languages.Core.Logic.ContractToHoareTriple
 import Strata.Languages.Core
 import Strata.Languages.Core.InstWellFormedSemanticsEval
@@ -55,7 +56,8 @@ open Lambda.LExpr.SyntaxMono
 
 namespace Strata
 
-open CoreHoareTestSupport
+open Strata.HoareUtils (boolFactory someValuation testParams blockWF_nil run_procBlock_nil
+  reachable_nil oldInoutAsPredicate_of_no_inout preAsPredicate_of_no_pre)
 
 private def trueCondition (model : Lambda.Interp Core.Factory) : EventArg Core.Expression :=
   { factory := boolFactory model
@@ -314,10 +316,6 @@ private theorem procOf_eq {p : Core.Program} {nm : String} {proc : Core.Procedur
     (h : p.findProcByString? nm = some proc) : (p.findProcByString? nm).get! = proc := by
   rw [h]; rfl
 
-/-- Gate parameters: no reserved fresh-prefixes, and every name counts as
-    declared (so `factoryDeclared` is immediate). -/
-private def testParams : Core.Logic.InitEnvWFParams := ⟨[], [], fun _ => true⟩
-
 /-- The value of the literal `κ` in the runtime factory of `ρ`. -/
 private noncomputable abbrev cval (ρ : Imperative.Env Core.Expression) (κ : Lambda.LConst) :
     Core.Expression.Val :=
@@ -371,48 +369,6 @@ private theorem xIs1_eval_eq_false (model : Lambda.Interp Core.Factory) (n : Int
       (show Lambda.SemValue.ofInt model.tcInterp 1 = Lambda.SemValue.ofInt model.tcInterp n
         from h)).symm)
 
-/-- The block condition is immediate for an empty body: every clause that mentions
-    the statements is vacuous, a runtime factory over `Core.Factory` is well-formed, and
-    the store holds only values. -/
-private theorem blockWF_nil (ρ : Imperative.Env Core.Expression)
-    (hfac : ρ.factory.factory = Core.Factory)
-    (hsv : Imperative.WellFormedStore ρ.store ρ.factory) :
-    Core.Logic.BlockInitEnvWF testParams [Imperative.Stmt.block "" [] #[]] ρ :=
-  Core.Logic.blockInitEnvWF_procBlock_nil (Core.coreFactory_WellFormedSemanticEval _ hfac)
-    hsv rfl (fun _ _ => rfl)
-
-/-- An empty body, wrapped as the procedure block a body actually runs in, returns to
-    its own environment: entering and leaving the block projects the store through
-    itself.  Stated over the *event* step relation, the run emits no events. -/
-private theorem run_procBlock_nil (π : String → Option Core.Procedure)
-    (ρ : Imperative.Env Core.Expression) (l : String)
-    (md : Imperative.MetaData Core.Expression) :
-    Imperative.StepStmtStarE Core.Expression (Core.EvalCommandE π)
-      (.stmts [Imperative.Stmt.block l [] md] ρ) [] (.terminal ρ) := by
-  have heq : ({ ρ with store := Imperative.projectStore ρ.store ρ.store }
-      : Imperative.Env Core.Expression) = ρ := by
-    simp [Imperative.projectStore_self]
-  refine .step _ [] _ [] _ .step_stmts_cons ?_
-  refine .step _ [] _ [] _ (.step_seq_inner .step_block) ?_
-  refine .step _ [] _ [] _ (.step_seq_inner (.step_block_body .step_stmts_nil)) ?_
-  refine .step _ [] _ [] _ (.step_seq_inner .step_block_done) ?_
-  refine .step _ [] _ [] _ .step_seq_done ?_
-  rw [heq]
-  exact .step _ [] _ [] _ .step_stmts_nil (.refl _)
-
-/-- The empty trace is reachable. -/
-private theorem reachable_nil (F : Lambda.Factory Core.CoreLParams) :
-    Trace.Reachable Core.Expression (Core.Logic.DenoteBasedInterp F) [] :=
-  ⟨someValuation F, fun _ hc => absurd hc (by simp)⟩
-
-/-- A procedure with no inout parameters satisfies `oldInoutAsPredicate` vacuously — its
-    `getInoutParams` keys are empty, so there is no `old`/current pair to relate. -/
-private theorem oldInoutAsPredicate_of_no_inout (proc : Core.Procedure)
-    (ρ : Imperative.Env Core.Expression)
-    (h : ListMap.keys proc.header.getInoutParams = []) :
-    Core.Logic.Hoare.Procedure.oldInoutAsPredicate proc ρ := by
-  intro id hid; rw [h] at hid; simp at hid
-
 /-! The semantic clauses `preAsPredicate factory` / `postAsPredicate factory` read a contract
 condition in *every* world over a factory.  On a runtime factory over that factory a
 condition holds when it evaluates to `true`; for an equality to a constant whose variable
@@ -454,13 +410,6 @@ private theorem preAsPredicate_of_binds (factory : Lambda.Factory Core.CoreLPara
   obtain ⟨b, hb, hexpr, hw⟩ := hsyn (label, check) hmem
   exact checkAsPredicate_eqConst factory ρ b.1 b.2.1 b.2.2 hfac (hstore b hb) label check hexpr
     hw
-
-/-- A procedure with no `requires` satisfies the semantic precondition vacuously. -/
-private theorem preAsPredicate_of_no_pre (factory : Lambda.Factory Core.CoreLParams)
-    (proc : Core.Procedure) (ρ : Imperative.Env Core.Expression)
-    (h : proc.spec.preconditions.toList = []) :
-    Core.Logic.Hoare.Procedure.preAsPredicate factory proc ρ := by
-  intro label check hmem; rw [h] at hmem; simp at hmem
 
 
 /-! ## A procedure that meets its contract
@@ -636,9 +585,10 @@ theorem noReq_violates_contract :
   have htbm := htb
   rw [hbody] at htbm
   have ⟨_hvalid, hpostF⟩ := htbm (xIs1Env model) (xIs1Env model) []
-    ⟨preAsPredicate_of_no_pre _ noReqProc (xIs1Env model) (by native_decide), rfl,
+    ⟨⟨preAsPredicate_of_no_pre _ noReqProc (xIs1Env model) (by native_decide), rfl,
       oldInoutAsPredicate_of_no_inout noReqProc (xIs1Env model) (by native_decide),
-      inputAsPredicate_xIs1 model noReqProc (by native_decide)⟩
+      inputAsPredicate_xIs1 model noReqProc (by native_decide)⟩,
+      Core.Specification.axiomsBeforeProcedureDecl_of_noAxioms (by decide +kernel) _⟩
     (blockWF_nil (xIs1Env model) rfl (xIs1Env_storeWellDefined model))
     (.inl (run_procBlock_nil _ (xIs1Env model) "" #[]))
   have hpost : Core.Logic.Hoare.Procedure.postAsPredicate Core.Factory noReqProc (xIs1Env model) :=
@@ -702,12 +652,13 @@ theorem offByOne_violates_contract :
   have htbm := htb
   rw [hbody] at htbm
   have ⟨_hvalid, hpostF⟩ := htbm (xIs1Env model) (xIs1Env model) []
-    ⟨preAsPredicate_of_binds _ offByOneProc (xIs1Env model)
+    ⟨⟨preAsPredicate_of_binds _ offByOneProc (xIs1Env model)
         [(⟨"x", ()⟩, some (Lambda.LMonoTy.tcons "int" []), Lambda.LConst.intConst 1)] rfl
         (by native_decide)
         (fun b hb => by simp only [List.mem_singleton] at hb; subst hb; simp [xIs1Env]), rfl,
       oldInoutAsPredicate_of_no_inout offByOneProc (xIs1Env model) (by native_decide),
-      inputAsPredicate_xIs1 model offByOneProc (by native_decide)⟩
+      inputAsPredicate_xIs1 model offByOneProc (by native_decide)⟩,
+      Core.Specification.axiomsBeforeProcedureDecl_of_noAxioms (by decide +kernel) _⟩
     (blockWF_nil (xIs1Env model) rfl (xIs1Env_storeWellDefined model))
     (.inl (run_procBlock_nil _ (xIs1Env model) "" #[]))
   have hpost : Core.Logic.Hoare.Procedure.postAsPredicate Core.Factory offByOneProc
@@ -1906,6 +1857,10 @@ theorem loopTerm_meets_contract :
   rw [Core.Logic.Hoare.Procedure.contractTriple, hfactory]
   refine ⟨loopTermProc, by native_decide, by native_decide, ?_⟩
   rw [loopTerm_body_eq]
+  -- The body proof does not use the axioms visible to the procedure.
+  refine Core.Logic.Hoare.consequence _ _
+    (Pre := Core.Logic.Hoare.Procedure.contractPre Core.Factory loopTermProc) ?_
+    (fun _ h => h.1) (fun _ h => h)
   refine (Core.Logic.Hoare.block loopTermPgmAST.findProcByString? testParams
     ?_ (Imperative.Logic.Hoare.postWF_of_definedVars_nil _ (by native_decide)))
   refine Core.Logic.Hoare.seq loopTermPgmAST.findProcByString? testParams

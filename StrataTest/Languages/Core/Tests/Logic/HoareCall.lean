@@ -5,10 +5,11 @@
 -/
 
 import Strata.Languages.Core
-import StrataTest.Languages.Core.Tests.Logic.HoareTestSupport
+import StrataTest.Languages.Core.Tests.Logic.HoareUtils
 import Strata.Languages.Core.Logic.HoareCall
 import Strata.Languages.Core.ProcedureProps
 import Strata.Languages.Core.ProgramProps
+import Strata.Languages.Core.Analysis.ProcedureCorrectnessProps
 import Strata.Languages.Core.BitVecEvalProps
 import Strata.Languages.Core.InstWellFormedSemanticsEval
 import Strata.DL.Lambda.LExprEvalProps
@@ -35,7 +36,7 @@ open Lambda.LExpr.SyntaxMono
 
 namespace Strata
 
-open CoreHoareTestSupport
+open Strata.HoareUtils (someValuation)
 
 
 /-- Replace the real source locations of every procedure expression by `valueLoc`,
@@ -58,7 +59,7 @@ private theorem procOf_eq {p : Core.Program} {nm : String} {proc : Core.Procedur
   rfl
 
 /-- Test gate with no reserved prefixes and every function name declared. -/
-private def testParams : Core.Logic.InitEnvWFParams := ⟨[], [], fun _ => true⟩
+private def testParams : Core.Logic.InitEnvWFParams := ⟨[], [], [], fun _ => true⟩
 
 /-! ## Pure bitvector absorption (the fact in Run's postcondition) -/
 
@@ -622,12 +623,13 @@ private theorem bv16_call_triple
           (∀ σ' : Core.CoreStore, (∀ k, k ≠ outVar → σ' k = ρ.store k) →
             σ' outVar = some (bvV ρ.factory (fval va vb)) → Ppost { ρ with store := σ' }))
     (hPreFac : ∀ ρ : Imperative.Env Core.Expression, Ppre ρ → ρ.factory.factory = Core.Factory)
-    (hfactory : mmAST.factoryBeforeProcedure procName = Core.Factory) :
+    (hfactory : mmAST.factoryBeforeProcedure procName = Core.Factory)
+    (haxioms : ∀ ρ, Core.Specification.AxiomsBeforeProcedureDecl procName mmAST ρ) :
     Core.Logic.Hoare.Triple mmAST.findProcByString? testParams Ppre
       [Core.Statement.call procName callArgs md] Ppost := by
   rw [← hfactory]
   refine Core.Logic.Hoare.Procedure.call_of_contract mmAST testParams procName
-    callArgs md Ppre Ppost hcontract hframe houtputs ?_ ?_
+    callArgs md Ppre Ppost hcontract hframe houtputs ?_ (fun _ _ _ _ _ _ _ => haxioms _) ?_
   · -- hentry
     intro ρ₀ proc' σAO hpre hwf hlk hce
     have hpe : proc' = proc := Option.some.inj (hlk.symm.trans hproc)
@@ -850,6 +852,10 @@ private theorem bv16_set_contract
   rw [Core.Logic.Hoare.Procedure.contractTriple, hfactory]
   refine ⟨proc, hproc, hChecksTyped, ?_⟩
   rw [hbody]
+  -- The body proof does not use the axioms visible to the procedure.
+  refine Core.Logic.Hoare.consequence _ _
+    (Pre := Core.Logic.Hoare.Procedure.contractPre Core.Factory proc) ?_
+    (fun _ h => h.1) (fun _ h => h)
   refine Core.Logic.Hoare.block mmAST.findProcByString? testParams ?_
     (Imperative.Logic.Hoare.postWF_of_definedVars_nil _ (by
       simp [Imperative.Block.definedVars, Imperative.Stmt.definedVars,
@@ -919,6 +925,16 @@ private theorem max_factory : mmAST.factoryBeforeProcedure "Max16" = Core.Factor
 /-- No user functions precede `Min16`, so its visible factory is `Core.Factory`. -/
 private theorem min_factory : mmAST.factoryBeforeProcedure "Min16" = Core.Factory :=
   Core.Program.factoryBeforeProcedure_eq_core_of_noFunctions (by decide +kernel)
+
+/-- No axiom or `distinct` declaration precedes `Max16`. -/
+private theorem max_axioms (ρ : Imperative.Env Core.Expression) :
+    Core.Specification.AxiomsBeforeProcedureDecl "Max16" mmAST ρ :=
+  Core.Specification.axiomsBeforeProcedureDecl_of_noAxioms (by decide +kernel) ρ
+
+/-- No axiom or `distinct` declaration precedes `Min16`. -/
+private theorem min_axioms (ρ : Imperative.Env Core.Expression) :
+    Core.Specification.AxiomsBeforeProcedureDecl "Min16" mmAST ρ :=
+  Core.Specification.axiomsBeforeProcedureDecl_of_noAxioms (by decide +kernel) ρ
 
 /-- No user functions precede `Run`, so its visible factory is `Core.Factory`. -/
 private theorem run_factory : mmAST.factoryBeforeProcedure "Run" = Core.Factory :=
@@ -1199,7 +1215,7 @@ private theorem call1_triple :
     (.fvar Core.valueLoc aId bv16Ty) (.fvar Core.valueLoc bId bv16Ty) maxABId vMax PA0 PA1
     max16_meets_contract (max_body_frame) (max_body_outputs) (by native_decide) max_body_eq
     cArgs1_in cArgs1_out cArgs1_lhs max_inKeys max_inList max_outOnly max_inout max_outKeys max_noPre
-    max_readsSub max_typedSub max_result_val ?_ (fun ρ hpre => hpre.1) max_factory
+    max_readsSub max_typedSub max_result_val ?_ (fun ρ hpre => hpre.1) max_factory max_axioms
   · intro ρ₀ hpre hwf hfac
     obtain ⟨_hfac, _hold, htyped⟩ := hpre
     obtain ⟨va, hva, hta⟩ := htyped aId (.bitvec 16) (by native_decide)
@@ -1223,7 +1239,7 @@ private theorem call2_triple :
     (.fvar Core.valueLoc maxABId bv16Ty) (.fvar Core.valueLoc aId bv16Ty) minMaxAId vMin PA1 PA2
     min16_meets_contract (min_body_frame) (min_body_outputs) (by native_decide) min_body_eq
     cArgs2_in cArgs2_out cArgs2_lhs min_inKeys min_inList min_outOnly min_inout min_outKeys min_noPre
-    min_readsSub min_typedSub min_result_val ?_ (fun ρ hpre => hpre.1) min_factory
+    min_readsSub min_typedSub min_result_val ?_ (fun ρ hpre => hpre.1) min_factory min_axioms
   · intro ρ₀ hpre _hwf _hfac
     obtain ⟨hfac, va, vb, ha, hb, hmaxAB⟩ := hpre
     refine ⟨vMax va vb, va, bv_fvar_eval hmaxAB, bv_fvar_eval ha, ?_⟩
@@ -1238,7 +1254,7 @@ private theorem call3_triple :
     (.fvar Core.valueLoc aId bv16Ty) (.fvar Core.valueLoc bId bv16Ty) minABId vMin PA2 PA3
     min16_meets_contract (min_body_frame) (min_body_outputs) (by native_decide) min_body_eq
     cArgs3_in cArgs3_out cArgs3_lhs min_inKeys min_inList min_outOnly min_inout min_outKeys min_noPre
-    min_readsSub min_typedSub min_result_val ?_ (fun ρ hpre => hpre.1) min_factory
+    min_readsSub min_typedSub min_result_val ?_ (fun ρ hpre => hpre.1) min_factory min_axioms
   · intro ρ₀ hpre _hwf _hfac
     obtain ⟨hfac, va, vb, ha, hb, hmm⟩ := hpre
     refine ⟨va, vb, bv_fvar_eval ha, bv_fvar_eval hb, ?_⟩
@@ -1254,7 +1270,7 @@ private theorem call4_triple :
     (.fvar Core.valueLoc minABId bv16Ty) (.fvar Core.valueLoc aId bv16Ty) maxMinAId vMax PA3 PA4
     max16_meets_contract (max_body_frame) (max_body_outputs) (by native_decide) max_body_eq
     cArgs4_in cArgs4_out cArgs4_lhs max_inKeys max_inList max_outOnly max_inout max_outKeys max_noPre
-    max_readsSub max_typedSub max_result_val ?_ (fun ρ hpre => hpre.1) max_factory
+    max_readsSub max_typedSub max_result_val ?_ (fun ρ hpre => hpre.1) max_factory max_axioms
   · intro ρ₀ hpre _hwf _hfac
     obtain ⟨hfac, va, vb, ha, hmm, hminAB⟩ := hpre
     refine ⟨vMin va vb, va, bv_fvar_eval hminAB, bv_fvar_eval ha, ?_⟩
@@ -1371,6 +1387,10 @@ theorem mm_run_meets_contract :
   rw [Core.Logic.Hoare.Procedure.contractTriple, run_factory]
   refine ⟨mmRunProc, by native_decide, by native_decide, ?_⟩
   rw [mm_run_body_eq]
+  -- The body proof does not use the axioms visible to the procedure.
+  refine Core.Logic.Hoare.consequence _ _
+    (Pre := Core.Logic.Hoare.Procedure.contractPre Core.Factory mmRunProc) ?_
+    (fun _ h => h.1) (fun _ h => h)
   have hpre : ∀ ρ, Core.Logic.Hoare.Procedure.contractPre Core.Factory mmRunProc ρ → PA0 ρ :=
     fun _ hc => ⟨hc.2.1, hc.2.2.1, hc.2.2.2⟩
   refine Core.Logic.Hoare.consequence mmAST.findProcByString? testParams

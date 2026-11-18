@@ -33,8 +33,10 @@ constructors for the Imperative dialect live in `Imperative.Logic`:
 - `EventLang.imperativeBlockE` — its block-body (statement-list) counterpart.
 - `EventLang.cfgE` — the deterministic-CFG event-trace language.
 - `EventLang.kleeneE` — the canonical event-producing Kleene language, over
-  `KleeneStmt`/`KleeneConfig`, stepping by `StepKleeneE P (EvalCmdE P)`; its
-  `InitEnvWFParamsTy`/`initEnvWF` are supplied explicitly by the caller.
+  `KleeneStmt`/`KleeneConfig`, stepping by `StepKleeneE P (EvalCmdE P)`.
+
+All four take `InitEnvWFParams P` as their `InitEnvWFParamsTy`; the caller
+supplies only the `initEnvWF` predicate.
 -/
 
 public section
@@ -71,9 +73,9 @@ structure EventLang (P : PureExpr.{u}) (EventT : Type v) where
   exiting_no_step : ∀ label ρ emitted cfg', ¬ step (exitingCfg label ρ) emitted cfg'
   /-- Extract an environment from a configuration. -/
   getEnv : CfgT → Env P
-  /-- Parameters threaded into `initEnvWF`. The Core languages use a record
-      bundling reserved fresh prefixes and a `declaredFuncs` predicate (see
-      `Core.Logic.InitEnvWFParams`). -/
+  /-- Parameters threaded into `initEnvWF`. The Imperative constructors use
+      `Imperative.Logic.InitEnvWFParams`, a record bundling reserved prefixes and a
+      `declaredFuncs` predicate. -/
   InitEnvWFParamsTy : Type
   /-- Language-specific initial-environment well-formedness. -/
   initEnvWF : InitEnvWFParamsTy → StmtT → Env P → Prop
@@ -95,14 +97,48 @@ namespace Logic
 
 open Strata.Logic
 
+/-- Initial-environment parameters shared by imperative language instances.
+Reserved prefixes identify names that must be fresh, reserved block-label prefixes
+identify the labels of generated blocks, which no `exit` may target, and
+`declaredFuncs` records evaluator operators available at entry. -/
+structure InitEnvWFParams (P : PureExpr) where
+  prefixIdents : List String
+  prefixBlockLabels : List String := []
+  /-- Prefixes of the type names a transform introduces. No well-formedness condition reads
+      them yet.
+      TODO: once the correctness of the transforms that introduce fresh type names is proven,
+      fill in their prefixes here and check them in the well-formedness conditions. -/
+  prefixTypeNames : List String := []
+  declaredFuncs : P.Ident → Bool
+
+/-- Add reserved identifier prefixes while preserving the other parameters. -/
+@[expose] def InitEnvWFParams.extend
+    (base : InitEnvWFParams P) (prefixes : List String) : InitEnvWFParams P where
+  prefixIdents := prefixes ++ base.prefixIdents
+  prefixBlockLabels := base.prefixBlockLabels
+  prefixTypeNames := base.prefixTypeNames
+  declaredFuncs := base.declaredFuncs
+
+/-- Add reserved block-label prefixes while preserving the other parameters. -/
+@[expose] def InitEnvWFParams.extendBlockLabels
+    (base : InitEnvWFParams P) (prefixes : List String) : InitEnvWFParams P where
+  prefixIdents := base.prefixIdents
+  prefixBlockLabels := prefixes ++ base.prefixBlockLabels
+  prefixTypeNames := base.prefixTypeNames
+  declaredFuncs := base.declaredFuncs
+
+/-- Default generic parameters reserve no prefixes and admit every operator. -/
+def InitEnvWFParams.default (P : PureExpr) : InitEnvWFParams P where
+  prefixIdents := []
+  declaredFuncs := fun _ => true
+
 /-- Build an event-trace language from `Imperative.Stmt`/`Config` with a given
 command event evaluator. The resulting bundle exposes `StepStmtE` as its
-one-step relation. -/
+one-step relation, and its `initEnvWF` takes `InitEnvWFParams P`. -/
 abbrev EventLang.imperativeE (P : PureExpr) [HasBool P] [HasBoolOps P]
     [HasFvar P] [HasFvars P] [HasInt P] [HasIntOps P] [HasSubstFvar P]
     (CmdT : Type) {EventT : Type _} (evalCmd : EvalCmdParamE P CmdT EventT)
-    (ParamsTy : Type)
-    (initEnvWF : ParamsTy → Stmt P CmdT → Env P → Prop) :
+    (initEnvWF : InitEnvWFParams P → Stmt P CmdT → Env P → Prop) :
     EventLang P EventT where
   StmtT := Stmt P CmdT
   CfgT := Config P CmdT
@@ -117,17 +153,17 @@ abbrev EventLang.imperativeE (P : PureExpr) [HasBool P] [HasBoolOps P]
     intro label ρ emitted cfg hstep
     cases hstep
   getEnv := Config.getEnv
-  InitEnvWFParamsTy := ParamsTy
+  InitEnvWFParamsTy := InitEnvWFParams P
   initEnvWF := initEnvWF
 
 /-- Event-trace language for block-level (statement-list) reachability.
-`StmtT` is `List (Stmt P CmdT)` and `stmtCfg` embeds via `.stmts`. `wfPkg`
-carries the initial-environment well-formedness parameters and predicate, for
-example `⟨InitEnvWFParams P, BlockInitEnvWF⟩`. -/
+`StmtT` is `List (Stmt P CmdT)` and `stmtCfg` embeds via `.stmts`.
+`initEnvWF` is the initial-environment well-formedness predicate, for example
+`BlockInitEnvWF`. -/
 abbrev EventLang.imperativeBlockE (P : PureExpr) [HasBool P] [HasBoolOps P]
     [HasFvar P] [HasFvars P] [HasInt P] [HasIntOps P] [HasSubstFvar P]
     (CmdT : Type) {EventT : Type _} (evalCmd : EvalCmdParamE P CmdT EventT)
-    (wfPkg : (ParamsTy : Type) × (ParamsTy → List (Stmt P CmdT) → Env P → Prop)) :
+    (initEnvWF : InitEnvWFParams P → List (Stmt P CmdT) → Env P → Prop) :
     EventLang P EventT where
   StmtT := List (Stmt P CmdT)
   CfgT := Config P CmdT
@@ -142,16 +178,16 @@ abbrev EventLang.imperativeBlockE (P : PureExpr) [HasBool P] [HasBoolOps P]
     intro label ρ emitted cfg hstep
     cases hstep
   getEnv := Config.getEnv
-  InitEnvWFParamsTy := wfPkg.1
-  initEnvWF := wfPkg.2
+  InitEnvWFParamsTy := InitEnvWFParams P
+  initEnvWF := initEnvWF
 
 /-- Event-trace language for deterministic CFGs. Active configurations carry the
 CFG and every configuration carries its environment, so the one-step relation is
 `StepCFGE P evalCmd` without additional captured parameters. -/
 abbrev EventLang.cfgE (P : PureExpr) [HasBool P] [HasBoolOps P] [HasVal P]
     [HasFvars P] (CmdT : Type) {EventT : Type _}
-    (evalCmd : EvalCmdParamE P CmdT EventT) (ParamsTy : Type)
-    (initEnvWF : ParamsTy → CFG String (DetBlock String CmdT P) → Env P → Prop) :
+    (evalCmd : EvalCmdParamE P CmdT EventT)
+    (initEnvWF : InitEnvWFParams P → CFG String (DetBlock String CmdT P) → Env P → Prop) :
     EventLang P EventT where
   StmtT := CFG String (DetBlock String CmdT P)
   CfgT := CFGConfig String CmdT P
@@ -166,7 +202,7 @@ abbrev EventLang.cfgE (P : PureExpr) [HasBool P] [HasBoolOps P] [HasVal P]
     intro _ ρ emitted cfg hstep
     cases hstep
   getEnv := CFGConfig.getEnv
-  InitEnvWFParamsTy := ParamsTy
+  InitEnvWFParamsTy := InitEnvWFParams P
   initEnvWF := initEnvWF
 
 /-- The canonical event-producing Kleene event-trace language, over
@@ -175,13 +211,11 @@ one-step relation is the event-producing Kleene step `StepKleeneE P (EvalCmdE P)
 Exiting configurations are represented by terminal configurations, as
 `KleeneConfig` has no exiting form.
 
-`ParamsTy` is the `InitEnvWFParamsTy` of the resulting language and
-`initEnvWF` its initial-environment well-formedness predicate; both are supplied
-explicitly by the caller. -/
+`initEnvWF` is its initial-environment well-formedness predicate over
+`InitEnvWFParams P`, supplied by the caller. -/
 abbrev EventLang.kleeneE (P : PureExpr) [HasBool P] [HasBoolOps P]
     [HasFvar P] [HasFvars P] [HasInt P] [HasIntOps P] [HasSubstFvar P]
-    (ParamsTy : Type)
-    (initEnvWF : ParamsTy → KleeneStmt P (Cmd P) → Env P → Prop) :
+    (initEnvWF : InitEnvWFParams P → KleeneStmt P (Cmd P) → Env P → Prop) :
     EventLang P (Event P) where
   StmtT := KleeneStmt P (Cmd P)
   CfgT := KleeneConfig P (Cmd P)
@@ -196,36 +230,8 @@ abbrev EventLang.kleeneE (P : PureExpr) [HasBool P] [HasBoolOps P]
     intro label ρ emitted cfg h
     cases h
   getEnv := KleeneConfig.getEnv
-  InitEnvWFParamsTy := ParamsTy
+  InitEnvWFParamsTy := InitEnvWFParams P
   initEnvWF := initEnvWF
-
-/-- Initial-environment parameters shared by imperative language instances.
-Reserved prefixes identify names that must be fresh, reserved block-label prefixes
-identify the labels of generated blocks, which no `exit` may target, and
-`declaredFuncs` records evaluator operators available at entry. -/
-structure InitEnvWFParams (P : PureExpr) where
-  prefixIdents : List String
-  prefixBlockLabels : List String := []
-  declaredFuncs : P.Ident → Bool
-
-/-- Add reserved prefixes while preserving the declared-function predicate. -/
-@[expose] def InitEnvWFParams.extend
-    (base : InitEnvWFParams P) (prefixes : List String) : InitEnvWFParams P where
-  prefixIdents := prefixes ++ base.prefixIdents
-  prefixBlockLabels := base.prefixBlockLabels
-  declaredFuncs := base.declaredFuncs
-
-/-- Add reserved block-label prefixes while preserving the other parameters. -/
-@[expose] def InitEnvWFParams.extendBlockLabels
-    (base : InitEnvWFParams P) (prefixes : List String) : InitEnvWFParams P where
-  prefixIdents := base.prefixIdents
-  prefixBlockLabels := prefixes ++ base.prefixBlockLabels
-  declaredFuncs := base.declaredFuncs
-
-/-- Default generic parameters reserve no prefixes and admit every operator. -/
-def InitEnvWFParams.default (P : PureExpr) : InitEnvWFParams P where
-  prefixIdents := []
-  declaredFuncs := fun _ => true
 
 /-- Block-level initial-environment well-formedness for the imperative-block
 language. -/

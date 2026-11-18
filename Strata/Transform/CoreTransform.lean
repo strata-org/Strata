@@ -8,6 +8,8 @@ public import Strata.Pipeline.Messages
 
 public import Strata.Languages.Core.CallGraph
 public import Strata.Languages.Core.CoreGen
+public import Strata.Languages.Core.Typing.Spec.ProcedureTypeSpec
+public import Strata.DL.Lambda.LTyMatch
 public import Strata.Util.Statistics
 
 /-! # Utility functions for program transformation in Strata Core -/
@@ -31,14 +33,14 @@ def createHavoc (ident : Expression.Ident)
 def createHavocs (ident : List Expression.Ident) (md : (Imperative.MetaData Expression))
   : List Statement := ident.map (createHavoc · md)
 
-def createFvar (ident : Expression.Ident)
-  : Expression.Expr
-  := Lambda.LExpr.fvar (ExprSourceLoc.synthesized "transform") ident none
-
 @[expose]
 def createFvars (ident : List Expression.Ident)
   : List Expression.Expr
-  := ident.map createFvar
+  := ident.map (createFvar ·)
+
+/-- References to the variables `vs`, each annotated with its monotype. -/
+def createTypedFvars (vs : List (Expression.Ident × Expression.Ty)) : List Expression.Expr :=
+  vs.map fun (v, ty) => createFvar v ty.toMonoType?
 
 def genIdent (ident : Expression.Ident) (pf : String → String)
   : CoreGenM Expression.Ident :=
@@ -79,35 +81,73 @@ def genOldExprIdents (idents : List Expression.Ident)
   : CoreGenM (List Expression.Ident)
   := List.mapM genOldExprIdent idents
 
-/-- Generate one fresh type-variable name (`TyIdentifier = String`) from the
+/-- Generate one fresh type name (`TyIdentifier = String`) from the
     shared `CoreGenState` counter — the same monotonic counter that backs the
     term-temp generators — so names are deterministic, resume-safe, and unique
-    across call sites without adding any new state. Mirrors `genIdent`.
+    across call sites without adding any new state; a name in `taken` is drawn again
+    (`CoreGenState.genAvoiding`). Mirrors `genIdent`.
 
     NOTE: `CoreGenState.gen` records every generated name in `γ.generated`,
-    including freshened type variables, which — unlike term temps — never get a
+    including generated type names, which — unlike term temps — never get a
     store binding. Any proof relying on
     `∀ v, v ∈ γ.generated ↔ ((σ v).isSome ∧ CoreIdent.isTemp v)`
     (e.g. `callElimStatementCorrect`) needs `generated` split by kind
-    (term-temp vs. type-var) so that invariant ranges only over term temps. -/
-def genTyVarName (prefixStr : String) : CoreGenM Lambda.TyIdentifier := do
-  let id ← CoreGenState.gen prefixStr
+    (term-temp vs. type name) so that invariant ranges only over term temps. -/
+def genTyVarName (prefixStr : String) (taken : Std.HashSet String) :
+    CoreGenM Lambda.TyIdentifier := do
+  let id ← CoreGenState.genAvoiding taken ⟨prefixStr, ()⟩
   return id.name
 
-def genTyVarNames (prefixStr : String) (n : Nat) : CoreGenM (List Lambda.TyIdentifier) :=
-  List.mapM (fun _ => genTyVarName prefixStr) (List.replicate n ())
+/-- `n` fresh type names at `prefixStr`, none of them in `taken`. -/
+def genTyVarNames (prefixStr : String) (taken : Std.HashSet String) (n : Nat) :
+    CoreGenM (List Lambda.TyIdentifier) :=
+  List.mapM (fun _ => genTyVarName prefixStr taken) (List.replicate n ())
 
-/-- Freshen a polymorphic callee's type parameters `typeArgs` for one instantiation site by
-    mapping each to a new type variable with prefix `prefixStr`; empty when `typeArgs` is. -/
-def freshenTypeArgsSubst (prefixStr : String) (typeArgs : List Lambda.TyIdentifier)
-  : CoreGenM Lambda.Subst := do
+/-- Build a one-scope type substitution mapping each declared type variable of a
+    polymorphic callee to a fresh nullary type constant named at `prefixStr`
+    (the caller supplies its reserved prefix, e.g. `callElimTyPrefix`) and not in
+    `taken` (the program's type names with that prefix), for per-call-site contract
+    instantiation. Returns the empty substitution (a verified
+    identity for `LMonoTy.subst`/`LExpr.applyTypeSubst`, which short-circuit on
+    `Subst.hasEmptyScopes`) when `typeArgs` is empty — so the transform is an
+    exact no-op for monomorphic procedures. -/
+def freshenTypeArgsSubst (prefixStr : String) (taken : Std.HashSet String)
+    (typeArgs : List Lambda.TyIdentifier) : CoreGenM Lambda.Subst := do
   if typeArgs.isEmpty then
     return Lambda.Subst.empty
   else
-    let fresh ← genTyVarNames prefixStr typeArgs.length
-    let scope : Lambda.SubstOne :=
-      Strata.Util.HMap.ofList ((typeArgs.zip fresh).map (fun (t, f) => (t, Lambda.LMonoTy.ftvar f)))
-    return [scope]
+    let fresh ← genTyVarNames prefixStr taken typeArgs.length
+    return Lambda.Subst.ofNullaryConsts (typeArgs.zip fresh)
+
+/-- The type of a call argument: the declared type of an unannotated variable, otherwise the
+    type its annotations give it; `none` when neither is known. -/
+def callArgType? (vt : TypeSpec.TypeScopes) : Expression.Expr → Option Lambda.LMonoTy
+  | .fvar _ x none => vt.monoType? x
+  | e => e.typeCheck []
+
+/-- The type instance of a call to `proc`: one-way matching of `proc`'s formal types against the
+    known types of the call's arguments and result variables gives each type parameter it
+    determines; every other parameter gets a fresh opaque type at `prefixStr` that is not in
+    `taken`, and so does every parameter when the matching fails. On a type-checked program
+    the matching cannot fail; the fallback serves callers that pass a program that was not
+    type-checked. -/
+def callTypeSubst (prefixStr : String) (taken : Std.HashSet String) (vt : TypeSpec.TypeScopes)
+    (proc : Procedure) (callArgs : List (Imperative.CallArg Expression)) :
+    CoreGenM Lambda.Subst := do
+  let typeArgs := proc.header.typeArgs
+  let argTy : Imperative.CallArg Expression → Option Lambda.LMonoTy
+    | .inArg e => callArgType? vt e
+    | .inoutArg x | .outArg x => vt.monoType? x
+  match proc.matchCall? ((Imperative.CallArg.inputArgs callArgs).map argTy)
+      ((Imperative.CallArg.resultArgs callArgs).map argTy) with
+  | none =>
+    -- TODO: prove that the transformations preserve typing; then this branch is provably
+    -- unreachable on pipeline input.
+    freshenTypeArgsSubst prefixStr taken typeArgs
+  | some S =>
+    let fresh ← freshenTypeArgsSubst prefixStr taken
+      (typeArgs.filter fun a => (S.find? a).isNone)
+    return fresh ++ [S]
 
 /-- Cached results of program analyses that are helpful for program
     transformation.
@@ -199,6 +239,27 @@ def bumpCounter (key : String) : CoreTransformM Nat := do
   set { σ with passCounter := σ.passCounter.insert key n }
   return n
 
+/-- Runs `t`, then declares at the start of its output a nullary type for
+    each name the generator drew at `prefixStr` during the run (the opaque
+    types of `callTypeSubst`), except the names in `taken`, which the generator
+    drew and skipped. `taken` is the input program's type names with
+    `prefixStr`; `t` must keep the program's type names. -/
+def declareGeneratedTypes (prefixStr : String) (taken : Std.HashSet String)
+    (t : CoreTransformM (Bool × Program)) :
+    CoreTransformM (Bool × Program) := do
+  let before := (← get).genState.generated.length
+  let (changed, p) ← t
+  let generated := (← get).genState.generated
+  let names := (generated.take (generated.length - before)).reverse.filter
+    fun n => n.name.startsWith (prefixStr ++ "_") && !taken.contains n.name
+  if names.isEmpty then
+    return (changed, p)
+  let p' : Program :=
+    { decls := names.map (fun n => Decl.opaqueType n.name)
+        ++ p.decls }
+  modify fun σ => { σ with currentProgram := some p' }
+  return (true, p')
+
 
 
 /--
@@ -249,14 +310,28 @@ def createInitVar (trip : (Expression.Ident × Expression.Ty) × Expression.Iden
     (md:Imperative.MetaData Expression)
   : Statement :=
   match trip with
-  | ((v', ty),
-      v) => Statement.init v' ty (.det (Lambda.LExpr.fvar (ExprSourceLoc.synthesized "transform") v
-      none)) md
+  | ((v', ty), v) => Statement.init v' ty (.det (createFvar v ty.toMonoType?)) md
 
 def createInitVars (trips : List ((Expression.Ident × Expression.Ty) × Expression.Ident))
     (md : (Imperative.MetaData Expression))
   : List Statement :=
   trips.map (createInitVar · md)
+
+/-- turns a list of preconditions into assert commands with substitution -/
+def createAssertCmds
+    (conds : ListMap CoreLabel Procedure.Check)
+    (subst : Map Expression.Ident Expression.Expr)
+    (md : (Imperative.MetaData Expression))
+    (labelPrefix : String := "assert_")
+    : CoreTransformM (List Command)
+    := conds.mapM (fun (l, check) => do
+          let newLabel ← genIdent l (fun s => s!"{labelPrefix}{s}")
+          -- Non-lifting: the replacement expressions must be closed (no dangling bvars).
+          -- Use the call site as the primary file range, preserving the requires
+          -- clause location as a related file range for richer diagnostics.
+          let assertMd := check.md.setCallSiteFileRange md
+          return .cmd (.assert newLabel.toPretty (Lambda.LExpr.substFvars check.expr subst)
+            assertMd))
 
 /-- turns a list of preconditions into asserts with substitution -/
 def createAsserts
@@ -265,21 +340,15 @@ def createAsserts
     (md : (Imperative.MetaData Expression))
     (labelPrefix : String := "assert_")
     : CoreTransformM (List Statement)
-    := conds.mapM (fun (l, check) => do
-          let newLabel ← genIdent l (fun s => s!"{labelPrefix}{s}")
-          -- Non-lifting: the replacement expressions must be closed (no dangling bvars).
-          -- Use the call site as the primary file range, preserving the requires
-          -- clause location as a related file range for richer diagnostics.
-          let assertMd := check.md.setCallSiteFileRange md
-          return Statement.assert newLabel.toPretty (Lambda.LExpr.substFvars check.expr subst) assertMd)
+    := (·.map .cmd) <$> createAssertCmds conds subst md labelPrefix
 
-/-- turns a list of preconditions into assumes with substitution -/
-def createAssumes
+/-- turns a list of postconditions into assume commands with substitution -/
+def createAssumeCmds
     (conds : ListMap CoreLabel Procedure.Check)
     (subst : Map Expression.Ident Expression.Expr)
     (md : (Imperative.MetaData Expression))
     (labelPrefix : String := "assume_")
-    : CoreTransformM (List Statement)
+    : CoreTransformM (List Command)
     :=
     conds.mapM (fun (l, check) => do
       let newLabel ← genIdent l (fun s => s!"{labelPrefix}{s}")
@@ -287,7 +356,56 @@ def createAssumes
       -- Use the call site as the primary file range, preserving the ensures
       -- clause location as a related file range for richer diagnostics.
       let assumeMd := check.md.setCallSiteFileRange md
-      return Statement.assume newLabel.toPretty (Lambda.LExpr.substFvars check.expr subst) assumeMd)
+      return .cmd (.assume newLabel.toPretty (Lambda.LExpr.substFvars check.expr subst)
+        assumeMd))
+
+/-- turns a list of postconditions into assumes with substitution -/
+def createAssumes
+    (conds : ListMap CoreLabel Procedure.Check)
+    (subst : Map Expression.Ident Expression.Expr)
+    (md : (Imperative.MetaData Expression))
+    (labelPrefix : String := "assume_")
+    : CoreTransformM (List Statement)
+    := (·.map .cmd) <$> createAssumeCmds conds subst md labelPrefix
+
+/-! ## Command-level builders
+
+`Command` counterparts of the statement builders above, for transforms that rewrite one command
+into a sequence of commands in a structured body or a CFG block. Each statement builder is the
+corresponding command builder followed by `.cmd` (`createHavocs_eq_cmds`, `createInits_eq_cmds`,
+`createInitVars_eq_cmds`, in `CoreTransformProps.lean`). -/
+
+/-- A command that havocs `ident`. -/
+def createHavocCmd (ident : Expression.Ident) (md : Imperative.MetaData Expression) : Command :=
+  .cmd (.set ident .nondet md)
+
+/-- Commands that havoc each of `ident`. -/
+def createHavocCmds (ident : List Expression.Ident) (md : Imperative.MetaData Expression) :
+    List Command :=
+  ident.map (createHavocCmd · md)
+
+/-- A command that declares `v'` of type `ty` with value `e`, for `((v', ty), e)`. -/
+def createInitCmd (trip : (Expression.Ident × Expression.Ty) × Expression.Expr)
+    (md : Imperative.MetaData Expression) : Command :=
+  match trip with
+  | ((v', ty), e) => .cmd (.init v' ty (.det e) md)
+
+/-- `createInitCmd` on each of `trips`. -/
+def createInitCmds (trips : List ((Expression.Ident × Expression.Ty) × Expression.Expr))
+    (md : Imperative.MetaData Expression) : List Command :=
+  trips.map (createInitCmd · md)
+
+/-- A command that declares `v'` of type `ty` with the value of variable `v`, for
+    `((v', ty), v)`. -/
+def createInitVarCmd (trip : (Expression.Ident × Expression.Ty) × Expression.Ident)
+    (md : Imperative.MetaData Expression) : Command :=
+  match trip with
+  | ((v', ty), v) => .cmd (.init v' ty (.det (createFvar v ty.toMonoType?)) md)
+
+/-- `createInitVarCmd` on each of `trips`. -/
+def createInitVarCmds (trips : List ((Expression.Ident × Expression.Ty) × Expression.Ident))
+    (md : Imperative.MetaData Expression) : List Command :=
+  trips.map (createInitVarCmd · md)
 
 /--
 Generate the substitution pairs needed for the body of the procedure
@@ -296,10 +414,45 @@ def createOldVarsSubst
   (trips : List ((Expression.Ident × Expression.Ty) × Expression.Ident))
   : Map Expression.Ident Expression.Expr :=
     trips.map go where go
-    | ((v', _), v) => (v, createFvar v')
+    | ((v', ty), v) => (v, createFvar v' ty.toMonoType?)
 
 
 /- Generic runner functions. -/
+
+/-- `runStmtsRec`, also passing `f` the declared types of the variables in scope before each
+    statement, starting from `vt`. -/
+def runStmtsRecTyped
+    (f : TypeSpec.TypeScopes → Statement → CoreTransformM (Option (List Statement)))
+    (vt : TypeSpec.TypeScopes) (ss : List Statement)
+    : CoreTransformM (Bool × List Statement) := do
+  match ss with
+  | [] => return (false, [])
+  | s :: ss' =>
+    -- Transform the head (and, when `f` declines, its sub-statements) before
+    -- recursing into the tail, so effects of `f` — e.g. freshly generated loop
+    -- numbers — follow source order.
+    let (changed, sres) ← (do
+      match ← f vt s with
+      | .some s' => return (true, s')
+      | .none =>
+        match s with
+        | .cmd _ => return (false, [s])
+        | .block lbl b md => do
+          let (changed, b') ← runStmtsRecTyped f (vt.push .empty) b
+          return (changed, [.block lbl b' md])
+        | .ite c thenb elseb md => do
+          let (changed, thenb') ← runStmtsRecTyped f (vt.push .empty) thenb
+          let (changed', elseb') ← runStmtsRecTyped f (vt.push .empty) elseb
+          return (changed || changed', [.ite c thenb' elseb' md])
+        | .loop guard measure invariant body md => do
+          let (changed, body') ← runStmtsRecTyped f (vt.push .empty) body
+          return (changed, [.loop guard measure invariant body' md])
+        | .typeDecl _ _ =>
+          return (false, [s])  -- Type declarations pass through unchanged
+        | .exit _ _ =>
+          return (false, [s]))
+    let (changed0, ss'') ← (runStmtsRecTyped f (vt.addInits sres) ss')
+    return ⟨changed || changed0, (sres ++ ss'')⟩
 
 /--
 Recursively visit all statements and run `f`.
@@ -332,57 +485,67 @@ in an inconsistent state. This function is for partial implementation.
 -/
 def runStmtsRec (f : Statement → CoreTransformM (Option (List Statement)))
     (ss : List Statement)
-    : CoreTransformM (Bool × List Statement) := do
-  match ss with
-  | [] => return (false, [])
-  | s :: ss' =>
-    -- Transform the head (and, when `f` declines, its sub-statements) before
-    -- recursing into the tail, so effects of `f` — e.g. freshly generated loop
-    -- numbers — follow source order.
-    let (changed, sres) ← (do
-      match ← f s with
-      | .some s' => return (true, s')
-      | .none =>
-        match s with
-        | .cmd _ => return (false, [s])
-        | .block lbl b md => do
-          let (changed, b') ← runStmtsRec f b
-          return (changed, [.block lbl b' md])
-        | .ite c thenb elseb md => do
-          let (changed, thenb') ← runStmtsRec f thenb
-          let (changed', elseb') ← runStmtsRec f elseb
-          return (changed || changed', [.ite c thenb' elseb' md])
-        | .loop guard measure invariant body md => do
-          let (changed, body') ← runStmtsRec f body
-          return (changed, [.loop guard measure invariant body' md])
-        | .typeDecl _ _ =>
-          return (false, [s])  -- Type declarations pass through unchanged
-        | .exit _lbl _md =>
-          return (false, [s]))
-    let (changed0, ss'') ← (runStmtsRec f ss')
-    return ⟨changed || changed0, (sres ++ ss'')⟩
+    : CoreTransformM (Bool × List Statement) :=
+  runStmtsRecTyped (fun _ => f) [] ss
 
 /--
-Run f on each statement of the program.
+Run `f vt` on each command of each block of `g`, in the order of `g.blocks`. `vt` is passed
+unchanged to every command, so callers pass the types of the variables in scope at every
+command (for a CFG, the parameters plus the initializations of every block). When `f vt c`
+returns `some cs`, `cs` replaces `c` in its block; when it returns `none`, `c` is kept.
+Labels, transfers and branch conditions are kept: a branch condition is an expression, and holds
+no command. The returned boolean is true if `f` returned `some` for at least one command.
+-/
+def runCFGCmdsTyped (f : TypeSpec.TypeScopes → Command → CoreTransformM (Option (List Command)))
+    (vt : TypeSpec.TypeScopes) (g : DetCFG)
+    : CoreTransformM (Bool × DetCFG) := do
+  let mut changed := false
+  let mut blocks := #[]
+  for (lbl, b) in g.blocks do
+    let mut cmds : Array Command := #[]
+    for c in b.cmds do
+      match ← f vt c with
+      | some cs =>
+        changed := true
+        cmds := cmds ++ cs.toArray
+      | none => cmds := cmds.push c
+    blocks := blocks.push (lbl, { b with cmds := cmds.toList })
+  return (changed, { g with blocks := blocks.toList })
+
+/-- `runCFGCmdsTyped` with an `f` that ignores the variable types. -/
+def runCFGCmds (f : Command → CoreTransformM (Option (List Command))) (g : DetCFG)
+    : CoreTransformM (Bool × DetCFG) :=
+  runCFGCmdsTyped (fun _ => f) [] g
+
+/--
+Run f on each statement of the program, passing it the declared types of the variables in
+scope, starting from the procedure's parameters. A command of a CFG body is passed the
+variables of the procedure's parameters and of every initialization in the CFG.
 Returns (has the program updated?, the updated program).
 If targetProcList is .none, apply f to all statements in every procedure.
 If targetProcList is .some l, apply f to statements that are in procedures
 listed in l only.
+A CFG body is rewritten whole by `cfgBody` when it is `some k` (`k proc g` returns whether it
+changed `g` and the new graph), else command by command by `cfgCmd` when it is `some h` (`h`
+is run on each command of its blocks, `runCFGCmds`), with the current procedure and program set
+as for a structured body; `cfgCmd` is not used when `cfgBody` is given. When both are `none`, a
+CFG body in a listed procedure is an error.
 
-The returned boolean is false if `f` has been never applied to any procedure
-which is in program `p` and a member of `targetProcList` (if it is `.some ..`).
-The requirement on `f` is exactly equivalent to the requirement on `f` of
-`runStmtsRec`.
-If the returned boolean value of `runProgram` is `false`, the returned `Program`
-and `CoreTransformState.factory` is exactly identical to the input `p` and
-that of the input state.
-However, `runProgram` can still conservatively return `true` if `f` was
-conservatively implemented in that way.
+The returned boolean is false if neither `f`, `cfgCmd` nor `cfgBody` reported a change in any
+procedure of `p` that is a member of `targetProcList` (if it is `.some ..`). The requirement on
+`f` is exactly equivalent to the requirement on `f` of `runStmtsRecTyped`. If the returned
+boolean is `false`, the returned `Program` and `CoreTransformState.factory` are the input `p` and
+that of the input state, provided each of `f`, `cfgCmd` and `cfgBody` reports a change whenever
+it makes one. `runProgram` can still return `true` for a rewrite that reports a change
+conservatively.
 -/
-def runProgram
-    (f : Statement → CoreTransformM (Option (List Statement)))
+def runProgramTyped
+    (f : TypeSpec.TypeScopes → Statement → CoreTransformM (Option (List Statement)))
     (p : Program)
     (targetProcList : Option (List String) := .none)
+    (cfgCmd : Option (TypeSpec.TypeScopes → Command → CoreTransformM (Option (List Command))) :=
+      none)
+    (cfgBody : Option (Procedure → DetCFG → CoreTransformM (Bool × DetCFG)) := none)
   : CoreTransformM (Bool × Program) := do
   modify (fun σ => { σ with currentProgram := .some p })
 
@@ -401,14 +564,22 @@ def runProgram
           currentProcedureName := .some proc.header.name.1
         })
 
-        let bodyStmts ← match proc.body with
-          | .structured ss => pure ss
-          | .cfg _ => throw (Strata.Message.fromString
+        let (changed, newBody) ← match proc.body, cfgBody, cfgCmd with
+          | .structured ss, _, _ => do
+            let (changed, ss') ← runStmtsRecTyped f (TypeSpec.procBodyScopes [] proc) ss
+            pure (changed, Procedure.Body.structured ss')
+          | .cfg g, some k, _ => do
+            let (changed, g') ← k proc g
+            pure (changed, Procedure.Body.cfg g')
+          | .cfg _, none, none => throw (Strata.Message.fromString
               s!"runProgram: cannot apply statement-level transform to CFG body (procedure '{proc.header.name.1}')")
-        let (changed, new_body) ← runStmtsRec f bodyStmts
+          | .cfg g, none, some h => do
+            let (changed, g') ← runCFGCmdsTyped h
+              ((TypeSpec.procBodyScopes [] proc).addCFGInits g) g
+            pure (changed, Procedure.Body.cfg g')
 
         if changed then
-          newDecls := newDecls.set i (Decl.proc { proc with body := .structured new_body } md)
+          newDecls := newDecls.set i (Decl.proc { proc with body := newBody } md)
           anyChanged := true
           modify (fun σ => { σ with
             currentProgram := .some { decls := newDecls }
@@ -421,26 +592,38 @@ def runProgram
   })
   return (anyChanged, newProg)
 
+/-- `runProgramTyped` with an `f` that ignores the variable types. -/
+def runProgram
+    (f : Statement → CoreTransformM (Option (List Statement)))
+    (p : Program)
+    (targetProcList : Option (List String) := .none)
+    (cfgCmd : Option (Command → CoreTransformM (Option (List Command))) := none)
+    (cfgBody : Option (Procedure → DetCFG → CoreTransformM (Bool × DetCFG)) := none)
+  : CoreTransformM (Bool × Program) :=
+  runProgramTyped (fun _ => f) p targetProcList (cfgCmd.map fun h _ => h) cfgBody
+
 /-- Repeatedly apply a statement-level transformation until no more changes occur
     or the iteration limit is reached.
     - `maxIters = none`: repeat until a fixed point (no changes).
     - `maxIters = some n`: run up to `n` iterations, stopping early if no change.
 
-    The requirement on `f` and meaning of returned boolean value is exactly
-    same as `runProgram`.
+    The requirement on `f`, the treatment of CFG bodies (`cfgCmd`) and the meaning of the
+    returned boolean value are exactly those of `runProgram`.
 -/
-def runProgramUntil
-    (f : Statement → CoreTransformM (Option (List Statement)))
+def runProgramUntilTyped
+    (f : TypeSpec.TypeScopes → Statement → CoreTransformM (Option (List Statement)))
     (p : Program)
     (maxIters : Option Nat := none)
     (targetProcList : Option (List String) := .none)
+    (cfgCmd : Option (TypeSpec.TypeScopes → Command → CoreTransformM (Option (List Command))) :=
+      none)
   : CoreTransformM (Bool × Program) := do
   match maxIters with
   | some n =>
     let mut prog := p
     let mut anyChanged := false
     for _ in List.range n do
-      let (changed, prog') ← runProgram f prog targetProcList
+      let (changed, prog') ← runProgramTyped f prog targetProcList cfgCmd
       prog := prog'
       if changed then anyChanged := true
       if !changed then break
@@ -449,11 +632,21 @@ def runProgramUntil
     let mut prog := p
     let mut anyChanged := false
     repeat
-      let (changed, prog') ← runProgram f prog targetProcList
+      let (changed, prog') ← runProgramTyped f prog targetProcList cfgCmd
       prog := prog'
       if changed then anyChanged := true
       if !changed then break
     return (anyChanged, prog)
+
+/-- `runProgramUntilTyped` with an `f` that ignores the variable types. -/
+def runProgramUntil
+    (f : Statement → CoreTransformM (Option (List Statement)))
+    (p : Program)
+    (maxIters : Option Nat := none)
+    (targetProcList : Option (List String) := .none)
+    (cfgCmd : Option (Command → CoreTransformM (Option (List Command))) := none)
+  : CoreTransformM (Bool × Program) :=
+  runProgramUntilTyped (fun _ => f) p maxIters targetProcList (cfgCmd.map fun h _ => h)
 
 @[expose, simp]
 def runWith {α : Type} (p : α) (f : α → CoreTransformM β)

@@ -4,7 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import StrataTest.Languages.Core.Tests.Logic.HoareAfterSupport
+import StrataTest.Languages.Core.Tests.Logic.HoareUtils
 import Strata.Transform.NondetElimCoreCorrect
 
 open Imperative
@@ -12,7 +12,7 @@ open StrataDDM (Program)
 
 namespace Strata.HoareAfterNondetElimTest
 
-open HoareAfterSupport
+open HoareUtils
 
 /-- The program.  It comes first in the file: the translation records the byte offsets of its
     statements in their metadata, which `walkBody` spells out with `loc`, so an edit above it
@@ -95,18 +95,18 @@ private abbrev addE : Core.Expression.Expr :=
 
 /-- The inner `if`. -/
 private abbrev innerIte : Core.Statement :=
-  .ite (.det gtE) [Core.Statement.set rId subE (loc 731 750)] [] (loc 703 758)
+  .ite (.det gtE) [Core.Statement.set rId subE (loc 717 736)] [] (loc 689 744)
 
 /-- The step up. -/
-private abbrev stepUp : Core.Statement := Core.Statement.set rId addE (loc 778 797)
+private abbrev stepUp : Core.Statement := Core.Statement.set rId addE (loc 764 783)
 
 /-- The metadata of the nondeterministic `if` and of the loop. -/
-private abbrev mdOut : MetaData Core.Expression := loc 690 803
-private abbrev mdL : MetaData Core.Expression := loc 676 807
+private abbrev mdOut : MetaData Core.Expression := loc 676 789
+private abbrev mdL : MetaData Core.Expression := loc 662 793
 
 /-- The translated body. -/
 private abbrev walkBody : Core.Statements :=
-  [Core.Statement.set rId (v nId) (loc 666 673),
+  [Core.Statement.set rId (v nId) (loc 652 659),
    .loop .nondet none [] [.ite .nondet [innerIte] [stepUp] mdOut] mdL]
 
 /-- The translated body really is the assignment followed by the nondeterministic loop. -/
@@ -135,7 +135,7 @@ private abbrev tgtRest : Core.Statements :=
 
 /-- The encoded body. -/
 private abbrev walkTgt : Core.Statements :=
-  [Core.Statement.set rId (v nId) (loc 666 673)] ++ tgtRest
+  [Core.Statement.set rId (v nId) (loc 652 659)] ++ tgtRest
 
 /-- Nondeterminism elimination turns the body into `walkTgt`. -/
 private theorem walk_nondetElim : Imperative.Block.nondetElim walkBody = walkTgt := by
@@ -374,6 +374,10 @@ theorem walk_meets_contract :
   rw [Core.Logic.Hoare.Procedure.contractTriple, hfactory]
   refine ⟨walkProc, by native_decide, by native_decide, ?_⟩
   rw [walk_body_eq]
+  -- The body proof does not use the axioms visible to the procedure.
+  refine Core.Logic.Hoare.consequence _ _
+    (Pre := Core.Logic.Hoare.Procedure.contractPre Core.Factory walkProc) ?_
+    (fun _ h => h.1) (fun _ h => h)
   have hvars : Block.definedVars (C := Core.Command) walkBody false ++
       Block.modifiedVars (C := Core.Command) walkBody = [rId, rId, rId] := by decide +kernel
   have hsrc := Core.NondetElim.triple π testParams (ss := walkBody)

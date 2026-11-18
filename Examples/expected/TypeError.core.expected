@@ -1,4 +1,3 @@
 Successfully parsed.
 TypeError.core.st(23, (2-18)) ❌ Type checking error.
-Impossible to unify (Map int int) with (Map int (Map bool bool)).
-First mismatch: int with (Map bool bool).
+Procedure 'TestLambdaTypeCheck': [call foo]: argument types [] and return types [(Map int (Map bool bool))] are incompatible with signature ([]) → ([(Map int int)])

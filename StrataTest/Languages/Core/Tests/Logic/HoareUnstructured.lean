@@ -5,12 +5,13 @@
 -/
 
 module
-import StrataTest.Languages.Core.Tests.Logic.HoareTestSupport
+import StrataTest.Languages.Core.Tests.Logic.HoareUtils
 import Strata.Languages.Core.IntEvalProps
 
 import Strata.Languages.Core
 import Strata.Languages.Core.Logic.ContractToHoareTripleProps
 import Strata.Languages.Core.ProgramProps
+import Strata.Languages.Core.Analysis.ProcedureCorrectnessProps
 import Strata.Languages.Core.Logic.HoareCall
 import Strata.DL.Imperative.CFGSemanticsProps
 import Strata.DL.Imperative.Logic.HoareTemplate
@@ -78,7 +79,7 @@ cfg entry {
 
 namespace Strata
 
-open CoreHoareTestSupport
+open Strata.HoareUtils (boolFactory someValuation)
 
 private def eraseTransfer
     (tr : Imperative.DetTransferCmd String Core.Expression) :
@@ -577,7 +578,7 @@ private theorem run_preserves {π : String → Option Core.Procedure} {F : Core.
 
 /-! ## Reading off the contract -/
 
-private def testParams : Core.Logic.InitEnvWFParams := ⟨[], [], fun _ => true⟩
+private def testParams : Core.Logic.InitEnvWFParams := ⟨[], [], [], fun _ => true⟩
 
 /-- The translated `sum_to_n` has a CFG body, namely `sumToNCFG`. -/
 private theorem sumToN_body : sumToNProc.body = .cfg sumToNCFG := by native_decide
@@ -667,7 +668,7 @@ theorem sum_to_n_meets_contract :
   refine ⟨sumToNProc, sumToN_find, by native_decide, ?_⟩
   rw [sumToN_body]
   intro ρEntry ρ₀ ρ' trace hpre hinit hterm
-  obtain ⟨hpre, rfl⟩ := hpre
+  obtain ⟨⟨hpre, _haxioms⟩, rfl⟩ := hpre
   obtain ⟨hpreP, hfac, _hold, hinput⟩ := hpre
   obtain ⟨vn, hvn, invn⟩ := hinput nId Lambda.LMonoTy.int (by native_decide)
   obtain ⟨nv, hvi⟩ := Lambda.SemValue.exists_ofInt invn
@@ -860,7 +861,8 @@ theorem false_ens_contract_refuted :
       rw [show falseEnsProc.header.inputs.toList = [] from by native_decide] at hmem
       simp at hmem
   obtain ⟨_, hpost⟩ := htriple (ρ0N model) (ρ0N model) { ρ0N model with store := σ2N model } []
-    ⟨hpre, rfl⟩ (false_ens_initEnvWF model) (Or.inl (falseEns_run model))
+    ⟨⟨hpre, Core.Specification.axiomsBeforeProcedureDecl_of_noAxioms (by native_decide) _⟩, rfl⟩
+    (false_ens_initEnvWF model) (Or.inl (falseEns_run model))
   have hreach : Trace.Reachable Core.Expression (Core.Logic.DenoteBasedInterp Core.Factory) [] :=
     ⟨someValuation _, by intro c hc; simp at hc⟩
   obtain ⟨⟨plabel, pcheck⟩, hmem, hattr, hexpr⟩ :
@@ -1035,7 +1037,7 @@ theorem copy_meets_contract :
   refine ⟨copyProc, copy_find, by native_decide, ?_⟩
   rw [copy_body]
   intro ρEntry ρ₀ ρ' trace hpre hinit hterm
-  obtain ⟨hpre, rfl⟩ := hpre
+  obtain ⟨⟨hpre, _haxioms⟩, rfl⟩ := hpre
   obtain ⟨_hpreP, hfac, _hold, hinput⟩ := hpre
   obtain ⟨vx, hvx, hvt⟩ := hinput xIdC Lambda.LMonoTy.int (by native_decide)
   obtain ⟨a, hvi⟩ := Lambda.SemValue.exists_ofInt hvt
@@ -1380,7 +1382,8 @@ theorem copy_call_triple :
     Core.Program.factoryBeforeProcedure_eq_core_of_noFunctions (by native_decide)
   refine Core.Logic.Hoare.Procedure.call_of_contract copyPgm testParams
     "copy" copyCall .empty CopyCallPre CopyCallPost copy_meets_contract
-    copy_body_frame copy_body_outputs_typed ?_ ?_
+    copy_body_frame copy_body_outputs_typed ?_
+    (fun _ _ _ _ _ _ _ => Core.Specification.axiomsBeforeProcedureDecl_of_noAxioms (by native_decide) _) ?_
   · -- hentry
     intro ρ₀ proc σAO hpre hwf hlk hce
     obtain rfl : proc = copyProc := Option.some.inj (hlk.symm.trans copy_find)

@@ -28,13 +28,21 @@ structure FieldDecl where
   name : FieldName
   ty : Core.Expression.Ty
 
-/-- A reference type. With `elem`, it is an array type whose objects hold elements of that
-type, and it declares no fields. -/
 structure CompositeDecl where
   name : TypeName
   extending : List TypeName
   fields : List FieldDecl
-  elem : Option Core.Expression.Ty := none
+
+/-- The type `Array elem` of the arrays whose elements have type `elem`. It is built in: a
+program uses it for any element type, an array type included, without declaring it. The
+element type identifies the array type: for constrained types `a` and `b` over one base type,
+`Array a`, `Array b` and the array type of the base type are three different types. -/
+@[expose] def arrayTy (elem : Lambda.LMonoTy) : Lambda.LMonoTy := .tcons "Array" [elem]
+
+/-- The element type of an array type. -/
+@[expose] def arrayElem? : Lambda.LMonoTy → Option Lambda.LMonoTy
+  | .tcons "Array" [elem] => some elem
+  | _ => none
 
 structure ConstrainedDecl where
   name : TypeName
@@ -60,17 +68,27 @@ inductive IRCmd where
   | new (lhs : Core.Expression.Ident) (ty : TypeName) (md : MD)
   | readField (lhs : Core.Expression.Ident) (obj : Expr) (field : FieldRef) (md : MD)
   | writeField (obj : Expr) (field : FieldRef) (rhs : Expr) (md : MD)
-  | instanceOf (lhs : Core.Expression.Ident) (obj : Expr) (ty : TypeName) (md : MD)
-  /-- Allocates an array of the declared array type `ty` with `len` elements, each the default
-  value of the element type. A negative `len` is a stuck state. -/
-  | newArray (lhs : Core.Expression.Ident) (ty : TypeName) (len : Expr) (md : MD)
-  /-- Reads the element at `index`, an `int`. `elemTy` is the element type of the array that
-  `arr` refers to. An index outside the array is a stuck state. -/
+  /-- Sets `lhs` to whether the type of the object that `obj` refers to is a subtype of `ty`,
+  a composite or an array type. -/
+  | instanceOf (lhs : Core.Expression.Ident) (obj : Expr) (ty : Core.Expression.Ty) (md : MD)
+  /-- Allocates an array of type `Array elemTy` with `len` elements, each the default value of
+  `elemTy`, or of its base type when `elemTy` is a constrained type. A negative `len` is a
+  stuck state. -/
+  | newArray (lhs : Core.Expression.Ident) (elemTy : Core.Expression.Ty) (len : Expr) (md : MD)
+  /-- Reads the element at `index`, an `int`. `elemTy` is the element type that the command
+  reads the array at: the type of the array that `arr` refers to is a subtype of
+  `Array elemTy`, and any other array is a stuck state. An index outside the array is a stuck
+  state. -/
   | readElem (lhs : Core.Expression.Ident) (arr : Expr) (index : Expr) (elemTy : Core.Expression.Ty) (md : MD)
   /-- Writes the element at `index`, with the conventions of `readElem`. -/
   | writeElem (arr : Expr) (index : Expr) (rhs : Expr) (elemTy : Core.Expression.Ty) (md : MD)
   /-- Reads the number of elements, an `int` that is fixed when the array is allocated. -/
   | arrayLength (lhs : Core.Expression.Ident) (arr : Expr) (md : MD)
+  /-- Sets `lhs` to whether the type of the object that `obj` refers to is a subtype of the
+  element type of the array that `arr` refers to. The element type is that of the array's own
+  type, whatever the type of the variable that holds the array. An array whose element type
+  is not a reference type is a stuck state. -/
+  | instanceOfComponent (lhs : Core.Expression.Ident) (obj : Expr) (arr : Expr) (md : MD)
   | call (lhs : List Core.Expression.Ident) (proc : ProcName) (args : List Expr) (md : MD)
   | virtualCall (lhs : List Core.Expression.Ident) (owner : TypeName) (method : String) (args : List Expr)
       (md : MD)
@@ -107,6 +125,11 @@ structure Procedure where
 
 structure UnorderedProgram where
   composites : List CompositeDecl
+  /-- Whether `Array S` is a subtype of `Array T` for a reference type `S` that is a subtype
+  of another one `T`. -/
+  covariantArrays : Bool := false
+  /-- The composites that every array type is a subtype of. -/
+  arrayParents : List TypeName := []
   constrained : List ConstrainedDecl := []
   globals : List (Core.Expression.Ident × Core.Expression.Ty) := []
   globalInit : List (Cmd Core.Expression) := []
@@ -129,10 +152,6 @@ inductive Program where
 @[expose] def UnorderedProgram.findComposite? (p : UnorderedProgram) (n : TypeName) : Option CompositeDecl :=
   p.composites.find? (·.name == n)
 
-/-- The element type of array type `n`. -/
-@[expose] def UnorderedProgram.arrayElem? (p : UnorderedProgram) (n : TypeName) : Option Core.Expression.Ty :=
-  (p.findComposite? n).bind (·.elem)
-
 @[expose] def UnorderedProgram.findProcedure? (p : UnorderedProgram) (n : ProcName) : Option Procedure :=
   p.procedures.find? (·.name == n)
 
@@ -149,6 +168,17 @@ where
     | 0, _ => false
     | _, [] => false
     | fuel + 1, frontier => frontier.contains sup || go fuel (frontier.flatMap p.parents).eraseDups
+
+/-- Whether an object of type `sub` is one of type `sup`. A composite is a subtype of the
+composites it extends, and every array type of `arrayParents` and of what they extend. An
+array type is a subtype of itself and, with `covariantArrays`, `Array S` is one of `Array T`
+when `S` is one of `T`. Only reference types have a subtype other than themselves, so an array
+of any other element type is a subtype of no other array type. -/
+@[expose] def UnorderedProgram.isSubtypeTy (p : UnorderedProgram) : Lambda.LMonoTy → Lambda.LMonoTy → Bool
+  | .tcons "Array" [s], .tcons "Array" [t] => s == t || (p.covariantArrays && p.isSubtypeTy s t)
+  | .tcons "Array" [_], .tcons c [] => p.arrayParents.any (p.isSubtype · c)
+  | .tcons s [], .tcons t [] => p.isSubtype s t
+  | _, _ => false
 
 @[expose] def implName (c : TypeName) (method : String) : ProcName := s!"{c}${method}"
 
@@ -168,9 +198,9 @@ where
       (p.findProcedure? (implName c.name method)).isSome
   (ds.map (·.name)).mergeSort fun a b => (p.ancestors a).length ≥ (p.ancestors b).length
 
-@[expose] def UnorderedProgram.dispatch (p : UnorderedProgram) (owner : TypeName) (method : String) (dyn : TypeName) :
-    ProcName :=
-  match (p.overriders owner method).find? (p.isSubtype dyn ·) with
+@[expose] def UnorderedProgram.dispatch (p : UnorderedProgram) (owner : TypeName) (method : String)
+    (dyn : Lambda.LMonoTy) : ProcName :=
+  match (p.overriders owner method).find? fun d => p.isSubtypeTy dyn (.tcons d []) with
   | some d => implName d method
   | none => implName owner method
 
@@ -192,12 +222,13 @@ where
     | some b => b.cfg.blocks.any fun (_, blk) => blk.cmds.any IRCmd.isVirtualCall
     | none => false
 
-@[expose] def Handler.catches (p : UnorderedProgram) (h : Handler) (ty : TypeName) : Bool :=
+/-- Whether `h` catches a thrown object of type `ty`. -/
+@[expose] def Handler.catches (p : UnorderedProgram) (h : Handler) (ty : Lambda.LMonoTy) : Bool :=
   match h.catchType with
   | none => true
-  | some c => p.isSubtype ty c
+  | some c => p.isSubtypeTy ty (.tcons c [])
 
-@[expose] def Body.handlerFor? (p : UnorderedProgram) (b : Body) (l : Label) (ty : TypeName) :
+@[expose] def Body.handlerFor? (p : UnorderedProgram) (b : Body) (l : Label) (ty : Lambda.LMonoTy) :
     Option Handler :=
   b.handlers.find? fun h => h.covered.contains l && h.catches p ty
 

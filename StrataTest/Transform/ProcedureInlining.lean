@@ -15,6 +15,8 @@ meta import Strata.Languages.Core.ProgramWF
 meta import Strata.Transform.CoreTransform
 meta import Strata.Transform.ProcedureInlining
 meta import Strata.Util.Tactics
+meta import StrataTest.Transform.CallFixtures
+meta import StrataTest.Languages.Core.Tests.TestUtil
 
 meta section
 
@@ -24,6 +26,7 @@ open Core.Transform
 open ProcedureInlining
 open Strata
 open Std
+open Core.CallFixtures (runInlineCall)
 
 /-! ## Procedure Inlining Examples -/
 
@@ -237,11 +240,6 @@ private def alphaEquiv (p1 p2:Core.Procedure):Except Format Bool := do
 def translate (t : StrataDDM.Program) : Core.Program :=
   (TransM.run Inhabited.default (translateProgram t)).fst
 
-def runInlineCall (p : Core.Program) : Core.Program :=
-  match (runProgram (targetProcList := .none) inlineCallCmd p .emp) with
-  | ⟨.ok (_,res), _⟩ => res
-  | ⟨.error e, _⟩ => panic! (toString e) -- nopanic:ok
-
 def checkInlining (prog : Core.Program) (progAns : Core.Program)
     : Except Format Bool := do
   let prog' := runInlineCall prog
@@ -435,8 +433,9 @@ def setCallGraph (p : Core.Program) : CoreTransformM Unit :=
 def test := do
   let p := translate TestRecursiveCall
   let _ ← setCallGraph p
-  let (changed, _p) ← runProgram (targetProcList := .some ["f"])
-    (inlineCallCmd (doInline := fun _caller callee _ => callee = "f")) p
+  let (changed, _p) ← runProgramTyped (targetProcList := .some ["f"])
+    (inlineCallCmd (p.typeNamesWithPrefix inlineTyPrefix)
+      (doInline := fun _caller callee _ => callee = "f")) p
   let cg := (← get).cachedAnalyses.callGraph
   return (changed, cg)
 
@@ -476,7 +475,8 @@ procedure top(n : int, out r : int) {
 def testThreeChainCG := do
   let p := translate TestThreeChain
   let _ ← setCallGraph p
-  let (_, p') ← runProgramUntil (inlineCallCmd) p
+  let (_, p') ← runProgramUntilTyped
+    (inlineCallCmd (p.typeNamesWithPrefix inlineTyPrefix)) p
   let cachedCG := (← get).cachedAnalyses.callGraph
   let freshCG := p'.toProcedureCG
   return (cachedCG.map (· == freshCG))
@@ -489,11 +489,8 @@ def testThreeChainCG := do
 
 
 /- A polymorphic callee inlined at two different concrete types. Each inlining
-   site freshens the callee's type parameters, so the two inlined blocks use
-   distinct type variables that can independently unify with `int` and `bool`.
-   Without per-site freshening the shared type variable is over-constrained and
-   the inlined program fails to type-check with "Impossible to unify a with
-   bool". -/
+   site instantiates the callee's type parameter at its own argument type, so
+   one block uses `int` and the other `bool`. -/
 def TestPolyTwoTypes :=
 #strata
 program Core;
@@ -509,12 +506,11 @@ procedure Caller() {
 #end
 
 -- Type-checking the inlined program prints `ok: <program>`, confirming both
--- sites are well-typed: the freshened type variables resolve independently to
--- `int` and `bool`, which a single shared type variable could not.
+-- sites are well-typed.
 /--
 info: ok: program Core;
 
-procedure PolyId (inout T : $__ty0)
+procedure PolyId<a> (inout T : a)
 {
   assert [inner]: old T == T;
 };
@@ -539,5 +535,350 @@ procedure Caller ()
 #guard_msgs in
 #eval Core.typeCheck .quiet (runInlineCall (translate TestPolyTwoTypes))
 
+/-- Inline the calls of the procedures `procs` of `p`, formatting the result or the error. -/
+private def inlineShown (p : Core.Program) (procs : List String) : String :=
+  match (runProgramTyped (targetProcList := some procs)
+      (inlineCallCmd (p.typeNamesWithPrefix inlineTyPrefix)) p) .emp with
+  | ⟨.ok (_, res), _⟩ => toString res.eraseTypes
+  | ⟨.error e, _⟩ => s!"error: {e}"
+
+/-- A structured caller of a CFG callee. -/
+private def TestCFGCallee :=
+#strata
+program Core;
+procedure leaf(x : int, out y : int)
+cfg entry {
+  entry: { y := int.add(x, 1); return; }
+};
+procedure top(n : int, out r : int) {
+  call leaf(n, out r);
+};
+#end
+
+-- A CFG callee is not inlined into structured code.
+/-- info: error: cannot inline procedure with CFG body into structured code -/
+#guard_msgs in
+#eval IO.println (inlineShown (translate TestCFGCallee) ["top"])
+
+/-- A CFG caller of a structured callee. -/
+private def TestCFGCaller :=
+#strata
+program Core;
+procedure leaf(x : int, out y : int) {
+  y := int.add(x, 1);
+};
+procedure top(n : int, out r : int)
+cfg entry {
+  entry: { call leaf(n, out r); return; }
+};
+#end
+
+-- A CFG caller is not walked.
+/--
+info: error: runProgram: cannot apply statement-level transform to CFG body
+  (procedure 'top')
+-/
+#guard_msgs (whitespace := lax) in
+#eval IO.println (inlineShown (translate TestCFGCaller) ["top"])
+
 end ProcedureInliningExamples
+
+/-! ## Inlining at the call's type instance
+
+Each program below except `unknownProg` and `conflictProg` is a fully annotated Core AST.
+The printed result shows the types inlining gives the callee's variables; the `#guard` checks
+that every expression of the result carries its type annotations. -/
+section CallInstanceTests
+open Lambda
+open Core.CallFixtures Core.TestUtil
+
+private def idpP : Decl :=
+  mkProc "idp" ["a"] [("x", tv "a")] [("r", tv "a")] (body := [setS "r" (v "x" (tv "a"))])
+private def swapP : Decl :=
+  mkProc "swap" ["a"] [("x", tv "a"), ("y", tv "a")] [("x", tv "a"), ("y", tv "a")] (body :=
+    [Statement.init "t" (.forAll [] (tv "a")) (.det (v "x" (tv "a"))) .empty,
+     setS "x" (v "y" (tv "a")), setS "y" (v "t" (tv "a")),
+     Statement.assert "swapped" (eqE (v "x" (tv "a")) (v (CoreIdent.mkOld "y").name (tv "a"))) #[]])
+private def seqP : Decl :=
+  mkProc "p" ["a"] [("s", seqTy (seqTy (tv "a")))] [] (body :=
+    [Statement.assert "refl" (eqE (v "s" (seqTy (seqTy (tv "a")))) (v "s" (seqTy (seqTy (tv "a")))))
+      #[]])
+private def pairP : Decl :=
+  mkProc "pair" ["a", "b"] [("x", tv "a"), ("y", tv "b")] [("r", tv "a")]
+    (body := [setS "r" (v "x" (tv "a"))])
+/-- `q<a>()` assumes `forall y : a :: y == y`. -/
+private def qP : Decl :=
+  mkProc "q" ["a"] [] [] (body := [Statement.assume "refl" (reflAll (tv "a")) #[]])
+/-- `r<a, b>(x : a)` with `b` only in an assumption of its body. -/
+private def rP : Decl :=
+  mkProc "r" ["a", "b"] [("x", tv "a")] [] (body :=
+    [Statement.assert "refl" (eqE (v "x" (tv "a")) (v "x" (tv "a"))) #[],
+     Statement.assume "reflB" (reflAll (tv "b")) #[]])
+
+/--
+info: program Core;
+
+procedure idp<a> (x : a, out r : a)
+{
+  r := x;
+};
+procedure Caller ()
+{
+  var ai : int;
+  $__inline1_idp$inlined: {
+    var $__inline1_x : int := 7;
+    var $__inline1_r : int;
+    $__inline1_r := $__inline1_x;
+    ai := $__inline1_r;
+  }
+};
+-/
+#guard_msgs in
+#eval IO.println (toString (runInlineCall (idpProg idpP)))
+#guard (runInlineCall (idpProg idpP)).allExprs LExpr.fullyAnnotated
+
+/--
+info: program Core;
+
+procedure swap<a> (inout x : a, inout y : a)
+{
+  var t : a := x;
+  x := y;
+  y := t;
+  assert [swapped]: x == old y;
+};
+procedure Caller ()
+{
+  var i : int;
+  var j : int;
+  $__inline1_swap$inlined: {
+    var $__inline1_x : int := i;
+    var $__inline1_y : int := j;
+    var $__inline1$old_x : int := $__inline1_x;
+    var $__inline1$old_y : int := $__inline1_y;
+    var $__inline1_t : int := $__inline1_x;
+    $__inline1_x := $__inline1_y;
+    $__inline1_y := $__inline1_t;
+    assert [$__inline1_swapped]: $__inline1_x == $__inline1$old_y;
+    i := $__inline1_x;
+    j := $__inline1_y;
+  }
+};
+-/
+#guard_msgs in
+#eval IO.println (toString (runInlineCall (swapProg swapP)))
+#guard (runInlineCall (swapProg swapP)).allExprs LExpr.fullyAnnotated
+
+/--
+info: program Core;
+
+procedure p<a> (s : Sequence (Sequence a))
+{
+  assert [refl]: s == s;
+};
+procedure Caller (t : Sequence (Sequence int))
+{
+  $__inline1_p$inlined: {
+    var $__inline1_s : Sequence (Sequence int) := t;
+    assert [$__inline1_refl]: $__inline1_s == $__inline1_s;
+  }
+};
+-/
+#guard_msgs in
+#eval IO.println (toString (runInlineCall (seqProg seqP)))
+#guard (runInlineCall (seqProg seqP)).allExprs LExpr.fullyAnnotated
+
+/--
+info: program Core;
+
+procedure idp<a> (x : a, out r : a)
+{
+  r := x;
+};
+procedure Caller<a> (z : a)
+{
+  var w : (a);
+  $__inline1_idp$inlined: {
+    var $__inline1_x : a := z;
+    var $__inline1_r : (a);
+    $__inline1_r := $__inline1_x;
+    w := $__inline1_r;
+  }
+};
+-/
+#guard_msgs in
+#eval IO.println (toString (runInlineCall (sameNameProg idpP)))
+#guard (runInlineCall (sameNameProg idpP)).allExprs LExpr.fullyAnnotated
+
+/--
+info: program Core;
+
+procedure pair<a, b> (x : a, y : b, out r : a)
+{
+  r := x;
+};
+procedure Caller<a, b> (x : a, y : b)
+{
+  var w : (b);
+  $__inline1_pair$inlined: {
+    var $__inline1_x : b := y;
+    var $__inline1_y : a := x;
+    var $__inline1_r : (b);
+    $__inline1_r := $__inline1_x;
+    w := $__inline1_r;
+  }
+};
+-/
+#guard_msgs in
+#eval IO.println (toString (runInlineCall (pairProg pairP)))
+#guard (runInlineCall (pairProg pairP)).allExprs LExpr.fullyAnnotated
+
+/--
+info: program Core;
+
+type $__inlinety_0;
+procedure q<a> ()
+{
+  assume [refl]: forall y : (a) :: y == y;
+};
+procedure Caller ()
+{
+  $__inline1_q$inlined: {
+    assume [$__inline1_refl]: forall y : $__inlinety_0 :: y == y;
+  }
+};
+-/
+#guard_msgs in
+#eval IO.println (toString (runInlineCall (qProg qP)))
+#guard (runInlineCall (qProg qP)).allExprs LExpr.fullyAnnotated
+
+/--
+info: program Core;
+
+type $__inlinety_0;
+procedure r<a, b> (x : a)
+{
+  assert [refl]: x == x;
+  assume [reflB]: forall y : (b) :: y == y;
+};
+procedure Caller ()
+{
+  $__inline1_r$inlined: {
+    var $__inline1_x : int := 7;
+    assert [$__inline1_refl]: $__inline1_x == $__inline1_x;
+    assume [$__inline1_reflB]: forall y : $__inlinety_0 :: y == y;
+  }
+};
+-/
+#guard_msgs in
+#eval IO.println (toString (runInlineCall (rProg rP)))
+#guard (runInlineCall (rProg rP)).allExprs LExpr.fullyAnnotated
+
+/--
+info: program Core;
+
+type $__inlinety_0;
+type $__inlinety_1;
+procedure r<a, b> (x : a)
+{
+  assert [refl]: x == x;
+  assume [reflB]: forall y : (b) :: y == y;
+};
+procedure Caller ()
+{
+  $__inline1_r$inlined: {
+    var $__inline1_x : $__inlinety_0 := int.neg(7);
+    assert [$__inline1_refl]: $__inline1_x == $__inline1_x;
+    assume [$__inline1_reflB]: forall y : $__inlinety_1 :: y == y;
+  }
+};
+-/
+#guard_msgs in
+#eval IO.println (toString (runInlineCall (unknownProg rP)))
+
+-- The type checker rejects this program: the call needs `a` at both `int` and
+-- `bool`. Inlining still runs on it and keeps the result annotated.
+/--
+info: program Core;
+
+type $__inlinety_0;
+procedure idp<a> (x : a, out r : a)
+{
+  r := x;
+};
+procedure Caller ()
+{
+  var bb : bool;
+  $__inline1_idp$inlined: {
+    var $__inline1_x : $__inlinety_0 := 7;
+    var $__inline1_r : $__inlinety_0;
+    $__inline1_r := $__inline1_x;
+    bb := $__inline1_r;
+  }
+};
+-/
+#guard_msgs in
+#eval IO.println (toString (runInlineCall (conflictProg idpP)))
+#guard (runInlineCall (conflictProg idpP)).allExprs LExpr.fullyAnnotated
+
+end CallInstanceTests
+
+/-! ## The opaque types of an inlined call avoid the program's type names
+
+A program may declare a type named like the opaque type inlining gives a callee type parameter
+that the call does not determine. Here the axiom makes `$__inlinety_0` a singleton, under which
+the assertion of `Q` holds, so the inlined assertion must be at another type. -/
+section InlineAvoidsTypeNames
+open Core.CallFixtures Core.TestUtil
+
+def capturedInlineTypePgm : Program :=
+  capturedTypeProg "$__inlinety_0" []
+    [Statement.assert "qa" (singletonAll (tv "a")) .empty]
+
+/--
+info: program Core;
+
+type $__inlinety_1;
+type $__inlinety_0;
+axiom [one]: forall x : $__inlinety_0 :: forall y : $__inlinety_0 :: x == y;
+procedure Q<a> ()
+{
+  assert [qa]: forall x : (a) :: forall y : (a) :: x == y;
+};
+procedure P ()
+{
+  $__inline1_Q$inlined: {
+    assert [$__inline1_qa]: forall x : $__inlinety_1 :: forall y : $__inlinety_1 :: x == y;
+  }
+};
+-/
+#guard_msgs in
+#eval match Core.typeCheck .quiet capturedInlineTypePgm with
+  | .ok p => IO.println (toString (runInlineCall p).stripMetaData)
+  | .error e => IO.println e.message
+
+/-- A type declared inside a procedure body is avoided as well. Here the assumption makes the
+    local `$__inlinety_0` a singleton, so the inlined assertion must be at another type. -/
+def capturedLocalInlineTypePgm : Program :=
+  capturedLocalTypeProg "$__inlinety_0" []
+    [Statement.assert "qa" (singletonAll (tv "a")) .empty]
+
+/--
+info:
+Obligation: qa
+Property: assert
+Result: ❌ fail
+
+Obligation: $__inline1_qa
+Property: assert
+Result: ❓ unknown
+-/
+#guard_msgs in
+#eval match Core.typeCheck .quiet capturedLocalInlineTypePgm with
+  | .ok p =>
+    EIO.toIO (fun s => IO.userError s)
+      (Core.verifyProgram (runInlineCall p) { Core.VerifyOptions.default with verbose := .quiet })
+  | .error e => throw (IO.userError e.message)
+
+end InlineAvoidsTypeNames
 end

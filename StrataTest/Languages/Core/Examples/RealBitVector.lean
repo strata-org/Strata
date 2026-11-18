@@ -102,11 +102,11 @@ procedure P()
   assert [bv_add_ge]: bv8.add(x, y) == bv8.add(y, x);
 };
 
-procedure Q(x: bv W1, out r: bv W1)
+procedure Q(a: bv W1, out r: bv W1)
 spec {
-  ensures r == bv1.sub(x, x);
+  ensures r == bv1.sub(a, a);
 } {
-  r := bv1.add(x, x);
+  r := bv1.add(a, a);
 };
 #end
 
@@ -126,11 +126,11 @@ procedure P ()
 {
   assert [bv_add_ge]: bv8.add(x, y) == bv8.add(y, x);
 };
-procedure Q (x : bv W1, out r : bv W1)
+procedure Q (a : bv W1, out r : bv W1)
 spec {
-  ensures [Q_ensures_0]: r == bv1.sub(x, x);
+  ensures [Q_ensures_0]: r == bv1.sub(a, a);
   } {
-  r := bv1.add(x, x);
+  r := bv1.add(a, a);
 };
 -/
 #guard_msgs in
@@ -155,7 +155,7 @@ Assumptions:
 bv_x_ge_1: bv8.uLe(bv{8}(1), x)
 bv_y_ge_2: bv8.uLe(bv{8}(2), y)
 Obligation:
-bv1.add(x@1, x@1) == bv1.sub(x@1, x@1)
+bv1.add(a@1, a@1) == bv1.sub(a@1, a@1)
 
 ---
 info:

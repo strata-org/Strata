@@ -45,6 +45,7 @@ import Strata.Transform.CoreSpecification
 import Strata.Transform.CoreSpecificationProps
 import Strata.Languages.Core.Analysis.ProcedureCorrectness
 import Strata.Languages.Core.Analysis.ProcedureCorrectnessProps
+import Strata.Languages.Core.Analysis.ProcedureCorrectnessHoareConnection
 import Strata.Languages.Core.Analysis.DeductiveVerification
 import Strata.Languages.Core.Analysis.DeductiveVerificationProps
 import Strata.Languages.Core.Analysis.FragmentFactory
@@ -97,9 +98,9 @@ import Strata.Languages.Core.Logic.Hoare
 import Strata.Languages.Core.Logic.HoareCall
 import Strata.Languages.Core.Logic.ContractToHoareTriple
 import Strata.Languages.Core.Logic.ContractToHoareTripleProps
+import Strata.Languages.Core.Logic.InterpreterHoareRelation
 
 /- Strata Languages — additional -/
-import Strata.Languages.B3
 import Strata.Languages.Cortex
 import Strata.Languages.Core.EntryPoint
 import Strata.Languages.Core.IncrementalSolve
@@ -111,6 +112,7 @@ import Strata.Languages.Core.ProgramFactSet
 import Strata.Languages.Core.ProgramFactSetProps
 import Strata.Languages.Core.PipelinePhaseProps
 import Strata.Languages.Core.VerifierProofs
+import Strata.Languages.Core.CoreGenProps
 import Strata.Languages.GOTO
 
 /- DDM -/
@@ -199,7 +201,8 @@ import Strata.Transform.FoldAxiomsEntry
 
 /- The monadic interpreter: the monad-generic engine, its soundness and completeness against
    the reference event semantics, Core's instantiation, the `EvalM`
-   instance and its soundness and completeness, and counterexample replay -/
+   instance and its soundness and completeness, counterexample replay, and symbolic execution
+   on it -/
 import Strata.DL.Imperative.InterpreterFuelMono
 import Strata.DL.Imperative.InterpreterTowerProps
 import Strata.Languages.Core.ConfigWF
@@ -223,9 +226,17 @@ import Strata.Languages.Core.InterpreterReach
 import Strata.Languages.Core.InterpreterReachBridge
 import Strata.Languages.Core.InterpreterReachBuiltins
 import Strata.Languages.Core.InterpreterReachCheck
+import Strata.Languages.Core.InterpreterReachProps
 import Strata.Languages.Core.InterpreterObs
 import Strata.Languages.Core.InterpreterObsProps
 import Strata.Languages.Core.InterpreterSound
+import Strata.Languages.Core.SymExec
+import Strata.Languages.Core.PathExplorer
+import Strata.Languages.Core.PathExplorerProps
+import Strata.Languages.Core.SymExecProps
+import Strata.Languages.Core.SymExecReplay
+import Strata.Languages.Core.SymExecReplayProps
+import Strata.Languages.Core.SymExecTree
 import Strata.Languages.Core.StmtCallFree
 
  -- deletion candidates: nothing imports these modules:
@@ -251,6 +262,7 @@ import Strata.DL.Lambda.LExprTProps
 import Strata.DL.Lambda.LExprTypeSpec
 import Strata.DL.Lambda.LExprTraversal
 import Strata.DL.Lambda.LExprTraversalProps
+import Strata.DL.Lambda.LTyMatchProps
 import Strata.DL.Lambda.NamePrefixesProps
 import Strata.DL.Lambda.Reflect
 import Strata.DL.Lambda.OperationalSemantics
@@ -265,16 +277,22 @@ import Strata.Util.HMapsProps
 import Strata.Languages.Core.ProgramWF
 import Strata.Languages.Core.StatementWF
 import Strata.DL.Lambda.DatatypeWF
-import Strata.Languages.Core.ProcedureTypeSpec
+import Strata.Languages.Core.TypeSkolem
+import Strata.Languages.Core.WrittenTyVarScope
+import Strata.Languages.Core.Typing.Spec.ProcedureTypeSpec
 import Strata.Languages.Core.ProcedureTypeProps
-import Strata.Languages.Core.DatatypeTypeSpec
-import Strata.Languages.Core.DatatypeTypeSpecProps
-import Strata.Languages.Core.ProgramTypeSpec
+import Strata.Languages.Core.Typing.Spec.DatatypeTypeSpec
+import Strata.Languages.Core.Typing.Spec.ProgramTypeSpec
+import Strata.Languages.Core.Typing.Spec.NamesWF
 import Strata.Languages.Core.Typing.Spec.TypeSpecShared
 import Strata.Languages.Core.Typing.Spec.TypingSpec
 import Strata.Languages.Core.FactoryProps
+import Strata.Languages.Core.Typing.Props.DatatypeTypeProps
 import Strata.Languages.Core.Typing.Props.FactoryRegistrationProps
+import Strata.Languages.Core.Typing.Props.FunctionTypeProps
+import Strata.Languages.Core.Typing.Props.NamesWFProps
 import Strata.Languages.Core.Typing.Props.ProcSigAgreementProps
+import Strata.Languages.Core.Typing.Props.TypeSkolemProps
 import Strata.Languages.Core.Typing.Props.TypingSpecProps
 import Strata.Util.Random
 

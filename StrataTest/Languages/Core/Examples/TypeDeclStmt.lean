@@ -175,7 +175,7 @@ procedure P () {
 
 /--
 error: ❌ Type checking error.
-Type 'T' is already declared
+Procedure 'P': Type 'T' is already declared at the program level
 -/
 #guard_msgs in
 #eval Core.verify shadowTopLevelType
@@ -215,7 +215,7 @@ procedure P () {
 -- again, this could instead be caught at DDM parse time.
 /--
 error: ❌ Type checking error.
-Impossible to unify (T int bool) with (T bool int).
+Procedure 'P': Impossible to unify (T int bool) with (T bool int).
 First mismatch: int with bool.
 -/
 #guard_msgs in

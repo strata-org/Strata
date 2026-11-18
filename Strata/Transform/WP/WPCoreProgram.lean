@@ -6,6 +6,7 @@
 module
 
 public import Strata.Transform.Passive.CoreProgram
+public import Strata.Languages.Core.PipelinePhase
 public import Strata.Transform.WP.WP
 
 /-! # The WP phase on Core procedures and programs
@@ -18,11 +19,14 @@ The WP phase of `Imperative.WP.wpEntry` lifted to Core procedures and programs:
 * the WP phase of a procedure (`wpLoopFree`, `wpProc`: same header, empty contract, the guarded
   program as body) and of a program (`wpProcsProgram`: one guarded procedure per procedure that
   is not an obligation unit, `isObligationUnit`, every other declaration kept), and the
-  declaration phase and the WP phase of a program in sequence (`wpProgramWith`).
+  declaration phase and the WP phase of a program in sequence (`wpProgramWith`);
+* the WP phase of a program with the names of a factory's functions reserved
+  (`Core.wpProgram`), and the pipeline phase that runs it (`Core.wpPipelinePhase`).
 
 Their properties are in `WPCoreProgramProps.lean`.
 
-Key definitions: `checkLoopFree`, `wpLoopFree`, `wpProcsProgram`, `wpProgramWith`. -/
+Key definitions: `checkLoopFree`, `wpLoopFree`, `wpProcsProgram`, `wpProgramWith`,
+`Core.wpPipelinePhase`. -/
 
 namespace Core
 namespace WP
@@ -114,4 +118,48 @@ public section
 end -- public section
 
 end WP
+
+open Strata
+
+public section
+
+/-- **The WP phase of a program** (`Core.WP.wpProcsProgram`): each procedure that is not an
+    obligation unit becomes a guarded procedure of the same name and header; every other
+    declaration is kept.  The names the procedures introduce avoid the names of the factory's
+    functions and those the program declares. -/
+def wpProgram (program : Program)
+    (moreFns : Lambda.Factory CoreLParams := Lambda.Factory.default) : Except Message Program := do
+  let factory ← Core.Factory.addFactory moreFns
+  let reserved := factory.toArray.toList.map (·.name)
+  match WP.wpProcsProgram reserved program with
+  | .ok p => return p
+  | .error e => throw (Message.fromString e)
+
+/-- The WP pipeline phase: each procedure that is not an obligation unit becomes a guarded
+    procedure, every other declaration is kept (`--vcgen wp` runs it after
+    `declObligationsPipelinePhase`, then `ssaPipelinePhase`). It requires a program without
+    calls, since it rejects every call, and bodies whose every `exit` targets an enclosing
+    block, which it checks of each procedure again (`WP.checkLoopFree`). It empties every
+    contract, emits only guarded-form bodies whose every `ite` arm contains an obligation
+    (`Imperative.WP.wpEntry_armsHaveObl`; each obligation unit it keeps is one `assert` or
+    `cover`), emits no loop and no `exit`, keeps headers, touches no function and builds only
+    annotated variables, literals and `ite`s. -/
+def wpPipelinePhase
+    (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default) : PipelinePhase :=
+  modelPreservingPipelinePhase "wp"
+    (requires := factSet![.noCFGBodies, .noCalls, .noLoops, .noNondetGuards, .typeAnnotated,
+      .exitsCovered])
+    (establishes := factSet![.noProcedureContracts, .treeForm, .armsHaveObligations])
+    (preserves := factSet![.noCFGBodies, .noCalls, .noLoops, .noLoopInvariants, .noLoopMeasures,
+                         .noPrecondsFromFuncs,
+                         .noPolymorphicProcedures,
+                         .noPolymorphicFunctions, .typeAnnotated, .exitsCovered])
+    fun prog => do
+      let prog' ← Transform.liftDiag
+        (Core.wpProgram prog moreFns |>.mapError fun err =>
+          { err with message := s!"❌ WP error.\n{err.message}" })
+      return (true, prog')
+
+end -- public section
+
 end Core

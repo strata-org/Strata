@@ -38,11 +38,12 @@ namespace Core
 public section
 
 /-- The shape of the results of a factory function's concrete evaluator: a well-typed constant
-    of the function's output type, or the second of exactly two arguments when both inputs and
-    the output have type `bool`. -/
+    of the function's output type or of the result type of the operator's type annotation, or
+    the second of exactly two arguments when both inputs and the output have type `bool`. -/
 private def EvalShape (fn : Lambda.LFunc CoreLParams) : Prop :=
   ∀ ceval, fn.concreteEval = some ceval → ∀ md opTy args r, ceval md opTy args = some r →
-    (∃ m c, r = .const m c ∧ c.wt = true ∧ c.ty = fn.output) ∨
+    (∃ m c, r = .const m c ∧ c.wt = true ∧
+      (c.ty = fn.output ∨ opTy.map (Lambda.LMonoTy.arrowResult fn.inputs.length) = some c.ty)) ∨
     (∃ x, args = [x, r] ∧ fn.inputs.map Prod.snd = [.bool, .bool] ∧ fn.output = .bool)
 
 /-- The concrete evaluator of a short-circuit factory function commutes with re-annotating the
@@ -69,7 +70,8 @@ private theorem unaryOp_shape {inTy outTy : LMonoTy} {InV OutV : Type} [ToString
   split at h
   · split at h
     · cases h
-      exact hmk md _
+      obtain ⟨m, c, h1, h2, h3⟩ := hmk md (f _)
+      exact ⟨m, c, h1, h2, .inl h3⟩
     · cases h
   · cases h
 
@@ -90,7 +92,8 @@ private theorem binaryOp_shape {inTy outTy : LMonoTy} {InV OutV : Type} [ToStrin
   · split at h
     · split at h
       · cases h
-        exact hmk md _
+        obtain ⟨m, c, h1, h2, h3⟩ := hmk md (g _ _)
+        exact ⟨m, c, h1, h2, .inl h3⟩
       · cases h
     · cases h
   · cases h
@@ -108,7 +111,7 @@ private theorem shortCircuitOp_shape {n : CoreLParams.Identifier} {absorb decide
     · split at h
       · split at h
         · cases h
-          exact .inl ⟨_, _, rfl, rfl, rfl⟩
+          exact .inl ⟨_, _, rfl, rfl, .inl rfl⟩
         · cases h
           exact .inr ⟨_, rfl, rfl, rfl⟩
       · cases h
@@ -119,6 +122,27 @@ private theorem shortCircuitOp_shape {n : CoreLParams.Identifier} {absorb decide
     · simp only [List.map]
       split <;> (try split) <;> rfl
     · rfl
+
+open Lambda in
+/-- A `polyLitOp` evaluator returns a well-typed constant of the result type of the operator's
+    type annotation; it is not a short-circuit function. -/
+private theorem polyLitOp_shape {n : CoreLParams.Identifier} {ta inputs output ev axs pre}
+    {h1 h2 h3 h4 h5 h6} :
+    EvalShape (polyLitOp n ta inputs output ev axs pre h1 h2 h3 h4 h5 h6).func ∧
+      SCShape (polyLitOp n ta inputs output ev axs pre h1 h2 h3 h4 h5 h6).func := by
+  refine ⟨fun ceval hce md opTy args r h => .inl ?_, fun h => by
+    simp [Strata.DL.Util.FuncAttr.hasShortCircuit, polyLitOp] at h⟩
+  cases hce
+  simp only at h
+  split at h
+  · obtain ⟨c, _, hres⟩ := Option.bind_eq_some_iff.mp h
+    split at hres
+    · rename_i hchk
+      simp only [Option.some.injEq] at hres; subst hres
+      simp only [Bool.and_eq_true, decide_eq_true_eq] at hchk
+      exact ⟨md, c, rfl, hchk.1.1, .inr hchk.1.2⟩
+    · cases hres
+  · cases h
 
 /-- Every function of `Core.Factory`'s underlying array has an evaluator of the shape
     `EvalShape` and, if it is a short-circuit function, one that commutes with re-annotation. -/
@@ -135,6 +159,7 @@ private theorem all_shape :
     | exact unaryOp_shape
     | exact binaryOp_shape
     | exact shortCircuitOp_shape
+    | exact polyLitOp_shape
     | exact unaryOp_shape (inTy := .bitvec _) (outTy := .int) (pre := []) (hI := rfl)
         (hO := rfl) (hp := nofun)
     | exact unaryOp_shape (inTy := .int) (outTy := .bitvec _) (pre := []) (hI := rfl)
@@ -158,14 +183,23 @@ private theorem LConst_ty_subst (c : Lambda.LConst) (S : Lambda.Subst) :
 /-- A concrete evaluator of a `Core.Factory` function returns, on arguments well typed at the
     input types instantiated by `S`, a result well typed at the output type instantiated by `S`. -/
 private theorem evalWt_of_mem {fn : Lambda.LFunc CoreLParams} (hfn : fn ∈ Core.Factory.toArray)
-    {ceval md opTy args r} (hce : fn.concreteEval = some ceval) (S : Lambda.Subst)
-    (h : ceval md opTy args = some r)
+    {ceval md args r} (hce : fn.concreteEval = some ceval) (S : Lambda.Subst)
+    (h : ceval md (some (fn.instTy S)) args = some r)
     (hargs : List.Rel₂ (Lambda.LExpr.HasTypeA [])
       args ((fn.inputs.map Prod.snd).map (Lambda.LMonoTy.subst S))) :
     Lambda.LExpr.HasTypeA [] r (fn.output.subst S) := by
-  rcases (shape_of_mem hfn).1 ceval hce md opTy args r h with
-    ⟨m, c, rfl, hw, hc⟩ | ⟨x, rfl, hin, hout⟩
+  rcases (shape_of_mem hfn).1 ceval hce md _ args r h with
+    ⟨m, c, rfl, hw, hc | hc⟩ | ⟨x, rfl, hin, hout⟩
   · rw [← hc, LConst_ty_subst]
+    exact .const hw
+  · simp only [Lambda.LFunc.instTy, Option.map_some, Option.some.injEq] at hc
+    have hlen : fn.inputs.length = ((fn.inputs.map Prod.snd).map (Lambda.LMonoTy.subst S)).length :=
+      by
+        simp only [List.length_map]
+        exact (List.length_map (as := (fn.inputs : List (CoreLParams.Identifier × Lambda.LMonoTy)))
+          (f := Prod.snd)).symm
+    rw [hlen, Lambda.LMonoTy.arrowResult_mkArrow'] at hc
+    rw [hc]
     exact .const hw
   · rw [hin] at hargs
     rw [hout]

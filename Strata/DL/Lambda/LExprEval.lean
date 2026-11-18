@@ -353,13 +353,8 @@ def eval (n : Nat) (F : @Factory TBase) (env : Env TBase) (e : (LExpr TBase.mono
             (FuncAttr.hasInlineIfAllValues lfunc.attr && args.all (isInlineArg F))) then
             -- Inline a function only if it has a body.
             let body := lfunc.body.get (by simp_all)
-            -- Apply type substitution to instantiate polymorphic type variables.
-            match LFunc.computeTypeSubst lfunc op_expr args with
-            | some tySubst =>
-              let body := body.applyTypeSubst tySubst
-              let input_map := lfunc.inputs.keys.zip args
-              let inlined := substFvarsLifting body input_map
-              combineEvalResValueFlag argsAllFull (eval n' F env inlined)
+            match lfunc.instantiateBody? body op_expr args with
+            | some inlined => combineEvalResValueFlag argsAllFull (eval n' F env inlined)
             | none => (rebuilt, .nonvalue) -- cannot happen in well-typed terms
           else
             if -- Case 1: All arguments in the function call are concrete.
