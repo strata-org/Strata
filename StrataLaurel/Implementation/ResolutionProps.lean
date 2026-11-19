@@ -434,6 +434,17 @@ private theorem postM_withStackWindow {α : Type} {stmt : StmtExprMd} {a : Resol
     postM_bind_any fun _ =>
     postM_pure hres
 
+/-- withInferScope preserves value postconditions. -/
+private theorem postM_withInferScope {α : Type} {a : ResolveM α} {P : α → Prop}
+    (h : PostM a P) : PostM (withInferScope a) P := by
+  unfold withInferScope
+  exact postM_bind_any fun _ =>
+    postM_bind_any fun _ =>
+    postM_bind h fun result hres =>
+    postM_bind_any fun _ =>
+    postM_bind_any fun _ =>
+    postM_pure hres
+
 /-- withScope preserves value postconditions. -/
 theorem postM_withScope {α : Type} {a : ResolveM α} {P : α → Prop}
     (h : PostM a P) : PostM (withScope a) P := by
@@ -630,6 +641,7 @@ include masterSynth masterCheck in
 private theorem statement_clean (e : StmtExprMd) :
     PostM (Check.statement e) Clean := by
   unfold Check.statement
+  apply postM_withInferScope
   split
   · exact postM_withStackWindow (masterCheck _ _)
   · exact postM_withStackWindow (masterCheck _ _)
@@ -729,6 +741,7 @@ theorem resolveProcedure_clean (proc : Procedure) :
   all_goals
     refine postM_bind_any fun procName' => ?_
     apply postM_withScope
+    apply postM_withInferScope
     refine postM_bind_any fun _ => ?_
     -- Polymorphism: `scopeTypeParams proc.typeArgs` is the first bind inside the scope.
     refine postM_bind_any fun typeArgs' => ?_
@@ -983,6 +996,7 @@ theorem resolveInstanceProcedure_clean (typeName : Identifier) (proc : Procedure
   unfold resolveInstanceProcedure
   refine postM_bind_any fun resolved => ?_
   apply postM_withScope
+  apply postM_withInferScope
   refine postM_bind_any fun _ => ?_
   refine postM_bind_any fun savedInstType => ?_
   refine postM_bind_any fun _ => ?_
@@ -1066,8 +1080,8 @@ theorem resolveTypeDefinition_clean (td : TypeDefinition) :
     refine postM_bind (postM_withScope (P := fun (r : Identifier × StmtExprMd × StmtExprMd) =>
         Clean r.2.1 ∧ Clean r.2.2) ?_) fun r hr => postM_pure ?_
     · refine postM_bind_any fun valueName' => ?_
-      refine postM_bind (masterSynth _) fun cw hcw => ?_
-      refine postM_bind (masterSynth _) fun ww hww => postM_pure ?_
+      refine postM_bind (postM_withInferScope (masterSynth _)) fun cw hcw => ?_
+      refine postM_bind (postM_withInferScope (masterSynth _)) fun ww hww => postM_pure ?_
       exact ⟨hcw, hww⟩
     · exact hr
   · -- Datatype
@@ -1094,7 +1108,7 @@ theorem resolveConstant_clean (c : Constant) :
     PostM (resolveConstant c) (fun c' => ∀ e ∈ c'.initializer, Clean e) := by
   unfold resolveConstant
   refine postM_bind_any fun ty' => ?_
-  refine postM_bind (postM_option_mapM _ _ (fun e => masterCheck e ty'))
+  refine postM_bind (postM_option_mapM _ _ (fun e => postM_withInferScope (masterCheck e ty')))
     fun init' hinit => ?_
   exact postM_bind_any fun name' => postM_pure hinit
 
@@ -1105,7 +1119,7 @@ theorem resolveField_clean (ownerName : Identifier) (f : Field) :
   unfold resolveField
   refine postM_bind_any fun ty' => ?_
   refine postM_bind_any fun resolved => ?_
-  refine postM_bind (postM_option_mapM _ _ (fun e => masterCheck e ty'))
+  refine postM_bind (postM_option_mapM _ _ (fun e => postM_withInferScope (masterCheck e ty')))
     fun init' hinit => ?_
   exact postM_pure hinit
 

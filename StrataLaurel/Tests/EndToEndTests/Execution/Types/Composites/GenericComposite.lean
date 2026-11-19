@@ -1061,3 +1061,34 @@ procedure methodCallsAtBothTypeParameters()
   bx#both(true)
 };
 #end
+
+/-! ## An instance call on a raw receiver
+
+`raw: Box` determines none of `Box`'s type parameters: a call or a field access through it reads
+the receiver as `Box<Unknown>`. Only the Laurel interpreter runs it: past resolution, the raw
+type is a dangling reference. -/
+#eval testLaurelExecution { skipVerification := true, skipCoreInterpreter := true } <|
+#strata
+program Laurel;
+composite Box<T> {
+  var element: T
+  var count: int
+  procedure set(self: Box<T>, e: T) opaque modifies self { self#element := e; self#count := 1 };
+  procedure size(self: Box<T>) returns (r: int) opaque { r := self#count };
+}
+
+procedure rawReceiver()
+  entry
+  opaque
+  modifies *
+{
+  var raw: Box := new Box<int>;
+  raw#set(7);
+  var e: int := raw#element;
+  assert e == 7;
+  raw#set(true);
+  assert raw#size() == 1;
+  assert raw#size() == 2
+//^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
+};
+#end
