@@ -162,7 +162,8 @@ private theorem up_iteration (m : Nat) :
     with `y == 10`. -/
 theorem countUp_meets_contract_total :
     Core.Logic.Hoare.Procedure.contractTripleTotal countPgmAST testParams "CountUp" := by
-  refine Core.Logic.Hoare.Procedure.contractTripleTotal_of_core_typed _ _ _ _ _
+  refine Core.Logic.Hoare.Procedure.contractTripleTotal_of_core_typed
+      (hmono := by native_decide) _ _ _ _ _
     (by native_decide) up_body_eq (by native_decide) ?_
   rw [Core.Program.factoryBeforeProcedure_eq_core_of_noFunctions (by native_decide)]
   refine Core.Logic.HoareTotal.block π testParams ?_
@@ -286,7 +287,8 @@ private theorem down_iteration (m : Nat) :
     terminates and ends with `r == 0`. -/
 theorem countDown_meets_contract_total :
     Core.Logic.Hoare.Procedure.contractTripleTotal countPgmAST testParams "CountDown" := by
-  refine Core.Logic.Hoare.Procedure.contractTripleTotal_of_core_typed _ _ _ _ _
+  refine Core.Logic.Hoare.Procedure.contractTripleTotal_of_core_typed
+      (hmono := by native_decide) _ _ _ _ _
     (by native_decide) down_body_eq (by native_decide) ?_
   rw [Core.Program.factoryBeforeProcedure_eq_core_of_noFunctions (by native_decide)]
   refine Core.Logic.HoareTotal.block π testParams ?_

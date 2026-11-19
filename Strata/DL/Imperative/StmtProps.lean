@@ -41,7 +41,9 @@ Equational theory for the boolean shape walkers defined in
   form.
 - `Stmt`/`Block.mapExpr_eq_mapExprM` — the monadic `mapExprM` at the identity
   monad `Id` computes the pure `mapExpr`, so reasoning transfers between the two
-  (supported by the `optionMapM_Id`/`listMapM_Id` container lemmas).
+  (supported by the `optionMapM_Id`/`listMapM_Id` container lemmas). Rewriting with
+  `mapExpr` keeps the labels covering the exits (`Stmt`/`Block.exitsCoveredByBlocks_mapExpr`)
+  and maps the commands `allCmds` checks (`Stmt`/`Block.allCmds_mapExpr`).
 - The def-use bridge: `Stmt`/`Block.defined_of_mem_touchedVars` derive the flat
   `readWritesDefined` condition from the flow-sensitive `defUseWellFormed`;
   `init_defUseWellFormed` and `havoc_defUseWellFormed` provide the base-command
@@ -2547,6 +2549,89 @@ theorem Block.mapExpr_eq_mapExprM (fExpr : P.Expr → P.Expr) (mapCmd : C → C)
   | s :: rest =>
       simp only [Block.mapExpr, Block.mapExprM]
       rw [Stmt.mapExpr_eq_mapExprM fExpr mapCmd s, Block.mapExpr_eq_mapExprM fExpr mapCmd rest]; rfl
+  termination_by sizeOf ss
+end
+
+mutual
+/-- Rewriting a statement's expressions and commands keeps the labels that cover its exits. -/
+theorem Stmt.exitsCoveredByBlocks_mapExpr (fExpr : P.Expr → P.Expr) (mapCmd : C → C)
+    (labels : List String) (s : Stmt P C) :
+    Stmt.exitsCoveredByBlocks labels (Stmt.mapExpr fExpr mapCmd s) ↔
+      Stmt.exitsCoveredByBlocks labels s := by
+  match s with
+  | .cmd c => simp only [Stmt.mapExpr, Stmt.exitsCoveredByBlocks]
+  | .block l ss md =>
+      simp only [Stmt.mapExpr, Stmt.exitsCoveredByBlocks]
+      exact Block.exitsCoveredByBlocks_mapExpr fExpr mapCmd _ ss
+  | .ite (.det c) tss ess md =>
+      simp only [Stmt.mapExpr, Stmt.exitsCoveredByBlocks]
+      rw [Block.exitsCoveredByBlocks_mapExpr fExpr mapCmd labels tss,
+        Block.exitsCoveredByBlocks_mapExpr fExpr mapCmd labels ess]
+  | .ite .nondet tss ess md =>
+      simp only [Stmt.mapExpr, Stmt.exitsCoveredByBlocks]
+      rw [Block.exitsCoveredByBlocks_mapExpr fExpr mapCmd labels tss,
+        Block.exitsCoveredByBlocks_mapExpr fExpr mapCmd labels ess]
+  | .loop (.det g) measure inv body md =>
+      simp only [Stmt.mapExpr, Stmt.exitsCoveredByBlocks]
+      exact Block.exitsCoveredByBlocks_mapExpr fExpr mapCmd labels body
+  | .loop .nondet measure inv body md =>
+      simp only [Stmt.mapExpr, Stmt.exitsCoveredByBlocks]
+      exact Block.exitsCoveredByBlocks_mapExpr fExpr mapCmd labels body
+  | .exit l md => simp only [Stmt.mapExpr, Stmt.exitsCoveredByBlocks]
+  | .typeDecl tc md => simp only [Stmt.mapExpr, Stmt.exitsCoveredByBlocks]
+  termination_by sizeOf s
+
+/-- Rewriting a block's expressions and commands keeps the labels that cover its exits. -/
+theorem Block.exitsCoveredByBlocks_mapExpr (fExpr : P.Expr → P.Expr) (mapCmd : C → C)
+    (labels : List String) (ss : Block P C) :
+    Block.exitsCoveredByBlocks labels (Block.mapExpr fExpr mapCmd ss) ↔
+      Block.exitsCoveredByBlocks labels ss := by
+  match ss with
+  | [] => simp only [Block.mapExpr, Block.exitsCoveredByBlocks]
+  | s :: rest =>
+      simp only [Block.mapExpr, Block.exitsCoveredByBlocks]
+      rw [Stmt.exitsCoveredByBlocks_mapExpr fExpr mapCmd labels s,
+        Block.exitsCoveredByBlocks_mapExpr fExpr mapCmd labels rest]
+  termination_by sizeOf ss
+end
+
+mutual
+/-- Every command of a statement whose commands are rewritten by `mapCmd` passes `Q` exactly
+    when every command of the statement passes `Q` once rewritten. -/
+theorem Stmt.allCmds_mapExpr (Q : C → Bool) (fExpr : P.Expr → P.Expr) (mapCmd : C → C)
+    (s : Stmt P C) :
+    Stmt.allCmds Q (Stmt.mapExpr fExpr mapCmd s) = Stmt.allCmds (Q ∘ mapCmd) s := by
+  match s with
+  | .cmd c => simp only [Stmt.mapExpr, Stmt.allCmds, Function.comp]
+  | .block l ss md =>
+      simp only [Stmt.mapExpr, Stmt.allCmds]
+      exact Block.allCmds_mapExpr Q fExpr mapCmd ss
+  | .ite (.det c) tss ess md =>
+      simp only [Stmt.mapExpr, Stmt.allCmds]
+      rw [Block.allCmds_mapExpr Q fExpr mapCmd tss, Block.allCmds_mapExpr Q fExpr mapCmd ess]
+  | .ite .nondet tss ess md =>
+      simp only [Stmt.mapExpr, Stmt.allCmds]
+      rw [Block.allCmds_mapExpr Q fExpr mapCmd tss, Block.allCmds_mapExpr Q fExpr mapCmd ess]
+  | .loop (.det g) measure inv body md =>
+      simp only [Stmt.mapExpr, Stmt.allCmds]
+      exact Block.allCmds_mapExpr Q fExpr mapCmd body
+  | .loop .nondet measure inv body md =>
+      simp only [Stmt.mapExpr, Stmt.allCmds]
+      exact Block.allCmds_mapExpr Q fExpr mapCmd body
+  | .exit l md => simp only [Stmt.mapExpr, Stmt.allCmds]
+  | .typeDecl tc md => simp only [Stmt.mapExpr, Stmt.allCmds]
+  termination_by sizeOf s
+
+/-- Every command of a block whose commands are rewritten by `mapCmd` passes `Q` exactly when
+    every command of the block passes `Q` once rewritten. -/
+theorem Block.allCmds_mapExpr (Q : C → Bool) (fExpr : P.Expr → P.Expr) (mapCmd : C → C)
+    (ss : Block P C) :
+    Block.allCmds Q (Block.mapExpr fExpr mapCmd ss) = Block.allCmds (Q ∘ mapCmd) ss := by
+  match ss with
+  | [] => simp only [Block.mapExpr, Block.allCmds]
+  | s :: rest =>
+      simp only [Block.mapExpr, Block.allCmds]
+      rw [Stmt.allCmds_mapExpr Q fExpr mapCmd s, Block.allCmds_mapExpr Q fExpr mapCmd rest]
   termination_by sizeOf ss
 end
 

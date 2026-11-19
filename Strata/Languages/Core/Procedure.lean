@@ -361,23 +361,57 @@ def DetCFG.mapCmdsGuards (cfg : DetCFG) (fc : Command → Command)
 def DetCFG.eraseTypes (cfg : DetCFG) : DetCFG :=
   DetCFG.mapCmdsGuards cfg Command.eraseTypes (·.eraseTypes)
 
+/-- `proc` with `f` applied to every type it mentions (its formals' types, the type annotations
+    of its contract and its body) and its type parameters replaced by `typeArgs`. -/
+def Procedure.mapTys (proc : Procedure) (f : LMonoTy → LMonoTy)
+    (typeArgs : List TyIdentifier) : Procedure :=
+  let mapChecks (cs : ListMap CoreLabel Procedure.Check) :=
+    cs.map fun p => (p.1, { p.2 with expr := mapExprTys f p.2.expr })
+  { header := { proc.header with
+      typeArgs := typeArgs,
+      inputs := proc.header.inputs.map fun p => (p.1, f p.2),
+      outputs := proc.header.outputs.map fun p => (p.1, f p.2) },
+    spec := { proc.spec with
+      preconditions := mapChecks proc.spec.preconditions,
+      postconditions := mapChecks proc.spec.postconditions },
+    body := match proc.body with
+      | .structured ss => .structured (mapStmtsTys f ss)
+      | .cfg c => .cfg (DetCFG.mapCmdsGuards c (mapCmdTys f) (mapExprTys f)) }
+
 /-- `proc` with its type parameters renamed by `ren` throughout, as
     `renameTyArgList` does to the parameter list. -/
 def Procedure.renameTypeArgs (proc : Procedure) (ren : List (String × String)) :
     Procedure :=
-  let f := LMonoTy.subst (Subst.ofRenaming ren)
-  let renameChecks (cs : ListMap CoreLabel Procedure.Check) :=
-    cs.map fun p => (p.1, { p.2 with expr := mapExprTys f p.2.expr })
-  { header := { proc.header with
-      typeArgs := renameTyArgList ren proc.header.typeArgs,
-      inputs := proc.header.inputs.map fun p => (p.1, f p.2),
-      outputs := proc.header.outputs.map fun p => (p.1, f p.2) },
-    spec := { proc.spec with
-      preconditions := renameChecks proc.spec.preconditions,
-      postconditions := renameChecks proc.spec.postconditions },
-    body := match proc.body with
-      | .structured ss => .structured (mapStmtsTys f ss)
-      | .cfg c => .cfg (DetCFG.mapCmdsGuards c (mapCmdTys f) (mapExprTys f)) }
+  proc.mapTys (LMonoTy.subst (Subst.ofRenaming ren)) (renameTyArgList ren proc.header.typeArgs)
+
+/-- Whether every type the body of `proc` declares a variable at (`init`) is a monotype.  The
+    typing rules require this (`CmdWellTyped.init_det`, `CmdHasType.init_det`), so it holds of
+    every type-checked procedure. -/
+@[expose] def Procedure.initTypesMono (proc : Procedure) : Bool :=
+  (match proc.body with
+    | .structured ss => Imperative.Block.initTypes ss
+    | .cfg c => Imperative.DetCFG.initTypes c).all LTy.isMonoType
+
+/-- `proc` instantiated at the type arguments `tys` of a call: each type parameter is replaced
+    throughout by its type argument, position by position, and the result has no type
+    parameters.  A monomorphic procedure is its own instance at `[]`.  `none` when `tys` has
+    the wrong length or holds a type that is not a monotype, and, for a polymorphic procedure,
+    when its body declares a variable at a quantified type (`initTypesMono`).  With every type
+    of the procedure a monotype, the substitution has no binder to go under, so it is exact for
+    any monotypes `tys`, ground or not; under a quantified `init` type it would substitute
+    bound variables and could capture a variable of `tys`.  The typing rules allow only
+    monotypes there, so no type-checked procedure is refused. -/
+@[expose] def Procedure.instantiateTypes (proc : Procedure) (tys : List Expression.Ty) :
+    Option Procedure :=
+  if proc.header.typeArgs.isEmpty then
+    if tys.isEmpty then some proc else none
+  else if tys.length ≠ proc.header.typeArgs.length then none
+  else if !proc.initTypesMono then none
+  else (tys.mapM LTy.toMonoType?).map fun ms =>
+    proc.mapTys (LMonoTy.subst (Strata.Util.HMaps.ofScopes [proc.header.typeArgs.zip ms])) []
+
+instance : Imperative.ProcedureTypeInstantiation Expression Procedure.Header where
+  instantiate := Procedure.instantiateTypes
 
 -- Only transfer metadata is stripped because command metadata (on assert,
 -- assume, init, set, cover) is not included in formatted output — formatCmd

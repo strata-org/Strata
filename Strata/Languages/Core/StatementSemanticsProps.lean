@@ -49,6 +49,8 @@ constructing well-formed call frames, beyond the remaining
   determinism into a unique caller store together with its chronological trace.
   `EvalCommandContractE.call_unique_of_outputs_nil` gives the corresponding
   full-result guarantee when contract abstraction has no outputs to havoc.
+  `CoreBodyExecE.singleton_cmd` is the converse of the singleton inversion: a command that
+  runs without events makes a finished run of a one-command body.
 - `assertBodyE_preserves_store` and `setBodyE_frame`: one-command procedure
   bodies establish exact store preservation or an output write frame.
 - Event-trace store-domain results:
@@ -123,7 +125,7 @@ theorem EvalCommandE.call_sem
     {tyArgs : Option (List Expression.Ty)}
     {σ' σ_final : CoreStore} {bodyEvents : Trace Expression}
     {md : MetaData Expression} {fac : Expression.Factory} {σAO : CoreStore}
-    (hπ : π n = some p)
+    (hπ : Imperative.Calls.typeInstantiatedCallee π n tyArgs = some p)
     (hentry : CallEntry fac σ p callArgs σAO)
     (hbody : CoreBodyExecE π p.body ⟨σAO, fac⟩ σ_final bodyEvents)
     (hexit : CallExit fac σ p callArgs σ_final σ') :
@@ -155,7 +157,7 @@ theorem EvalCommandContractE.call_sem {π : String → Option Procedure}
     {σ σO : CoreStore} {n : String} {p : Procedure} {callArgs : List (CallArg Expression)}
     {tyArgs : Option (List Expression.Ty)}
     {σ' : CoreStore} {md : MetaData Expression} {fac : Expression.Factory} {σAO : CoreStore}
-    (hπ : π n = .some p)
+    (hπ : Imperative.Calls.typeInstantiatedCallee π n tyArgs = some p)
     (hentry : CallEntry fac σ p callArgs σAO)
     (hhavoc : HavocVars fac σAO (ListMap.keys p.header.outputs) σO)
     (hexit : CallExit fac σ p callArgs σO σ') :
@@ -498,7 +500,8 @@ theorem EvalCommandContractE.call_unique_of_outputs_nil
     {σ σ₁ σ₂ : CoreStore} {n : String} {tyArgs : Option (List Expression.Ty)} {p : Procedure}
     {callArgs : List (CallArg Expression)} {md : MetaData Expression}
     {emitted₁ emitted₂ : Trace Expression}
-    (hLookup : π n = some p) (hOutputs : ListMap.keys p.header.outputs = [])
+    (hLookup : Imperative.Calls.typeInstantiatedCallee π n tyArgs = some p)
+    (hOutputs : ListMap.keys p.header.outputs = [])
     (h₁ : EvalCommandContractE π fac σ (.call n tyArgs callArgs md) σ₁ emitted₁)
     (h₂ : EvalCommandContractE π fac σ (.call n tyArgs callArgs md) σ₂ emitted₂) :
     σ₁ = σ₂ ∧ emitted₁ = emitted₂ := by
@@ -674,6 +677,20 @@ theorem CoreBodyExecE.singleton_cmd_invert
           · simp at hc
           · simp at hc
 
+/-- A command that runs from `σ` to `σ'` without events, as the one statement of a structured
+    procedure body, makes a finished run of the body that ends in `σ'` projected through `σ`. -/
+theorem CoreBodyExecE.singleton_cmd {π : String → Option Procedure}
+    {fac : Expression.Factory} {σ σ' : CoreStore} {cmd : Command}
+    (h : EvalCommandE π fac σ cmd σ' []) :
+    CoreBodyExecE π (.structured [.cmd cmd]) ⟨σ, fac⟩ (projectStore σ σ') [] := by
+  refine CoreBodyExecE.structured (ρ' := ⟨projectStore σ σ', fac⟩) ?_
+  refine .step _ [] _ [] _ .step_block ?_
+  refine .step _ [] _ [] _ (.step_block_body .step_stmts_cons) ?_
+  refine .step _ [] _ [] _ (.step_block_body (.step_seq_inner (.step_cmd h))) ?_
+  refine .step _ [] _ [] _ (.step_block_body .step_seq_done) ?_
+  refine .step _ [] _ [] _ (.step_block_body .step_stmts_nil) ?_
+  exact .step _ [] _ [] _ .step_block_done (.refl _)
+
 /-- An event-producing call has a unique store and trace when every execution of
 its selected body has a unique store, factory, and trace. -/
 theorem EvalCommandE.call_unique_of_body_unique
@@ -683,7 +700,7 @@ theorem EvalCommandE.call_unique_of_body_unique
     {n : String} {p : Procedure} {callArgs : List (CallArg Expression)}
     {tyArgs : Option (List Expression.Ty)}
     {md : MetaData Expression} {emitted₁ emitted₂ : Trace Expression}
-    (hLookup : π n = some p)
+    (hLookup : Imperative.Calls.typeInstantiatedCallee π n tyArgs = some p)
     (hBodyUnique : ∀ {frame end₁ end₂ : CoreStore}
       {bodyEvents₁ bodyEvents₂ : Trace Expression},
       CoreBodyExecE π p.body ⟨frame, fac⟩ end₁ bodyEvents₁ →
@@ -785,7 +802,8 @@ theorem EvalCommandE.empty_body_call_store_unique
     {n : String} {p : Procedure} {callArgs : List (CallArg Expression)}
     {tyArgs : Option (List Expression.Ty)}
     {md : MetaData Expression} {emitted : Trace Expression}
-    (hLookup : π n = some p) (hBody : p.body = .structured [])
+    (hLookup : Imperative.Calls.typeInstantiatedCallee π n tyArgs = some p)
+    (hBody : p.body = .structured [])
     (hEntry : CallEntry fac σ p callArgs σAO)
     (hExit : CallExit fac σ p callArgs σAO expected)
     (h : EvalCommandE π fac σ (.call n tyArgs callArgs md) σ' emitted) : σ' = expected := by

@@ -30,6 +30,7 @@ abbrev StepCFGExtE
     [DecidableEq P.Ident] [HasOldIdent P]
     [HasBool P] [HasBoolOps P] [HasFvar P] [HasFvars P]
     {Hdr : Type} [DecidableEq Hdr] [Inhabited Hdr] [ProcedureHeader P Hdr]
+    [ProcedureTypeInstantiation P Hdr]
     (π : String → Option (Procedure P (CmdExt P) Hdr)) :
     CFGConfig l (CmdExt P) P → List (Event P) → CFGConfig l (CmdExt P) P → Prop :=
   _root_.Imperative.StepCFGE P (EvalCmdExtE π)
@@ -41,6 +42,7 @@ abbrev StepCFGExtStarE
     [DecidableEq P.Ident] [HasOldIdent P]
     [HasBool P] [HasBoolOps P] [HasFvar P] [HasFvars P]
     {Hdr : Type} [DecidableEq Hdr] [Inhabited Hdr] [ProcedureHeader P Hdr]
+    [ProcedureTypeInstantiation P Hdr]
     (π : String → Option (Procedure P (CmdExt P) Hdr)) :
     CFGConfig l (CmdExt P) P → List (Event P) → CFGConfig l (CmdExt P) P → Prop :=
   _root_.Imperative.StepCFGStarE P (EvalCmdExtE π)
@@ -52,6 +54,7 @@ abbrev StepKleeneExtE
     [DecidableEq P.Ident] [HasOldIdent P]
     [HasBool P] [HasBoolOps P] [HasFvar P] [HasFvars P]
     {Hdr : Type} [DecidableEq Hdr] [Inhabited Hdr] [ProcedureHeader P Hdr]
+    [ProcedureTypeInstantiation P Hdr]
     (π : String → Option (Procedure P (CmdExt P) Hdr)) :
     KleeneConfig P (CmdExt P) → List (Event P) → KleeneConfig P (CmdExt P) → Prop :=
   _root_.Imperative.StepKleeneE P (EvalCmdExtE π)
@@ -62,6 +65,7 @@ abbrev StepKleeneExtStarE
     [DecidableEq P.Ident] [HasOldIdent P]
     [HasBool P] [HasBoolOps P] [HasFvar P] [HasFvars P]
     {Hdr : Type} [DecidableEq Hdr] [Inhabited Hdr] [ProcedureHeader P Hdr]
+    [ProcedureTypeInstantiation P Hdr]
     (π : String → Option (Procedure P (CmdExt P) Hdr)) :
     KleeneConfig P (CmdExt P) → List (Event P) → KleeneConfig P (CmdExt P) → Prop :=
   _root_.Imperative.StepKleeneStarE P (EvalCmdExtE π)

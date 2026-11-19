@@ -302,7 +302,8 @@ theorem countdown_meets_contract :
   have hfactory : cdPgmAST.factoryBeforeProcedure "Countdown" = Core.Factory :=
     Core.Program.factoryBeforeProcedure_eq_core_of_noFunctions (by decide +kernel)
   rw [Core.Logic.Hoare.Procedure.contractTriple, hfactory]
-  refine ⟨cdProc, by native_decide, by native_decide, ?_⟩
+  refine ⟨cdProc, by native_decide,
+    Core.Procedure.forall_instance_of_typeArgs_nil (by native_decide) ⟨by native_decide, ?_⟩⟩
   rw [cd_body_eq]
   -- The body proof does not use the axioms visible to the procedure.
   refine Core.Logic.Hoare.consequence _ _

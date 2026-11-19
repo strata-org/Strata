@@ -50,6 +50,7 @@ namespace Calls
 
 variable {P : PureExpr} [HasBool P] [DecidableEq P.Expr] [DecidableEq P.Ident] [InterpLang P]
   {Hdr : Type} [DecidableEq Hdr] [Inhabited Hdr] [ProcedureHeader P Hdr]
+  [ProcedureTypeInstantiation P Hdr]
 
 /-- The `ReplayM` run-projection to an `(outcome, final-state)` pair. -/
 private abbrev runProj {α : Type} (X : ReplayM P α) (cfg : ReplayCfg P)

@@ -52,6 +52,7 @@ namespace Calls
 variable {P : PureExpr} [HasBoolOps P] [HasFvar P] [HasFvars P]
   [DecidableEq P.Expr] [DecidableEq P.Ident] [InterpLang P] [HasOldIdent P]
   {Hdr : Type} [DecidableEq Hdr] [Inhabited Hdr] [ProcedureHeader P Hdr]
+  [ProcedureTypeInstantiation P Hdr]
 
 /-! ## Steps of an oracle-reading run -/
 
@@ -210,7 +211,8 @@ private theorem stepCmd_call_completeG
     {nm : String} {args : List (CallArg P)} {md : MetaData P} {p : Procedure P (CmdExt P) Hdr}
     {tyArgs : Option (List P.Ty)}
     {σAO σf σ' : SemanticStore P} {evB : List (Event P)} {o o' : List P.Val}
-    (hπ : π nm = some p) (hentry : CallEntry F (InterpLang.absStore F ρ.store.get) p args σAO)
+    (hπ : typeInstantiatedCallee π nm tyArgs = some p)
+    (hentry : CallEntry F (InterpLang.absStore F ρ.store.get) p args σAO)
     (hexit : CallExit F (InterpLang.absStore F ρ.store.get) p args σf σ')
     (hargs : CallArgsReach F (InterpLang.absStore F ρ.store.get) args)
     (hwb : WriteBackOK F (InterpLang.absStore F ρ.store.get) p args σf)
@@ -229,6 +231,9 @@ private theorem stepCmd_call_completeG
         = (.ok (.terminal { ρ with store := σi }), st')) ∧ Pend st' o' ∧
       obs.TraceExt F st st' (defaultAssertEvents F σAO (checksAtCall md p.spec.preconditions) ++
         evB ++ defaultAssertEvents F σf p.spec.postconditions) := by
+  obtain ⟨p₀, hπ₀, hinst⟩ : ∃ p₀, π nm = some p₀ ∧
+      ProcedureTypeInstantiation.instantiate p₀ (tyArgs.getD []) = some p :=
+    Option.bind_eq_some_iff.1 hπ
   obtain ⟨vi, vo, hin, hout, hinit⟩ := hentry
   obtain ⟨-, vs, hrd, hup, hrel⟩ := hexit
   obtain ⟨N, ri, hri, hev⟩ := evalBoundedList_of_reach hMono (storeDenotes_absStore hd) hin hargs
@@ -259,8 +264,9 @@ private theorem stepCmd_call_completeG
   · obtain ⟨i, rfl⟩ : ∃ k, i = k + 1 := ⟨i - 1, by omega⟩
     obtain ⟨j, rfl⟩ : ∃ k, j = k + 1 := ⟨j - 1, by omega⟩
     rw [stepCmd]
-    simp (disch := omega) [hπ, hf, hev, hro, hlin, hlout, hri.length_eq, hrorel.length_eq, e1,
-      hrun i j, e3, hms, hold, hwb, ReadValuesLength hrd, hbind.1, -List.forM_eq_forM]
+    simp (disch := omega) [hπ₀, hinst, hf, hev, hro, hlin, hlout, hri.length_eq,
+      hrorel.length_eq, e1, hrun i j, e3, hms, hold, hwb, ReadValuesLength hrd, hbind.1,
+      -List.forM_eq_forM]
   · simp only [List.map_append, rDefaultAssertEvents_abs, habs, hrb]
   · simp [t1, t2, t3]
 
@@ -1104,8 +1110,8 @@ theorem runChoices_nil_of_deterministic {π : String → Option (Procedure P (Cm
         ⟨_, _, _, _, _, _, g, _, _, rfl, hp, hg, -, hb, -, rfl, -⟩) hd
       · exact oracleCmdBase_det h hd
       · exact (oracleStar_det ih hb (by simpa [Config.noNondetGuards, Stmt.noNondetGuards,
-          Config.allCmds, Stmt.allCmds] using hdet.2.1 _ _ _ hp hs)).1
-      · exact (oracleCFG_det ih hb (hdet.2.2 _ _ _ hp hg)).1
+          Config.allCmds, Stmt.allCmds] using hdet.2.1 _ _ _ _ hp hs)).1
+      · exact (oracleCFG_det ih hb (hdet.2.2 _ _ _ _ hp hg)).1
   obtain ⟨n, hn⟩ := h
   exact (oracleStar_det (hcmd n) (List.append_nil cs ▸ hn []) hdet.1).1.symm
 

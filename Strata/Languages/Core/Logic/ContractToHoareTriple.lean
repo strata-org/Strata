@@ -43,7 +43,8 @@ pair.  Kept separate because none of it is part of the logic proper.
   `Procedure.outputAsPredicate` — connect runtime parameter values to the types declared
   by the procedure signature.
 - `Procedure.contractTriple` — "the procedure named `procName` in `p` meets its
-  contract", as a single judgement.  It names the procedure rather than taking it, so
+  contract", as a single judgement, at every instance of its type parameters
+  (`Procedure.instantiateTypes`).  It names the procedure rather than taking it, so
   the environment a `call` resolves against is `p`'s own `findProcByString?` by
   construction, and dispatches on the resolved procedure's body so neither an
   unresolvable name nor either body representation makes the obligation vacuous.
@@ -177,6 +178,11 @@ precondition, body trace interpretation, and postcondition. -/
     environment, can still refer to the entry store.
     Both readings use the same contract precondition and postcondition.
 
+    A polymorphic procedure must meet its contract at every instance a call can run: for every
+    list of type arguments `tys` that instantiates it (`Procedure.instantiateTypes`), the
+    instantiated procedure's body meets the instantiated contract.  A monomorphic procedure
+    has one instance, itself, at `[]`.
+
     Current scope: this judgement is intended for typed pipeline procedures whose
     contract clauses evaluate in the stores they are captured in (the invariant
     described on `checkAsPredicate`); that invariant is not yet carried as a
@@ -195,7 +201,8 @@ precondition, body trace interpretation, and postcondition. -/
     means a diverging body satisfies any postcondition. -/
 @[expose] def Procedure.contractTriple (p : Core.Program) (params : InitEnvWFParams)
     (procName : String) : Prop :=
-  ∃ proc, p.findProcByString? procName = some proc ∧
+  ∃ proc₀, p.findProcByString? procName = some proc₀ ∧
+    ∀ tys proc, proc₀.instantiateTypes tys = some proc →
     Procedure.contractChecksTyped proc ∧
       match proc.body with
       | .structured bss =>
@@ -218,7 +225,8 @@ precondition, body trace interpretation, and postcondition. -/
 
     The counterpart of `Procedure.contractTriple`, with the same precondition and
     postcondition, and `HoareTotal.Triple` and `HoareTotal.TripleUnstructured` in place of
-    `Triple` and `TripleUnstructured`: it is `contractTriple` together with termination
+    `Triple` and `TripleUnstructured`, at every instance of the procedure as there: it is
+    `contractTriple` together with termination
     with valid assertions of the body from every admitted entry satisfying the precondition
     (`Procedure.contractTripleTotal_iff`).  The output typing in the precondition matters
     here: an assignment to an output steps only to a value of the type of the value the
@@ -226,7 +234,8 @@ precondition, body trace interpretation, and postcondition. -/
     stuck. -/
 @[expose] def Procedure.contractTripleTotal (p : Core.Program) (params : InitEnvWFParams)
     (procName : String) : Prop :=
-  ∃ proc, p.findProcByString? procName = some proc ∧
+  ∃ proc₀, p.findProcByString? procName = some proc₀ ∧
+    ∀ tys proc, proc₀.instantiateTypes tys = some proc →
     Procedure.contractChecksTyped proc ∧
       match proc.body with
       | .structured bss =>
@@ -245,14 +254,16 @@ precondition, body trace interpretation, and postcondition. -/
               { ρ' with store := Imperative.projectStore ρEntry.store ρ'.store })
             (factory := p.factoryBeforeProcedure procName)
 
-/-- **The body of the procedure named `procName` in `p` terminates with valid assertions** from
+/-- **The body of the procedure named `procName` in `p` terminates with valid assertions**, at
+    every instance of the procedure (`Procedure.instantiateTypes`), from
     every entry admitted by the body's gate that satisfies `contractTriple`'s precondition:
     in every world, every execution of the body whose assumptions hold there terminates and
     has its assertions hold there.  With
     `contractTriple`, it makes up `contractTripleTotal` (`Procedure.contractTripleTotal_iff`). -/
 @[expose] def Procedure.bodyTerminatesAndAssertsValid (p : Core.Program)
     (params : InitEnvWFParams) (procName : String) : Prop :=
-  ∃ proc, p.findProcByString? procName = some proc ∧
+  ∃ proc₀, p.findProcByString? procName = some proc₀ ∧
+    ∀ tys proc, proc₀.instantiateTypes tys = some proc →
       match proc.body with
       | .structured bss =>
           ∀ ρ, Procedure.contractPre (p.factoryBeforeProcedure procName) proc ρ ∧

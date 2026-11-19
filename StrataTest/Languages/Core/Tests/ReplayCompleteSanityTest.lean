@@ -8,6 +8,7 @@ module
 import Strata.Languages.Core.InterpreterCallComplete
 import Strata.Languages.Core.InterpreterComplete
 import Strata.Languages.Core.InstWellFormedSemanticsEval
+import Strata.Languages.Core.ProcedureProps
 import all Strata.Languages.Core.Interpreter
 import all Strata.Languages.Core.InterpreterReplay
 import all Strata.DL.Imperative.InterpreterCall
@@ -301,11 +302,16 @@ attribute [local simp] Block.allCmds.eq_1 Block.allCmds.eq_2 Stmt.allCmds.eq_1
   Calls.CmdCallOk Calls.StrictActual Calls.getInputExprs CallArg.getInputExprs CallArg.getLhs ListMap.keys
   Procedure.Header.getOutputOnlyParams HasFvar.getFvar HasFvars.getFvars
 
+/-- The witness table has no polymorphic procedure. -/
+private theorem wPi_mono : ∀ n p, wPi n = some p → p.header.typeArgs = [] := by
+  simp [wPi, wCallee]
+
 /-- Every procedure of the witness table is well-formed for call-aware replay: its frame-binding
     formals are pairwise distinct, and its structured body is exit-covered and has well-formed
     call sites. -/
-private theorem procsOk_wPi : ProcsOk wPi := by
-  simp [ProcsOk, ProcOk, wPi, wCallee, vid, Block.exitsCoveredByBlocks, Stmt.exitsCoveredByBlocks]
+private theorem procsOk_wPi : ProcsOk wPi :=
+  procsOk_of_procOk
+    (by simp [ProcOk, wPi, wCallee, vid, Block.exitsCoveredByBlocks, Stmt.exitsCoveredByBlocks])
 
 /-- The witness caller environment: the empty store over Core's concrete factory. -/
 def wEnv : Imperative.IEnv Expression :=
@@ -335,9 +341,9 @@ def wFuel : Nat := 100
 /-- No target assertion id occurs in a procedure of the witness table: the callee has no spec
     clauses and its body has no `assert` or `cover`. -/
 private theorem targetNotInProcs_wPi (target : AssertId Expression) :
-    TargetNotInProcs wPi target := by
-  simp [Calls.TargetNotInProcs, wPi, wCallee, Calls.ChecksAvoidTarget, Calls.cmdAvoidsTarget,
-    Calls.checksAtCall]
+    TargetNotInProcs wPi target :=
+  Procedure.forall_typeInstantiatedCallee_of_typeArgs_nil wPi_mono
+    (by simp [wPi, wCallee, Calls.ChecksAvoidTarget, Calls.cmdAvoidsTarget, Calls.checksAtCall])
 
 /-- Replay soundness holds at the witness, at every modeled factory over `Core.Factory`: for
     every target, if replaying `wCex` returns `genuine`, then the reference semantics has a run

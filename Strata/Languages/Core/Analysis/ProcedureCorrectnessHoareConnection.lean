@@ -9,6 +9,7 @@ public import Strata.Languages.Core.Analysis.ProcedureCorrectness
 public import Strata.Languages.Core.Logic.ContractToHoareTriple
 import Strata.Languages.Core.Analysis.ProcedureCorrectnessProps
 import Strata.Languages.Core.Logic.ContractToHoareTripleProps
+import Strata.Languages.Core.ProcedureProps
 import all Strata.DL.Lambda.LTy
 
 /-! # Procedure correctness from a contract triple
@@ -58,16 +59,18 @@ theorem ProcEntryEnv.contractPre {params : InitEnvWFParams} {entryProcName : Str
     simp only [Lambda.LTy.toMonoType?, Option.some.injEq] at hty
     exact ⟨v, hv, hty.symm⟩
 
-/-- **A proved contract triple gives the contract of procedure correctness.** From
-    every entry environment `ProcEntryEnv` admits, every finished run of the body,
-    followed by the procedure's non-free postconditions as assertions, is
-    assertion-valid: the `contract` field of
-    `ProcedureAssertsValidOnTraces.denote`. -/
+/-- **A proved contract triple gives the contract of procedure correctness.** From every entry
+    environment `ProcEntryEnv` admits, every finished run of the body, followed by the
+    procedure's non-free postconditions as assertions, is assertion-valid: the `contract` field
+    of `ProcedureAssertsValidOnTraces.denote`, for a procedure whose body declares variables
+    only at monotypes, as every type-checked one does.  For a polymorphic procedure, this is the
+    triple of its instance at its own type parameters, which differs from it only in having
+    none. -/
 theorem contract_of_contractTriple {params : InitEnvWFParams} {entryProcName : String}
     {p : Program} (h : Hoare.Procedure.contractTriple p params entryProcName)
     (proc : Procedure) (ss : Statements)
     (hproc : p.findProcByString? entryProcName = some proc)
-    (hbody : proc.body = .structured ss)
+    (hbody : proc.body = .structured ss) (hinits : proc.initTypesMono = Bool.true)
     (ρ₀ ρ' : Imperative.Env Expression) (trace : Trace Expression)
     (hentry : ProcEntryEnv params entryProcName p proc ρ₀)
     (hrun : (Core.Logic.EventLang.coreBlock p.findProcByString?).TerminatesAt
@@ -75,8 +78,18 @@ theorem contract_of_contractTriple {params : InitEnvWFParams} {entryProcName : S
     Trace.AssertionsValid Expression
       (DenoteBasedInterp (p.factoryBeforeProcedure entryProcName))
       (trace ++ postconditionEvents proc ρ') := by
-  obtain ⟨proc', hproc', -, htriple⟩ := h
+  obtain ⟨proc', hproc', hinsts⟩ := h
   obtain rfl : proc = proc' := Option.some.inj (hproc.symm.trans hproc')
+  -- The instance at the procedure's own type parameters reads the same contract and body.
+  obtain ⟨-, htriple⟩ := hinsts _ _ (Procedure.instantiateTypes_own_typeArgs proc hinits)
+  change match proc.body with
+    | .structured bss => Hoare.Triple p.findProcByString? params
+        (fun ρ => Hoare.Procedure.contractPre (p.factoryBeforeProcedure entryProcName) proc ρ ∧
+          AxiomsBeforeProcedureDecl entryProcName p ρ)
+        [Stmt.block "" bss #[]]
+        (Hoare.Procedure.contractPost (p.factoryBeforeProcedure entryProcName) proc)
+        (factory := p.factoryBeforeProcedure entryProcName)
+    | .cfg _ => _ at htriple
   rw [hbody] at htriple
   obtain ⟨hvalid, hpost⟩ :=
     htriple ρ₀ ρ' trace hentry.contractPre (hentry.1.structuredBodyWF ss hbody) hrun

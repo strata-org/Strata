@@ -5,6 +5,7 @@
 -/
 
 import Strata.Languages.Core.Logic.ContractToHoareTripleProps
+import Strata.Languages.Core.ProcedureProps
 import Strata.Languages.Core.ProgramProps
 import Strata.Languages.Core
 import Strata.Languages.Core.InstWellFormedSemanticsEval
@@ -480,7 +481,8 @@ theorem count_meets_contract :
   have hfactory : countPgmAST.factoryBeforeProcedure "Count" = Core.Factory :=
     Core.Program.factoryBeforeProcedure_eq_core_of_noFunctions (by decide +kernel)
   rw [Core.Logic.Hoare.Procedure.contractTriple, hfactory]
-  refine ⟨countProc, by native_decide, by native_decide, ?_⟩
+  refine ⟨countProc, by native_decide,
+    Core.Procedure.forall_instance_of_typeArgs_nil (by native_decide) ⟨by native_decide, ?_⟩⟩
   obtain ⟨_, _, hrun⟩ := countRun_ok
   obtain ⟨ss', hd, htriple⟩ := Core.InsertLoopInvAsserts.triple_coreProgram π testParams
     (fun _ h => by simp [testParams] at h) Core.CoreGenState.wf_emp hrun count_decl count_body_eq

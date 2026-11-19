@@ -22,7 +22,8 @@ Key results:
 - `isDefinedCons` / `isDefinedApp` and the corresponding `SemanticStore.varsUndefined*` laws
   compose and decompose list-level definedness.
 - `substStoresFlip`, `substDefinedFlip`, `invStoresComm`, and
-  `invStoresExceptComm` establish substitution and invariance symmetry.
+  `invStoresExceptComm` establish substitution and invariance symmetry, and
+  `invStoresExcept_of_agree` gives invariance outside a key set from agreement there.
 - `SemanticStore.isReserved.gen_slot_none`,
   `SemanticStore.isReserved.storeWith_gen`, and `SemanticStore.isReserved.mono`
   establish and preserve generated-name reservations.
@@ -197,6 +198,13 @@ theorem invStoresExceptComm :
   intros hinvariant other hdisjoint
   simp only [invStoresExcept] at *
   exact invStoresComm (hinvariant other hdisjoint)
+
+/-- Stores that agree at every key outside `ks` are invariant outside `ks`. -/
+theorem invStoresExcept_of_agree {P : PureExpr} {σ₁ σ₂ : SemanticStore P} {ks : List P.Ident}
+    (h : ∀ k, k ∉ ks → σ₁ k = σ₂ k) : invStoresExcept σ₁ σ₂ ks := by
+  intro other hdisj k₁ k₂ hmem
+  obtain rfl := zip_self_eq hmem
+  exact h k₁ (hdisj (List.of_mem_zip hmem).1)
 
 /-! ## Generated-name reservations -/
 

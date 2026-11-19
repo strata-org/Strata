@@ -28,7 +28,8 @@ Key results:
 - `Core.eval_intAdd`, `eval_intSub`, `eval_intMul`, `eval_intLt`, `eval_intLe`,
   `eval_intGt` and `eval_intGe` (instances of `Core.eval_app2_op`) give Core's evaluation of an
   operator applied to two integers, with `eval_const`, `eval_intConst`, `eval_boolConst`,
-  `eval_fvar` and `eval_fvar_int` for its leaves and `eval_eq_true`/`eval_eq_false` for equalities.
+  `eval_fvar`, `eval_fvar_int` and `eval_fvar_of_wellFormedStore` for its leaves, and
+  `eval_eq_true`/`eval_eq_false`/`eval_eq_tt_iff` for equalities.
 - `Core.eval_tt_or_ff_of_ofBool` reads a Boolean result as the factory's `true` or `false`, and
   `Core.valueOfStoredTy_int` lets an integer be assigned to a variable holding one.
 -/
@@ -295,6 +296,20 @@ theorem eval_eq_false (f : Expression.Factory)
     Expression.eval f σ (.eq m a b) = some (SemValue.ofBool f.model.tcInterp false) :=
   LExpr.denoteEval_eq_false ha hb hs hne
 
+/-- An equality of two expressions evaluating to values of the same sort evaluates to `true`
+    exactly when the values are equal. -/
+theorem eval_eq_tt_iff (f : Expression.Factory)
+    {m : ExpressionMetadata} {σ : CoreStore} {a b : Expression.Expr}
+    {va vb : Expression.Val} (ha : Expression.eval f σ a = some va)
+    (hb : Expression.eval f σ b = some vb) (hs : va.sort = vb.sort) :
+    Expression.eval f σ (.eq m a b) = some (Imperative.HasBool.ttVal f) ↔ va = vb := by
+  constructor
+  · intro h
+    exact Classical.byContradiction fun hne => Imperative.HasBool.ttVal_ne_ffVal f
+      (Option.some.inj (h.symm.trans (eval_eq_false f ha hb hs hne)))
+  · rintro rfl
+    exact eval_eq_true f ha hb
+
 /-- A conditional whose condition evaluates to a Boolean and whose branches evaluate to
     values of the same sort evaluates to the selected branch's value. -/
 theorem eval_ite (f : Expression.Factory)
@@ -312,6 +327,13 @@ theorem eval_fvar (f : Expression.Factory) {m : ExpressionMetadata} {σ : CoreSt
     (hv : v.tc = f.model.tcInterp) :
     Expression.eval f σ (.fvar m x ty) = some v :=
   LExpr.denoteEval_fvar hx hv
+
+/-- A free variable evaluates, in a well-formed store, to the value the store gives it. -/
+theorem eval_fvar_of_wellFormedStore {f : Expression.Factory} {m : ExpressionMetadata}
+    {σ : CoreStore} {x : CoreIdent} {ty : Option LMonoTy}
+    (hwf : Imperative.WellFormedStore σ f) :
+    Expression.eval f σ (.fvar m x ty) = σ x :=
+  coreEvaluator_WellFormedSemanticEvalVar f _ _ _ hwf rfl
 
 /-- A free variable bound to an integer of the factory evaluates to it. -/
 theorem eval_fvar_int (f : Expression.Factory)

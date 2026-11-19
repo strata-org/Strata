@@ -5,6 +5,7 @@
 -/
 import Strata.Languages.Core.InterpreterReachCheck
 import Strata.Languages.Core.FactoryInterp
+import Strata.Languages.Core.ProcedureProps
 import Strata.Languages.Core.InterpreterReplay
 import Strata.DL.Imperative.InterpreterConfig
 import Strata.DL.Imperative.InterpreterCFGProps
@@ -180,31 +181,36 @@ theorem wGenuine_of_fragment :
   · simp [wCex, IConfig.abs, ConfigInFragment, BlockInFragment, StmtInFragment, CmdInFragment,
       Calls.getInputExprs]
   · simp only [List.mem_singleton, forall_eq]
-    refine ⟨.inl ⟨_, rfl, ?_⟩, by simp [wProc, ListMap.toList], by simp [wProc, ListMap.toList]⟩
+    refine ⟨rfl, .inl ⟨_, rfl, ?_⟩, by simp [wProc, ListMap.toList],
+      by simp [wProc, ListMap.toList]⟩
     exact ⟨⟨.const default _ rfl, rfl⟩, trivial⟩
   · simp [wEnv, IEnv.abs, InterpLang.absStore, IEnv.ofStore, IStore.get,
       IStore.ofStore, InterpLang.writesFind?_empty] at h
-  · refine ⟨?_, fun n p ss hp hss => ?_, fun n p g hp hg => ?_⟩
+  · refine ⟨?_, fun n _ p ss hp hss => ?_, fun n _ p g hp hg => ?_⟩
     · refine ⟨?_, ?_⟩ <;> simp only [wCex, IConfig.abs, Config.noNondetGuards, Config.allCmds]
       · unfold Block.noNondetGuards Stmt.noNondetGuards Block.noNondetGuards
         rfl
       · unfold Block.allCmds Stmt.allCmds Block.allCmds
         rfl
-    · unfold wPi at hp
-      split at hp
-      · cases hp
+    · obtain ⟨p₀, hp₀, hinst⟩ := Option.bind_eq_some_iff.1 hp
+      unfold wPi at hp₀
+      split at hp₀
+      · cases hp₀
+        obtain ⟨-, rfl⟩ := (Procedure.instantiateTypes_of_typeArgs_nil rfl).1 hinst
         cases hss
         refine ⟨?_, ?_⟩
         · unfold Block.noNondetGuards Stmt.noNondetGuards Block.noNondetGuards
           rfl
         · unfold Block.allCmds Stmt.allCmds Block.allCmds
           rfl
-      · cases hp
-    · unfold wPi at hp
-      split at hp
-      · cases hp
+      · cases hp₀
+    · obtain ⟨p₀, hp₀, hinst⟩ := Option.bind_eq_some_iff.1 hp
+      unfold wPi at hp₀
+      split at hp₀
+      · cases hp₀
+        obtain ⟨-, rfl⟩ := (Procedure.instantiateTypes_of_typeArgs_nil rfl).1 hinst
         cases hg
-      · cases hp
+      · cases hp₀
 
 /-- The callee with a CFG body: no formals, no spec clauses, one block `b` running
     `assert fail : false` and then `finish`. -/
@@ -255,29 +261,34 @@ theorem wcGenuine_of_fragment :
   · simp [wcCex, IConfig.abs, ConfigInFragment, BlockInFragment, StmtInFragment, CmdInFragment,
       Calls.getInputExprs]
   · simp only [List.mem_singleton, forall_eq]
-    refine ⟨.inr ⟨_, rfl, ?_⟩, by simp [wcProc, ListMap.toList], by simp [wcProc, ListMap.toList]⟩
+    refine ⟨rfl, .inr ⟨_, rfl, ?_⟩, by simp [wcProc, ListMap.toList],
+      by simp [wcProc, ListMap.toList]⟩
     simp only [CFGInFragment, List.mem_singleton, forall_eq, CmdInFragment, TransferInFragment,
       and_true]
     exact ⟨.const default _ rfl, rfl⟩
   · simp [wEnv, IEnv.abs, InterpLang.absStore, IEnv.ofStore, IStore.get,
       IStore.ofStore, InterpLang.writesFind?_empty] at h
-  · refine ⟨?_, fun n p ss hp hss => ?_, fun n p g hp hg => ?_⟩
+  · refine ⟨?_, fun n _ p ss hp hss => ?_, fun n _ p g hp hg => ?_⟩
     · refine ⟨?_, ?_⟩ <;> simp only [wcCex, IConfig.abs, Config.noNondetGuards, Config.allCmds]
       · unfold Block.noNondetGuards Stmt.noNondetGuards Block.noNondetGuards
         rfl
       · unfold Block.allCmds Stmt.allCmds Block.allCmds
         rfl
-    · unfold wcPi at hp
-      split at hp
-      · cases hp
+    · obtain ⟨p₀, hp₀, hinst⟩ := Option.bind_eq_some_iff.1 hp
+      unfold wcPi at hp₀
+      split at hp₀
+      · cases hp₀
+        obtain ⟨-, rfl⟩ := (Procedure.instantiateTypes_of_typeArgs_nil rfl).1 hinst
         cases hss
-      · cases hp
-    · unfold wcPi at hp
-      split at hp
-      · cases hp
+      · cases hp₀
+    · obtain ⟨p₀, hp₀, hinst⟩ := Option.bind_eq_some_iff.1 hp
+      unfold wcPi at hp₀
+      split at hp₀
+      · cases hp₀
+        obtain ⟨-, rfl⟩ := (Procedure.instantiateTypes_of_typeArgs_nil rfl).1 hinst
         cases hg
         exact CFG.allCmds_of_mem (by simp [Calls.CmdExtDeterministic, CmdDeterministic])
-      · cases hp
+      · cases hp₀
 
 /-- A CFG body whose block guard `x + 1 < y` is in the fragment. -/
 private def cProcIn : Procedure :=

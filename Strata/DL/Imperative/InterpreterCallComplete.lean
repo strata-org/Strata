@@ -73,6 +73,7 @@ namespace Calls
 variable {P : PureExpr} [HasBoolOps P] [HasFvar P] [HasFvars P]
   [DecidableEq P.Expr] [DecidableEq P.Ident] [InterpLang P] [HasOldIdent P]
   {Hdr : Type} [DecidableEq Hdr] [Inhabited Hdr] [ProcedureHeader P Hdr]
+  [ProcedureTypeInstantiation P Hdr]
 
 /-- **Completeness of call-aware replay**: if a reference run from `cex.cfg` emits an event on
     which the halting predicate fires at fuel `fuel` (an event of the target obligation whose
@@ -147,7 +148,7 @@ abbrev CallBodyRel (P : PureExpr) :=
   fun fac σ c σ' emitted =>
     ∃ nm tyArgs p callArgs md σAO σ_final bodyEvents,
       c = CmdExt.call nm tyArgs callArgs md
-      ∧ π nm = some p
+      ∧ typeInstantiatedCallee π nm tyArgs = some p
       ∧ CallEntry fac σ p callArgs σAO
       ∧ B p.body ⟨σAO, fac⟩ σ_final bodyEvents
       ∧ CallExit fac σ p callArgs σ_final σ'
@@ -211,7 +212,8 @@ theorem writeBackTyped_of_rel (hWB : WriteBackTypedComplete P) {F : P.Factory}
       Bool.true_and]
     exact hw
 
-omit [HasFvar P] [HasFvars P] [DecidableEq P.Expr] [HasOldIdent P] [DecidableEq P.Ident]  in
+omit [HasFvar P] [HasFvars P] [DecidableEq P.Expr] [HasOldIdent P] [DecidableEq P.Ident]
+    [ProcedureTypeInstantiation P Hdr] in
 /-- When the runtime value checks are complete for typed write-back (`WriteBackTypedComplete`),
     the engine's write-back check passes on every runtime representation of a reference call exit
     (`WriteBackOK`). -/
@@ -292,7 +294,7 @@ variable {m : Type → Type} [Monad m] [LawfulMonad m] [InterpEffects P m]
   [MonadExcept StopReason m]
 
 omit [HasFvar P] [HasFvars P] [DecidableEq P.Expr] [DecidableEq P.Ident] [HasOldIdent P]
-    [ProcedureHeader P Hdr] in
+    [ProcedureHeader P Hdr] [ProcedureTypeInstantiation P Hdr] in
 /-- An engine-realizable event-trace CFG run over the command relation `E` is an oracle-reading
     CFG run whose commands leave the oracle `o` alone. -/
 theorem stepCFGEngStarE_toOracle {l : Type} [BEq l] {E : CallCmdRel P}
@@ -353,7 +355,8 @@ theorem stepCmd_call_complete (obs : InterpObs P m)
     {nm : String} {args : List (CallArg P)} {md : MetaData P} {p : Procedure P (CmdExt P) Hdr}
     {tyArgs : Option (List P.Ty)}
     {σAO σf σ' : SemanticStore P} {evB : List (Event P)} {o o' : List P.Val}
-    (hπ : π nm = some p) (hentry : CallEntry F (InterpLang.absStore F ρ.store.get) p args σAO)
+    (hπ : typeInstantiatedCallee π nm tyArgs = some p)
+    (hentry : CallEntry F (InterpLang.absStore F ρ.store.get) p args σAO)
     (hexit : CallExit F (InterpLang.absStore F ρ.store.get) p args σf σ')
     (hargs : CallArgsReach F (InterpLang.absStore F ρ.store.get) args)
     (hwb : WriteBackOK F (InterpLang.absStore F ρ.store.get) p args σf)
@@ -372,6 +375,9 @@ theorem stepCmd_call_complete (obs : InterpObs P m)
         = (.ok (.terminal { ρ with store := σi }), st')) ∧ Pend st' o' ∧
       obs.TraceExt F st st' (defaultAssertEvents F σAO (checksAtCall md p.spec.preconditions) ++
         evB ++ defaultAssertEvents F σf p.spec.postconditions) := by
+  obtain ⟨p₀, hπ₀, hinst⟩ : ∃ p₀, π nm = some p₀ ∧
+      ProcedureTypeInstantiation.instantiate p₀ (tyArgs.getD []) = some p :=
+    Option.bind_eq_some_iff.1 hπ
   obtain ⟨vi, vo, hin, hout, hinit⟩ := hentry
   obtain ⟨-, vs, hrd, hup, hrel⟩ := hexit
   obtain ⟨N, ri, hri, hev⟩ := evalBoundedList_of_reach hMono (storeDenotes_absStore hd) hin hargs
@@ -400,7 +406,8 @@ theorem stepCmd_call_complete (obs : InterpObs P m)
   · obtain ⟨i, rfl⟩ : ∃ k, i = k + 1 := ⟨i - 1, by omega⟩
     obtain ⟨j, rfl⟩ : ∃ k, j = k + 1 := ⟨j - 1, by omega⟩
     rw [stepCmd]
-    simp (disch := omega) [hπ, hf, hev, hro, hlin, hlout, hri.length_eq, hrorel.length_eq, e1,
+    simp (disch := omega) [hπ₀, hinst, hf, hev, hro, hlin, hlout, hri.length_eq,
+      hrorel.length_eq, e1,
       hrun i j, e3, hms, hold, hwb, ReadValuesLength hrd, hbind.1, -List.forM_eq_forM]
   · simp only [List.map_append, rDefaultAssertEvents_abs, habs, hrb]
   · simp [t1, t2, t3]
@@ -693,7 +700,8 @@ inductive OracleStepE (E : OracleCmdRel P) :
 @[expose] def OracleCallArm (π : String → Option (Procedure P (CmdExt P) Hdr))
     (E : OracleCmdRel P) : OracleCmdRel P := fun f σ c σ' evs o o' =>
   (∃ nm tyArgs p args md σAO ss ρ' bodyEvs,
-    c = .call nm tyArgs args md ∧ π nm = some p ∧ p.body = .structured ss ∧
+    c = .call nm tyArgs args md ∧ typeInstantiatedCallee π nm tyArgs = some p ∧
+      p.body = .structured ss ∧
     CallEntry f σ p args σAO ∧
     ReflTransTrace (OracleStepE E)
       (.stmt (Stmt.block "" ss #[]) ⟨σAO, f⟩, o) bodyEvs (.terminal ρ', o') ∧
@@ -702,7 +710,8 @@ inductive OracleStepE (E : OracleCmdRel P) :
       defaultAssertEvents f ρ'.store p.spec.postconditions ∧
     CallArgsReach f σ args ∧ WriteBackOK f σ p args ρ'.store) ∨
   ∃ nm tyArgs p args md σAO g ρEnd bodyEvs,
-    c = .call nm tyArgs args md ∧ π nm = some p ∧ p.body = .cfg g ∧
+    c = .call nm tyArgs args md ∧ typeInstantiatedCallee π nm tyArgs = some p ∧
+      p.body = .cfg g ∧
     CallEntry f σ p args σAO ∧
     ReflTransTrace (OracleCFGStepE E)
       (.atBlock g g.entry ⟨σAO, f⟩, o) bodyEvs (.terminal ρEnd, o') ∧
@@ -746,13 +755,14 @@ inductive OracleStepE (E : OracleCmdRel P) :
 
 /-- **A deterministic call-aware program**: no `.nondet` guard and no nondeterministic base
     command, in the statements still to be executed in `c`, in every structured callee body of
-    `π`, and in every block of every CFG callee body of `π`. -/
+    `π`, and in every block of every CFG callee body of `π`, at every instance a call can run
+    (`typeInstantiatedCallee`). -/
 @[expose] def ProgDeterministic (π : String → Option (Procedure P (CmdExt P) Hdr))
     (c : Config P (CmdExt P)) : Prop :=
   (Config.noNondetGuards c = true ∧ Config.allCmds CmdExtDeterministic c) ∧
-  (∀ n p ss, π n = some p → p.body = .structured ss →
+  (∀ n tyArgs p ss, typeInstantiatedCallee π n tyArgs = some p → p.body = .structured ss →
     Block.noNondetGuards ss = true ∧ Block.allCmds CmdExtDeterministic ss = true) ∧
-  ∀ n p g, π n = some p → p.body = .cfg g →
+  ∀ n tyArgs p g, typeInstantiatedCallee π n tyArgs = some p → p.body = .cfg g →
     g.allCmds CmdExtDeterministic
 
 /-! ## The replay configuration of `genuine` -/

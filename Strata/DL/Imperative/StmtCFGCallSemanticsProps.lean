@@ -33,6 +33,7 @@ public section
 variable {P : PureExpr}
   [DecidableEq P.Ident] [HasOldIdent P]
   {Hdr : Type} [DecidableEq Hdr] [Inhabited Hdr] [ProcedureHeader P Hdr]
+  [ProcedureTypeInstantiation P Hdr]
   [HasBool P] [HasBoolOps P] [HasFvar P] [HasFvars P]
 
 /-- Induction on `EvalCmdExtE` with a single motive. In the `call_sem` case the
@@ -47,7 +48,7 @@ theorem EvalCmdExtE.induct
     (cmd_sem : ∀ {fac σ c σ' emitted} (h : EvalCmdE (P := P) fac σ c σ' emitted),
       motive fac σ (.cmd c) σ' emitted (.cmd_sem h))
     (call_sem : ∀ {σ n tyArgs p callArgs σ' σFinal bodyEvents md fac σAO}
-      (hπ : π n = .some p)
+      (hπ : Calls.typeInstantiatedCallee π n tyArgs = .some p)
       (hentry : Calls.CallEntry fac σ p callArgs σAO)
       (hbody : BigStepE π p.body ⟨σAO, fac⟩ σFinal bodyEvents)
       (hexit : Calls.CallExit fac σ p callArgs σFinal σ'),

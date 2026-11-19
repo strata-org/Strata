@@ -57,6 +57,9 @@ private def upCall : List (Imperative.CallArg Core.Expression) := [.outArg zId]
 
 /-- `CountUp` is found by name. -/
 private theorem up_find : π "CountUp" = some upProc := by native_decide
+/-- A call to `CountUp` without type arguments runs `upProc`, which has no type parameters. -/
+private theorem up_callee : Calls.typeInstantiatedCallee π "CountUp" none = some upProc :=
+  (Core.Procedure.typeInstantiatedCallee_of_typeArgs_nil up_find (by native_decide)).2 ⟨rfl, rfl⟩
 
 /-! ## Facts about `CountUp`'s signature -/
 
@@ -232,9 +235,10 @@ private theorem up_brun {σ : Core.CoreStore} {f : Core.Expression.Factory}
 
 /-- **Every run of `CountUp`'s body writes only its output `y`.** -/
 private theorem up_body_frame :
-    ∀ proc, π "CountUp" = some proc → Core.Logic.Hoare.Procedure.bodyFrame π proc := by
+    ∀ proc, Calls.typeInstantiatedCallee π "CountUp" none = some proc →
+      Core.Logic.Hoare.Procedure.bodyFrame π proc := by
   intro proc hlk
-  obtain rfl : proc = upProc := Option.some.inj (hlk.symm.trans up_find)
+  obtain rfl : proc = upProc := Option.some.inj (hlk.symm.trans up_callee)
   intro σe f σx evs hbody
   rw [up_body_eq] at hbody
   have hb := up_brun hbody
@@ -280,11 +284,11 @@ private theorem up_run_yInt {σe σx : Core.CoreStore} {f : Core.Expression.Fact
 
 /-- **Every run of `CountUp`'s body leaves its output `y` holding an integer.** -/
 private theorem up_body_outputs :
-    ∀ proc, π "CountUp" = some proc →
+    ∀ proc, Calls.typeInstantiatedCallee π "CountUp" none = some proc →
       Core.Logic.Hoare.Procedure.bodyOutputsTyped
         (countPgmAST.factoryBeforeProcedure "CountUp") π proc := by
   intro proc hlk
-  obtain rfl : proc = upProc := Option.some.inj (hlk.symm.trans up_find)
+  obtain rfl : proc = upProc := Option.some.inj (hlk.symm.trans up_callee)
   intro σe f σx evs _ _ hbody
   obtain ⟨w, hw, hwt⟩ := up_run_yInt hbody
   intro id ty hmem
@@ -507,8 +511,10 @@ private theorem up_bodyRun {f : Core.Expression.Factory} (hfac : f.factory = Cor
   obtain ⟨hpre, hwf⟩ := up_entry hfac k
   have hterm := (Core.Logic.Hoare.Procedure.contractTripleTotal_iff countPgmAST testParams
     "CountUp").mp countUp_meets_contract_total |>.2
-  obtain ⟨proc, hproc, hterm⟩ := hterm
+  obtain ⟨proc, hproc, hterms⟩ := hterm
   obtain rfl : proc = upProc := Option.some.inj (hproc.symm.trans up_find)
+  have hterm := hterms [] upProc
+    ((Core.Procedure.instantiateTypes_of_typeArgs_nil (by native_decide)).2 ⟨rfl, rfl⟩)
   rw [up_body_eq] at hterm ⊢
   have hQ : Config.allCmds isDetSet
       (.stmts [Stmt.block "" upBody #[]] ⟨entryStore (intOf f k), f⟩) := by
@@ -538,20 +544,20 @@ theorem countUp_call_total :
     upCall .empty CallPre CallPost
     (Core.Logic.Hoare.Procedure.contractTriple_of_contractTripleTotal
       countUp_meets_contract_total)
-    up_body_frame up_body_outputs ?_
+    ⟨_, up_callee⟩ up_body_frame up_body_outputs ?_
     (fun _ _ _ _ _ _ _ =>
       _root_.Core.Specification.axiomsBeforeProcedureDecl_of_noAxioms (by native_decide) _)
     ?_ ?_ ?_ ?_
   · -- hentry: the contract precondition and the body's gate hold at the callee entry.
     intro ρ₀ proc σAO ⟨hfac, k, hz⟩ _ hlk hce
-    obtain rfl : proc = upProc := Option.some.inj (hlk.symm.trans up_find)
+    obtain rfl : proc = upProc := Option.some.inj (hlk.symm.trans up_callee)
     obtain ⟨w, hzw, _, rfl⟩ := up_callEntry_inv hce
     obtain rfl : w = intOf ρ₀.factory k := Option.some.inj (hzw.symm.trans hz)
     rw [up_body_eq]
     exact up_entry hfac k
   · -- hexit: the write-back puts `10` into `z`.
     intro ρ₀ proc ρ' σ' σAO ⟨hfac, _⟩ _ hlk hpost hout hρ' _ _ hcx
-    obtain rfl : proc = upProc := Option.some.inj (hlk.symm.trans up_find)
+    obtain rfl : proc = upProc := Option.some.inj (hlk.symm.trans up_callee)
     rw [hfactory] at hpost
     have hy := y10_of_post (show Pinned ρ' by rw [Pinned, hρ']; exact hfac) hpost hout
     rw [hρ'] at hy
@@ -568,18 +574,18 @@ theorem countUp_call_total :
         | update _ hnew _ => exact ⟨hfac, hnew⟩
   · -- hcallEntry: the call has a callee entry store.
     intro ρ₀ proc ⟨_, k, hz⟩ hwf hlk
-    obtain rfl : proc = upProc := Option.some.inj (hlk.symm.trans up_find)
+    obtain rfl : proc = upProc := Option.some.inj (hlk.symm.trans up_callee)
     exact ⟨_, up_callEntry hz (hwf.storeWellDefined zId _ hz)⟩
   · -- hbodyRun: some run of the body finishes from the callee entry.
     intro ρ₀ proc σAO ⟨hfac, k, hz⟩ _ hlk hce
-    obtain rfl : proc = upProc := Option.some.inj (hlk.symm.trans up_find)
+    obtain rfl : proc = upProc := Option.some.inj (hlk.symm.trans up_callee)
     obtain ⟨w, hzw, _, rfl⟩ := up_callEntry_inv hce
     obtain rfl : w = intOf ρ₀.factory k := Option.some.inj (hzw.symm.trans hz)
     exact up_bodyRun hfac k
   · -- hcallExit: every finished run of the body has a write-back into `z`, since it leaves
     -- `y` holding an integer.
     intro ρ₀ proc σAO σEnd bodyEvents ⟨_, k, hz⟩ _ hlk _ hb
-    obtain rfl : proc = upProc := Option.some.inj (hlk.symm.trans up_find)
+    obtain rfl : proc = upProc := Option.some.inj (hlk.symm.trans up_callee)
     obtain ⟨w, hw, hwt⟩ := up_run_yInt hb
     refine ⟨SemanticStore.update ρ₀.store zId w,
       by simp [upCall, Imperative.CallArg.getLhs], [w], ?_, ?_, ?_⟩
