@@ -69,7 +69,7 @@ private def mkClauseHelper (name : String) (params : List Parameter)
     ⟨.Assume (freshenDeclared s!"$assumed{k}" e), e.source⟩
   let assign : StmtExprMd := ⟨.Assign [⟨.Local (mkId resultOutputName), src⟩] clause, src⟩
   let exit : StmtExprMd := ⟨.Goto returnLabel .blockEnd, src⟩
-  { name := mkId name
+  { name := { mkId name with source := src }
     inputs := params
     outputs := [⟨mkId resultOutputName, { val := .TBool, source := src }⟩]
     preconditions := []
