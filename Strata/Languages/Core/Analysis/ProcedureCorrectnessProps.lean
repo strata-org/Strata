@@ -109,27 +109,25 @@ callee is declared no later than the caller, its axioms are among the caller's, 
 they read no variable they hold in every store over the same factory. A run keeps the
 factory, so the caller's entry assumption gives the callee's at every call. -/
 
-/-- A closed expression evaluates alike in every store. -/
-theorem eval_of_closed {f : Expression.Factory} {σ σ' : CoreStore} {e : Expression.Expr}
-    (h : e.freeVars.isEmpty = Bool.true) :
-    Expression.eval f σ e = Expression.eval f σ' e :=
-  Lambda.LExpr.denoteEval_congr e fun x ty hx => by
-    rw [List.isEmpty_iff.mp h] at hx; cases hx
-
 /-- **Closed axioms hold by the factory alone.** If the axioms and `distinct` declarations
     before `entryProcName` read no variable, they hold in an environment once they hold in
     one with the same factory. -/
 theorem AxiomsBeforeProcedureDecl.of_closed {entryProcName : String} {p : Program}
     {ρ ρ' : Imperative.Env Expression}
-    (hclosed : axiomsClosedBeforeProcedureDecl entryProcName p = Bool.true)
+    (hclosed : p.axiomsClosedBeforeProcedure entryProcName = Bool.true)
     (hfac : ρ.factory = ρ'.factory)
     (h : AxiomsBeforeProcedureDecl entryProcName p ρ) :
     AxiomsBeforeProcedureDecl entryProcName p ρ' := by
   obtain ⟨σ, f⟩ := ρ
   obtain ⟨σ', f'⟩ := ρ'
   obtain rfl : f = f' := hfac
+  -- a closed expression evaluates alike in every store
+  have heval : ∀ {e : Expression.Expr} (σ₁ σ₂ : CoreStore), e.freeVars.isEmpty = Bool.true →
+      Expression.eval f σ₁ e = Expression.eval f σ₂ e := fun {e} _ _ he =>
+    Lambda.LExpr.denoteEval_congr e fun _ _ hx => by
+      rw [List.isEmpty_iff.mp he] at hx; cases hx
   unfold AxiomsBeforeProcedureDecl at h ⊢
-  unfold axiomsClosedBeforeProcedureDecl at hclosed
+  unfold Program.axiomsClosedBeforeProcedure at hclosed
   rw [List.all_eq_true] at hclosed
   generalize p.declsBeforeProcedure entryProcName = decls at h hclosed
   induction decls with
@@ -140,13 +138,12 @@ theorem AxiomsBeforeProcedureDecl.of_closed {entryProcName : String} {p : Progra
     cases d with
     | ax a md =>
       simp only [List.foldr_cons] at h ⊢
-      exact ⟨(eval_of_closed (f := f) (σ := σ') (σ' := σ) hd).trans h.1, hds h.2⟩
+      exact ⟨(heval σ' σ hd).trans h.1, hds h.2⟩
     | distinct name es md =>
       simp only [List.foldr_cons] at h ⊢
       have hes := List.all_eq_true.mp hd
       exact ⟨h.1.imp_of_mem fun {e₁ e₂} h₁ h₂ hne heq => hne <|
-        (eval_of_closed (f := f) (σ := σ) (σ' := σ') (hes e₁ h₁)).trans <|
-          heq.trans (eval_of_closed (f := f) (σ := σ') (σ' := σ) (hes e₂ h₂)), hds h.2⟩
+        (heval σ σ' (hes e₁ h₁)).trans <| heq.trans (heval σ' σ (hes e₂ h₂)), hds h.2⟩
     | _ => simpa only [List.foldr_cons] using hds (by simpa only [List.foldr_cons] using h)
 
 /-- **A procedure declared no later sees no more axioms.** If the declarations before
@@ -176,7 +173,7 @@ theorem AxiomsBeforeProcedureDecl.of_declaredBefore {caller callee : String} {p 
 theorem AxiomsBeforeProcedureDecl.callee {caller callee : String} {p : Program}
     {ρ ρ' : Imperative.Env Expression}
     (hbefore : (p.declsBeforeProcedure callee).length ≤ (p.declsBeforeProcedure caller).length)
-    (hclosed : axiomsClosedBeforeProcedureDecl callee p = Bool.true)
+    (hclosed : p.axiomsClosedBeforeProcedure callee = Bool.true)
     (hfac : ρ.factory = ρ'.factory)
     (h : AxiomsBeforeProcedureDecl caller p ρ) :
     AxiomsBeforeProcedureDecl callee p ρ' :=
