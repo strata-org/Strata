@@ -15,6 +15,7 @@ import StrataDDM.Ion
 import Strata.DL.SMT
 import Strata.DL.Lambda
 import Strata.DL.Imperative
+import Strata.DL.Str
 
 /- Utilities -/
 import Strata.Util.NameProofs
