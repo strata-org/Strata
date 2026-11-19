@@ -159,13 +159,8 @@ private partial def coreStmtsToGoto
             CProverGOTO.Expr.symbol name ty
           | [] => CProverGOTO.Expr.symbol "" .Empty
         let calleeExpr := CProverGOTO.Expr.symbol procName
-          (CProverGOTO.Ty.mkCode (argExprs.map (·.type)) lhsExpr.type)
-        let callCode := CProverGOTO.Code.functionCall lhsExpr calleeExpr argExprs
-        let inst : CProverGOTO.Instruction :=
-          { type := .FUNCTION_CALL, code := callCode, locationNum := trans.nextLoc }
-        pure { trans with
-          instructions := trans.instructions.push inst
-          nextLoc := trans.nextLoc + 1 }
+          (CProverGOTO.Ty.mkFunctionType (argExprs.map (·.type)) lhsExpr.type)
+        pure (Imperative.emitFunctionCall lhsExpr calleeExpr argExprs .nil trans)
       | .block l body md =>
         if hasCallStmt body then
           let srcLoc := Imperative.metadataToSourceLoc md pname trans.sourceText

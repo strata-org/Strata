@@ -48,6 +48,7 @@ fi
 SUITES=(
   "StrataLaurel/Tests/CBMC/run_laurel_cbmc_tests.sh"
   "StrataTest/Backends/CBMC/GOTO/test_property_summary_e2e.sh"
+  "StrataTest/Backends/CBMC/GOTO/test_structs_globals_e2e.sh"
   "StrataTest/Backends/CBMC/contracts/test_contracts_e2e.sh"
 )
 
@@ -55,10 +56,11 @@ failed=0
 for suite in "${SUITES[@]}"; do
   echo
   echo "=== $suite"
+  start=$SECONDS
   if bash "$suite"; then
-    echo "=== PASS: $suite"
+    echo "=== PASS: $suite ($((SECONDS - start)) s)"
   else
-    echo "=== FAIL: $suite (exit $?)"
+    echo "=== FAIL: $suite (exit $?, $((SECONDS - start)) s)"
     failed=$((failed + 1))
   fi
 done

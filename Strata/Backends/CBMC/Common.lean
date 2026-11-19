@@ -239,11 +239,16 @@ def mkSymbol (identifier : String) (symbolType : Json) : Json :=
 
 /-! # Constants -/
 
+/-- `n` in upper-case hexadecimal without a prefix, the form CBMC uses for the
+    value of a bit-vector constant. -/
+def natToHex (n : Nat) : String :=
+  String.ofList ((Nat.toDigits 16 n).map Char.toUpper)
+
 def i32ToHex (s : String) : Except String String := do
   match s.toInt? with
   | some n =>
     let unsigned := if n < 0 then UInt32.size + n else n
-    return "".intercalate ((Nat.toDigits 16 unsigned.natAbs).map (λ c => c.toUpper.toString))
+    return natToHex unsigned.natAbs
   | none => throw "Failed to convert String to int"
 
 /-- Convert a decimal integer string to hex for a bitvector of the given bit width.
@@ -253,7 +258,7 @@ def bvToHex (s : String) (width : Nat) : Except String String := do
   | some n =>
     let modulus := 2 ^ width
     let unsigned := if n < 0 then modulus + n else n
-    return "".intercalate ((Nat.toDigits 16 unsigned.natAbs).map (λ c => c.toUpper.toString))
+    return natToHex unsigned.natAbs
   | none => throw s!"Failed to convert '{s}' to int"
 
 def mkConstant (value : String) (base : String) (sourceLocation : Json) (config : CBMCConfig := .empty) : Except String Json := do
