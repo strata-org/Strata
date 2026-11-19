@@ -389,6 +389,145 @@ inline function apply<a, b> (f : a -> b, x : a) : b {
   Std.format (Core.typeCheck .default (translate higherOrderPgm))
 
 ---------------------------------------------------------------------
+-- Type parameter order
+---------------------------------------------------------------------
+
+-- Type parameters whose first occurrences in the signature are out of
+-- declaration order keep their declared names and order.
+-- h<a,b>(x:b, y:a):a, without and with a body.
+private def outOfOrderDecl : Core.Function :=
+  { name := ⟨"h", ()⟩,
+    typeArgs := ["a", "b"],
+    inputs := [(⟨"x", ()⟩, .ftvar "b"), (⟨"y", ()⟩, .ftvar "a")],
+    output := .ftvar "a",
+    body := none }
+
+/--
+info: ok: typeArgs: [a, b]
+inputs: (x, b) (y, a)
+output: a
+-/
+#guard_msgs in
+#eval do
+  let (func', _) ← Function.typeCheck C Env outOfOrderDecl
+  return format f!"typeArgs: {func'.typeArgs}\ninputs: {func'.inputs}\noutput: {func'.output}"
+
+open Strata in
+private def outOfOrderPgm :=
+#strata
+program Core;
+
+function h<a, b>(x : b, y : a) : a {
+  y
+}
+#end
+
+/--
+info: [Strata.Core] Type checking succeeded.
+
+---
+info: ok: program Core;
+
+function h<a, b> (x : b, y : a) : a {
+  y
+}
+-/
+#guard_msgs in
+open Strata in
+#eval
+  let pgm := (TransM.run Inhabited.default (translateProgram outOfOrderPgm)).fst
+  Std.format (Core.typeCheck .default pgm.stripMetaData)
+
+-- An alias that reorders its parameters: `Swap a b` resolves to `Map b a`,
+-- so `b` occurs first in the resolved signature.
+open Strata in
+private def swapAliasPgm :=
+#strata
+program Core;
+
+type Swap (a : Type, b : Type) := Map b a;
+function f<a, b>(x : Swap a b) : a;
+#end
+
+/--
+info: [Strata.Core] Type checking succeeded.
+
+---
+info: ok: program Core;
+
+type Swap (a : Type, b : Type) := Map b a;
+function f<a, b> (x : Map b a) : a;
+-/
+#guard_msgs in
+open Strata in
+#eval
+  let pgm := (TransM.run Inhabited.default (translateProgram swapAliasPgm)).fst
+  Std.format (Core.typeCheck .default pgm.stripMetaData)
+
+-- An alias that repeats its parameter: `Dup b` resolves to `Map b b`.
+open Strata in
+private def dupAliasPgm :=
+#strata
+program Core;
+
+type Dup (a : Type) := Map a a;
+function g<a, b>(x : Dup b, y : a) : a;
+#end
+
+/--
+info: [Strata.Core] Type checking succeeded.
+
+---
+info: ok: program Core;
+
+type Dup (a : Type) := Map a a;
+function g<a, b> (x : Map b b, y : a) : a;
+-/
+#guard_msgs in
+open Strata in
+#eval
+  let pgm := (TransM.run Inhabited.default (translateProgram dupAliasPgm)).fst
+  Std.format (Core.typeCheck .default pgm.stripMetaData)
+
+-- Declaration order differs from alphabetical and first-occurrence order.
+-- f<b,a>(x:a, y:b):b keeps [b, a].
+private def reverseDeclOrder : Core.Function :=
+  { name := ⟨"f", ()⟩,
+    typeArgs := ["b", "a"],
+    inputs := [(⟨"x", ()⟩, .ftvar "a"), (⟨"y", ()⟩, .ftvar "b")],
+    output := .ftvar "b",
+    body := none }
+
+/--
+info: ok: typeArgs: [b, a]
+inputs: (x, a) (y, b)
+output: b
+-/
+#guard_msgs in
+#eval do
+  let (func', _) ← Function.typeCheck C Env reverseDeclOrder
+  return format f!"typeArgs: {func'.typeArgs}\ninputs: {func'.inputs}\noutput: {func'.output}"
+
+-- A declared type parameter that occurs in no input or output type is rejected,
+-- since no call could determine it.
+open Strata in
+private def phantomPgm :=
+#strata
+program Core;
+
+function f<a, b>(x : a) : a;
+#end
+
+/--
+info: error: Function 'f': type parameters [b] occur in neither an input type nor the output type, so a call could not determine them
+-/
+#guard_msgs in
+open Strata in
+#eval
+  let pgm := (TransM.run Inhabited.default (translateProgram phantomPgm)).fst
+  Std.format (Core.typeCheck .default pgm.stripMetaData)
+
+---------------------------------------------------------------------
 -- alphaEquivMap unit tests
 ---------------------------------------------------------------------
 
@@ -589,6 +728,75 @@ body: some exists x : bool :: x
 -/
 #guard_msgs (whitespace := lax) in
 #eval checkedSummary inferredBoolQuantifierFunc
+
+-- A body annotation naming a declared type parameter means that parameter: the binder of
+-- `forall y : a :: y == y` is typed at the function's own `a`, though nothing else ties `y`
+-- to `x`.
+open Strata in
+private def ownParamBinderPgm :=
+#strata
+program Core;
+
+function f<a>(x : a) : a { if (forall y : a :: y == y) then x else x }
+#end
+
+/--
+info: [Strata.Core] Type checking succeeded.
+
+---
+info: ok: program Core;
+
+function f<a> (x : a) : a {
+  if forall y : a :: y == y then x else x
+}
+-/
+#guard_msgs (whitespace := lax) in
+#eval
+  Std.format (Core.typeCheck .default (translate ownParamBinderPgm))
+
+-- An unannotated quantified variable used only at its own type has a type that no call can
+-- fix, so the body is rejected, in a polymorphic function and in a monomorphic one.
+-- f<a>(x : a) : a { if (forall y :: y == y) then x else x }
+private def undeterminedBinderFunc : Core.Function :=
+  { name := ⟨"f", ()⟩, typeArgs := ["a"],
+    inputs := [(⟨"x", ()⟩, .ftvar "a")], output := .ftvar "a",
+    body := some (.ite Core.coreLoc
+      (.quant Core.coreLoc .all "y" none (.bvar Core.coreLoc 0)
+        (.eq Core.coreLoc (.bvar Core.coreLoc 0) (.bvar Core.coreLoc 0)))
+      (.fvar Core.coreLoc ⟨"x", ()⟩ none) (.fvar Core.coreLoc ⟨"x", ()⟩ none)) }
+
+/--
+info: error: Function 'f': the body, the decreases expression, a precondition or an axiom is typed at a generated type variable that is not declared. Nothing fixes the type of a polymorphic instance there; annotate it, or use a type parameter the signature mentions
+-/
+#guard_msgs in
+#eval checkedSummary undeterminedBinderFunc
+
+-- f(x : int) : int { if (forall y :: y == y) then x else x }
+private def undeterminedBinderMonoFunc : Core.Function :=
+  { undeterminedBinderFunc with typeArgs := [], inputs := [(⟨"x", ()⟩, .int)], output := .int }
+
+/--
+info: error: Function 'f': the body, the decreases expression, a precondition or an axiom is typed at a generated type variable that is not declared. Nothing fixes the type of a polymorphic instance there; annotate it, or use a type parameter the signature mentions
+-/
+#guard_msgs in
+#eval checkedSummary undeterminedBinderMonoFunc
+
+-- An undetermined type with no binder: the element type of an empty sequence whose length is
+-- compared with 0.
+-- f(x : int) : bool { Sequence.length(Sequence.empty()) == 0 }
+private def undeterminedEmptySeqPgm : Program :=
+  { decls :=
+      [.func { name := "f", typeArgs := [], inputs := [("x", .int)], output := .bool,
+               body := some (.eq Core.coreLoc
+                 (.app Core.coreLoc (.op Core.coreLoc ⟨"Sequence.length", ()⟩ none)
+                   (.op Core.coreLoc ⟨"Sequence.empty", ()⟩ none))
+                 (.intConst Core.coreLoc 0)) } .empty] }
+
+/--
+info: REJECTED: Function 'f': the body, the decreases expression, a precondition or an axiom is typed at a generated type variable that is not declared. Nothing fixes the type of a polymorphic instance there; annotate it, or use a type parameter the signature mentions
+-/
+#guard_msgs in
+#eval programVerdict undeterminedEmptySeqPgm
 
 -- An integer measure using `x : a` would refine the rigid `a` to `int`.
 open Strata in
