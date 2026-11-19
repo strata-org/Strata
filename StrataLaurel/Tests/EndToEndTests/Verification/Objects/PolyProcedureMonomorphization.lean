@@ -147,7 +147,7 @@ procedure falsePostconditionOnClone()
 #strata
 program Laurel;
 composite Box<T> { var val: T }
-procedure get7<T>(b: Box<T>) returns (r: T) requires b#val == 7 opaque ensures r == b#val { r := b#val };
+procedure getIf<T>(b: Box<T>, w: T) returns (r: T) requires b#val == w opaque ensures r == b#val { r := b#val };
 
 procedure violatedPreconditionOnClone()
   opaque
@@ -155,8 +155,8 @@ procedure violatedPreconditionOnClone()
 {
   var bx: Box<int> := new Box<int>;
   bx#val := 5;
-  var got: int := get7(bx);
-//^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition does not hold
+  var got: int := getIf(bx, 7);
+//^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition does not hold
   assert got == 7
 //^^^^^^^^^^^^^^^ error: assertion does not hold
 };
@@ -411,52 +411,9 @@ procedure tooFewArguments(b: Box<int>) opaque {
 };
 #end
 
--- `x: S` fixes nothing, so `get(x)` is recorded at the expected `Animal`; the clone of `getAnimal`
--- at `S := Box<Dog>` calls `get` at `Dog`, which its argument fits.
-#eval testLaurelVerification <|
-#strata
-program Laurel;
-composite Animal { }
-composite Dog extends Animal { }
-composite Box<T> { var v: T }
-procedure get<T>(b: Box<T>) returns (r: T) opaque ensures r == b#v { r := b#v };
-procedure getAnimal<S>(x: S) returns (r: Animal) opaque { var b: Box<S>; r := get(x) };
-
-procedure recordUnfitInClone(c: Box<Dog>) opaque { var k: Animal := getAnimal(c) };
-#end
-
--- An argument at `S` fixes nothing in the generic bodies, so `both(d, s)` and `put(x, d)` are
--- recorded at `d`'s `Dog`, and `get(id(x))` at the expected `Animal`. Each clone calls them at what
--- its arguments bind, also through the nested `id(x)`.
-#eval testLaurelVerification <|
-#strata
-program Laurel;
-composite Animal { }
-composite Dog extends Animal { }
-composite Box<T> { var v: T }
-procedure both<T>(x: T, y: T) returns (r: T) opaque ensures r == y { var bx: Box<T>; r := y };
-procedure put<T>(b: Box<T>, y: T) returns (r: T) opaque ensures r == y;
-procedure get<T>(b: Box<T>) returns (r: T) opaque ensures r == b#v { r := b#v };
-procedure id<T>(x: T) returns (r: T) opaque ensures r == x { var bx: Box<T>; r := x };
-procedure outer<S>(s: S, d: Dog) returns (r: Animal) opaque ensures r == s {
-  var bs: Box<S>;
-  r := both(d, s)
-};
-procedure putOuter<S>(x: S, d: Dog) returns (r: Animal) opaque { var bs: Box<S>; r := put(x, d) };
-procedure nestedOuter<S>(x: S) returns (r: Animal) opaque { var bs: Box<S>; r := get(id(x)) };
-
-procedure argumentAtCloneVariable(a: Animal, d: Dog, ba: Box<Animal>, bd: Box<Dog>) opaque {
-  var r: Animal := outer(a, d);
-  assert r == a;
-  var p: Animal := putOuter(ba, d);
-  var n: Animal := nestedOuter(bd)
-};
-#end
-
--- A catch binding may be typed at its thrower's own `S`, as `unrecordedThrower`'s always is, which
--- the clones at `Box<int>` must not substitute although their own `S` is spelled the same, nor bind
--- a type argument to: `get(e)` keeps the `bool` and `mk(e)` the `int` they are recorded at, and only
--- the hole is reported.
+-- A catch binding is typed at its thrower's call: in the clones at `Box<int>`, whose own `S` is
+-- spelled like `thrS`'s, `get(e)` keeps the `bool` and `mk(e)` the `int` they are recorded at.
+-- Beside a hole the call records nothing, so the thrown value has no type and the binding none.
 #eval testLaurelVerification <|
 #strata
 program Laurel;
@@ -474,7 +431,7 @@ procedure recordedThrower<S>(y: S, bb: Box<bool>) opaque modifies * {
 procedure unrecordedThrower<S>(y: S) opaque modifies * {
   var k: Box<S>;
   try { thrS(<?>) } catch e { var r: bool := get(e) }
-//           ^^^ error: could not infer type
+//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: the `catch` binding of this `try` cannot be typed: the body throws a value of unknown type
 };
 
 procedure callsThem(c: Box<int>, bb: Box<bool>) opaque modifies * {

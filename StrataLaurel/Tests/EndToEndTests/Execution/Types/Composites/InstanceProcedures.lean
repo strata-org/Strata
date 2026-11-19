@@ -396,16 +396,16 @@ procedure genericMethodFalsePostcondition()
 -- requires 7, so the precondition VC at the call site is the one that fails.
 -- The Core interpreter runs this and reproduces the failure at the annotated range. The
 -- STANDALONE Laurel interpreter is skipped because it localizes the same failure differently:
--- it reports the call expression `bx#get7()` (snippet cols 16-25) where the verifier and the
--- Core interpreter both report the whole declaration statement (cols 2-25), and one
+-- it reports the call expression `bx#getIf(7)` (snippet cols 16-27) where the verifier and the
+-- Core interpreter both report the whole declaration statement (cols 2-27), and one
 -- annotation cannot pin both ranges.
 #eval testLaurelExecution { skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 composite BoxP<T> {
   var val: T
-  procedure get7(self: BoxP<T>) returns (r: T)
-    requires self#val == 7
+  procedure getIf(self: BoxP<T>, w: T) returns (r: T)
+    requires self#val == w
     opaque
     ensures r == self#val
   { r := self#val };
@@ -418,8 +418,8 @@ procedure genericMethodPreconditionGated()
 {
   var bx: BoxP<int> := new BoxP<int>;
   bx#val := 5;
-  var g: int := bx#get7();
-//^^^^^^^^^^^^^^^^^^^^^^^ error: precondition does not hold
+  var g: int := bx#getIf(7);
+//^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition does not hold
   assert 1 == 1
 };
 #end
@@ -520,8 +520,8 @@ procedure methodTypeParamSpelledLikeTheComposites()
 /-! ### Type arguments the receiver brings in
 
 `b#m(5)` in `outer<U>` instantiates `m`'s `T` at the caller's `U`, which `m`'s own `U` must not
-capture; likewise the composite `E` and `n`'s own `E`. Inside the composite, a call on `self` is
-at its own type parameters. -/
+capture: the call is a `U`, and its `5` fits `m`'s own; likewise the composite `E` and `n`'s own
+`E`. Inside the composite, a call on `self` is at its own type parameters. -/
 
 #eval testLaurelExecution {} <|
 #strata
@@ -559,7 +559,7 @@ composite BoxR<T> {
 procedure outer<U>(b: BoxR<U>)
   opaque
 {
-  var z: bool := b#m(5);
+  var z: U := b#m(5);
   assert 1 == 1
 };
 
@@ -585,8 +585,9 @@ procedure receiverTypesAreNotCaptured()
 
 /-! ### A receiver's type argument in the caller's type parameter
 
-`b#put(x)` in `inCell<U>` passes a `Cell<int>` at the receiver's `T := Cell<U>`, as the static call
-the lift makes does, and runs at `U := int`. -/
+`b#put(x)` in `inCell<U>` passes a `Cell<U>` at the receiver's `T := Cell<U>`, as the static call
+the lift makes does, and runs at `U := int`. (A `Cell<int>` there does not fit: inside `inCell`,
+`U` is one fixed type.) -/
 
 #eval testLaurelExecution {} <|
 #strata
@@ -601,8 +602,8 @@ composite BoxN<T> {
   { r := a };
 }
 
-procedure inCell<U>(b: BoxN<Cell<U>>, x: Cell<int>)
-  returns (r: Cell<int>)
+procedure inCell<U>(b: BoxN<Cell<U>>, x: Cell<U>)
+  returns (r: Cell<U>)
   opaque
   ensures r == x
 { r := b#put(x) };
