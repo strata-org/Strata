@@ -38,7 +38,7 @@ private def piEnv : String → Option Procedure :=
 
 /-- `call Double(5, out y)`. -/
 private def callStmt : Statement :=
-  .cmd (CmdExt.call "Double" [.inArg (int 5), .outArg (id "y")] md)
+  .cmd (CmdExt.call "Double" none [.inArg (int 5), .outArg (id "y")] md)
 
 /-- Target assert `y == rhs`. -/
 private def assertTgt (rhs : Int) : Statement :=
@@ -85,7 +85,7 @@ private def piExit : String → Option Procedure :=
   fun n => if n == "E" then some exitProc else none
 
 /-- `call E(out y)`. -/
-private def callExit : Statement := .cmd (CmdExt.call "E" [.outArg (id "y")] md)
+private def callExit : Statement := .cmd (CmdExt.call "E" none [.outArg (id "y")] md)
 
 private def cexExit : CexA Expression Command :=
   { cfg := .stmts [callExit, assertTgt 7] callerEnv, oracle := [] }

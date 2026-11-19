@@ -103,7 +103,7 @@ private theorem brunS_wide [DecidableEq P.Ident] [LawfulHasVal P] (hE : EvCongr 
     ∃ evs' o', BRunS F s σ' evs' o' ∧ evs'.map Event.obs = evs.map Event.obs ∧ OWide F live o o'
   | _, _, _, _, .cmd (c := .cmd c) h, _, _, hW =>
     (cmd_widen hE h hW).elim fun _ ⟨evs', h', hm, hO⟩ => ⟨evs', _, .cmd h', hm, hO⟩
-  | _, _, _, _, .cmd (c := .call _ _ _) h, _, _, _ => h.elim
+  | _, _, _, _, .cmd (c := .call _ _ _ _) h, _, _, _ => h.elim
   | _, σ, _, _, .ite_true hc h, live, σ', hW | _, σ, _, _, .ite_false hc h, live, σ', hW => by
     simp only [Stmt.idents, ExprOrNondet.getVars, List.append_assoc] at hW
     obtain ⟨evs', o', h', hm, hO⟩ := brun_wide hE (live := live) h (hW.mono fun y hy => by
@@ -174,7 +174,7 @@ private theorem breachS_wide [DecidableEq P.Ident] [LawfulHasVal P] (hE : EvCong
   | _, _, _, .cmd (c := .cmd c) h hne, _, hW => by
     obtain ⟨_, evs', h', hm, -⟩ := cmd_widen hE (N := []) h (by simpa using hW)
     exact ⟨evs', .cmd h' fun h0 => hne (by simpa [h0] using hm), hm⟩
-  | _, _, _, .cmd (c := .call _ _ _) h _, _, _ => h.elim
+  | _, _, _, .cmd (c := .call _ _ _ _) h _, _, _ => h.elim
   | _, _, _, .ite_true hc h, _, hW | _, _, _, .ite_false hc h, _, hW => by
     simp only [Stmt.idents, ExprOrNondet.getVars, List.append_assoc] at hW
     obtain ⟨evs', h', hm⟩ := breach_wide hE h (hW.mono fun y hy => by simp [hy])

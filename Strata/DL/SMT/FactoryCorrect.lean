@@ -30,7 +30,7 @@ open Strata.SMT
 /-- The unique `TermDenoteInput` for the empty context. -/
 private abbrev tdi₀ : TermDenoteInput ({} : Context) :=
   ⟨[], ⟨rfl, fun _ hi => nomatch hi⟩, ⟨[], []⟩,
-   ⟨⟨rfl, fun _ hi => nomatch hi⟩, ⟨rfl, fun _ hi => nomatch hi⟩⟩⟩
+   ⟨⟨rfl, fun _ hi => nomatch hi⟩, ⟨rfl, fun _ hi => nomatch hi⟩⟩, fun _ => 0, id⟩
 
 /-- Extract denoteTerm witness from denoteBoolTermAux. -/
 private theorem denoteBoolTermAux_extract {t : Term} {p : Prop}
@@ -411,11 +411,14 @@ theorem Factory.intDiv_correct {t₁ t₂ : Term} {n₁ n₂ : Int}
     denoteIntTermAux (Factory.intDiv t₁ t₂) = some (n₁ / n₂) := by
   obtain ⟨f₁, hdt₁, rfl⟩ := denoteIntTermAux_extract h₁
   obtain ⟨f₂, hdt₂, rfl⟩ := denoteIntTermAux_extract h₂
-  unfold Factory.intDiv Factory.intapp
+  unfold Factory.intDiv Factory.intDivMod Factory.intapp
+  split
+  · simp only [denoteTerm, Option.pure_def, Option.some.injEq] at hdt₂; cases hdt₂
+    simp +contextual [denoteIntTermAux, denoteTerm, hdt₁]
   split
   · simp only [denoteTerm, Option.pure_def, Option.some.injEq] at hdt₁ hdt₂; cases hdt₁; cases hdt₂
     simp only [denoteIntTermAux, denoteTerm, Option.pure_def, Option.some.injEq]; rfl
-  · simp [denoteIntTermAux, denoteTerm, denoteTerms, leftAssoc, leftAssoc.go, hdt₁, hdt₂]
+  · simp +contextual [denoteIntTermAux, denoteTerm, hdt₁, hdt₂]
 
 /-- `Factory.intMod` preserves `denoteIntTermAux` semantics. -/
 theorem Factory.intMod_correct {t₁ t₂ : Term} {n₁ n₂ : Int}
@@ -423,11 +426,14 @@ theorem Factory.intMod_correct {t₁ t₂ : Term} {n₁ n₂ : Int}
     denoteIntTermAux (Factory.intMod t₁ t₂) = some (n₁ % n₂) := by
   obtain ⟨f₁, hdt₁, rfl⟩ := denoteIntTermAux_extract h₁
   obtain ⟨f₂, hdt₂, rfl⟩ := denoteIntTermAux_extract h₂
-  unfold Factory.intMod Factory.intapp
+  unfold Factory.intMod Factory.intDivMod Factory.intapp
+  split
+  · simp only [denoteTerm, Option.pure_def, Option.some.injEq] at hdt₂; cases hdt₂
+    simp +contextual [denoteIntTermAux, denoteTerm, hdt₁]
   split
   · simp only [denoteTerm, Option.pure_def, Option.some.injEq] at hdt₁ hdt₂; cases hdt₁; cases hdt₂
     simp only [denoteIntTermAux, denoteTerm, Option.pure_def, Option.some.injEq]; rfl
-  · simp [denoteIntTermAux, denoteTerm, hdt₁, hdt₂]
+  · simp +contextual [denoteIntTermAux, denoteTerm, hdt₁, hdt₂]
 
 /-! ## Integer comparison correctness -/
 

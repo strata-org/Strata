@@ -89,7 +89,8 @@ def renameCmd (rigid : List TyIdentifier) (m : ScopeMap) (st : ScopeState) :
   | .cmd (.assert l e md) => (.cmd (.assert l (renameExpr m e) md), m, st)
   | .cmd (.assume l e md) => (.cmd (.assume l (renameExpr m e) md), m, st)
   | .cmd (.cover l e md) => (.cmd (.cover l (renameExpr m e) md), m, st)
-  | .call pname args md => (.call pname (renameCallArgs m args) md, m, st)
+  -- `tyArgs` is not renamed: the type checker, which checks the renamed call, discards it.
+  | .call pname tyArgs args md => (.call pname tyArgs (renameCallArgs m args) md, m, st)
 
 /-- The type variables of the free-variable and binder annotations in an expression. -/
 def exprTyVars (e : Expression.Expr) : List TyIdentifier :=
@@ -110,8 +111,8 @@ def unboundAnnotMsg? (writable : Bool) (rigid : List TyIdentifier) (m : ScopeMap
   (es.findSome? (unboundAnnotVar? writable rigid m)).map
     fun v => f!"type variable `{v}` is not in scope"
 
-/-- The type variables of the declared types and of the free-variable and binder annotations in a
-    list of statements. -/
+/-- The type variables of the declared types, the type arguments of calls, and the free-variable
+    and binder annotations in a list of statements. -/
 def stmtsTyVars (ss : List Statement) : List TyIdentifier :=
   stmtsCollect exprTyVars LMonoTy.freeVars ss
 

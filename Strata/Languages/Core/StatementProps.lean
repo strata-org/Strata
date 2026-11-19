@@ -140,7 +140,7 @@ theorem exists_baseCmd_of_noCalls {c : Command} (h : Statement.noCalls (.cmd c) 
     ∃ c' : Imperative.Cmd Expression, c = .cmd c' := by
   cases c with
   | cmd c' => exact ⟨c', rfl⟩
-  | call n args md =>
+  | call n _ args md =>
     rw [Statement.noCalls, Imperative.Stmt.allSubstmts_cmd] at h; cases h
 
 end

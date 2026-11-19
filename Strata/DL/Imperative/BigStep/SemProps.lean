@@ -9,6 +9,7 @@ public import Strata.DL.Imperative.BigStep.Sem
 public import Strata.DL.Imperative.Logic.TraceRelations
 public import Strata.DL.Imperative.CmdProps
 import Strata.DL.Imperative.Logic.TraceInterpProps
+import Strata.DL.Imperative.StmtProps
 
 /-! # Properties of the big-step semantics
 
@@ -23,11 +24,15 @@ values (`failsAt_transfer`); and
 the conditions of the events of a run, a reach or a failure read only identifiers of the list
 (`brun_fv`, `breach_fv`, `fails_fv`). A run keeps the variables defined
 at its start defined (`brun_dom`), defines only those and the list's (`brun_sub`), changes no
-variable it does not modify (`brun_frame`), keeps
+variable it does not modify (`brun_frame`), none it neither modifies nor defines
+(`brun_frame_modifiedOrDefined`), leaves unbound what it does not define (`brun_undef`), keeps
 the store value-valued, its values typed in agreement with the start (`brun_typed`,
 `brunS_typed`, `TypeAgree`), leaving a scope keeps it value-valued (`WellFormedStore.proj`), and a
 statement ending normally defines exactly its start's variables and its top-level definitions
-(`brunS_normal_isSome`); a list exits only to the labels of its `exit`s (`brun_exit_label`), and
+(`brunS_normal_isSome`); a run emitting events reaches the end of its trace (`brun_breach`,
+`brunS_breach`); the store of a projected or block outcome is the projected store
+(`Outcome.proj_store`, `Outcome.block_store`, `Outcome.proj_normal`, `Outcome.block_normal`);
+a list exits only to the labels of its `exit`s (`brun_exit_label`), and
 only to labels of enclosing blocks when its blocks catch the others (`brun_exit_covered`).
 Under evaluation to `true`, an assumption or a check is
 the counterpart (`Event.WeakensAssume`) of one with the same label whose condition evaluates as
@@ -41,7 +46,9 @@ under the shared semantic event relation `EventArg.WithWF`), `brun_append`, `bru
 `breach_append_left`, `breach_append_run`,
 `fails_iff_claim`, `claim_prepend`, `claim_split`, `reach_cmd_claim`, `failsAt_transfer`,
 `brun_fv`, `breach_fv`, `fails_fv`, `brun_dom`, `brun_sub`, `brun_frame`,
+`brun_frame_modifiedOrDefined`, `brun_undef`, `brun_breach`,
 `brun_typed`, `brunS_normal_isSome`, `brun_exit_label`, `brun_exit_covered`,
+`Outcome.block_store`,
 `Event.WeakensAssume.assume`,
 `Event.WeakensAssume.check`. -/
 
@@ -147,6 +154,40 @@ theorem breachS_ne_nil {s : PStmt P} {σ : SemanticStore P} {evs : List (Event P
   | .ite_true _ h | .ite_false _ h | .ite_nondet_true h | .ite_nondet_false h | .block h
   | .loop_here _ h => breach_ne_nil h
   | .loop_later _ _ h => by simpa using fun _ => breachS_ne_nil h
+end
+
+mutual
+/-- A run of a list emitting a nonempty trace reaches the end of that trace. -/
+theorem brun_breach : ∀ {ss : PStmts P} {σ : SemanticStore P}
+    {evs : List (Event P)} {o : Outcome P},
+    BRun F ss σ evs o → evs ≠ [] → BReach F ss σ evs
+  | _, _, _, _, .nil, h => absurd rfl h
+  | _, _, _, _, .cons_normal (evs2 := evs2) h1 h2, h => by
+    by_cases h2e : evs2 = []
+    · subst h2e
+      rw [List.append_nil] at h ⊢
+      exact .here (brunS_breach h1 h)
+    · exact .later h1 (brun_breach h2 h2e)
+  | _, _, _, _, .cons_exit h1, h => .here (brunS_breach h1 h)
+/-- A run of a statement emitting a nonempty trace reaches the end of that trace. -/
+theorem brunS_breach : ∀ {s : PStmt P} {σ : SemanticStore P}
+    {evs : List (Event P)} {o : Outcome P},
+    BRunS F s σ evs o → evs ≠ [] → BReachS F s σ evs
+  | _, _, _, _, .cmd h, he => .cmd h he
+  | _, _, _, _, .ite_true hc h, he => .ite_true hc (brun_breach h he)
+  | _, _, _, _, .ite_false hc h, he => .ite_false hc (brun_breach h he)
+  | _, _, _, _, .ite_nondet_true h, he => .ite_nondet_true (brun_breach h he)
+  | _, _, _, _, .ite_nondet_false h, he => .ite_nondet_false (brun_breach h he)
+  | _, _, _, _, .block h, he => .block (brun_breach h he)
+  | _, _, _, _, .exit, he | _, _, _, _, .typeDecl, he | _, _, _, _, .loop_exit _, he =>
+    absurd rfl he
+  | _, _, _, _, .loop_iter (evs2 := evs2) hg h1 h2, he => by
+    by_cases h2e : evs2 = []
+    · subst h2e
+      rw [List.append_nil] at he ⊢
+      exact .loop_here hg (brun_breach h1 he)
+    · exact .loop_later hg h1 (brunS_breach h2 h2e)
+  | _, _, _, _, .loop_break hg h, he => .loop_here hg (brun_breach h he)
 end
 
 end Sequencing
@@ -263,7 +304,7 @@ private theorem brunS_fv : ∀ {s : PStmt P} {σ : SemanticStore P}
     {evs : List (Event P)} {o : Outcome P}, BRunS F s σ evs o →
     ∀ ev ∈ evs, ∀ y ∈ exprFV ev.condition.expr, y ∈ Stmt.idents s
   | _, _, _, _, .cmd (c := .cmd _) h => evalE_fv h
-  | _, _, _, _, .cmd (c := .call _ _ _) h => h.elim
+  | _, _, _, _, .cmd (c := .call _ _ _ _) h => h.elim
   | _, _, _, _, .ite_true _ h | _, _, _, _, .ite_nondet_true h | _, _, _, _, .ite_false _ h
   | _, _, _, _, .ite_nondet_false h => fun ev hev y hy => by
     simp [Stmt.idents, brun_fv h ev hev y hy, ExprOrNondet.getVars_det,
@@ -291,7 +332,7 @@ theorem breach_fv : ∀ {ss : PStmts P} {σ : SemanticStore P} {evs : List (Even
 private theorem breachS_fv : ∀ {s : PStmt P} {σ : SemanticStore P} {evs : List (Event P)},
     BReachS F s σ evs → ∀ ev ∈ evs, ∀ y ∈ exprFV ev.condition.expr, y ∈ Stmt.idents s
   | _, _, _, .cmd (c := .cmd _) h _ => evalE_fv h
-  | _, _, _, .cmd (c := .call _ _ _) h _ => h.elim
+  | _, _, _, .cmd (c := .call _ _ _ _) h _ => h.elim
   | _, _, _, .ite_true _ h | _, _, _, .ite_nondet_true h | _, _, _, .ite_false _ h
   | _, _, _, .ite_nondet_false h => fun ev hev y hy => by
     simp [Stmt.idents, breach_fv h ev hev y hy, ExprOrNondet.getVars_det,
@@ -371,15 +412,34 @@ theorem WellFormedStore.proj {σp σ : SemanticStore P} (h : WellFormedStore σ 
 
 omit [HasBool P] [HasFvar P] [HasFvars P] in
 /-- The store of a projected outcome is the projected store. -/
-private theorem Outcome.proj_store (σp : SemanticStore P) (o : Outcome P) :
+theorem Outcome.proj_store (σp : SemanticStore P) (o : Outcome P) :
     (o.proj σp).store = projectStore σp o.store := by
   cases o <;> rfl
 
 omit [HasBool P] [HasFvar P] [HasFvars P] in
 /-- The store of the outcome of a block is the projected store. -/
-private theorem Outcome.block_store (l : String) (σp : SemanticStore P) (o : Outcome P) :
+theorem Outcome.block_store (l : String) (σp : SemanticStore P) (o : Outcome P) :
     (o.block l σp).store = projectStore σp o.store := by
   cases o <;> simp only [Outcome.block] <;> (try split) <;> rfl
+
+omit [HasBool P] [HasFvar P] [HasFvars P] [LawfulHasVal P] in
+/-- A projected outcome that ends normally comes from a normal outcome, projected. -/
+theorem Outcome.proj_normal {σ σ' : SemanticStore P} {o : Outcome P}
+    (h : o.proj σ = .normal σ') : ∃ σa, o = .normal σa ∧ σ' = projectStore σ σa := by
+  cases o with
+  | normal σa => simp only [Outcome.proj, Outcome.normal.injEq] at h; exact ⟨σa, rfl, h.symm⟩
+  | exit => simp [Outcome.proj] at h
+
+omit [HasBool P] [HasFvar P] [HasFvars P] [LawfulHasVal P] in
+/-- A block outcome that ends normally ends in the projection of the body's final store. -/
+theorem Outcome.block_normal {l : String} {σ σ' : SemanticStore P} {o : Outcome P}
+    (h : o.block l σ = .normal σ') : σ' = projectStore σ o.store := by
+  cases o with
+  | normal σa => simp only [Outcome.block, Outcome.normal.injEq] at h; exact h.symm
+  | exit l' σa =>
+    simp only [Outcome.block] at h; split at h
+    · simp only [Outcome.normal.injEq] at h; exact h.symm
+    · cases h
 
 /-- What a run does to the store: it keeps the variables defined at its start defined, changes
     none of them outside `W`, defines no variable outside `D` that was not defined at its start,
@@ -575,6 +635,28 @@ theorem brunS_typed {s : PStmt P} {σ : SemanticStore P}
     {evs : List (Event P)} {o : Outcome P} (h : BRunS F s σ evs o) (hT : WellFormedStore σ F) :
     WellFormedStore o.store F ∧ TypeAgree F σ o.store :=
   (brunS_runStore h).typed hT
+
+/-- A run leaves unbound every unbound variable its list does not define. -/
+theorem brun_undef {ss : PStmts P} {σ : SemanticStore P} {evs : List (Event P)}
+    {o : Outcome P} (h : BRun F ss σ evs o) :
+    ∀ z, z ∉ Block.definedVars ss false → σ z = none → o.store z = none := by
+  intro z hz h0
+  cases ho : o.store z with
+  | none => rfl
+  | some _ =>
+    rcases brun_sub h z (by simp [ho]) with h1 | h1
+    · simp [h0] at h1
+    · exact absurd (Block.definedVars_true_subset_false (fun _ _ h => h) h1) hz
+
+/-- A run changes only the variables its list modifies or defines, at any depth. -/
+theorem brun_frame_modifiedOrDefined {ss : PStmts P} {σ : SemanticStore P}
+    {evs : List (Event P)} {o : Outcome P} (h : BRun F ss σ evs o) :
+    ∀ z, z ∉ Block.modifiedOrDefinedVars ss false → o.store z = σ z := by
+  intro z hz
+  simp only [Block.modifiedOrDefinedVars, List.mem_append, not_or] at hz
+  cases hσ : σ z with
+  | none => exact brun_undef h z hz.2 hσ
+  | some _ => rw [brun_frame h z (by simp [hσ]) hz.1, hσ]
 
 /-- A statement ending normally defines exactly the variables of its start and those it defines
     at top level. -/

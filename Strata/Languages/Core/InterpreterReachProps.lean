@@ -270,7 +270,7 @@ private theorem runLits_mustTerminate {π : String → Option Procedure} {fuel :
     simp [runLitsProgresses] at h
   | Stmt.cmd (CmdExt.cmd (Cmd.cover _ _ _)) :: _, _, _, _, h, _, _, _, _ => by
     simp [runLitsProgresses] at h
-  | Stmt.cmd (CmdExt.call _ _ _) :: _, _, _, _, h, _, _, _, _ => by
+  | Stmt.cmd (CmdExt.call _ _ _ _) :: _, _, _, _, h, _, _, _, _ => by
     simp [runLitsProgresses] at h
   | Stmt.block _ _ _ :: _, _, _, _, h, _, _, _, _ => by simp [runLitsProgresses] at h
   | Stmt.ite _ _ _ _ :: _, _, _, _, h, _, _, _, _ => by simp [runLitsProgresses] at h

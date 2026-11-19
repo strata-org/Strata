@@ -170,7 +170,7 @@ def stepCmd {m : Type → Type} [Monad m] [InterpEffects P m] [MonadExcept StopR
   | .cmd base => do
     let store ← stepBaseCmdStore fuel env.factory env.store base
     return .terminal { env with store }
-  | .call procName args md =>
+  | .call procName _ args md =>
     match fuel with
     | 0 => throw .replayFuelExhausted
     | fuel' + 1 =>

@@ -764,11 +764,13 @@ def buildEnv (options : VerifyOptions) (program : Program)
     except on the functions whose expansion removes a lambda (`Core.Simplify.lambdaCarriers`),
     through `buildEnv` and `Program.eval`.  Returns the program-level declarations of the
     obligation program (the program's type declarations, the functions evaluation added with
-    their recursive axioms, the `distinct` declarations), the obligations evaluation deferred,
-    the statistics, and the environment after evaluation. -/
+    their recursive axioms), its `distinct` groups in declaration order, the obligations
+    evaluation deferred, each recording among its assumptions the `distinct` groups declared
+    before its lemma or procedure, the statistics, and the environment after evaluation. -/
 private def evalProgramDeclsWithEnv (options : VerifyOptions) (program : Program)
     (moreFns : Lambda.Factory CoreLParams := Lambda.Factory.default) :
-    Except Message (List Decl × Imperative.ProofObligations Expression × Statistics × Env) := do
+    Except Message (List Decl × List (List Expression.Expr) ×
+      Imperative.ProofObligations Expression × Statistics × Env) := do
   let factory ← Core.Factory.addFactory moreFns
   -- Symbolic evaluation gets both the factory and the program without the unconditional
   -- `inline` attribute, so expanding such a call is the Simplify phase's decision.
@@ -820,16 +822,16 @@ private def evalProgramDeclsWithEnv (options : VerifyOptions) (program : Program
     match declaredAttrs[f.name.name]? with
     | some attr => Decl.func { f with attr := attr } .empty
     | none => Decl.func f .empty
-  let distinctDecls := postEvalEnv.distinct.mapIdx fun i es =>
-    Decl.distinct s!"distinct_{i}" es .empty
-  return (typeDecls ++ funcDecls ++ distinctDecls, postEvalEnv.deferred, stats, postEvalEnv)
+  return (typeDecls ++ funcDecls, postEvalEnv.distinct.reverse, postEvalEnv.deferred, stats,
+    postEvalEnv)
 
 /-- `evalProgramDeclsWithEnv` without the post-evaluation environment. -/
 def evalProgramDecls (options : VerifyOptions) (program : Program)
     (moreFns : Lambda.Factory CoreLParams := Lambda.Factory.default) :
-    Except Message (List Decl × Imperative.ProofObligations Expression × Statistics) := do
-  let (decls, deferred, stats, _) ← evalProgramDeclsWithEnv options program moreFns
-  return (decls, deferred, stats)
+    Except Message (List Decl × List (List Expression.Expr) ×
+      Imperative.ProofObligations Expression × Statistics) := do
+  let (decls, distincts, deferred, stats, _) ← evalProgramDeclsWithEnv options program moreFns
+  return (decls, distincts, deferred, stats)
 
 /-- The statements checking a deferred obligation `ob`: an `assume` per assumption, oldest
     first, then its `assert` or `cover`. -/
@@ -840,12 +842,15 @@ private def deferredBlock (ob : Imperative.ProofObligation Expression) : List St
     | _ => none
   assumes ++ [Imperative.Stmt.cmd (CmdExt.cmd ob.toCheckCmd)]
 
-/-- The obligation program: `decls`, then one obligation procedure whose body has each of
-    `blocks` as a branch of nested `if *`s. The procedure is named after the first procedure of
-    `program`, else its first lemma; the name is only a label, since obligation extraction walks
-    the body. No obligation procedure when `program` has neither. -/
-private def obligationProgram (program : Program) (decls : List Decl)
-    (blocks : List (List Statement)) : Program :=
+/-- The obligation procedure numbered `k` of an obligation program for `program`: its body has
+    each of `blocks` as a branch of nested `if *`s. It is named after the first procedure of
+    `program`, else its first lemma, with `$seg<k>` appended for `k > 0`. The name is only a
+    label: obligation extraction and common-subexpression elimination read the body and use the
+    name only in error messages, and an obligation program holds no user procedure, so the names
+    need not be fresh against the input program's. No procedure when `program` has neither a
+    procedure nor a lemma. -/
+private def obligationProcs (program : Program) (k : Nat) (blocks : List (List Statement)) :
+    List Decl :=
   let procName := program.decls.findSome? fun
     | .proc p _ => some p.header.name | _ => none
   let procName := procName <|> program.decls.findSome? fun
@@ -855,10 +860,39 @@ private def obligationProgram (program : Program) (decls : List Decl)
     | [b] => b
     | b :: rest => rest.foldl (fun acc block =>
         [Imperative.Stmt.ite .nondet acc block .empty]) b
-  let oblProcs := match procName with
-    | some name => [Decl.obligationProc name body]
-    | none => []
-  { decls := decls ++ oblProcs }
+  match procName with
+  | some name =>
+    [Decl.obligationProc (if k == 0 then name else ⟨s!"{name.name}$seg{k}", name.metadata⟩) body]
+  | none => []
+
+/-- The number of `distinct` groups obligation `ob` records among its assumptions, the groups it
+    is checked under (`Program.eval` adds each group to the top-level path condition). -/
+private def distinctScopeOf (ob : Imperative.ProofObligation Expression) : Nat :=
+  ob.assumptions.flatten.countP fun | .distinct .. => true | _ => false
+
+/-- The obligation program with `distinct` declarations scoped by position: `decls`, then the
+    groups `distincts` (in declaration order) placed among the obligation procedures so that each
+    block of `blocks`, tagged with the number `c` of groups it is checked under, follows exactly
+    the first `c` groups. Blocks with one tag form one obligation procedure (`obligationProcs`),
+    in their order in `blocks`; an empty one is left out. Without `distinct` groups this is
+    `decls` and one obligation procedure holding every block. A block tagged with more groups
+    than `distincts` holds is an internal error. -/
+private def scopedObligationProgram (program : Program) (decls : List Decl)
+    (distincts : List (List Expression.Expr)) (blocks : List (Nat × List Statement)) :
+    Except Message Program := do
+  let nd := distincts.length
+  if blocks.any (·.1 > nd) then
+    throw (Message.fromString
+      "obligation program: an obligation records more distinct groups than the program declares")
+  let segment (c : Nat) := (blocks.filter (·.1 == c)).map (·.2)
+  -- `distinct_0` is the last declared.
+  let (declsRev, k) := distincts.zipIdx.foldl (init := (([] : List Decl), 0))
+    fun (acc, k) (es, i) =>
+      let seg := segment i
+      let acc := if seg.isEmpty then acc else (obligationProcs program k seg).reverse ++ acc
+      let k := if seg.isEmpty then k else k + 1
+      (Decl.distinct s!"distinct_{nd - 1 - i}" es .empty :: acc, k)
+  return { decls := decls ++ declsRev.reverse ++ obligationProcs program k (segment nd) }
 
 /-- Proof obligation program construction: Program → Program.
     Runs symbolic execution and converts obligations to a program
@@ -884,9 +918,13 @@ def toCoreProofObligationProgram (options : VerifyOptions) (program : Program)
     | _ => none) with
   | some msg => throw (Message.fromString s!"toCoreProofObligationProgram: {msg}")
   | none => pure ()
-  let (decls, deferred, stats) ← evalProgramDecls options program moreFns
-  -- One obligation procedure containing all deferred obligations.
-  let oblProgram := obligationProgram program decls (deferred.toList.map deferredBlock)
+  let (decls, distincts, deferred, stats) ← evalProgramDecls options program moreFns
+  -- A `distinct` group is assumed only by the obligations of the declarations after it, as the
+  -- language reference checks a lemma or a procedure under the declarations before it. Each
+  -- obligation records those groups among its assumptions (`Program.eval`), and
+  -- `ObligationExtraction` reads the placed declarations in order.
+  let oblProgram ← scopedObligationProgram program decls distincts
+    (deferred.toList.map fun ob => (distinctScopeOf ob, deferredBlock ob))
 
   if options.verbose >= .normal then do
     dbg_trace f!"{Std.Format.line}VCs:"
@@ -897,14 +935,15 @@ def toCoreProofObligationProgram (options : VerifyOptions) (program : Program)
 /-- **The declaration phase of a program** (`Core.WP.declObligationsProgramWith`): the
     program-level declarations and the lemmas' obligations are those symbolic evaluation produces
     for the program without its procedures (`evalProgramDecls`, the evaluation symbolic mode
-    runs, done once); the axioms and procedures are kept in place; each lemma becomes the
+    runs, done once); the axioms, `distinct` declarations and procedures are kept in place, so
+    the `distinct` groups `evalProgramDecls` returns are not used; each lemma becomes the
     obligation unit of its obligation. -/
 def declObligationsProgram (options : VerifyOptions) (program : Program)
     (moreFns : Lambda.Factory CoreLParams := Lambda.Factory.default) :
     Except Message (Program × Statistics) := do
   let lemmaSource : Program :=
     { decls := program.decls.filter fun d => match d with | .proc _ _ => false | _ => true }
-  let (decls, lemmaObls, stats) ← evalProgramDecls options lemmaSource moreFns
+  let (decls, _, lemmaObls, stats) ← evalProgramDecls options lemmaSource moreFns
   match WP.declObligationsProgramWith { decls := decls } lemmaObls.toList program with
   | .ok p => return (p, stats)
   | .error e => throw (Message.fromString e)
@@ -1012,7 +1051,8 @@ private def markOnlyChecks (counts : Std.HashMap String Nat) (p : Procedure) : P
     it and the evaluator's factory, merging where `policy` says (default: the preset
     `options.symExecMode` names), giving one tree-shaped block (`SymExec.Result.treeStmts`) plus
     one block per check no path reached. The lemma blocks and these become the `if *` branches
-    of one obligation procedure, named after the first procedure (else the first lemma). Each
+    of the obligation procedures, each block after exactly the `distinct` declarations before
+    its lemma or procedure (`scopedObligationProgram`). Each
     run stops past `symExecMaxPaths` paths. The whole run stops with an error, naming the
     procedure and the reason, if the program fails a fact `SymExec.failedRequires` checks, a CFG
     body has a loop (`cfgLoopBlocks`), or a procedure's run is incomplete (`symExecIncomplete`,
@@ -1028,18 +1068,27 @@ def toSymExecObligationProgram (options : VerifyOptions) (program : Program)
         that establish them first.")
   let declProgram : Program :=
     { program with decls := program.decls.filter fun | .proc _ _ => false | _ => true }
-  let (decls, deferred, stats, postEvalEnv) ← evalProgramDeclsWithEnv options declProgram moreFns
+  let (decls, distincts, deferred, stats, postEvalEnv) ←
+    evalProgramDeclsWithEnv options declProgram moreFns
   let F := postEvalEnv.exprEnv.config.factory
   let fnNames := F.toArray.toList.map (·.name.name)
-  -- Lemma obligations, as the symbolic evaluator states them.
-  let lemmaBlocks := deferred.toList.map deferredBlock
-  -- Procedures, in declaration order, each under the axioms declared before it.
+  -- Lemma obligations, as the symbolic evaluator states them, each tagged with the `distinct`
+  -- groups it records.
+  let lemmaBlocks := deferred.toList.map fun ob => (distinctScopeOf ob, deferredBlock ob)
+  -- Procedures, in declaration order, each under the axioms declared before it, and tagged with
+  -- the number of `distinct` groups declared before it. The tag is the procedure's position, not
+  -- read from path conditions, and that is sound here: this fold walks the declarations in order
+  -- and runs one procedure at a time, and a procedure's blocks are tagged when it is run, so how
+  -- its paths are explored or merged cannot move them past a `distinct`
+  -- (`exitReorderPgm` checks it with paths kept apart and merged).
   let counts := checkCounts program
-  let (_, _, procBlocks, stats) ← program.decls.foldlM
-    (fun (acc : Array (String × Expression.Expr) × Nat × Array (List Statement) × Statistics) d =>
-      let (axioms, idx, blocks, stats) := acc
+  let (_, _, _, procBlocks, stats) ← program.decls.foldlM
+    (fun (acc : Array (String × Expression.Expr) × Nat × Nat × Array (Nat × List Statement) ×
+        Statistics) d =>
+      let (axioms, nDistinct, idx, blocks, stats) := acc
       match d with
-      | .ax a _ => pure (axioms.push (toString a.name, a.e), idx, blocks, stats)
+      | .ax a _ => pure (axioms.push (toString a.name, a.e), nDistinct, idx, blocks, stats)
+      | .distinct .. => pure (axioms, nDistinct + 1, idx, blocks, stats)
       | .proc p _ =>
         let p := markOnlyChecks counts p
         let pol := policy.getD (SymExec.MergePolicy.ofMode options.symExecMode)
@@ -1070,11 +1119,14 @@ def toSymExecObligationProgram (options : VerifyOptions) (program : Program)
           -- edge that introduces it), plus one block per unreached check.
           let axAssumes := axioms.toList.map fun (l, e) => Statement.assume l e #[]
           let tree := if r.obligations.isEmpty then [] else [axAssumes ++ r.treeStmts]
-          pure (axioms, idx + 1,
-            blocks ++ tree.toArray ++ (r.unreached.map (symExecBlock axAssumes)).toArray, stats)
-      | _ => pure (axioms, idx, blocks, stats))
-    ((#[] : Array (String × Expression.Expr)), 0, (#[] : Array (List Statement)), stats)
-  return (obligationProgram program decls (lemmaBlocks ++ procBlocks.toList), stats)
+          let procBlocks := tree ++ r.unreached.map (symExecBlock axAssumes)
+          pure (axioms, nDistinct, idx + 1,
+            blocks ++ (procBlocks.map (nDistinct, ·)).toArray, stats)
+      | _ => pure (axioms, nDistinct, idx, blocks, stats))
+    ((#[] : Array (String × Expression.Expr)), 0, 0, (#[] : Array (Nat × List Statement)), stats)
+  let oblProgram ← scopedObligationProgram program decls distincts
+    (lemmaBlocks ++ procBlocks.toList)
+  return (oblProgram, stats)
 
 /-- Convenience: type check then build obligation program. The program's lemmas keep their
     type parameters; the verification pipeline's opaque-type phase closes them. -/

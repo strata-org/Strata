@@ -208,6 +208,7 @@ private theorem stepCmd_call_completeG
         ∧ Pend st' o ∧ obs.trace st' = revs.reverse ++ obs.trace st)
     {ρ : IEnv P} (hd : RStore.Denoting F ρ.store.get) (hf : ρ.factory = InterpLang.rfactory F)
     {nm : String} {args : List (CallArg P)} {md : MetaData P} {p : Procedure P (CmdExt P) Hdr}
+    {tyArgs : Option (List P.Ty)}
     {σAO σf σ' : SemanticStore P} {evB : List (Event P)} {o o' : List P.Val}
     (hπ : π nm = some p) (hentry : CallEntry F (InterpLang.absStore F ρ.store.get) p args σAO)
     (hexit : CallExit F (InterpLang.absStore F ρ.store.get) p args σf σ')
@@ -224,7 +225,7 @@ private theorem stepCmd_call_completeG
     (st : obs.St) (hst : Pend st o) :
     ∃ (f0 : Nat) (σi : IStore P) (st' : obs.St), InterpLang.absStore F σi.get = σ' ∧
       RStore.Denoting F σi.get ∧
-      (∀ i j, f0 ≤ i → f0 ≤ j → obs.run (stepCmd π i j ρ (.call nm args md)) cfgr st
+      (∀ i j, f0 ≤ i → f0 ≤ j → obs.run (stepCmd π i j ρ (.call nm tyArgs args md)) cfgr st
         = (.ok (.terminal { ρ with store := σi }), st')) ∧ Pend st' o' ∧
       obs.TraceExt F st st' (defaultAssertEvents F σAO (checksAtCall md p.spec.preconditions) ++
         evB ++ defaultAssertEvents F σf p.spec.postconditions) := by
@@ -275,8 +276,8 @@ private theorem oracleCmdAt_defines (π : String → Option (Procedure P (CmdExt
     hc ▸ evalCmdE_cmdDefsSound _ _ _ _ _ h.toEvalCmdE
   rintro (_ | n) _ _ _ _ _ _ _ h
   · exact hb h
-  rcases h with h | ⟨_, _, _, _, _, _, _, _, rfl, -, -, -, -, ⟨_, _, _, hup, -⟩, -⟩ |
-    ⟨_, _, _, _, _, _, _, _, rfl, -, -, -, -, ⟨_, _, _, hup, -⟩, -⟩
+  rcases h with h | ⟨_, _, _, _, _, _, _, _, _, rfl, -, -, -, -, ⟨_, _, _, hup, -⟩, -⟩ |
+    ⟨_, _, _, _, _, _, _, _, _, rfl, -, -, -, -, ⟨_, _, _, hup, -⟩, -⟩
   · exact hb h
   all_goals exact fun x hx => .inl (UpdateStatesDefMonotone' (vs := [x])
     (fun _ hv => List.mem_singleton.1 hv ▸ hx) hup x (List.mem_singleton_self x))
@@ -306,9 +307,10 @@ private theorem oracleCmdAt_followsG {F : P.Factory}
     obtain ⟨hdρ, hfρ⟩ := hd
     have hq2 : ∀ {a b c : List (Event P)}, (∀ ev ∈ a ++ b ++ c, Q ev) → ∀ ev ∈ b, Q ev :=
       fun h ev hev => h ev (by simp [hev])
-    rcases hcall with ⟨nm, p, args, md, σAO, ss, ρ', bodyEvs, rfl, hπ, hss, hentry, hbody, hexit,
+    rcases hcall with ⟨nm, _, p, args, md, σAO, ss, ρ', bodyEvs, rfl, hπ, hss, hentry, hbody, hexit,
         rfl, hargs, hwb⟩ |
-      ⟨nm, p, args, md, σAO, gr, ρEnd, bodyEvs, rfl, hπ, hgr, hentry, hbody, hexit, rfl, hargs, hwb⟩
+      ⟨nm, _, p, args, md, σAO, gr, ρEnd, bodyEvs, rfl, hπ, hgr, hentry, hbody, hexit, rfl, hargs,
+        hwb⟩
     all_goals
       refine (stepCmd_call_completeG obs cfgr π hMono hem hdρ hfρ hπ hentry hexit hargs hwb
         (fun er habs hder s1 p1 => ?_) hq st hst).imp fun _ ⟨σi, s, h1, h2, hr, hp, ht⟩ =>
@@ -870,12 +872,12 @@ private theorem oracleCmdAt_mono (π : String → Option (Procedure P (CmdExt P)
   | succ n ih =>
     intro m hm _ _ _ _ _ _ _ h
     obtain ⟨m, rfl⟩ : ∃ k, m = k + 1 := ⟨m - 1, by omega⟩
-    rcases h with h | ⟨nm, p, a, md, σAO, ss, ρ', be, rfl, hp, hs, he, hb, hx, rfl, hr, hw⟩ |
-      ⟨nm, p, a, md, σAO, g, ρE, be, rfl, hp, hs, he, hb, hx, rfl, hr, hw⟩
+    rcases h with h | ⟨nm, _, p, a, md, σAO, ss, ρ', be, rfl, hp, hs, he, hb, hx, rfl, hr, hw⟩ |
+      ⟨nm, _, p, a, md, σAO, g, ρE, be, rfl, hp, hs, he, hb, hx, rfl, hr, hw⟩
     · exact .inl h
-    · exact .inr (.inl ⟨nm, p, a, md, σAO, ss, ρ', be, rfl, hp, hs, he,
+    · exact .inr (.inl ⟨nm, _, p, a, md, σAO, ss, ρ', be, rfl, hp, hs, he,
         hb.imp fun _ _ _ => OracleStepE.imp fun _ _ _ _ _ _ _ => ih (by omega), hx, rfl, hr, hw⟩)
-    · exact .inr (.inr ⟨nm, p, a, md, σAO, g, ρE, be, rfl, hp, hs, he,
+    · exact .inr (.inr ⟨nm, _, p, a, md, σAO, g, ρE, be, rfl, hp, hs, he,
         hb.imp fun _ _ _ => OracleCFGStepE.imp fun _ _ _ _ _ _ _ => ih (by omega), hx, rfl, hr,
           hw⟩)
 
@@ -1013,12 +1015,12 @@ theorem runChoices_of_stepStmtExtStarE
       · obtain ⟨cs, n, hn⟩ :=
           runChoices_of_star π hEvalComplete hGuards (fun _ _ _ _ _ ⟨_, hm⟩ => hm) hr
         exact ⟨cs, n + 1, fun r =>
-          .inr (.inl ⟨_, _, _, _, _, _, _, _, rfl, hπ, hss, he, hn r, hx, rfl,
+          .inr (.inl ⟨_, _, _, _, _, _, _, _, _, rfl, hπ, hss, he, hn r, hx, rfl,
             fun _ _ => hEvalComplete.reach, writeBackOK_of_complete hWB hx⟩)⟩
       · obtain ⟨cs, n, hn⟩ :=
           oracleCFG_of_star π hEvalComplete hGuards (fun _ _ _ _ _ ⟨_, hm⟩ => hm) hr
         exact ⟨cs, n + 1, fun r =>
-          .inr (.inr ⟨_, _, _, _, _, _, _, _, rfl, hπ, hg, he, hn r, hx, rfl,
+          .inr (.inr ⟨_, _, _, _, _, _, _, _, _, rfl, hπ, hg, he, hn r, hx, rfl,
             fun _ _ => hEvalComplete.reach, writeBackOK_of_complete hWB hx⟩)⟩
   exact runChoices_of_star π hEvalComplete hGuards hcmd h
 
@@ -1098,8 +1100,8 @@ theorem runChoices_nil_of_deterministic {π : String → Option (Procedure P (Cm
     induction n with
     | zero => exact fun _ _ _ _ _ _ _ => oracleCmdBase_det
     | succ n ih =>
-      rintro _ _ _ _ _ _ _ (h | ⟨_, _, _, _, _, ss, _, _, rfl, hp, hs, -, hb, -, rfl, -⟩ |
-        ⟨_, _, _, _, _, g, _, _, rfl, hp, hg, -, hb, -, rfl, -⟩) hd
+      rintro _ _ _ _ _ _ _ (h | ⟨_, _, _, _, _, _, ss, _, _, rfl, hp, hs, -, hb, -, rfl, -⟩ |
+        ⟨_, _, _, _, _, _, g, _, _, rfl, hp, hg, -, hb, -, rfl, -⟩) hd
       · exact oracleCmdBase_det h hd
       · exact (oracleStar_det ih hb (by simpa [Config.noNondetGuards, Stmt.noNondetGuards,
           Config.allCmds, Stmt.allCmds] using hdet.2.1 _ _ _ hp hs)).1

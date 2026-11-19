@@ -414,6 +414,27 @@ def Procedure.matchCall? (proc : Procedure) (inTys outTys : List (Option LMonoTy
   LMonoTys.matchKnown? proc.header.typeArgs
     (proc.header.inputs.values.zip inTys ++ proc.header.outputs.values.zip outTys)
 
+/-- The type arguments of `proc` at a call that stores `tyArgs`. When `tyArgs` has one entry per
+    type parameter, they are read from it, position by position; a parameter whose entry is not a
+    monotype, or mentions a generated type variable, is left unbound. Otherwise (a call that was
+    not type-checked) they are matched one-way against the known types of the call's inputs
+    `inTys` and outputs `outTys`, as in `Procedure.matchCall?`.
+    Stored `tyArgs` are trusted, so they must agree with the argument and result
+    types (the type checker ensures this for its output); a disagreeing value
+    instantiates the callee at the stored types. -/
+def Procedure.callTypeArgs? (proc : Procedure) (tyArgs : Option (List LTy))
+    (inTys outTys : List (Option LMonoTy)) : Option SubstOne :=
+  match tyArgs with
+  | some tys =>
+    if tys.length = proc.header.typeArgs.length then
+      some ((proc.header.typeArgs.zip tys).foldl (init := Strata.Util.HMap.empty) fun S (a, t) =>
+        match t.toMonoType? with
+        | some m =>
+          if m.freeVars.any (·.startsWith Lambda.genTyPrefix) then S else S.insert a m
+        | none => S)
+    else proc.matchCall? inTys outTys
+  | none => proc.matchCall? inTys outTys
+
 namespace Transform
 
 /-- A reference to the variable `ident`, annotated with `ty` when given. -/

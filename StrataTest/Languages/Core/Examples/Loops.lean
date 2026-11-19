@@ -568,12 +568,12 @@ theorem precondElimInMeasurePgm_correct : smtVCsCorrect precondElimInMeasurePgm 
   all_goals (try grind)
   -- insertLoopInvAssert_measure_lb_loop_0: the loop measure i / d is non-negative
   case insertLoopInvAssert_measure_lb_loop_0 =>
-    intro _ d i _ dpos _ _ _ inonneg _
+    intro _ _ _ d i _ dpos _ _ _ inonneg _
     have p := Int.ediv_nonneg (a := i) (b := d)
     grind
   -- insertLoopInvAssert_measure_decrease_loop_0: the loop measure i / d strictly decreases
   case insertLoopInvAssert_measure_decrease_loop_0 =>
-    intro _ d i _ dpos _ _ _ _
+    intro _ _ _ d i _ dpos _ _ _ _
     have p := Int.add_mul_ediv_left (a := i) (b := d) (c := -1)
     grind
 

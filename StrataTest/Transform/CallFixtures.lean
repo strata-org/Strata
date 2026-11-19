@@ -75,12 +75,32 @@ def pairProg (pair : Decl) : Program := { decls := [pair,
     [declNondet "w" (tv "b"),
      callS "pair" [.inArg (v "y" (tv "b")), .inArg (v "x" (tv "a")), .outArg "w"]]] }
 
+/-- `q<a>()` requiring `forall y : a :: y == y`. -/
+def qReflDecl : Decl := mkProc "q" ["a"] [] [] (pre := [reflAll (tv "a")])
+
 /-- `q<a>()` called with no arguments, so the call does not determine `a`. -/
 def qProg (q : Decl) : Program := { decls := [q, caller [] [] [callS "q" []]] }
 
 /-- `r<a, b>(x : a)` called with `7`, which does not determine `b`. -/
 def rProg (r : Decl) : Program :=
   { decls := [r, caller [] [] [callS "r" [.inArg int7]]] }
+
+/-- `q<a>(x : a)` requiring `forall y : a :: y == y`. -/
+def qArgDecl : Decl :=
+  mkProc "q" ["a"] [("x", tv "a")] [] (pre := [reflAll (tv "a")])
+
+/-- `P<b>(y : b)` calls `q` with its own parameter `y`, so the call determines
+    `a` as the caller's type parameter `b`. -/
+def qParamProg (q : Decl) : Program := { decls := [q,
+  mkProc "P" ["b"] [("y", tv "b")] [] [callS "q" [.inArg (v "y" (tv "b"))]]] }
+
+/-- `q<a>()` called with the stored type arguments `tyArgs`. -/
+def qTyArgsProg (q : Decl) (tyArgs : Option (List LTy)) : Program :=
+  { decls := [q, caller [] [] [.cmd (.call "q" tyArgs [] .empty)]] }
+
+/-- `r<a, b>(x : a)` called with `7` and the stored type arguments `tyArgs`. -/
+def rTyArgsProg (r : Decl) (tyArgs : Option (List LTy)) : Program :=
+  { decls := [r, caller [] [] [.cmd (.call "r" tyArgs [.inArg int7] .empty)]] }
 
 /-- `r<a, b>(x : a)` called with an argument of unknown type. -/
 def unknownProg (r : Decl) : Program :=

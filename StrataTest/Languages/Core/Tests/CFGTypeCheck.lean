@@ -1279,14 +1279,14 @@ cfg entry {
   entry: {
     var x : int;
     y := x;
-    goto exit;
+    goto |exit|;
   }
   dead: {
     var w : bool;
     z := w;
     return;
   }
-  exit: {
+  |exit|: {
     return;
   }
 };
@@ -1513,7 +1513,7 @@ private def cmdAnnots : Core.Command → List (String × String)
   | .cmd (.assert _ e _) => exprAnnots e
   | .cmd (.assume _ e _) => exprAnnots e
   | .cmd (.cover _ e _) => exprAnnots e
-  | .call _ args _ => args.flatMap fun
+  | .call _ _ args _ => args.flatMap fun
       | .inArg e => exprAnnots e
       | _ => []
   | _ => []
@@ -1653,7 +1653,7 @@ arguments, but Q has 1 input parameter (x)"
 -/
 #guard_msgs (whitespace := lax) in
 #eval (Std.format (Core.typeCheck .default
-  (callQ (.call "Q" [.outArg "y"] .empty)))).pretty
+  (callQ (.call "Q" none [.outArg "y"] .empty)))).pretty
 
 -- A call to a procedure the program does not declare is rejected.
 /--
@@ -1663,7 +1663,7 @@ declared"
 #guard_msgs (whitespace := lax) in
 #eval (Std.format (Core.typeCheck .default
   (callBody
-    (.call "R" [.inArg (.intConst Core.coreLoc 1), .outArg "y"] .empty)))).pretty
+    (.call "R" none [.inArg (.intConst Core.coreLoc 1), .outArg "y"] .empty)))).pretty
 
 -- A call that passes `y` for both outputs of `Q2` is rejected.
 /--
@@ -1674,7 +1674,7 @@ distinct variables"
 #guard_msgs (whitespace := lax) in
 #eval (Std.format (Core.typeCheck .default
   (withCallee "Q2" [] [] [("r", .int), ("s", .int)]
-    (callBody (.call "Q2" [.outArg "y", .outArg "y"] .empty))))).pretty
+    (callBody (.call "Q2" none [.outArg "y", .outArg "y"] .empty))))).pretty
 
 /-- `procedure Id<t> (x : t, out r : t)`, called from `P` by `call`. -/
 private def callId (call : Core.Command) : Core.Program :=
@@ -1702,7 +1702,7 @@ cfg entry {
 #guard_msgs in
 #eval Std.format (Core.typeCheck .default
   (callId
-    (.call "Id" [.inArg (.intConst Core.coreLoc 1), .outArg "y"] .empty)))
+    (.call "Id" none [.inArg (.intConst Core.coreLoc 1), .outArg "y"] .empty)))
 
 -- A call to `Id` with a `bool` input and an `int` output is rejected.
 /--
@@ -1712,7 +1712,7 @@ incompatible with signature ([t]) → ([t])"
 #guard_msgs (whitespace := lax) in
 #eval (Std.format (Core.typeCheck .default
   (callId
-    (.call "Id" [.inArg (.boolConst Core.coreLoc true), .outArg "y"] .empty)))).pretty
+    (.call "Id" none [.inArg (.boolConst Core.coreLoc true), .outArg "y"] .empty)))).pretty
 
 /-! ## A branch condition reads the right variables after the block's own declarations.
 

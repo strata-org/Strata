@@ -64,7 +64,7 @@ structure WFcallProp (p : Program) (procName : String) (callArgs : List (CallArg
 
 @[expose] def WFCmdExtProp (p : Program) (c : CmdExt Expression) : Prop := match c with
   | .cmd c => WFcmdProp p c
-  | .call procName callArgs _ => WFcallProp p procName callArgs
+  | .call procName _ callArgs _ => WFcallProp p procName callArgs
 
 structure WFblockProp (Cmd : Type) (p : Program) (label : String) (b : Block) : Prop where
 

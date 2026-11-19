@@ -149,23 +149,16 @@ distinct [dist]: [c, d];
 lemma [late]: !(c == d);
 #end
 
--- The premise theorems take: it fails on the first program and holds on the second.
-#guard !Core.Specification.Analysis.Program.distinctsBeforeLemmasB
-  (translateWithMetaData distinctAfterLemmaPgm)
-#guard Core.Specification.Analysis.Program.distinctsBeforeLemmasB
-  (translateWithMetaData distinctBeforeLemmaPgm)
-
 /-- `Core.verify`'s verdict on each obligation of `p`. -/
 private def verdicts (p : StrataDDM.Program) : IO Unit := do
   let results ← Strata.Core.verify p (options := .quiet)
   for r in results do
     IO.println s!"{r.obligation.label}: {if r.isSuccess then "pass" else "not proved"}"
 
--- A KNOWN WRONG verdict: `Core.verify` hoists the later `distinct` into `early`'s obligation
--- and reports it proved, although the language reference checks a lemma only under the
--- declarations before it, and a model with `c = d` falsifies `early` there. When
--- `Core.verify` scopes `distinct` declarations by position, this becomes `not proved`.
-/-- info: early: pass -/
+-- `Core.verify` scopes `distinct` declarations by position: `early` is checked under the
+-- declarations before it only, as the language reference says, and a model with `c = d`
+-- falsifies it there.
+/-- info: early: not proved -/
 #guard_msgs in
 #eval verdicts distinctAfterLemmaPgm
 

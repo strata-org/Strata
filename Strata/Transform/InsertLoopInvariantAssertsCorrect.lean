@@ -1032,7 +1032,7 @@ private theorem runS_sim (hvar : WellFormedSemanticEvalVar (P := P) F)
     cases hr
     obtain ⟨τ1, evs', hE', hext, hk⟩ := cmd_sim hcong hE h.ext h.srcWF h.tgtWF h.notE
     exact ⟨evs', .normal τ1, brun_single (.cmd hE'), hext, hk⟩
-  | _, _, _, _, .cmd (c := .call _ _ _) hE, _, _, _, _, _ => hE.elim
+  | _, _, _, _, .cmd (c := .call _ _ _ _) hE, _, _, _, _, _ => hE.elim
   | _, _, _, _, .ite_true hc hb, _, _, _, hr, h => by
     cases hr with
     | ite ht _ =>
@@ -1280,7 +1280,7 @@ private theorem reachS_sim (hvar : WellFormedSemanticEvalVar (P := P) F)
     cases hr
     obtain ⟨τ1, evs', hE', -, hk⟩ := cmd_sim hcong hE h.ext h.srcWF h.tgtWF h.notE
     exact ⟨evs', .here (.cmd hE' ((hk []).ne_nil hne)), hk⟩
-  | _, _, _, .cmd (c := .call _ _ _) hE _, _, _, _, _, _ => hE.elim
+  | _, _, _, .cmd (c := .call _ _ _ _) hE _, _, _, _, _, _ => hE.elim
   | _, _, _, .ite_true hc hb, _, _, _, hr, h => by
     cases hr with
     | ite ht _ =>

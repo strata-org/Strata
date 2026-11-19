@@ -49,6 +49,23 @@ Equational theory for the boolean shape walkers defined in
   the dual for names a statement list defines.
   `Strata.Languages.Core.Logic.LangDefProps` consumes both to move a
   well-formedness condition around a derivation.
+- Free-variable annotations: `Stmt`/`Block.fvarTypesWellAnnotatedB_iff` show the Boolean
+  checks decide `fvarTypesWellAnnotated` for an explicit typing, and
+  `Block.annotsAgreeB_transport` shows that a list whose annotations agree with those of a
+  list well annotated for a typing (`Block.annotsAgreeB`) is well annotated for it too, which
+  lets a phase check its output's annotations against its input's.
+- Def-use well-formedness is monotone: it survives adding defined names it does not
+  redeclare (`Stmt`/`Block.defUse_grow`) and declaring more functions
+  (`Stmt`/`Block.defUse_declared`); `Block.noLoops_append` splits `noLoops` over `++`, and a
+  loop-free statement or list has no measure (`Stmt`/`Block.measures_nil_of_noLoops`).
+- Fast checks: `Block.defUseWellFormedHashed_empty` and
+  `Block.fvarTypesWellAnnotatedHashed_empty` show that the hashed checks, which keep the
+  names in scope in a hash set or map and so run in time linear in a list's length, compute
+  `Block.defUseWellFormed` and `Block.fvarTypesWellAnnotatedB`; the `_eq` forms
+  (`Stmt`/`Block.defUseWellFormedHashed_eq`, `Stmt`/`Block.fvarTypesWellAnnotatedHashed_eq`)
+  state it for any starting set or map, as the statement-level checks need;
+  `Block.annotsAgreeHashed_eq` shows the hashed annotation-agreement check computes
+  `Block.annotsAgreeB`.
 - Per-constructor equations for `allSubstmts` (`Block.allSubstmts_nil`/`_cons`,
   `Stmt.allSubstmts_cmd`/`_exit`/`_typeDecl`/`_block`/`_ite`/`_loop`): a predicate holds
   of every statement of a list, nested ones included, exactly when it holds of each
@@ -848,6 +865,126 @@ theorem Block.fvarTypesWellAnnotated_mono [HasTypedVarsImp P C] [HasFvars P] :
       Block.fvarTypesWellAnnotated_mono rest _ _ (VarTyping.extend_mono hle _) h.2⟩
 end
 
+/-- `VarTyping.annotatesB` decides `VarTyping.annotates`. -/
+private theorem VarTyping.annotatesB_iff [DecidableEq P.Ty] {Γ : VarTyping P}
+    {occs : List (P.Ident × P.Ty)} : Γ.annotatesB occs = true ↔ Γ.annotates occs := by
+  simp only [VarTyping.annotatesB, List.all_eq_true, decide_eq_true_eq, VarTyping.annotates]
+  exact ⟨fun h x ty hm => h (x, ty) hm, fun h o hm => h o.1 o.2 hm⟩
+
+mutual
+/-- `Stmt.fvarTypesWellAnnotatedB` decides `Stmt.fvarTypesWellAnnotated`. -/
+theorem Stmt.fvarTypesWellAnnotatedB_iff [HasTypedVarsImp P C] [HasFvars P] [DecidableEq P.Ty] :
+    ∀ (Γ : VarTyping P) (s : Stmt P C),
+      Stmt.fvarTypesWellAnnotatedB Γ s = true ↔ Stmt.fvarTypesWellAnnotated Γ s
+  | _, .cmd _ => by simp only [Stmt.fvarTypesWellAnnotatedB, Stmt.fvarTypesWellAnnotated,
+      VarTyping.annotatesB_iff]
+  | _, .block _ bss _ => by
+    simp only [Stmt.fvarTypesWellAnnotatedB, Stmt.fvarTypesWellAnnotated]
+    exact Block.fvarTypesWellAnnotatedB_iff _ bss
+  | _, .ite _ tss ess _ => by
+    simp only [Stmt.fvarTypesWellAnnotatedB, Stmt.fvarTypesWellAnnotated, Bool.and_eq_true,
+      VarTyping.annotatesB_iff, Block.fvarTypesWellAnnotatedB_iff _ tss,
+      Block.fvarTypesWellAnnotatedB_iff _ ess, and_assoc]
+  | _, .loop _ _ _ body _ => by
+    simp only [Stmt.fvarTypesWellAnnotatedB, Stmt.fvarTypesWellAnnotated, Bool.and_eq_true,
+      VarTyping.annotatesB_iff, Block.fvarTypesWellAnnotatedB_iff _ body, and_assoc]
+  | _, .exit _ _ => by simp [Stmt.fvarTypesWellAnnotatedB, Stmt.fvarTypesWellAnnotated]
+  | _, .typeDecl _ _ => by simp [Stmt.fvarTypesWellAnnotatedB, Stmt.fvarTypesWellAnnotated]
+
+/-- `Block.fvarTypesWellAnnotatedB` decides `Block.fvarTypesWellAnnotated`. -/
+theorem Block.fvarTypesWellAnnotatedB_iff [HasTypedVarsImp P C] [HasFvars P] [DecidableEq P.Ty] :
+    ∀ (Γ : VarTyping P) (ss : List (Stmt P C)),
+      Block.fvarTypesWellAnnotatedB Γ ss = true ↔ Block.fvarTypesWellAnnotated Γ ss
+  | _, [] => by simp [Block.fvarTypesWellAnnotatedB, Block.fvarTypesWellAnnotated]
+  | Γ, s :: rest => by
+    simp only [Block.fvarTypesWellAnnotatedB, Block.fvarTypesWellAnnotated, Bool.and_eq_true,
+      Stmt.fvarTypesWellAnnotatedB_iff Γ s, Block.fvarTypesWellAnnotatedB_iff _ rest]
+end
+
+/-- Extending a typing twice is extending it once, the later definitions first. -/
+private theorem VarTyping.extend_extend (Γ : VarTyping P) (D D₂ : List (P.Ident × P.Ty)) :
+    (Γ.extend D).extend D₂ = Γ.extend (D₂ ++ D) := by
+  funext y
+  simp only [VarTyping.extend, List.find?_append]
+  cases List.find? (fun d => d.1 == y) D₂ <;> rfl
+
+/-- The occurrences of variables the definitions `D` do not define are typed by `Γ` as
+    annotated, when they are annotated as `Γ` extended with `D` types them. -/
+private theorem entryTypedVarsOf_typed {Γ : VarTyping P} {D occs : List (P.Ident × P.Ty)}
+    (h : (Γ.extend D).annotates occs) : ∀ o ∈ entryTypedVarsOf D occs, Γ o.1 = some o.2 := by
+  intro ⟨x, ty⟩ ho
+  simp only [entryTypedVarsOf, List.mem_filter, Option.isNone_iff_eq_none] at ho
+  have hx := h x ty ho.1
+  simp only [VarTyping.extend, ho.2] at hx
+  exact hx
+
+mutual
+/-- A well-annotated statement's entry occurrences are typed as annotated. -/
+private theorem Stmt.entryTypedVars_typed [HasTypedVarsImp P C] [HasFvars P] {Γ : VarTyping P} :
+    ∀ (D : List (P.Ident × P.Ty)) (s : Stmt P C),
+      Stmt.fvarTypesWellAnnotated (Γ.extend D) s →
+      ∀ o ∈ Stmt.entryTypedVars D s, Γ o.1 = some o.2
+  | _, .cmd _, h => entryTypedVarsOf_typed h
+  | D, .block _ bss _, h => Block.entryTypedVars_typed D bss h
+  | D, .ite _ tss ess _, h => by
+    intro o ho
+    simp only [Stmt.entryTypedVars, List.mem_append] at ho
+    rcases ho with (ho | ho) | ho
+    · exact entryTypedVarsOf_typed h.1 o ho
+    · exact Block.entryTypedVars_typed D tss h.2.1 o ho
+    · exact Block.entryTypedVars_typed D ess h.2.2 o ho
+  | D, .loop _ _ _ body _, h => by
+    intro o ho
+    simp only [Stmt.entryTypedVars, List.mem_append] at ho
+    rcases ho with ((ho | ho) | ho) | ho
+    · exact entryTypedVarsOf_typed h.1 o ho
+    · exact entryTypedVarsOf_typed h.2.1 o ho
+    · exact entryTypedVarsOf_typed h.2.2.1 o ho
+    · exact Block.entryTypedVars_typed D body h.2.2.2 o ho
+  | _, .exit _ _, _ => by simp [Stmt.entryTypedVars]
+  | _, .typeDecl _ _, _ => by simp [Stmt.entryTypedVars]
+
+/-- A well-annotated list's entry occurrences are typed as annotated. -/
+private theorem Block.entryTypedVars_typed [HasTypedVarsImp P C] [HasFvars P] {Γ : VarTyping P} :
+    ∀ (D : List (P.Ident × P.Ty)) (ss : List (Stmt P C)),
+      Block.fvarTypesWellAnnotated (Γ.extend D) ss →
+      ∀ o ∈ Block.entryTypedVars D ss, Γ o.1 = some o.2
+  | _, [], _ => by simp [Block.entryTypedVars]
+  | D, s :: rest, h => by
+    intro o ho
+    simp only [Block.entryTypedVars, List.mem_append] at ho
+    obtain ⟨h1, h2⟩ := h
+    rw [VarTyping.extend_extend] at h2
+    rcases ho with ho | ho
+    · exact Stmt.entryTypedVars_typed D s h1 o ho
+    · exact Block.entryTypedVars_typed _ rest h2 o ho
+end
+
+/-- Every variable a list's annotations type is typed so by a typing the list is well
+    annotated for. -/
+private theorem Block.entryTyping_le [HasTypedVarsImp P C] [HasFvars P] {Γ : VarTyping P}
+    {ss : List (Stmt P C)} (h : Block.fvarTypesWellAnnotated Γ ss) :
+    ∀ x ty, Block.entryTyping ss x = some ty → Γ x = some ty := by
+  intro x ty hx
+  simp only [Block.entryTyping, VarTyping.ofList, VarTyping.extend] at hx
+  split at hx
+  · rename_i o ho
+    cases hx
+    have hox : o.1 = x := by simpa using List.find?_some ho
+    rw [← hox]
+    exact Block.entryTypedVars_typed (Γ := Γ) [] ss h o (List.mem_of_find?_eq_some ho)
+  · cases hx
+
+/-- **Agreeing annotations transport well-annotatedness.** If `ss` is well annotated for
+    `Γ` and `ss'`'s annotations agree with `ss`'s (`Block.annotsAgreeB`), then `ss'` is well
+    annotated for `Γ`. -/
+theorem Block.annotsAgreeB_transport [HasTypedVarsImp P C] [HasFvars P] [DecidableEq P.Ty]
+    {Γ : VarTyping P} {ss ss' : List (Stmt P C)} (h : Block.fvarTypesWellAnnotated Γ ss)
+    (hA : Block.annotsAgreeB ss ss' = true) : Block.fvarTypesWellAnnotated Γ ss' := by
+  simp only [Block.annotsAgreeB, Block.annotsAgreeWithB, Bool.and_eq_true] at hA
+  exact Block.fvarTypesWellAnnotated_mono ss' _ _ (Block.entryTyping_le h)
+    ((Block.fvarTypesWellAnnotatedB_iff _ ss').mp hA.2)
+
 /-- Def-use well-formedness of a concatenated block splits into well-formedness
 of the prefix and of the suffix, the latter checked with the prefix's defined
 variables added to the defined set. -/
@@ -875,6 +1012,221 @@ theorem Block.defUseWellFormed_append [HasVarsImp P C] [HasFvars P] [HasOps P]
         simp [hs, hr]
     rw [hp]
     simp
+
+/-- Inserting a list of names into a hash set adds exactly those names. -/
+private theorem contains_foldl_insert {α : Type} [BEq α] [LawfulBEq α] [Hashable α] :
+    ∀ (xs : List α) (acc : Std.HashSet α) (n : α),
+      (xs.foldl (·.insert ·) acc).contains n = (acc.contains n || decide (n ∈ xs))
+  | [], acc, n => by simp
+  | x :: xs, acc, n => by
+    rw [List.foldl_cons, contains_foldl_insert xs, Std.HashSet.contains_insert]
+    by_cases h : x = n
+    · subst h; simp
+    · have h' : n ≠ x := fun e => h e.symm
+      simp [beq_eq_false_iff_ne.mpr h, h']
+
+mutual
+/-- The hashed check computes `Stmt.defUseWellFormed`, with the hash set's names counted as
+    defined. -/
+theorem Stmt.defUseWellFormedHashed_eq [HasVarsImp P C] [HasFvars P] [HasOps P]
+    [HasOpsImp P C] [DecidableEq P.Ident] [Hashable P.Ident]
+    (acc : Std.HashSet P.Ident) (defined declared : P.Ident → Bool) (s : Stmt P C) :
+    Stmt.defUseWellFormedHashed acc defined declared s =
+      Stmt.defUseWellFormed (fun n => defined n || acc.contains n) declared s := by
+  match s with
+  | .cmd c => simp only [Stmt.defUseWellFormedHashed, Stmt.defUseWellFormed]
+  | .block l bss md =>
+    simp only [Stmt.defUseWellFormedHashed, Stmt.defUseWellFormed]
+    exact Block.defUseWellFormedHashed_eq acc defined declared bss
+  | .ite g tss ess md =>
+    simp only [Stmt.defUseWellFormedHashed, Stmt.defUseWellFormed]
+    rw [Block.defUseWellFormedHashed_eq acc defined declared tss,
+      Block.defUseWellFormedHashed_eq acc defined declared ess]
+  | .loop g m inv body md =>
+    simp only [Stmt.defUseWellFormedHashed, Stmt.defUseWellFormed]
+    rw [Block.defUseWellFormedHashed_eq acc defined declared body]
+  | .exit l md => rfl
+  | .typeDecl t md => rfl
+  termination_by sizeOf s
+
+/-- The hashed check computes `Block.defUseWellFormed`, with the hash set's names counted
+    as defined. -/
+theorem Block.defUseWellFormedHashed_eq [HasVarsImp P C] [HasFvars P] [HasOps P]
+    [HasOpsImp P C] [DecidableEq P.Ident] [Hashable P.Ident]
+    (acc : Std.HashSet P.Ident) (defined declared : P.Ident → Bool) (ss : List (Stmt P C)) :
+    Block.defUseWellFormedHashed acc defined declared ss =
+      Block.defUseWellFormed (fun n => defined n || acc.contains n) declared ss := by
+  match ss with
+  | [] => rfl
+  | s :: rest =>
+    simp only [Block.defUseWellFormedHashed, Block.defUseWellFormed]
+    rw [Stmt.defUseWellFormedHashed_eq acc defined declared s,
+      Block.defUseWellFormedHashed_eq _ defined declared rest]
+    have hp : (fun n => defined n ||
+          ((Stmt.definedVars s true).foldl (·.insert ·) acc).contains n) =
+        (fun n => defined n || acc.contains n || decide (n ∈ Stmt.definedVars s true)) := by
+      funext n
+      rw [contains_foldl_insert, Bool.or_assoc]
+    rw [hp]
+  termination_by sizeOf ss
+end
+
+/-- Adding definitions to the map extends the overlaid typing with them. -/
+private theorem VarTyping.overlay_insertDefs [DecidableEq P.Ident] [Hashable P.Ident]
+    (M : Std.HashMap P.Ident P.Ty) (Γ : VarTyping P) :
+    ∀ D : List (P.Ident × P.Ty),
+      VarTyping.overlay (VarTyping.insertDefs M D) Γ = (VarTyping.overlay M Γ).extend D
+  | [] => rfl
+  | d :: D => by
+    funext x
+    have ih := congrFun (VarTyping.overlay_insertDefs M Γ D) x
+    simp only [VarTyping.insertDefs, List.reverse_cons, List.foldl_append, List.foldl_cons,
+      List.foldl_nil] at ih ⊢
+    simp only [VarTyping.overlay, Std.HashMap.getElem?_insert] at ih ⊢
+    by_cases h : d.1 = x
+    · subst h; simp [VarTyping.extend]
+    · have h' : (d.1 == x) = false := beq_eq_false_iff_ne.mpr h
+      simp only [h', Bool.false_eq_true, ↓reduceIte]
+      rw [ih]
+      simp only [VarTyping.extend]
+      rw [List.find?_cons_of_neg (by simpa using h)]
+
+/-- The empty map adds nothing to a typing. -/
+private theorem VarTyping.overlay_empty [DecidableEq P.Ident] [Hashable P.Ident] (Γ : VarTyping P) :
+    VarTyping.overlay (∅ : Std.HashMap P.Ident P.Ty) Γ = Γ := by
+  funext x; simp [VarTyping.overlay]
+
+mutual
+/-- The hashed annotation check computes `Stmt.fvarTypesWellAnnotatedB` on the overlaid
+    typing. -/
+theorem Stmt.fvarTypesWellAnnotatedHashed_eq [HasTypedVarsImp P C] [HasFvars P]
+    [DecidableEq P.Ty] [DecidableEq P.Ident] [Hashable P.Ident]
+    (M : Std.HashMap P.Ident P.Ty) (Γ : VarTyping P) (s : Stmt P C) :
+    Stmt.fvarTypesWellAnnotatedHashed M Γ s =
+      Stmt.fvarTypesWellAnnotatedB (VarTyping.overlay M Γ) s := by
+  match s with
+  | .cmd c => rfl
+  | .block l bss md =>
+    simp only [Stmt.fvarTypesWellAnnotatedHashed, Stmt.fvarTypesWellAnnotatedB]
+    exact Block.fvarTypesWellAnnotatedHashed_eq M Γ bss
+  | .ite g tss ess md =>
+    simp only [Stmt.fvarTypesWellAnnotatedHashed, Stmt.fvarTypesWellAnnotatedB]
+    rw [Block.fvarTypesWellAnnotatedHashed_eq M Γ tss,
+      Block.fvarTypesWellAnnotatedHashed_eq M Γ ess]
+  | .loop g m inv body md =>
+    simp only [Stmt.fvarTypesWellAnnotatedHashed, Stmt.fvarTypesWellAnnotatedB]
+    rw [Block.fvarTypesWellAnnotatedHashed_eq M Γ body]
+  | .exit l md => rfl
+  | .typeDecl t md => rfl
+  termination_by sizeOf s
+
+/-- The hashed annotation check computes `Block.fvarTypesWellAnnotatedB` on the overlaid
+    typing. -/
+theorem Block.fvarTypesWellAnnotatedHashed_eq [HasTypedVarsImp P C] [HasFvars P]
+    [DecidableEq P.Ty] [DecidableEq P.Ident] [Hashable P.Ident]
+    (M : Std.HashMap P.Ident P.Ty) (Γ : VarTyping P) (ss : List (Stmt P C)) :
+    Block.fvarTypesWellAnnotatedHashed M Γ ss =
+      Block.fvarTypesWellAnnotatedB (VarTyping.overlay M Γ) ss := by
+  match ss with
+  | [] => rfl
+  | s :: rest =>
+    simp only [Block.fvarTypesWellAnnotatedHashed, Block.fvarTypesWellAnnotatedB]
+    rw [Stmt.fvarTypesWellAnnotatedHashed_eq M Γ s,
+      Block.fvarTypesWellAnnotatedHashed_eq _ Γ rest, VarTyping.overlay_insertDefs]
+  termination_by sizeOf ss
+end
+
+/-- **The hashed annotation check from an empty map is `Block.fvarTypesWellAnnotatedB`.** -/
+theorem Block.fvarTypesWellAnnotatedHashed_empty [HasTypedVarsImp P C] [HasFvars P]
+    [DecidableEq P.Ty] [DecidableEq P.Ident] [Hashable P.Ident]
+    (Γ : VarTyping P) (ss : List (Stmt P C)) :
+    Block.fvarTypesWellAnnotatedHashed ∅ Γ ss = Block.fvarTypesWellAnnotatedB Γ ss := by
+  rw [Block.fvarTypesWellAnnotatedHashed_eq, VarTyping.overlay_empty]
+
+/-- **The hashed check from an empty set is `Block.defUseWellFormed`.** -/
+theorem Block.defUseWellFormedHashed_empty [HasVarsImp P C] [HasFvars P] [HasOps P]
+    [HasOpsImp P C] [DecidableEq P.Ident] [Hashable P.Ident]
+    (defined declared : P.Ident → Bool) (ss : List (Stmt P C)) :
+    Block.defUseWellFormedHashed ∅ defined declared ss =
+      Block.defUseWellFormed defined declared ss := by
+  rw [Block.defUseWellFormedHashed_eq]
+  congr 1
+  funext n
+  simp
+
+/-- The hashed filter is `entryTypedVarsOf` when the set holds the definitions' names. -/
+private theorem entryTypedVarsOfHashed_eq [DecidableEq P.Ident] [Hashable P.Ident]
+    {defd : Std.HashSet P.Ident} {D : List (P.Ident × P.Ty)}
+    (h : ∀ x, defd.contains x = decide (x ∈ D.map Prod.fst)) (occs : List (P.Ident × P.Ty)) :
+    entryTypedVarsOfHashed defd occs = entryTypedVarsOf D occs := by
+  simp only [entryTypedVarsOfHashed, entryTypedVarsOf, h]
+  refine List.filter_congr fun o _ => ?_
+  cases hf : D.find? (fun d => d.1 == o.1) with
+  | none =>
+    rw [List.find?_eq_none] at hf
+    have hx : o.1 ∉ D.map Prod.fst := fun hm => by
+      obtain ⟨d, hd, he⟩ := List.mem_map.mp hm
+      exact hf d hd (beq_iff_eq.mpr he)
+    simp [hx]
+  | some d =>
+    have hb : (d.1 == o.1) = true := by
+      have h1 := List.find?_some hf
+      exact h1
+    have hx : o.1 ∈ D.map Prod.fst :=
+      List.mem_map.mpr ⟨d, List.mem_of_find?_eq_some hf, beq_iff_eq.mp hb⟩
+    simp [hx]
+
+mutual
+/-- The hashed entry occurrences of a statement are `Stmt.entryTypedVars`, when the set holds
+    the names of the definitions in scope. -/
+theorem Stmt.entryTypedVarsHashed_eq [HasTypedVarsImp P C] [HasFvars P]
+    [DecidableEq P.Ident] [Hashable P.Ident] :
+    ∀ {defd : Std.HashSet P.Ident} {D : List (P.Ident × P.Ty)},
+      (∀ x, defd.contains x = decide (x ∈ D.map Prod.fst)) →
+      ∀ s : Stmt P C, Stmt.entryTypedVarsHashed defd s = Stmt.entryTypedVars D s
+  | _, _, h, .cmd _ => entryTypedVarsOfHashed_eq h _
+  | _, _, h, .block _ bss _ => Block.entryTypedVarsHashed_eq h bss
+  | _, _, h, .ite _ tss ess _ => by
+    simp only [Stmt.entryTypedVarsHashed, Stmt.entryTypedVars, entryTypedVarsOfHashed_eq h,
+      Block.entryTypedVarsHashed_eq h tss, Block.entryTypedVarsHashed_eq h ess]
+  | _, _, h, .loop _ _ _ body _ => by
+    simp only [Stmt.entryTypedVarsHashed, Stmt.entryTypedVars, entryTypedVarsOfHashed_eq h,
+      Block.entryTypedVarsHashed_eq h body]
+  | _, _, _, .exit _ _ => rfl
+  | _, _, _, .typeDecl _ _ => rfl
+
+/-- The hashed entry occurrences of a list are `Block.entryTypedVars`, when the set holds the
+    names of the definitions in scope. -/
+theorem Block.entryTypedVarsHashed_eq [HasTypedVarsImp P C] [HasFvars P]
+    [DecidableEq P.Ident] [Hashable P.Ident] :
+    ∀ {defd : Std.HashSet P.Ident} {D : List (P.Ident × P.Ty)},
+      (∀ x, defd.contains x = decide (x ∈ D.map Prod.fst)) →
+      ∀ ss : List (Stmt P C), Block.entryTypedVarsHashed defd ss = Block.entryTypedVars D ss
+  | _, _, _, [] => rfl
+  | defd, D, h, s :: rest => by
+    simp only [Block.entryTypedVarsHashed, Block.entryTypedVars]
+    rw [Stmt.entryTypedVarsHashed_eq h s]
+    congr 1
+    refine Block.entryTypedVarsHashed_eq (fun x => ?_) rest
+    rw [contains_foldl_insert, h, Bool.eq_iff_iff]
+    simp only [Bool.or_eq_true, decide_eq_true_eq, List.map_append, List.mem_append]
+    exact or_comm
+end
+
+/-- **The hashed entry occurrences from an empty set are `Block.entryTypedVars []`.** -/
+theorem Block.entryTypedVarsHashed_empty [HasTypedVarsImp P C] [HasFvars P]
+    [DecidableEq P.Ident] [Hashable P.Ident] (ss : List (Stmt P C)) :
+    Block.entryTypedVarsHashed ∅ ss = Block.entryTypedVars [] ss :=
+  Block.entryTypedVarsHashed_eq (fun x => by simp) ss
+
+/-- The hashed annotation-agreement check computes `Block.annotsAgreeB`. -/
+theorem Block.annotsAgreeHashed_eq [HasTypedVarsImp P C] [HasFvars P] [DecidableEq P.Ty]
+    [DecidableEq P.Ident] [Hashable P.Ident] (ss ss' : List (Stmt P C)) :
+    Block.annotsAgreeHashed ss ss' = Block.annotsAgreeB ss ss' := by
+  simp only [Block.annotsAgreeHashed, Block.annotsAgreeB, Block.annotsAgreeWithB]
+  rw [Block.entryTypedVarsHashed_empty, Block.fvarTypesWellAnnotatedHashed_empty,
+    VarTyping.overlay_insertDefs, VarTyping.overlay_empty]
+  rfl
 
 /-- A name a statement list does not define is defined by none of its members, for any
     command type and at either setting of `excludeScoped` — the two sides are read at the
@@ -2463,7 +2815,7 @@ theorem Stmt.definedVars_subset_idents :
       Stmt.idents]
   | .cmd (.cmd (.set _ _ _)), _, x, hx | .cmd (.cmd (.assert _ _ _)), _, x, hx
   | .cmd (.cmd (.assume _ _ _)), _, x, hx | .cmd (.cmd (.cover _ _ _)), _, x, hx
-  | .cmd (.call _ _ _), _, x, hx => by
+  | .cmd (.call _ _ _ _), _, x, hx => by
     simp [HasVarsImp.definedVars, CmdExt.definedVars, Cmd.definedVars] at hx
   | .block _ bss _, b, x, hx => by
     cases b <;> simp only [Stmt.definedVars, Bool.false_eq_true, ite_false, ite_true,
@@ -2516,7 +2868,7 @@ theorem Stmt.idents_subset_vars :
   | .cmd (.cmd (.assert _ _ _)), x, hx | .cmd (.cmd (.assume _ _ _)), x, hx
   | .cmd (.cmd (.cover _ _ _)), x, hx => by
     simp_all [Stmt.idents, Stmt.getVars, HasVarsImp.readVars, CmdExt.readVars, Cmd.getVars]
-  | .cmd (.call _ args _), x, hx => by
+  | .cmd (.call _ _ args _), x, hx => by
     simp only [Stmt.idents, List.mem_append, List.mem_flatMap] at hx
     simp only [Stmt.getVars, Stmt.modifiedVars, HasVarsImp.readVars, CmdExt.readVars,
       HasVarsImp.modifiedVars, CmdExt.modifiedVars, List.mem_flatMap]
@@ -2687,7 +3039,7 @@ theorem Stmt.mem_idents_of_mem_freeVars :
   | .cmd (.cmd (.cover _ _ _)), _, h => by
     simp only [Stmt.freeVars, Stmt.idents, List.mem_cons, mem_exprFV] at h ⊢
     first | exact h | exact .inr h
-  | .cmd (.cmd (.init _ _ .nondet _)), _, h | .cmd (.call _ _ _), _, h
+  | .cmd (.cmd (.init _ _ .nondet _)), _, h | .cmd (.call _ _ _ _), _, h
   | .exit _ _, _, h | .typeDecl _ _, _, h => by simp [Stmt.freeVars] at h
   | .cmd (.cmd (.set _ .nondet _)), _, h => by simpa [Stmt.freeVars, Stmt.idents] using h
   | .block _ ss _, _, h => Block.mem_idents_of_mem_freeVars ss h
@@ -2788,6 +3140,149 @@ theorem Block.wellScopedH_eq (Lc S : List P.Ident) (ss : Block P (CmdExt P)) :
     (ScopeCountRep.ofList S)).1
 
 end WellScoped
+
+mutual
+/-- A loop-free statement has no measure. -/
+theorem Stmt.measures_nil_of_noLoops (s : Stmt P C) (h : Stmt.noLoops s = true) :
+    Stmt.measures s = [] := by
+  match s with
+  | .cmd _ => rfl
+  | .exit _ _ => rfl
+  | .typeDecl _ _ => rfl
+  | .block _ ss _ =>
+    rw [Stmt.noLoops_block] at h
+    simp only [Stmt.measures]; exact Block.measures_nil_of_noLoops ss h
+  | .ite _ ts es _ =>
+    rw [Stmt.noLoops_ite, Bool.and_eq_true] at h
+    simp only [Stmt.measures, Block.measures_nil_of_noLoops ts h.1,
+      Block.measures_nil_of_noLoops es h.2, List.append_nil]
+  | .loop _ _ _ _ _ => rw [Stmt.noLoops_loop] at h; cases h
+  termination_by sizeOf s
+/-- A loop-free list has no measure. -/
+theorem Block.measures_nil_of_noLoops (ss : List (Stmt P C)) (h : Block.noLoops ss = true) :
+    Block.measures ss = [] := by
+  match ss with
+  | [] => rfl
+  | s :: rest =>
+    rw [Block.noLoops_cons, Bool.and_eq_true] at h
+    simp only [Block.measures, Stmt.measures_nil_of_noLoops s h.1,
+      Block.measures_nil_of_noLoops rest h.2, List.append_nil]
+  termination_by sizeOf ss
+end
+
+/-- A list has no loops exactly when its two parts have none. -/
+theorem Block.noLoops_append (a b : List (Stmt P C)) :
+    Block.noLoops (a ++ b) = (Block.noLoops a && Block.noLoops b) := by
+  induction a with
+  | nil => simp [Block.noLoops_nil]
+  | cons s rest ih => simp only [List.cons_append, Block.noLoops_cons, ih, Bool.and_assoc]
+
+section DefUseGrow
+variable [HasVarsImp P C] [HasFvars P] [HasOps P] [HasOpsImp P C]
+  [DecidableEq P.Ident]
+
+omit [HasFvars P] [HasOps P] [DecidableEq P.Ident] in
+/-- `Block.DefinedGrows` restricts to fewer protected names. -/
+private theorem Block.DefinedGrows.sub {ns ms : List P.Ident}
+    {source target : P.Ident → Bool} (h : Block.DefinedGrows ns source target)
+    (hs : ∀ x ∈ ms, x ∈ ns) : Block.DefinedGrows ms source target :=
+  ⟨h.1, fun x hx => h.2 x (hs x hx)⟩
+
+mutual
+/-- Def-use well-formedness survives growing the defined names, when they are unchanged
+    on the names the statement declares. -/
+theorem Stmt.defUse_grow (s : Stmt P C) (source target declared : P.Ident → Bool)
+    (hrel : Block.DefinedGrows (Stmt.definedVars s false) source target)
+    (hdu : Stmt.defUseWellFormed source declared s = true) :
+    Stmt.defUseWellFormed target declared s = true := by
+  match s with
+  | .cmd c =>
+    simp only [Stmt.defUseWellFormed, Bool.and_eq_true] at hdu ⊢
+    refine ⟨⟨⟨List.all_mono hrel.1 hdu.1.1.1, List.all_mono hrel.1 hdu.1.1.2⟩, ?_⟩, hdu.2⟩
+    have hfresh := hdu.1.2
+    rw [List.all_eq_true] at hfresh ⊢
+    intro x hx
+    rw [hrel.2 x hx]
+    exact hfresh x hx
+  | .block l bss md =>
+    exact Block.defUse_grow bss source target declared (by simpa using hrel) hdu
+  | .ite g tss ess md =>
+    simp only [Stmt.defUseWellFormed, Bool.and_eq_true] at hdu ⊢
+    have hrel' : Block.DefinedGrows (Block.definedVars tss false ++ Block.definedVars ess false)
+        source target := by simpa using hrel
+    refine ⟨⟨⟨List.all_mono hrel.1 hdu.1.1.1, hdu.1.1.2⟩, ?_⟩, ?_⟩
+    · exact Block.defUse_grow tss source target declared
+        (hrel'.sub fun _ h => List.mem_append_left _ h) hdu.1.2
+    · exact Block.defUse_grow ess source target declared
+        (hrel'.sub fun _ h => List.mem_append_right _ h) hdu.2
+  | .loop g m inv body md =>
+    simp only [Stmt.defUseWellFormed, Bool.and_eq_true] at hdu ⊢
+    refine ⟨⟨⟨⟨⟨⟨List.all_mono hrel.1 hdu.1.1.1.1.1.1, hdu.1.1.1.1.1.2⟩,
+      List.all_mono hrel.1 hdu.1.1.1.1.2⟩, hdu.1.1.1.2⟩,
+      List.all_mono hrel.1 hdu.1.1.2⟩, hdu.1.2⟩, ?_⟩
+    exact Block.defUse_grow body source target declared (by simpa using hrel) hdu.2
+  | .exit l md => exact hdu
+  | .typeDecl t md => exact hdu
+  termination_by sizeOf s
+
+/-- Block form of `Stmt.defUse_grow`. -/
+theorem Block.defUse_grow (ss : List (Stmt P C)) (source target declared : P.Ident → Bool)
+    (hrel : Block.DefinedGrows (Block.definedVars ss false) source target)
+    (hdu : Block.defUseWellFormed source declared ss = true) :
+    Block.defUseWellFormed target declared ss = true := by
+  match ss with
+  | [] => rfl
+  | s :: rest =>
+    simp only [Block.defUseWellFormed, Bool.and_eq_true] at hdu ⊢
+    have hrel' : Block.DefinedGrows (Stmt.definedVars s false ++ Block.definedVars rest false)
+        source target := by simpa using hrel
+    refine ⟨Stmt.defUse_grow s source target declared
+      (hrel'.sub fun _ h => List.mem_append_left _ h) hdu.1, ?_⟩
+    refine Block.defUse_grow rest _ _ declared ⟨fun x hx => ?_, fun x hx => ?_⟩ hdu.2
+    · rw [Bool.or_eq_true] at hx ⊢
+      exact hx.elim (fun h => .inl (hrel.1 x h)) .inr
+    · simp only [hrel'.2 x (List.mem_append_right _ hx)]
+  termination_by sizeOf ss
+end
+
+mutual
+/-- Def-use well-formedness survives declaring more functions. -/
+theorem Stmt.defUse_declared (s : Stmt P C) (defined d d' : P.Ident → Bool)
+    (h : ∀ f, d f = true → d' f = true) (hdu : Stmt.defUseWellFormed defined d s = true) :
+    Stmt.defUseWellFormed defined d' s = true := by
+  match s with
+  | .cmd c =>
+    simp only [Stmt.defUseWellFormed, Bool.and_eq_true] at hdu ⊢
+    exact ⟨hdu.1, List.all_mono h hdu.2⟩
+  | .block l bss md => exact Block.defUse_declared bss defined d d' h hdu
+  | .ite g tss ess md =>
+    simp only [Stmt.defUseWellFormed, Bool.and_eq_true] at hdu ⊢
+    exact ⟨⟨⟨hdu.1.1.1, List.all_mono h hdu.1.1.2⟩,
+      Block.defUse_declared tss defined d d' h hdu.1.2⟩,
+      Block.defUse_declared ess defined d d' h hdu.2⟩
+  | .loop g m inv body md =>
+    simp only [Stmt.defUseWellFormed, Bool.and_eq_true] at hdu ⊢
+    exact ⟨⟨⟨⟨⟨⟨hdu.1.1.1.1.1.1, List.all_mono h hdu.1.1.1.1.1.2⟩, hdu.1.1.1.1.2⟩,
+      List.all_mono h hdu.1.1.1.2⟩, hdu.1.1.2⟩, List.all_mono h hdu.1.2⟩,
+      Block.defUse_declared body defined d d' h hdu.2⟩
+  | .exit l md => exact hdu
+  | .typeDecl t md => exact hdu
+  termination_by sizeOf s
+
+/-- Block form of `Stmt.defUse_declared`. -/
+theorem Block.defUse_declared (ss : List (Stmt P C)) (defined d d' : P.Ident → Bool)
+    (h : ∀ f, d f = true → d' f = true) (hdu : Block.defUseWellFormed defined d ss = true) :
+    Block.defUseWellFormed defined d' ss = true := by
+  match ss with
+  | [] => rfl
+  | s :: rest =>
+    simp only [Block.defUseWellFormed, Bool.and_eq_true] at hdu ⊢
+    exact ⟨Stmt.defUse_declared s defined d d' h hdu.1,
+      Block.defUse_declared rest _ d d' h hdu.2⟩
+  termination_by sizeOf ss
+end
+
+end DefUseGrow
 
 end -- public section
 

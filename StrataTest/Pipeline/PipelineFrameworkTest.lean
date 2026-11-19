@@ -160,7 +160,7 @@ private def progOf (body : List Statement) : Program :=
     levels down inside its body. -/
 private def loadedProgram : Program :=
   progOf [.loop .nondet (some trueExpr) [("inv", trueExpr)]
-    [.block "b" [.ite .nondet [Statement.call "f" [] {}] [] {}] {}] {}]
+    [.block "b" [.ite .nondet [Statement.call "f" none [] {}] [] {}] {}] {}]
 
 /-- info: noCFGBodies, uniqueInits, loopBodyNoInits, staticSingleAssignment, noBetaRedexes, noPrecondsFromFuncs, noProcedureContracts, noPolymorphicProcedures, noPolymorphicFunctions, noInits, exitsCovered -/
 #guard_msgs in
@@ -195,7 +195,7 @@ block, or inside either branch of an `ite`. -/
 /-- info: noLoops, noLoopInvariants, noLoopMeasures, uniqueInits, loopBodyNoInits, staticSingleAssignment, noBetaRedexes, noPrecondsFromFuncs, noNondetGuards, noProcedureContracts, noPolymorphicProcedures, noPolymorphicFunctions, noInits, exitsCovered, armsHaveObligations -/
 #guard_msgs in
 #eval IO.println
-  (factNames (ofProgramFacts { decls := [.proc { (default : Procedure) with body := .cfg { entry := "entry", blocks := [("entry", { cmds := [.call "f" [] {}], transfer := .finish {} })] } } default] }))
+  (factNames (ofProgramFacts { decls := [.proc { (default : Procedure) with body := .cfg { entry := "entry", blocks := [("entry", { cmds := [.call "f" none [] {}], transfer := .finish {} })] } } default] }))
 
 /-- info: wellFormedCalls, noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, uniqueInits, loopBodyNoInits, noBetaRedexes, noPrecondsFromFuncs, noNondetGuards, noProcedureContracts, noPolymorphicProcedures, noPolymorphicFunctions, noInits, treeForm, exitsCovered, armsHaveObligations -/
 #guard_msgs in
@@ -1346,7 +1346,7 @@ private def polyProgOf (typeArgs : List String) (body : Procedure.Body) : Progra
 private def cfgCallBody : Procedure.Body :=
   .cfg {
     entry := "entry"
-    blocks := [("entry", { cmds := [.call "f" [] #[]], transfer := .finish #[] })] }
+    blocks := [("entry", { cmds := [.call "f" none [] #[]], transfer := .finish #[] })] }
 
 /-- info: rejected: ❌ GenOpaqueTypeParams: procedure _ still contains a call; eliminate calls before running this pass. -/
 #guard_msgs in
@@ -1355,14 +1355,14 @@ private def cfgCallBody : Procedure.Body :=
 /-- info: rejected: ❌ GenOpaqueTypeParams: procedure _ still contains a call; eliminate calls before running this pass. -/
 #guard_msgs in
 #eval IO.println (runAsserter genOpaqueTypeParamsPipelinePhase
-  (polyProgOf ["T"] (.structured [Statement.call "f" [] {}])))
+  (polyProgOf ["T"] (.structured [Statement.call "f" none [] {}])))
 
 /-! A non-polymorphic procedure with a call is similarly accepted:
     monomorphization is a no-op, so the noCalls precondition does not apply. -/
 /-- info: accepted -/
 #guard_msgs in
 #eval IO.println (runAsserter genOpaqueTypeParamsPipelinePhase
-  (progOf [Statement.call "f" [] {}]))
+  (progOf [Statement.call "f" none [] {}]))
 
 /-! Symbolic evaluation reports a `loop` and a CFG body through the evaluator's
 error channel. -/

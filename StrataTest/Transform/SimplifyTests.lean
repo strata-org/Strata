@@ -9,6 +9,7 @@ public meta import Strata.Languages.Core
 meta import Strata.Languages.Core.DDMTransform.Translate
 public meta import Strata.Transform.Simplify
 meta import Strata.Transform.PrecondElim
+meta import StrataTest.Languages.Core.Tests.TestUtil
 import StrataDDM.Integration.Lean.HashCommands
 meta import StrataTest.DL.Lambda.RenamingFixtures
 
@@ -34,7 +35,20 @@ private def simplifyProgram (p : StrataDDM.Program) : Core.Program :=
   | .error e => panic! s!"Simplify failed: {e}"
   | .ok (_changed, program) => program
 
-private def simplifyAndPrint (p : StrataDDM.Program) : IO Unit :=
+/-- The procedures whose original body Simplify keeps because their simplified body fails
+    its def-use check. Every test here expects none. -/
+private def fallbacks (p : StrataDDM.Program) : List String :=
+  let cp := translateCore p
+  match Core.Transform.run cp Core.Simplify.baseCtx
+      { Core.Transform.CoreTransformState.emp with factory := Core.Factory } with
+  | .error _ => []
+  | .ok base => cp.decls.filterMap fun
+    | .proc q _ => if Core.Simplify.bodyFallsBack base q then some q.header.name.name else none
+    | _ => none
+
+private def simplifyAndPrint (p : StrataDDM.Program) : IO Unit := do
+  let fb := fallbacks p
+  unless fb.isEmpty do throw (IO.userError s!"Simplify kept the original body of {fb}")
   let s := (Core.formatProgram (simplifyProgram p)).pretty
   IO.print (s.toList.reverse.dropWhile (· == '\n') |>.reverse |> String.ofList)
 
@@ -1109,6 +1123,40 @@ procedure p (x : int)
 #guard_msgs in
 #eval simplifyAndPrint dependentForgets
 
+/-! ### An assignment forgets a value that mentions the assigned variable
+
+`x`'s recorded value is `y`. Assigning `y` makes that recording stale even though `x`
+itself was not written, so the assertion keeps reading `x`; only `y`, whose new value
+is known, is substituted. Substituting the stale `y` for `x` would turn the assertion
+into `2 == 2`, which the program does not guarantee. `y` is declared without a value
+on purpose: given one, it would be substituted into `x`'s definition and `x` would no
+longer mention `y`. -/
+
+/-- A body whose assertion reads a variable whose recorded value goes stale. -/
+private def assignmentForgetsDependent :=
+#strata
+program Core;
+procedure p ()
+{
+  var y : int;
+  var x : int := y;
+  y := 2;
+  assert [stale]: x == y;
+};
+#end
+
+/-- info: program Core;
+
+procedure p ()
+{
+  var y : int;
+  var x : int := y;
+  y := 2;
+  assert [stale]: x == 2;
+}; -/
+#guard_msgs in
+#eval simplifyAndPrint assignmentForgetsDependent
+
 /-! ### A chain of expansions completes within the budget
 
 Expanding a body can expose another call to expand, and that descent is bounded by
@@ -2155,5 +2203,42 @@ procedure p (x : int)
 #end
 
 #guard ((Core.formatProgram (simplifyProgram agreedBranches)).pretty.splitOn "int.ge(a, 7)").length == 1
+
+/-! ### A call keeps the type arguments it stores
+
+The argument `1 + 1` folds to `2`; the call keeps its stored type argument `int`. -/
+
+/-- `Caller` calls `Identity` with the argument `1 + 1` and the stored type argument `int`. -/
+private def storedTyArgsPgm : Core.Program := { decls :=
+  [Core.TestUtil.identityDecl,
+   Core.TestUtil.mkProc "Caller" [] [] [("m", .int)]
+     [Statement.call "Identity" (some [.forAll [] .int])
+       [.inArg (.app Core.coreLoc (.app Core.coreLoc (.op Core.coreLoc "Int.Add" none)
+          (.intConst Core.coreLoc 1)) (.intConst Core.coreLoc 1)), .outArg "m"]
+       .empty]] }
+
+/-- The program that simplification produces for `pgm`. -/
+private def simplifiedResult (pgm : Core.Program) :=
+  (Core.Transform.run pgm Core.Simplify.runSimplify
+      { Core.Transform.CoreTransformState.emp with factory := Core.Factory }).map (·.2)
+
+/-- info: [some ["int"]] -/
+#guard_msgs in
+#eval Core.TestUtil.tyArgsOfResult (simplifiedResult storedTyArgsPgm)
+
+/--
+info: program Core;
+
+procedure Identity<T> (x : T, out y : T)
+{
+  y := x;
+};
+procedure Caller (out m : int)
+{
+  call Identity(2, out m);
+};
+-/
+#guard_msgs in
+#eval IO.println (Core.TestUtil.programText (simplifiedResult storedTyArgsPgm))
 
 end Core.Simplify.Tests

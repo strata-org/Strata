@@ -1279,7 +1279,7 @@ partial def stmtToCST {M} [Inhabited M] (s : Core.Statement)
     let exprCST ← lexprToExpr expr 0
     let annotsAnn ← metadataToAnn md (← get).annFilter
     pure (.cover default annotsAnn labelAnn exprCST)
-  | .call pname coreCallArgs md => do
+  | .call pname _ coreCallArgs md => do
     let pnameAnn : Ann String M := ⟨default, pname⟩
     let mut callArgs : Array (CoreDDM.CallArg M) := #[]
     for a in coreCallArgs do
@@ -1548,6 +1548,12 @@ private def extractNames (exprs : List Core.Expression.Expr) :
     | _ => #[]
   exprs.foldl (fun acc expr => acc ++ extractFromExpr expr) #[]
 
+/-- The format context for Core programs, without a global context. Collecting the Core
+    keywords for `quoteKeywords` walks every declaration of the dialects, so it is done once
+    here rather than on each call of `formatWithDDM`. -/
+private def coreFormatContext : FormatContext :=
+  FormatContext.ofDialects Core_map {} { quoteKeywords := true }
+
 /-- Run the DDM formatting pipeline on a converted CST, appending any conversion errors.
     The optional `fmtErrors` parameter controls how errors are rendered; the default
     appends them on separate lines. -/
@@ -1559,7 +1565,7 @@ def formatWithDDM (finalCtx : ToCSTContext SourceRange)
     : Std.Format :=
   let dialects := Core_map
   let ddmCtx := recreateGlobalContext finalCtx
-  let ctx := FormatContext.ofDialects dialects ddmCtx {}
+  let ctx := coreFormatContext.withGlobalContext ddmCtx
   let state : FormatState := {
     openDialects := dialects.toList.foldl (init := {})
       fun a (d : Dialect) => a.insert d.name

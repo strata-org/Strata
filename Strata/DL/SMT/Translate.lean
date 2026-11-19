@@ -20,6 +20,10 @@ inductive Translate.Var where
   | uf : SMT.UF → Translate.Var
   | us : DL.SMT.Sort → Translate.Var
   | is : DL.SMT.Sort → Translate.Var
+  /-- The model's value of integer `div` at a zero divisor (`Int → Int`). -/
+  | divByZero
+  /-- The model's value of integer `mod` at a zero divisor (`Int → Int`). -/
+  | modByZero
 deriving BEq, Hashable, Repr
 
 structure Translate.State where
@@ -297,6 +301,16 @@ def translateSort (ty : TermType) : TranslateM Expr := do
     let as ← as.mapM translateSort
     return mkAppN t as.toArray
 
+/-- Integer `div` or `mod` of the translated `x` and `y`: the model's value
+`byZero` of the dividend at a zero divisor, `op` otherwise. The test uses
+`Int.decEq`, so that the goal is definitionally the query's denotation. -/
+private def intDivModByZero (byZero : Var) (op x y : Expr) : TranslateM (Expr × Expr) := do
+  let (_, f) ← findVar byZero
+  let zero := toExpr (0 : Int)
+  let c := mkApp3 (.const ``Eq [1]) mkInt y zero
+  return (mkInt, mkApp5 (.const ``ite [1]) mkInt c (mkApp2 (.const ``Int.decEq []) y zero)
+    (.app f x) (mkApp2 op x y))
+
 /--
 Translate an SMT term to a Lean expression, together with its Lean type.
 
@@ -318,7 +332,7 @@ def translateTerm (t : SMT.Term) : TranslateM (Expr × Expr) := do
     let translateBinder := fun v => do
       let n := symbolToName v.id
       let t ← translateSort v.ty
-      modify fun s => { level := s.level + 1, bvars := s.bvars.insert (.bv v) (t, s.level) }
+      modify fun s => { s with level := s.level + 1, bvars := s.bvars.insert (.bv v) (t, s.level) }
       return (n, t)
     let ns ← ns.mapM translateBinder
     let (_, b) ← translateTerm b
@@ -366,12 +380,16 @@ def translateTerm (t : SMT.Term) : TranslateM (Expr × Expr) := do
     leftAssocOp mkIntAdd as
   | .app .mul as _ =>
     leftAssocOp mkIntMul as
-  | .app .div as _ =>
-    leftAssocOp mkIntDiv as
-  | .app .mod [x, y] _ =>
-    let (α, x) ← translateTerm x
+  | .app .div [x, y] _ =>
+    let (_, x) ← translateTerm x
     let (_, y) ← translateTerm y
-    return (α, mkApp2 mkIntMod x y)
+    intDivModByZero .divByZero mkIntDiv x y
+  | .app .div as _ =>
+    throw m!"Error: 'div' expects exactly two operands, got '{as.length}'"
+  | .app .mod [x, y] _ =>
+    let (_, x) ← translateTerm x
+    let (_, y) ← translateTerm y
+    intDivModByZero .modByZero mkIntMod x y
   | .app .mod as _ =>
     throw m!"Error: 'mod' expects exactly two operands, got '{as.length}'"
   | .app .abs [a] _ =>
@@ -627,12 +645,12 @@ where
   translateTypeDecl (us : DL.SMT.Sort) : TranslateM (Array (Name × Expr × BinderInfo)) := do
     let n := symbolToName us.name
     let t := us.arity.repeatTR (.forallE .anonymous (.sort 1) · .default) (.sort 1)
-    modify fun s => { level := s.level + 1, bvars := s.bvars.insert (.us us) (t, s.level) }
+    modify fun s => { s with level := s.level + 1, bvars := s.bvars.insert (.us us) (t, s.level) }
     let hn := `inst
     let xs := (Array.range us.arity).map Expr.bvar
     let nonempty := .app (.const ``Nonempty [1]) (mkAppN (.bvar us.arity) xs.reverse)
     let ht := us.arity.repeatTR (.forallE `α (.sort 1) · .default) nonempty
-    modify fun s => { level := s.level + 1, bvars := s.bvars.insert (.is us) (ht, s.level) }
+    modify fun s => { s with level := s.level + 1, bvars := s.bvars.insert (.is us) (ht, s.level) }
     return #[(n, t, .default), (hn, ht, .instImplicit)]
 
 /--
@@ -652,8 +670,25 @@ where
     let n := symbolToName is.fst
     let t := .sort 1
     let v ← translateSort is.snd
-    modify fun s => { level := s.level + 1, bvars := s.bvars.insert (.us { name := is.fst, arity := 0 }) (t, s.level) }
+    modify fun s => { s with level := s.level + 1, bvars := s.bvars.insert (.us { name := is.fst, arity := 0 }) (t, s.level) }
     return (n, t, v)
+
+/--
+Introduce the model's values of integer `div` and `mod` at a zero divisor, which
+SMT-LIB leaves unspecified, as `forall` binders of type `Int → Int`, when the
+query uses them (`dm`). The query's denotation always binds them; omitting them
+when unused keeps goals readable, and `gen_smt_vcs` checks with the kernel that
+the goal still implies the denotation.
+-/
+def withDivModByZero (dm : Bool) (k : TranslateM Expr) : TranslateM Expr := do
+  if !dm then return ← k
+  let state ← get
+  let ty := mkArrow mkInt mkInt
+  for v in [Var.divByZero, Var.modByZero] do
+    modify fun s => { s with level := s.level + 1, bvars := s.bvars.insert v (ty, s.level) }
+  let b ← k
+  set state
+  return .forallE `divByZero ty (.forallE `modByZero ty b .default) .default
 
 /--
 Introduce uninterpreted function declarations as outer `forall` binders.
@@ -674,7 +709,7 @@ where
       return (.anonymous, t)
     let s ← translateSort uf.out
     let t := ps.foldr (fun (n, t) b => .forallE n t b .default) s
-    set { level := state.level + 1, bvars := state.bvars.insert (.uf uf) (t, state.level) : Translate.State }
+    set { state with level := state.level + 1, bvars := state.bvars.insert (.uf uf) (t, state.level) }
     return (n, t)
 
 /--
@@ -699,25 +734,26 @@ where
     let n := symbolToName f.id
     let t := ps.foldr (fun (n, t) b => .forallE n t b .default) s
     let v := ps.foldr (fun (n, t) b => .lam n t b .default) b
-    set { level := state.level + 1, bvars := state.bvars.insert (.uf f.toUF) (t, state.level) : Translate.State }
+    set { state with level := state.level + 1, bvars := state.bvars.insert (.uf f.toUF) (t, state.level) }
     return (n, t, v)
   translateParam (v : TermVar) : TranslateM (Name × Expr) := do
     let n := symbolToName v.id
     let t ← translateSort v.ty
-    modify fun s => { level := s.level + 1, bvars := s.bvars.insert (.bv v) (t, s.level) }
+    modify fun s => { s with level := s.level + 1, bvars := s.bvars.insert (.bv v) (t, s.level) }
     return (n, t)
 
 /--
 Build the full translation scope for an SMT context:
 1. sort declarations (`forall`)
 2. sort definitions (`let`)
-3. function declarations (`forall`)
-4. function definitions (`let`)
-5. context axioms as implications
+3. integer `div`/`mod` at a zero divisor (`forall`), when `dm`
+4. function declarations (`forall`)
+5. function definitions (`let`)
+6. context axioms as implications
 -/
-def withCtx (ctx : Core.SMT.Context) (k : TranslateM Expr) : TranslateM Expr := do
+def withCtx (ctx : Core.SMT.Context) (dm : Bool) (k : TranslateM Expr) : TranslateM Expr := do
   let state ← get
-  let p ← withTypeDecls ctx.sorts.toArray <| withTypeDefs ctx.tySubst <|
+  let p ← withTypeDecls ctx.sorts.toArray <| withTypeDefs ctx.tySubst <| withDivModByZero dm <|
           withFunDecls ctx.ufs.toArray <| withFunDefs ctx.ifs.toArray do
     let f as a := do
       let (_, a) ← translateTerm a
@@ -729,13 +765,23 @@ def withCtx (ctx : Core.SMT.Context) (k : TranslateM Expr) : TranslateM Expr := 
   set state
   return p
 
+end Translate
+
+/-- Does the goal `translateQuery` builds for this query bind the values of
+`div`/`mod` at a zero divisor? Decided on the implication `denoteQuery` denotes. -/
+def goalBindsDivModByZero (ctx : Core.SMT.Context) (assums : List SMT.Term) (conc : SMT.Term) : Bool :=
+  let imp (a b : SMT.Term) : SMT.Term := .app .implies [a, b] (.prim .bool)
+  usesIntDivMod ctx.ifs.toList (ctx.axms.toList.foldr imp (assums.foldr imp conc))
+
+namespace Translate
+
 /--
 Translate an SMT query under `ctx` by first introducing context symbols and
 axioms (`withCtx`), then building the assumption-to-conclusion implication
 shape (`mkPropArrowN`).
 -/
 def translateQuery (ctx : Core.SMT.Context) (assums : Array SMT.Term) (conc : SMT.Term) : TranslateM Expr := do
-  withCtx ctx (mkPropArrowN assums conc)
+  withCtx ctx (goalBindsDivModByZero ctx assums.toList conc) (mkPropArrowN assums conc)
 
 end Translate
 

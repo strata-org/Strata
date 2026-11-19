@@ -89,7 +89,7 @@ variable [Hashable P.Ident]
   | .cmd (.init x _ (.det e) _) | .cmd (.set x (.det e) _) => insertFV (h.insert x) e
   | .cmd (.init x _ .nondet _) | .cmd (.set x .nondet _) => h.insert x
   | .cmd (.assume _ e _) | .cmd (.assert _ e _) | .cmd (.cover _ e _) => insertFV h e
-  | .call _ args _ => args.foldl insertCallArg h
+  | .call _ _ args _ => args.foldl insertCallArg h
 
 mutual
 /-- Insert every identifier of a statement list (`Block.idents`). -/

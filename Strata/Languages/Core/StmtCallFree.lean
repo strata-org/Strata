@@ -21,7 +21,7 @@ mutual
 /-- No procedure `.call` at *this* statement's own positions, recursively. -/
 @[expose] def StmtCallFree : Statement → Bool
   | .cmd (.cmd _) => true
-  | .cmd (.call _ _ _) => false
+  | .cmd (.call _ _ _ _) => false
   | .block _ b _ => StmtsCallFree b
   | .ite _ t e _ => StmtsCallFree t && StmtsCallFree e
   | .loop _ _ _ body _ => StmtsCallFree body
