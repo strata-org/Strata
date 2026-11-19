@@ -284,9 +284,8 @@ procedure p(x: string, y: string) opaque {
 /-! ## 5. The rest of the overload set is unchanged.
 
 `string` is disjoint from `int`, `real` and every `bv n`, so the four new arms
-cannot capture an existing call. §5.2 is the one shape that IS ambiguous: a type
-variable selects no overload, so the diagnostic is a property of the overload
-set, not of its size.
+cannot capture an existing call. §5.2 is the one shape that matches none: a
+type parameter of the enclosing procedure is one fixed type, not any of theirs.
 
 ### 5.1 `int`, `real` and `bv 32` comparisons still resolve. -/
 
@@ -300,13 +299,13 @@ procedure p(x: int, y: int, u: real, v: real) opaque {
 };
 #end
 
-/-! ### 5.2 A comparison at a TYPE VARIABLE is still ambiguous. -/
+/-! ### 5.2 A comparison at a TYPE VARIABLE has no overload. -/
 
 #eval testLaurelVerification <|
 #strata
 program Laurel;
 procedure f<T>(a: T, b: T) : bool { return a > b };
-//                                         ^^^^^ error: ambiguous call to '$gt'
+//                                         ^^^^^ error: no overload of '$gt' matches the argument types
 procedure p() opaque {
   assert true
 };

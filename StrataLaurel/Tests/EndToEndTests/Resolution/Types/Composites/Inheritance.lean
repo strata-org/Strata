@@ -219,6 +219,27 @@ procedure uniquelyInheritedOnDiamondShape()
 };
 #end
 
+-- Ambiguous read on a method's result, typed by the method's own type parameter: `second(d)`
+-- is a `Bottom`, as `d` is. Verification-only: the program is rejected.
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
+#strata
+program Laurel;
+composite Top6 { var f: int }
+composite L6 extends Top6 { }
+composite R6 extends Top6 { }
+composite D6 extends L6, R6 { }
+composite Box6<T> {
+  var element: T
+  procedure second<U>(self: Box6<T>, u: U) returns (r: U) opaque ensures r == u { r := u };
+}
+procedure viaMethodTypeParam() opaque modifies * {
+  var b: Box6<int> := new Box6<int>;
+  var d: D6 := new D6;
+  var x: int := b#second(d)#f
+//                          ^ error: fields that are inherited multiple times can not be accessed.
+};
+#end
+
 /-! ## Upcasting to the WRONG supertype
 
 A child's supertype is computed by applying the `extends` remap — `substitutedAncestors` —
