@@ -90,7 +90,7 @@ private def π : String → Option Procedure := Strata.InterpreterTestUtils.proc
 private def callerCmd (n : String) : Command :=
   match (π n).map Procedure.body with
   | some (.structured [.cmd c]) => c
-  | _ => .call "" [] #[]
+  | _ => .call "" none [] #[]
 
 /-- The CFG body of the procedure `n`, the empty CFG if it has none. -/
 private def cfgBody (n : String) : DetCFG Expression Command :=

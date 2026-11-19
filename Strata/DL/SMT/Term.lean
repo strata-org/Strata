@@ -271,6 +271,27 @@ private def Term.addSortNamesListList (acc : Std.HashSet String) :
   | ts :: tss => Term.addSortNamesListList (Term.addSortNamesList acc ts) tss
 end
 
+mutual
+/-- Does some operator applied in the term satisfy `p`? Triggers count. -/
+@[expose] def Term.anyOp (p : Op → Bool) : Term → Bool
+  | .some t => t.anyOp p
+  | .app op args _ => p op || Term.anyOpList p args
+  | .quant _ _ trs body => body.anyOp p || Term.anyOpListList p trs
+  | _ => false
+
+@[expose] def Term.anyOpList (p : Op → Bool) : List Term → Bool
+  | [] => false
+  | t :: ts => t.anyOp p || Term.anyOpList p ts
+
+@[expose] def Term.anyOpListList (p : Op → Bool) : List (List Term) → Bool
+  | [] => false
+  | ts :: tss => Term.anyOpList p ts || Term.anyOpListList p tss
+end
+
+/-- Does the term apply integer `div` or `mod`? -/
+@[expose] def Term.hasIntDivMod (t : Term) : Bool :=
+  t.anyOp (· matches .num .div | .num .mod)
+
 structure IF where
   id : String
   args : List TermVar
@@ -281,6 +302,17 @@ structure IF where
 deriving Repr, DecidableEq, Inhabited, Hashable
 
 @[expose] def IF.toUF (f : IF) : UF := { id := f.id, args := f.args.map (·.ty), out := f.out }
+
+/--
+Does a query, with interpreted functions `ifs` and closed term `t` (the axioms
+and assumptions implying the conclusion), use integer `div` or `mod`? Its
+denotation always quantifies over their values at a zero divisor; its Lean goal
+(`Translate.translateQuery`) does only when this says so. That is only an
+optimization: `gen_smt_vcs` checks with the kernel that the goal implies the
+denotation, so a wrong answer here makes it fail, never prove too much.
+-/
+@[expose] def usesIntDivMod (ifs : List IF) (t : Term) : Bool :=
+  ifs.any (·.body.hasIntDivMod) || t.hasIntDivMod
 
 end Strata.SMT
 end

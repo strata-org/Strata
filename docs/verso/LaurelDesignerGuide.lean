@@ -548,15 +548,14 @@ communicate by message passing (~). Laurel is currently sequential, and reasonin
 memory model is a large, separable piece of work, so this is planned rather than available.
 
 ## Proof-relevant subtyping
-The shared conversions above — numeric widening, and (below) the dynamic type — are realized through
-a single subtyping judgment. `coerce S T` returns a witness describing how a value of type `S`
-becomes one of type `T`: `refl` for identical types, `upcast` for nominal widening
-(representation-preserving), `widen` for `int` to `real`/`float64`, and `inject`/`project` to box and
-unbox across the dynamic type. The boolean subtype check is derived from it
+The shared conversions above, such as numeric widening, are realized through a single subtyping
+judgment. `coerce S T` returns a witness describing how a value of type `S` becomes one of type `T`:
+`refl` for identical types, `upcast` for nominal widening (representation-preserving), and `widen`
+for `int` to `real`/`float64`. The boolean subtype check is derived from it
 (`isConsistentSubtype := (coerce …).isSome`), so one computation produces both the decision and the
 coercion. `upcast` and `widen` are ordinary subtyping and hold in every Laurel program.
 
-A frontend supplies `realizeCoercion` to turn a witness into the concrete box/unbox/convert term for
+A frontend supplies `realizeCoercion` to turn a witness into the concrete conversion term for
 its runtime. Native Laurel supplies none, so `refl` and `upcast` pass the value through unchanged and
 `widen` is rejected — an `int` in a `real` slot is only accepted once a frontend provides the
 conversion.

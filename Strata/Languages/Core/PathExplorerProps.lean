@@ -14,6 +14,7 @@ import all Strata.DL.Imperative.CFGDominators
 import all Strata.DL.Lambda.Denote.LExprDenoteEq
 import Strata.DL.Lambda.LExprProps
 import Strata.DL.Imperative.InterpreterConfigProps
+import Strata.Util.DecidableEqProps
 
 /-! # Properties of the path explorer: merging, and options at their defaults
 
@@ -28,12 +29,15 @@ environments (`mergeEnvs`), which `mergeBranches` runs for every kind of configu
   denotes where the guard is true, and the else-branch's where it is false.
 * `mergeEnvs_pc`: the merged path condition holds under a model iff the guard holds and the
   then-branch's path condition does, or the guard fails and the else-branch's does.
+* `mergeEnvs_shape`: a merge succeeds only on branches whose path conditions end in the guard
+  (then-branch) or its negation (else-branch) above one shared prefix of the fork's length.
 * `mergeChoices_nil`: a merge of branches that made no choices keeps the record of choices.
 
 What each kind of configuration brings to a merge: a structured path its terminal environment
-(`structuredShape_joinEnv_setJoinEnv`); a CFG path its environment without the locals of blocks that
-do not dominate the join, keeping the store's base and every other variable's value
-(`cfgShape_forMerge_block`).
+(`structuredShape_joinEnv_setJoinEnv`); a CFG path its environment without the locals that no block
+dominating the join declares, keeping the store's base and every other variable's value
+(`cfgShape_forMerge_block`), never one that a block dominating the join declares
+(`cfgOutOfScope_not_dominating`).
 
 And the explorer's options at their defaults: `failedCheckStatus_off` (no failed check ends a
 path) and `overPathLimit_none` (no path limit is reached).
@@ -125,28 +129,60 @@ theorem structuredShape_joinEnv_setJoinEnv {scfg : ExploreCfg} (c : StmtConfig s
     | _ => none) = some e
   rw [deepest_replaceDeepest_terminal]
 
+/-- The locals a merge at block `j` leaves out, given the dominators `dom` and each block's
+    declared locals `decls`: those declared in a block that does not dominate `j` and in no block
+    that does. -/
+def cfgOutOfScope (dom : Std.HashMap String (List String))
+    (decls : List (String × List CoreIdent)) (j : String) : List CoreIdent :=
+  let kept := decls.flatMap fun p => bif CFG.Dom.dominates dom p.1 j then p.2 else []
+  decls.flatMap fun p =>
+    bif CFG.Dom.dominates dom p.1 j then [] else p.2.filter (fun x => !kept.contains x)
+
+/-- A `flatMap` whose function gives `[]` on an entry with no locals is unchanged by first
+    dropping such entries. -/
+private theorem flatMap_filter_nonempty (l : List (String × List CoreIdent))
+    (f : String × List CoreIdent → List CoreIdent) (hf : ∀ d, f (d, []) = []) :
+    (l.filter (!·.2.isEmpty)).flatMap f = l.flatMap f := by
+  induction l with
+  | nil => rfl
+  | cons p l ih =>
+    obtain ⟨d, xs⟩ := p
+    cases xs with
+    | nil => simp [ih, hf]
+    | cons x xs => simp [ih]
+
 /-- Looking only at the blocks that declare locals finds the same out-of-scope locals at `j` as
-    looking at every block: the locals of each block that does not dominate `j`. -/
+    looking at every block (`cfgOutOfScope`). -/
 private theorem localsOutOfScope_filter (dom : Std.HashMap String (List String))
     (decls : List (String × List CoreIdent)) (j : String) :
-    localsOutOfScope dom (decls.filter (!·.2.isEmpty)) j =
-      decls.flatMap fun (d, xs) => if CFG.Dom.dominates dom d j then [] else xs := by
-  have hf : ∀ l : List (String × List CoreIdent),
-      (l.filter (!·.2.isEmpty)).flatMap (fun (d, xs) =>
-          if CFG.Dom.dominates dom d j then [] else xs) =
-        l.flatMap fun (d, xs) => if CFG.Dom.dominates dom d j then [] else xs := by
-    intro l
-    induction l with
-    | nil => rfl
-    | cons p l ih =>
-      obtain ⟨d, xs⟩ := p
-      cases xs <;> simp_all
-  rw [← hf]
-  unfold localsOutOfScope
+    localsOutOfScope dom (decls.filter (!·.2.isEmpty)) j = cfgOutOfScope dom decls j := by
+  have hkept := flatMap_filter_nonempty decls
+    (fun (p : String × List CoreIdent) => bif CFG.Dom.dominates dom p.1 j then p.2 else [])
+    (fun d => by simp)
+  unfold localsOutOfScope cfgOutOfScope
   split
   · rename_i h
-    simp [List.isEmpty_iff.mp h]
-  · simp [CFG.Dom.dominates, Std.HashSet.contains_ofList]
+    rw [← flatMap_filter_nonempty decls _ (fun d => by simp), List.isEmpty_iff.mp h]
+    rfl
+  · simp only [Std.HashSet.contains_ofList, CFG.Dom.dominates] at hkept ⊢
+    rw [hkept]
+    exact flatMap_filter_nonempty decls _ (fun d => by simp)
+
+/-- A merge at `j` never leaves out a local that some block dominating `j` declares. -/
+theorem cfgOutOfScope_not_dominating {dom : Std.HashMap String (List String)}
+    {decls : List (String × List CoreIdent)} {j : String} {x : CoreIdent}
+    (hx : x ∈ cfgOutOfScope dom decls j) :
+    ∀ d xs, (d, xs) ∈ decls → CFG.Dom.dominates dom d j = true → x ∉ xs := by
+  intro d xs hd hdom hxs
+  simp only [cfgOutOfScope, List.mem_flatMap] at hx
+  obtain ⟨p, _, hx⟩ := hx
+  cases hp : CFG.Dom.dominates dom p.1 j with
+  | true => simp [hp] at hx
+  | false =>
+    simp only [hp, cond_eq_ite, List.contains_eq_mem, List.mem_flatMap, List.mem_ite_nil_right,
+      Prod.exists, Bool.false_eq_true, ↓reduceIte, List.mem_filter, Bool.not_eq_eq_eq_not,
+      Bool.not_true, decide_eq_false_iff_not, not_exists, not_and] at hx
+    exact hx.2 d xs hd hdom hxs
 
 /-- In a map built by inserting, for each block label `j`, a thunk of `f j`, every thunk found
     at a key `k` gives `f k`. -/
@@ -169,16 +205,16 @@ private theorem foldl_insert_thunk {β : Type} (f : String → List CoreIdent)
       rfl
     · exact hm k t h
 
-/-- A CFG path brings to a merge at block `j` its environment with the locals declared in
-    blocks that do not dominate `j` left out (`IStore.drop`): the store keeps its base, and
-    reads as `RStore.dropVars` of those locals, so every other variable keeps its value. -/
+/-- A CFG path brings to a merge at block `j` its environment without the locals that no block
+    dominating `j` declares (`cfgOutOfScope`, `IStore.drop`): the store keeps its base, and reads
+    as `RStore.dropVars` of those locals, so every other variable keeps its value. -/
 theorem cfgShape_forMerge_block {scfg : ExploreCfg} (g : Core.DetCFG) (j : String)
     (e : @IEnv Expression (symLang scfg)) :
     letI := symLang scfg
     ((cfgShape scfg g).forMerge (.block j) e).store.base = e.store.base ∧
       ((cfgShape scfg g).forMerge (.block j) e).store.get =
-        RStore.dropVars ((g.blocks.map fun (d, b) => (d, blockInits b)).flatMap fun (d, xs) =>
-          if CFG.Dom.dominates g.computeDominators d j then [] else xs) e.store.get :=
+        RStore.dropVars (cfgOutOfScope g.computeDominators
+          (g.blocks.map fun (d, b) => (d, WF.blockInitVars b)) j) e.store.get :=
   letI := symLang scfg
   by
     refine ⟨rfl, ?_⟩
@@ -215,48 +251,6 @@ private theorem cfgShape_forkSite_nested {scfg : ExploreCfg} {g : Core.DetCFG} {
   · obtain ⟨x, -, hx⟩ := Option.map_eq_some_iff.mp hf
     exact nestJoin_nested hac hx
   · exact absurd hf (by simp)
-
-/-- Expressions equal up to source locations (`LExpr.beqIgnoringMetadata`) have equal metadata
-    erasures. -/
-private theorem eraseMetadata_eq_of_beqIgnoringMetadata :
-    ∀ {a b : Expression.Expr}, a.beqIgnoringMetadata b = true →
-      a.eraseMetadata = b.eraseMetadata := by
-  intro a
-  induction a with
-  | const | op | bvar | fvar =>
-    intro b h
-    cases b <;>
-      simp_all [LExpr.beqIgnoringMetadata, LExpr.eraseMetadata, LExpr.replaceMetadata]
-  | abs m n ty e ih =>
-    intro b h
-    cases b <;> simp only [LExpr.beqIgnoringMetadata, Bool.and_eq_true, beq_iff_eq,
-      reduceCtorEq] at h
-    obtain ⟨⟨rfl, rfl⟩, h⟩ := h
-    have := ih h; simp only [LExpr.eraseMetadata] at this
-    simp [LExpr.eraseMetadata, LExpr.replaceMetadata, this]
-  | quant m k n ty tr e iht ihe =>
-    intro b h
-    cases b <;> simp only [LExpr.beqIgnoringMetadata, Bool.and_eq_true, beq_iff_eq,
-      reduceCtorEq] at h
-    obtain ⟨⟨⟨⟨rfl, rfl⟩, rfl⟩, h1⟩, h2⟩ := h
-    have h1 := iht h1; have h2 := ihe h2; simp only [LExpr.eraseMetadata] at h1 h2
-    simp [LExpr.eraseMetadata, LExpr.replaceMetadata, h1, h2]
-  | app m f x ihf ihx =>
-    intro b h
-    cases b <;> simp only [LExpr.beqIgnoringMetadata, Bool.and_eq_true, reduceCtorEq] at h
-    have h1 := ihf h.1; have h2 := ihx h.2; simp only [LExpr.eraseMetadata] at h1 h2
-    simp [LExpr.eraseMetadata, LExpr.replaceMetadata, h1, h2]
-  | ite m c t e ihc iht ihe =>
-    intro b h
-    cases b <;> simp only [LExpr.beqIgnoringMetadata, Bool.and_eq_true, reduceCtorEq] at h
-    have h1 := ihc h.1.1; have h2 := iht h.1.2; have h3 := ihe h.2
-    simp only [LExpr.eraseMetadata] at h1 h2 h3
-    simp [LExpr.eraseMetadata, LExpr.replaceMetadata, h1, h2, h3]
-  | eq m x y ihx ihy =>
-    intro b h
-    cases b <;> simp only [LExpr.beqIgnoringMetadata, Bool.and_eq_true, reduceCtorEq] at h
-    have h1 := ihx h.1; have h2 := ihy h.2; simp only [LExpr.eraseMetadata] at h1 h2
-    simp [LExpr.eraseMetadata, LExpr.replaceMetadata, h1, h2]
 
 /-- What the merge assigns `x` given the two branch stores `sa` (then) and `sb` (else). -/
 private def mergedVal (g : Expression.Expr) (sa sb : RStore Expression) (x : CoreIdent) :
@@ -419,18 +413,18 @@ theorem mergeEnvs_store_denote {scfg : ExploreCfg} {j : Join}
     refine ⟨ha, ?_⟩
     have hmod : LExpr.eqModuloMeta va vb = true :=
       (LExpr.beq_eq va.eraseMetadata vb.eraseMetadata).mpr
-        (eraseMetadata_eq_of_beqIgnoringMetadata hab)
+        (LExpr.eraseMetadata_eq_of_beqIgnoringMetadata hab)
     rw [← eqModuloMeta_true_implies_denote_eq tc op fv vt .nil ha hb hmod]
     cases LExpr.denote tc op fv vt .nil j.guard .bool hg <;> rfl
   · rw [ite_eq_right_of_eq_false _ _ (eq_false hab)]
     exact ⟨.ite hg ha hb, denote_ite .nil hg ha hb _⟩
 
 /-- The merged path condition holds under a model exactly when the guard and the then-branch's
-    path condition hold, or the guard fails and the else-branch's holds. This needs each
-    branch's path condition to be its own entries, then the guard (then-branch) or its negation
-    (else-branch), then a prefix of length `j.basePcLen` that both share, and the model's truth
-    predicate to respect `negate` (`NegSound`), `if`, and `true`. -/
-theorem mergeEnvs_pc {scfg : ExploreCfg} {j : Join}
+    path condition hold, or the guard fails and the else-branch's holds, for branches whose path
+    conditions are given as their own entries, then the guard (then-branch) or its negation
+    (else-branch), then one shared prefix of length `j.basePcLen`; the model's truth predicate
+    must respect `negate`, `if` and `true`. -/
+private theorem mergeEnvs_pc_of_shape {scfg : ExploreCfg} {j : Join}
     {ea eb em : @IEnv Expression (symLang scfg)} {sa sb st : PathState} {n : Nat}
     (h : mergeEnvs j ea eb sa sb = some (em, st, n))
     {holds : Expression.Expr → Prop} (hneg : NegSound holds)
@@ -492,6 +486,65 @@ theorem mergeEnvs_pc {scfg : ExploreCfg} {j : Join}
         · exact (hite _ _ _).2 (Or.inr ⟨hg, hb q (Or.inl hq)⟩)
         · exact (hite _ _ _).2 (Or.inr ⟨hg, htrue⟩)
         · exact hb p (Or.inr (Or.inr hp))
+
+/-- `isNegationOf ng g` holds only when `ng` is `negate g`. -/
+private theorem isNegationOf_eq {ng g : Expression.Expr} (h : isNegationOf ng g = true) :
+    ng = negate g := by
+  unfold isNegationOf at h
+  split at h
+  · simp only [Bool.and_eq_true] at h
+    obtain ⟨⟨⟨hc, hm⟩, ht⟩, he⟩ := h
+    rw [ptrFastEq_eq hc, ptrFastEq_eq hm, ptrFastEq_eq ht, ptrFastEq_eq he]
+    rfl
+  · cases h
+
+/-- A merge succeeds only on branches whose path conditions have the form merging relies on:
+    the then-branch's is its own entries, then the guard, then a prefix `base` of length
+    `j.basePcLen`; the else-branch's is its own entries, then the guard's negation, then the same
+    `base` (`mergeShapeOk`). -/
+theorem mergeEnvs_shape {scfg : ExploreCfg} {j : Join}
+    {ea eb em : @IEnv Expression (symLang scfg)} {sa sb st : PathState} {n : Nat}
+    (h : mergeEnvs j ea eb sa sb = some (em, st, n)) :
+    ∃ (ownA ownB base : List (String × Expression.Expr)) (la lb : String),
+      sa.pc = ownA ++ (la, j.guard) :: base ∧ sb.pc = ownB ++ (lb, negate j.guard) :: base ∧
+      base.length = j.basePcLen := by
+  unfold mergeEnvs at h
+  split at h
+  · cases h
+  rename_i hc
+  have hok : mergeShapeOk j sa sb = true := by
+    cases hm : mergeShapeOk j sa sb
+    · simp [hm] at hc
+    · rfl
+  unfold mergeShapeOk at hok
+  generalize hda : sa.pc.drop (sa.pc.length - (j.basePcLen + 1)) = da at hok
+  generalize hdb : sb.pc.drop (sb.pc.length - (j.basePcLen + 1)) = db at hok
+  match da, db, hok with
+  | (la, ga) :: ba, (lb, gb) :: bb, hok =>
+    simp only [Bool.and_eq_true, beq_iff_eq] at hok
+    obtain ⟨⟨⟨hlen, hga⟩, hgb⟩, hbb⟩ := hok
+    refine ⟨sa.pc.take (sa.pc.length - (j.basePcLen + 1)),
+      sb.pc.take (sb.pc.length - (j.basePcLen + 1)), ba, la, lb, ?_, ?_, hlen⟩
+    · rw [← ptrFastEq_eq hga, ← hda, List.take_append_drop]
+    · rw [← isNegationOf_eq hgb, ptrFastEq_eq hbb, ← hdb, List.take_append_drop]
+  | [], _, hok => simp at hok
+  | _ :: _, [], hok => simp at hok
+
+/-- The merged path condition holds under a model exactly when the guard and the then-branch's
+    path condition hold, or the guard fails and the else-branch's holds. This needs the model's
+    truth predicate to respect `negate` (`NegSound`), `if`, and `true`; the form of the two path
+    conditions it relies on, `mergeEnvs` checks (`mergeEnvs_shape`). -/
+theorem mergeEnvs_pc {scfg : ExploreCfg} {j : Join}
+    {ea eb em : @IEnv Expression (symLang scfg)} {sa sb st : PathState} {n : Nat}
+    (h : mergeEnvs j ea eb sa sb = some (em, st, n))
+    {holds : Expression.Expr → Prop} (hneg : NegSound holds)
+    (hite : ∀ g t e,
+      holds (LExpr.ite symExecLoc g t e) ↔ (holds g ∧ holds t) ∨ (¬ holds g ∧ holds e))
+    (htrue : holds Core.true) :
+    PCHolds holds st ↔
+      (holds j.guard ∧ PCHolds holds sa) ∨ (¬ holds j.guard ∧ PCHolds holds sb) := by
+  obtain ⟨_, _, _, _, _, hpa, hpb, hlen⟩ := mergeEnvs_shape h
+  exact mergeEnvs_pc_of_shape h hneg hite htrue hpa hpb hlen
 
 /-- With `endOnFailedChecks` off, no failed check ends a path. -/
 theorem failedCheckStatus_off {scfg : ExploreCfg} (h : scfg.endOnFailedChecks = false)

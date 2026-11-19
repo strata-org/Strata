@@ -183,6 +183,17 @@ Key parameters that vary across platforms:
 - `endianness`: 1 = little-endian, 2 = big-endian
 - `arch`/`os`: string identifiers for the target platform
 
+#### Division by zero and overflow are undefined in GOTO
+
+Core gives every operator a value at every argument: a safe operator equals its
+plain operator, and division by zero and overflow have SMT-LIB's values (the
+language reference, "Values outside a precondition"). The GOTO translation maps
+division and modulus to GOTO's `div` and `mod`, which follow C, where division
+by zero is undefined, and signed operations to C's signed operators, where
+signed overflow is undefined. So CBMC need not give these cases Core's values,
+and a Core assertion whose proof relies on one (for example
+`bv8.uDiv(x, 0) == 255`) can fail under CBMC.
+
 #### DFCC with mathematical integers
 
 CBMC's DFCC instrumentation requires concrete-sized types for assigns clause

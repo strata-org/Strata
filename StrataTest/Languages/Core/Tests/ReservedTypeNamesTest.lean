@@ -223,7 +223,7 @@ Result: ✅ pass
 /-! Type checking returns the lemma `l_refl<$__ty0>` with its type parameter
 renamed to `a` throughout. -/
 
-/-- info: l_refl<[a]> : forall x : (a) :: x == x -/
+/-- info: l_refl<[a]> : forall x : a :: x == x -/
 #guard_msgs in
 #eval printChecked
   { decls := [.lemma { name := "l_refl", typeArgs := ["$__ty0"],

@@ -146,7 +146,8 @@ abbrev CmdCallOk (π : String → Option Procedure) : Command → Bool := Calls.
 
 /-- **The call is the active redex of a config**, stable under the `.seq _ rest` and
     `.block l σ _` evaluation contexts: peeling seq/block wrappers from `C` reaches
-    the bare call `.stmt (.cmd (.call pn args md)) env` (`Calls.CallActive` at `Expression`). -/
+    the bare call `.stmt (.cmd (.call pn tyArgs args md)) env` for some `tyArgs`
+    (`Calls.CallActive` at `Expression`). -/
 abbrev CallActive :
     CoreConfig → String → List (Imperative.CallArg Expression) →
       Imperative.MetaData Expression → Imperative.Env Expression → Prop :=

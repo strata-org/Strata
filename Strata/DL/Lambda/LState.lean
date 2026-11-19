@@ -171,6 +171,10 @@ Compatible with `Imperative.SemanticStore` from `Strata.DL.Imperative.CmdSemanti
 -/
 abbrev Env (T : LExprParams) := T.Identifier → Option (LExpr T.mono)
 
+/-- `env₁` holds a subset of the bindings of `env₂`. -/
+def Env.Sub {T : LExprParams} (env₁ env₂ : Env T) : Prop :=
+  ∀ x v, env₁ x = some v → env₂ x = some v
+
 instance : CoeFun (Env T) (fun _ => T.Identifier → Option (LExpr T.mono)) where
   coe f := f
 

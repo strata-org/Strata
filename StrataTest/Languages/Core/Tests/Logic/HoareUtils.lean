@@ -40,7 +40,8 @@ about these fixtures belong in the library's `*Props` files.
   which a test spells out a translated body as a closed Core term (so that facts about a pass's
   output on it are decided by the kernel), and `intMono`, `intLTy`, `v`.
 * Store and contract facts: `Pinned`, `intOf`, the condition `ge0`, its value (`ge0_eval`) and
-  the contract facts it gives (`nonneg_of_pre`, `post_ge0`).
+  the contract facts it gives (`nonneg_of_pre`, `post_ge0`), the postcondition `eqInt` and its
+  contract fact `post_eqInt`, and the loop measure `intMeasure` read off an integer variable.
 * Empty bodies: `blockWF_nil`, `run_procBlock_nil` and `reachable_nil` run an empty body, and
   `oldInoutAsPredicate_of_no_inout`, `preAsPredicate_of_no_pre` discharge the parts of a
   contract precondition a procedure has no clause for.
@@ -189,7 +190,7 @@ theorem nonneg_of_pre {proc : Core.Procedure} {ρ : Env Core.Expression}
     (hpre : ∀ lc ∈ proc.spec.preconditions.toList, lc.2.expr = ge0 x)
     (hne : proc.spec.preconditions.toList ≠ []) :
     ∃ k, ρ.store x = some (intOf ρ.factory k) ∧ 0 ≤ k := by
-  obtain ⟨hreq, hp, _, hin⟩ := h
+  obtain ⟨hreq, hp, _, hin, -⟩ := h
   obtain ⟨k, hk⟩ := Core.Logic.Hoare.Procedure.inputAsPredicate_int hwf hin x hx
   obtain ⟨⟨l, c⟩, hmem⟩ := List.exists_mem_of_ne_nil _ hne
   rcases hreq l c hmem ⟨fun _ => False⟩ with ⟨_, he⟩ | ⟨hnf, _⟩
@@ -210,6 +211,37 @@ theorem post_ge0 {proc : Core.Procedure} {ρ : Env Core.Expression} {x : Core.Ex
   change Core.Expression.eval ρ.factory ρ.store check.expr = some (HasBool.ttVal ρ.factory)
   rw [hpost _ hmem, ge0_eval hp hx, decide_eq_true hk]
   rfl
+
+/-- `x == k`. -/
+abbrev eqInt (x : Core.Expression.Ident) (k : Int) : Core.Expression.Expr :=
+  .eq Core.valueLoc (v x) (.intConst Core.valueLoc k)
+
+/-- **The contract's postcondition `x == k`.**  For a procedure whose postconditions are all
+    `x == k`: an environment over `Core.Factory` where `x` holds `k` satisfies the contract's
+    postcondition. -/
+theorem post_eqInt {proc : Core.Procedure} {ρ : Env Core.Expression} {x : Core.Expression.Ident}
+    {k : Int} (hpost : ∀ lc ∈ proc.spec.postconditions.toList, lc.2.expr = eqInt x k)
+    (hp : Pinned ρ) (hx : ρ.store x = some (intOf ρ.factory k)) :
+    Core.Logic.Hoare.Procedure.contractPost Core.Factory proc ρ := by
+  intro label check hmem _ _
+  refine .inl ⟨hp, ?_⟩
+  change Core.Expression.eval ρ.factory ρ.store check.expr = some (HasBool.ttVal ρ.factory)
+  rw [hpost _ hmem]
+  exact Core.eval_eq_true _ (Core.eval_fvar_int ρ.factory hx) (Core.eval_intConst _ _ k)
+
+open Classical in
+/-- A loop measure read off the integer `x` holds: `m n` where `x` holds `n`, and `0` where `x`
+    holds no integer. -/
+noncomputable def intMeasure (x : Core.Expression.Ident) (m : Int → Nat)
+    (ρ : Env Core.Expression) : Nat :=
+  if h : ∃ n : Int, ρ.store x = some (intOf ρ.factory n) then m h.choose else 0
+
+/-- Where `x` holds the integer `n`, `intMeasure x m` is `m n`. -/
+theorem intMeasure_eq {x : Core.Expression.Ident} {m : Int → Nat} {ρ : Env Core.Expression}
+    {n : Int} (hx : ρ.store x = some (intOf ρ.factory n)) : intMeasure x m ρ = m n := by
+  have h : ∃ n : Int, ρ.store x = some (intOf ρ.factory n) := ⟨n, hx⟩
+  rw [intMeasure, dite_eq_left_of_eq_true (eq_true h),
+    Lambda.SemValue.ofInt_injective (Option.some.inj (h.choose_spec.symm.trans hx))]
 
 /-! ## Empty bodies and contracts without clauses
 

@@ -53,6 +53,7 @@ public import Strata.DL.Imperative.Analysis.VerdictProps
 public import Strata.DL.Imperative.Analysis.DeductiveVerification
 public import Strata.DL.Imperative.Analysis.DeductiveVerificationProps
 public import Strata.DL.Imperative.Logic.HoareTemplate
+public import Strata.DL.Imperative.Logic.HoareTotalTemplate
 
 public import Strata.DL.Imperative.KleeneStmt
 public import Strata.DL.Imperative.KleeneStmtSemantics

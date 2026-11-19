@@ -156,7 +156,7 @@ private theorem maxTgt_triple :
       (Core.Logic.Hoare.Procedure.contractPre Core.Factory maxProc) [maxIte] Exit := by
   refine Core.Logic.Hoare.of_storeWF_pre π _
     (Core.Logic.Hoare.consequence π testParams (Pre := Entry) ?_
-    (fun ρ ⟨⟨_, hp, _, hin⟩, hwf⟩ =>
+    (fun ρ ⟨⟨_, hp, _, hin, _⟩, hwf⟩ =>
       have ⟨p, ha⟩ := Core.Logic.Hoare.Procedure.inputAsPredicate_int hwf hin aId (by native_decide)
       have ⟨q, hb⟩ := Core.Logic.Hoare.Procedure.inputAsPredicate_int hwf hin bId (by native_decide)
       ⟨hp, p, q, ha, hb⟩) (fun _ h => h))

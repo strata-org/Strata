@@ -29,6 +29,8 @@ Key results:
   `eval_intGt` and `eval_intGe` (instances of `Core.eval_app2_op`) give Core's evaluation of an
   operator applied to two integers, with `eval_const`, `eval_intConst`, `eval_boolConst`,
   `eval_fvar` and `eval_fvar_int` for its leaves and `eval_eq_true`/`eval_eq_false` for equalities.
+- `Core.eval_tt_or_ff_of_ofBool` reads a Boolean result as the factory's `true` or `false`, and
+  `Core.valueOfStoredTy_int` lets an integer be assigned to a variable holding one.
 -/
 
 public section
@@ -401,6 +403,25 @@ theorem eval_intGe {f : Expression.Factory} {m m' : ExpressionMetadata}
       some (SemValue.ofBool f.model.tcInterp (decide (a ≥ b))) :=
   eval_app2_op "Int.Ge" (c := .bool) rfl rfl rfl hx hy
       (intGe_opInterp_of_lookup f.model hlookup a b)
+
+/-- An expression evaluating to a Boolean of the runtime factory evaluates to its `true` or to
+    its `false`. -/
+theorem eval_tt_or_ff_of_ofBool {f : Expression.Factory} {σ : CoreStore}
+    {e : Expression.Expr} {b : Bool}
+    (h : Expression.eval f σ e = some (SemValue.ofBool f.model.tcInterp b)) :
+    Expression.eval f σ e = some (Imperative.HasBool.ttVal f) ∨
+      Expression.eval f σ e = some (Imperative.HasBool.ffVal f) := by
+  cases b
+  · exact .inr h
+  · exact .inl h
+
+/-- An integer of the runtime factory has the type of the value of a variable holding an
+    integer of it, so it may be assigned to that variable. -/
+theorem valueOfStoredTy_int {f : Expression.Factory} {σ : CoreStore} {x : CoreIdent} {k : Int}
+    (hx : σ x = some (SemValue.ofInt f.model.tcInterp k)) (j : Int) :
+    Imperative.HasVal.valueOfStoredTy (P := Expression) f σ x
+      (SemValue.ofInt f.model.tcInterp j) :=
+  ⟨_, .forAll [] .int, hx, ⟨rfl, rfl⟩, ⟨rfl, rfl⟩⟩
 
 end Core
 

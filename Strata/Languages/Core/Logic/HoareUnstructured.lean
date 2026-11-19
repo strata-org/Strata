@@ -6,12 +6,16 @@
 module
 
 public import Strata.Languages.Core.Logic.Hoare
+public import Strata.Languages.Core.Logic.HoareTotal
 
 /-! # Hoare Logic for unstructured Core CFGs
 
-Core-specific wrappers around the language-generic Hoare triple, instantiated
-with `EventLang.coreCFG`. These are the CFG counterparts of `TripleWith` and
-`Triple` in `Strata.Languages.Core.Logic.Hoare`.
+Core-specific wrappers around the language-generic Hoare triples, instantiated
+with `EventLang.coreCFG`. `Hoare.TripleUnstructuredWith` and `Hoare.TripleUnstructured`
+are the CFG counterparts of `TripleWith` and `Triple` in
+`Strata.Languages.Core.Logic.Hoare`; `HoareTotal.TripleUnstructuredWith` and
+`HoareTotal.TripleUnstructured` are their total-correctness counterparts, for
+`Strata.Languages.Core.Logic.HoareTotal`.
 -/
 
 public section
@@ -49,6 +53,29 @@ CFG.
 -/
 
 end Hoare
+
+namespace HoareTotal
+
+variable (π : String → Option Procedure)
+
+/-- Core CFG total-correctness Hoare triple with an explicit event-condition
+    interpretation. -/
+@[expose] def TripleUnstructuredWith (conditionInterp : ConditionInterp Expression)
+    (params : InitEnvWFParams)
+    (Pre : Imperative.Env Expression → Prop) (cfg : Core.DetCFG)
+    (Post : Imperative.Env Expression → Prop) : Prop :=
+  Strata.Logic.HoareTotal.TripleWith (EventLang.coreCFG π)
+    conditionInterp params Pre cfg Post
+
+/-- **Core total-correctness Hoare triple over an unstructured CFG**, with conditions read
+    by evaluation in runtime factories over `factory`. The default is `Core.Factory`. -/
+@[expose] def TripleUnstructured (params : InitEnvWFParams)
+    (Pre : Imperative.Env Expression → Prop) (cfg : Core.DetCFG)
+    (Post : Imperative.Env Expression → Prop)
+    (factory : Lambda.Factory CoreLParams := Core.Factory) : Prop :=
+  TripleUnstructuredWith π (DenoteBasedInterp factory) params Pre cfg Post
+
+end HoareTotal
 
 end Core.Logic
 

@@ -96,7 +96,7 @@ theorem fs_assumePre {n : Nat} (ih : FundAt cfg E Rw K Gl n) {P P' : Procedure} 
     refine fs_bind (fs_emitE (S := Sm E Gl condG) (evRel_fail (E := _)) ⟨hc.2.1, _, hs⟩) (fun _ _ _ => ?_)
     refine fs_bind (exprMdE hp ih hc.2.1 hc.2.2 (hP.preOK c hm) hM) (fun v v' hv => ?_)
     subst hv
-    refine fs_bind (fs_liftM (isTrue_pconst hp.cfg_ok _)) (fun b b' hb => ?_)
+    refine fs_bind (fs_liftM (isTrue_pconst _)) (fun b b' hb => ?_)
     subst hb
     exact fs_ite (fun _ =>  fs_pure rfl)
       (fun _ => fs_bind (fs_throw (A := Eq) _) (fun _ _ _ => fs_pure rfl))

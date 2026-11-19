@@ -154,6 +154,7 @@ private theorem not_contractTriple_ensures_false (p : Core.Program) (n : String)
     (hpre : (procOf p n).spec.preconditions.toList = [])
     (hinout : ListMap.keys (procOf p n).header.getInoutParams = [])
     (hinputs : (procOf p n).header.inputs.toList = [])
+    (houtputs : (procOf p n).header.outputs.toList = [])
     (hpost : ∃ lc ∈ (procOf p n).spec.postconditions.toList,
       (Prod.snd lc).attr = Core.Procedure.CheckAttr.Default ∧
       (Prod.snd lc).expr = Lambda.LExpr.boolConst Core.valueLoc false)
@@ -170,7 +171,8 @@ private theorem not_contractTriple_ensures_false (p : Core.Program) (n : String)
   have ⟨_hvalid, hpostF⟩ := htb ρ ρ []
     ⟨⟨preAsPredicate_of_no_pre _ _ ρ hpre, rfl,
       oldInoutAsPredicate_of_no_inout _ ρ hinout,
-      fun id ty hmem => by rw [hinputs] at hmem; cases hmem⟩, haxioms ρ⟩
+      (fun id ty hmem => by rw [hinputs] at hmem; cases hmem),
+      Core.Logic.Hoare.Procedure.outputAsPredicate_of_no_outputs ρ houtputs⟩, haxioms ρ⟩
     (blockWF_nil ρ rfl (fun _ _ hn => by cases hn))
     (.inl (run_procBlock_nil _ ρ "" #[]))
   obtain ⟨⟨label, check⟩, hmem, hattr, hexpr⟩ := hpost
@@ -278,7 +280,7 @@ theorem late_violates_contract :
   not_contractTriple_ensures_false lateAST "Late"
     (Core.Program.factoryBeforeProcedure_eq_core_of_noFunctions (by native_decide))
     (by native_decide) (by native_decide) (by native_decide) (by native_decide)
-    (by native_decide) (by native_decide)
+    (by native_decide) (by native_decide) (by native_decide)
     (Core.Specification.axiomsBeforeProcedureDecl_of_noAxioms late_axiom_after.2)
 
 /-! ### The declaration `distinct [a, a]` -/
@@ -344,7 +346,7 @@ theorem lateClash_violates_contract :
   not_contractTriple_ensures_false lateClashAST "LateClash"
     (Core.Program.factoryBeforeProcedure_eq_core_of_noFunctions (by native_decide))
     (by native_decide) (by native_decide) (by native_decide) (by native_decide)
-    (by native_decide) (by native_decide)
+    (by native_decide) (by native_decide) (by native_decide)
     (Core.Specification.axiomsBeforeProcedureDecl_of_noAxioms lateClash_distinct_after.2)
 
 /-! ## A `distinct` declaration at the entry -/

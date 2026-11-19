@@ -158,10 +158,17 @@ def intSub := intapp .sub Int.sub
 def intAdd := intapp .add Int.add
 -- Correctness: `Factory.intMul_correct`
 def intMul := intapp .mul Int.mul
+/-- `intapp` for integer `div` and `mod`, except that it does not fold a zero
+divisor, whose result SMT-LIB leaves unspecified. -/
+def intDivMod (op : Op) (fn : Int → Int → Int) (t₁ t₂ : Term) : Term :=
+  match t₂ with
+  | .prim (.int 0) => .app op [t₁, t₂] t₁.typeOf
+  | _ => intapp op fn t₁ t₂
+
 -- Correctness: `Factory.intDiv_correct`
-def intDiv := intapp .div Int.ediv
+def intDiv := intDivMod .div Int.ediv
 -- Correctness: `Factory.intMod_correct`
-def intMod := intapp .mod Int.emod
+def intMod := intDivMod .mod Int.emod
 
 def intcmp (op : Op) (fn : Int → Int → Bool) (t₁ t₂ : Term) : Term :=
   match t₁, t₂ with

@@ -25,7 +25,7 @@ def resolveLaurel (options : LaurelTranslateOptions) (program : LaurelProgram) :
   let program := { program with
     staticProcedures := coreDefinitionsForLaurel.staticProcedures ++ program.staticProcedures
     types := coreDefinitionsForLaurel.types ++ program.types }
-  let result := resolveWithInferredThrows program (gradualTypes := options.gradualTypes)
+  let result := resolveWithInferredThrows program
     (realizeCoercion := options.realizeCoercion) (toBool := options.toBool)
     (reservedNames := options.reservedNames)
     -- An entry procedure may use a global of a constrained type here. The Laurel pipeline
@@ -40,7 +40,7 @@ def resolveLaurel (options : LaurelTranslateOptions) (program : LaurelProgram) :
   let (eliminated, stackDiags) := eliminateStack result.program (exprReadsHeap result.model.heapReaders)
     (some result.model.heapWriters)
   if !stackDiags.isEmpty then .error (errs ++ stackDiags) else
-  let again := resolveWithInferredThrows eliminated (gradualTypes := options.gradualTypes)
+  let again := resolveWithInferredThrows eliminated
     (realizeCoercion := options.realizeCoercion) (toBool := options.toBool)
     (reservedNames := options.reservedNames) (entryConstrainedGlobals := true)
   let errs' := again.errors.toList

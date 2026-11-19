@@ -63,7 +63,7 @@ mutual
   | .cmd (.cmd c) =>
     let r := π.cmd d c
     (.cmd (.cmd r.1), r.2)
-  | .cmd (.call n args md) => (.cmd (.call n args md), π.reset)
+  | .cmd (.call n tyArgs args md) => (.cmd (.call n tyArgs args md), π.reset)
   | .block l ss md => (.block l (π.stmts d ss).1 md, π.forget d [.block l ss md])
   | .ite c ts es md =>
     (.ite c (π.stmts d ts).1 (π.stmts d es).1 md, π.forget d [.ite c ts es md])

@@ -138,7 +138,7 @@ def wEnv : Imperative.IEnv Expression := .ofStore (fun _ => none) Core.Factory
 
 /-- The counterexample: the call, with an empty oracle. -/
 def wCex : CexA Expression Command :=
-  { cfg := .stmts [.cmd (.call "w" [] md)] wEnv, oracle := [] }
+  { cfg := .stmts [.cmd (.call "w" none [] md)] wEnv, oracle := [] }
 
 /-- The target: the callee's assert. -/
 def wTarget : AssertId Expression := { label := "fail", md := md }
@@ -149,7 +149,7 @@ private theorem wRefRun :
     ∃ evs final, CoreStepStarE wPi (wCex.cfg.abs M0) evs final ∧
       ∃ ev ∈ evs, RefFailure wTarget ev :=
   ⟨_, _, .step _ _ _ _ _ .step_stmts_cons
-    (.step _ _ _ _ _ (.step_seq_inner (.step_cmd (.call_sem (n := "w") (p := wProc)
+    (.step _ _ _ _ _ (.step_seq_inner (.step_cmd (.call_sem (n := "w") (tyArgs := none) (p := wProc)
       (σAO := Calls.withOldSnapshots (Calls.inoutParams wProc.header) emptyStore) rfl
       ⟨[], [], .eval_none, .read_none, ⟨_, _, .init_none, .init_none, rfl⟩⟩
       (.structured (.step _ _ _ _ _ .step_block
@@ -218,7 +218,7 @@ def wcPi : String → Option Procedure := fun n => if n = "wc" then some wcProc 
 
 /-- The counterexample: the call of `wc`, with an empty oracle. -/
 def wcCex : CexA Expression Command :=
-  { cfg := .stmts [.cmd (.call "wc" [] md)] wEnv, oracle := [] }
+  { cfg := .stmts [.cmd (.call "wc" none [] md)] wEnv, oracle := [] }
 
 /-- A bare reference run of `wcCex.cfg`, stopped right after the call, emits the callee's failing
     assertion. -/
@@ -226,7 +226,8 @@ private theorem wcRefRun :
     ∃ evs final, CoreStepStarE wcPi (wcCex.cfg.abs M0) evs final ∧
       ∃ ev ∈ evs, RefFailure wTarget ev :=
   ⟨_, _, .step _ _ _ _ _ .step_stmts_cons
-    (.step _ _ _ _ _ (.step_seq_inner (.step_cmd (.call_sem (n := "wc") (p := wcProc)
+    (.step _ _ _ _ _ (.step_seq_inner (.step_cmd (.call_sem (n := "wc") (tyArgs := none)
+      (p := wcProc)
       (σAO := Calls.withOldSnapshots (Calls.inoutParams wcProc.header) emptyStore) rfl
       ⟨[], [], .eval_none, .read_none, ⟨_, _, .init_none, .init_none, rfl⟩⟩
       (.cfg (.step _ _ _ _ _ (.fetch rfl)

@@ -7,6 +7,7 @@ module
 
 public import Strata.DL.Lambda.TypeFactoryWF
 import all Strata.DL.Lambda.TypeFactoryWF
+import all Strata.DL.Lambda.TypeFactory
 
 /-!
 ## Properties of `Lambda.TypeFactoryWF`
@@ -14,9 +15,15 @@ import all Strata.DL.Lambda.TypeFactoryWF
 - `TypeFactoryWF.eq_of_name_eq` — in a well-formed `TypeFactory` (i.e. one whose
   datatype names are unique), two datatypes drawn from it with the same name are
   equal.
+- `TypeFactoryWF.default` — the empty type factory is well-formed.
 -/
 
 namespace Lambda
+
+/-- The empty type factory is well-formed. -/
+public theorem TypeFactoryWF.default {IDMeta : Type} :
+    TypeFactoryWF (TypeFactory.default : @TypeFactory IDMeta) :=
+  ⟨by simp [TypeFactory.default, TypeFactory.allDatatypes]⟩
 
 /-- Two datatypes in a well-formed `TypeFactory` with the same name are equal. -/
 theorem TypeFactoryWF.eq_of_name_eq {IDMeta : Type} {tf : @TypeFactory IDMeta}

@@ -63,7 +63,7 @@ datatype Tree (a : Type) {
 info: program Core;
 
 type T0;
-type Byte := bv W8;
+type Byte := |bv| W8;
 type IntMap := Map int int;
 type T1 (x : Type);
 type MyMap (a : Type, b : Type);
@@ -337,9 +337,9 @@ procedure P(x: bv W8, step: bv W8, a: int, table: int, total: int, safe: int) {
 /--
 info: program Core;
 
-procedure P (x : bv W8, step : bv W8, a : int, table : int, total : int, safe : int)
+procedure P (x : |bv| W8, step : |bv| W8, a : int, table : int, total : int, safe : int)
 {
-  var r1 : bv W8 := bv8.uShr(x, step);
+  var r1 : |bv| W8 := bv8.uShr(x, step);
   var r2 : int := int.safeDiv(a, table);
   var r3 : int := int.safeMod(a, total);
   var r4 : int := int.add(safe, 1);
@@ -374,7 +374,7 @@ procedure P(x: bv W8, y: bv W8, z: bv W8) {
 /--
 info: program Core;
 
-procedure P (x : bv W8, y : bv W8, z : bv W8)
+procedure P (x : |bv| W8, y : |bv| W8, z : |bv| W8)
 {
   assert [add_comm]: bv8.add(x, y) == bv8.add(y, x);
   assert [xor_cancel]: bv8.xor(x, x) == bv{8}(0);
@@ -386,9 +386,9 @@ procedure P (x : bv W8, y : bv W8, z : bv W8)
   assert [arith_shift]: bv8.sShr(x, y) == bv8.uShr(x, y);
   assert [signed_lt]: bv8.sLt(x, y);
   assert [signed_le]: bv8.sLe(x, y);
-  var xy : bv W16 := bvconcat{8}{8}(x, y);
-  var xy2 : bv W32 := bvconcat{16}{16}(xy, xy);
-  var xy4 : bv W64 := bvconcat{32}{32}(xy2, xy2);
+  var xy : |bv| W16 := bvconcat{8}{8}(x, y);
+  var xy2 : |bv| W32 := bvconcat{16}{16}(xy, xy);
+  var xy4 : |bv| W64 := bvconcat{32}{32}(xy2, xy2);
 };
 -/
 #guard_msgs in
@@ -455,7 +455,7 @@ procedure R(x: bv W8, y: bv W8) {
 /--
 info: program Core;
 
-procedure R (x : bv W8, y : bv W8)
+procedure R (x : |bv| W8, y : |bv| W8)
 {
   assert [s_add]: bv8.safeAdd(x, y) == bv8.safeAdd(x, y);
   assert [s_sub]: bv8.safeSub(x, y) == bv8.safeSub(x, y);
@@ -588,22 +588,22 @@ spec {
 /--
 info: program Core;
 
-procedure find_max (nums : Map (bv W64) (bv W32), nums_len : bv W64, out ret : bv W32)
+procedure find_max (nums : Map (|bv| W64) (|bv| W32), nums_len : |bv| W64, out ret : |bv| W32)
 spec {
   requires [find_max_requires_0]: bv64.uGt(nums_len, bv{64}(0));
-  ensures [find_max_ensures_1]: forall x0 : (bv W64) :: bv64.uLe(bv{64}(0), x0) && bv64.uLt(x0, nums_len) ==> bv32.sGe(ret, nums[x0]);
-  ensures [find_max_ensures_2]: exists x0 : (bv W64) :: bv64.uLe(bv{64}(0), x0) && bv64.uLt(x0, nums_len) && ret == nums[x0];
+  ensures [find_max_ensures_1]: forall x0 : (|bv| W64) :: bv64.uLe(bv{64}(0), x0) && bv64.uLt(x0, nums_len) ==> bv32.sGe(ret, nums[x0]);
+  ensures [find_max_ensures_2]: exists x0 : (|bv| W64) :: bv64.uLe(bv{64}(0), x0) && bv64.uLt(x0, nums_len) && ret == nums[x0];
   } {
-  var max : (bv W32);
-  var i : (bv W64);
+  var max : (|bv| W32);
+  var i : (|bv| W64);
   max := nums[bv{64}(0)];
   i := bv{64}(1);
   while (bv64.uLt(i, nums_len))
   invariant bv64.uGt(nums_len, bv{64}(0))
   invariant bv64.uLe(bv{64}(0), i)
   invariant bv64.uLe(i, nums_len)
-  invariant forall x0 : (bv W64) :: bv64.uLe(bv{64}(0), x0) && bv64.uLt(x0, i) ==> bv32.sGe(max, nums[x0])
-  invariant exists x0 : (bv W64) :: bv64.uLe(bv{64}(0), x0) && bv64.uLt(x0, i) && max == nums[x0]
+  invariant forall x0 : (|bv| W64) :: bv64.uLe(bv{64}(0), x0) && bv64.uLt(x0, i) ==> bv32.sGe(max, nums[x0])
+  invariant exists x0 : (|bv| W64) :: bv64.uLe(bv{64}(0), x0) && bv64.uLt(x0, i) && max == nums[x0]
   {
     if (bv32.sGt(nums[i], max)) {
       max := nums[i];
@@ -1156,11 +1156,11 @@ function g () : bool { frac(1, 2) }
 /--
 info: program Core;
 
-function frac (x : int, y : int) : bool {
+function |frac| (x : int, y : int) : bool {
   true
 }
 function g () : bool {
-  frac(1, 2)
+  |frac|(1, 2)
 }
 -/
 #guard_msgs in

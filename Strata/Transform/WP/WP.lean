@@ -448,7 +448,7 @@ mutual
     let r := match κ with | .top => none | κ => some κ
     return { out := .one (.obls r [(true, l, we, md)]), sk := [.obl l],
              R := Std.HashSet.ofList rd, hasObl := true }
-  | .cmd (.call p _ _) => throw s!"WP: call to '{p}' (run callElim first)"
+  | .cmd (.call p _ _ _) => throw s!"WP: call to '{p}' (run callElim first)"
   | .typeDecl _ _ => pure {}
   | .loop _ _ _ _ _ => throw "WP: loop (run loopElim first)"
   | .ite .nondet _ _ _ => throw "WP: nondeterministic guard (run nondetElim first)"

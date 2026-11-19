@@ -60,18 +60,21 @@ open Lambda in
     of the output type builds constants of that type; it is not a short-circuit function. -/
 private theorem unaryOp_shape {inTy outTy : LMonoTy} {InV OutV : Type} [ToString OutV]
     [LambdaLeanType inTy InV] [LambdaLeanType outTy OutV]
-    {n : CoreLParams.Identifier} {f : InV → OutV} {pre hI hO hp}
+    {n : CoreLParams.Identifier} {f : InV → OutV} {guard pre hI hO hp}
     (hmk : ∀ md (v : OutV), ∃ m c, LambdaLeanType.mkConst (ty := outTy) CoreLParams md v =
       .const m c ∧ c.wt = true ∧ c.ty = outTy := by intro md v; exact ⟨_, _, rfl, rfl, rfl⟩) :
-    EvalShape (unaryOp n f pre hI hO hp).func ∧ SCShape (unaryOp n f pre hI hO hp).func := by
+    EvalShape (unaryOp n f guard pre hI hO hp).func ∧
+      SCShape (unaryOp n f guard pre hI hO hp).func := by
   refine ⟨fun ceval hce md opTy args r h => .inl ?_, fun h => nomatch h⟩
   cases hce
   simp only at h
   split at h
   · split at h
-    · cases h
-      obtain ⟨m, c, h1, h2, h3⟩ := hmk md (f _)
-      exact ⟨m, c, h1, h2, .inl h3⟩
+    · split at h
+      · cases h
+        obtain ⟨m, c, h1, h2, h3⟩ := hmk md (f _)
+        exact ⟨m, c, h1, h2, .inl h3⟩
+      · cases h
     · cases h
   · cases h
 
@@ -85,6 +88,30 @@ private theorem binaryOp_shape {inTy outTy : LMonoTy} {InV OutV : Type} [ToStrin
       .const m c ∧ c.wt = true ∧ c.ty = outTy := by intro md v; exact ⟨_, _, rfl, rfl, rfl⟩) :
     EvalShape (binaryOp n g guard pre hI hO hp).func ∧
       SCShape (binaryOp n g guard pre hI hO hp).func := by
+  refine ⟨fun ceval hce md opTy args r h => .inl ?_, fun h => nomatch h⟩
+  cases hce
+  simp only at h
+  split at h
+  · split at h
+    · split at h
+      · cases h
+        obtain ⟨m, c, h1, h2, h3⟩ := hmk md (g _ _)
+        exact ⟨m, c, h1, h2, .inl h3⟩
+      · cases h
+    · cases h
+  · cases h
+
+open Lambda in
+/-- A `heteroBinaryOp` evaluator returns a constant of its output type, provided the literal builder
+    of the output type builds constants of that type; it is not a short-circuit function. -/
+private theorem heteroBinaryOp_shape {inTy1 inTy2 outTy : LMonoTy} {InV1 InV2 OutV : Type}
+    [ToString OutV] [LambdaLeanType inTy1 InV1] [LambdaLeanType inTy2 InV2]
+    [LambdaLeanType outTy OutV]
+    {n : CoreLParams.Identifier} {g : InV1 → InV2 → OutV} {guard pre hI1 hI2 hO hp}
+    (hmk : ∀ md (v : OutV), ∃ m c, LambdaLeanType.mkConst (ty := outTy) CoreLParams md v =
+      .const m c ∧ c.wt = true ∧ c.ty = outTy := by intro md v; exact ⟨_, _, rfl, rfl, rfl⟩) :
+    EvalShape (heteroBinaryOp n g guard pre hI1 hI2 hO hp).func ∧
+      SCShape (heteroBinaryOp n g guard pre hI1 hI2 hO hp).func := by
   refine ⟨fun ceval hce md opTy args r h => .inl ?_, fun h => nomatch h⟩
   cases hce
   simp only at h
@@ -158,6 +185,7 @@ private theorem all_shape :
     first
     | exact unaryOp_shape
     | exact binaryOp_shape
+    | exact heteroBinaryOp_shape
     | exact shortCircuitOp_shape
     | exact polyLitOp_shape
     | exact unaryOp_shape (inTy := .bitvec _) (outTy := .int) (pre := []) (hI := rfl)

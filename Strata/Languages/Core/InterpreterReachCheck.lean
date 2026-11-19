@@ -568,7 +568,7 @@ theorem eq_ofConst_of_isLitMonoTy {v : SemValue} (h : isLitMonoTy v.sort.toMonoT
   | .cmd (.assert _ e _) => P e
   | .cmd (.cover _ e _) => P e
   | .cmd (.assume _ _ _) => True
-  | .call _ args _ => ∀ e ∈ Calls.getInputExprs args, P e
+  | .call _ _ args _ => ∀ e ∈ Calls.getInputExprs args, P e
 
 mutual
 /-- A statement is in the fragment `P` of expressions: its commands are (`CmdInFragment`), and the
@@ -625,7 +625,7 @@ end
   | .cmd (.assert _ e _) => fe e
   | .cmd (.cover _ e _) => fe e
   | .cmd (.assume _ _ _) => true
-  | .call _ args _ => (Calls.getInputExprs args).all fe
+  | .call _ _ args _ => (Calls.getInputExprs args).all fe
 
 /-- The decision procedure for a deterministic guard in the fragment. -/
 @[expose] def guardInFragment (fe : Expression.Expr → Bool) : ExprOrNondet Expression → Bool
@@ -683,7 +683,7 @@ theorem cmdInFragment_iff (fe : Expression.Expr → Bool) (c : Command) :
     | init _ _ e _ => cases e <;> simp [cmdInFragment, CmdInFragment]
     | set _ e _ => cases e <;> simp [cmdInFragment, CmdInFragment]
     | _ => simp [cmdInFragment, CmdInFragment]
-  | call _ args _ => simp [cmdInFragment, CmdInFragment]
+  | call _ _ args _ => simp [cmdInFragment, CmdInFragment]
 
 /-- `guardInFragment` decides that a deterministic guard satisfies the fragment. -/
 private theorem guardInFragment_iff (fe : Expression.Expr → Bool) (g : ExprOrNondet Expression) :
@@ -1080,7 +1080,7 @@ private theorem evalCommandE_inFragment {F : Expression.Factory} (hF : FragmentF
   | cmd_sem h =>
     rintro rfl hσ hc
     exact evalCmdE_inFragment hF h hσ hc
-  | @call_sem _ _ _ _ _ σF bev _ f _ hπ he _ hx ih =>
+  | @call_sem _ _ _ _ _ _ σF bev _ f _ hπ he _ hx ih =>
     intro hf hσ hc
     subst f
     obtain ⟨hbody, hpre, hpost⟩ := hprocs _ _ hπ

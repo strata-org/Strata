@@ -645,12 +645,6 @@ structure ExternalBackendM (m : Type → Type) [Monad m] [InterpHost m] where
     fun _ => InterpHost.fail ("No ExternalBackend support for valueBool")
   valueString  : ExternalValue → m StringPrimitive :=
     fun _ => InterpHost.fail ("No ExternalBackend support for valueString")
-  /-- Direct truthiness read of a host value using the host language's own
-      coercion rules. Not a type-checked Bool conversion — assertions may
-      consume any host value, so backends decide truthiness (e.g. JS
-      `Boolean(v)`, Python `bool(v)`). -/
-  externalTruthy : ExternalValue → m Bool :=
-    fun _ => InterpHost.stuck ("No ExternalBackend support for externalTruthy")
   enumerate : HighType → m (List Value) :=
     fun _ => InterpHost.fail ("No ExternalBackend support for enumerating a quantifier's values")
   canEnumerate : Bool := false
@@ -659,12 +653,10 @@ structure ExternalBackendM (m : Type → Type) [Monad m] [InterpHost m] where
 
 abbrev ExternalBackend := ExternalBackendM IO
 
-/-- Laurel-owned truthiness. `.external` defers to the backend's
-    `externalTruthy` since only the host knows its own coercion rules;
-    `.int`/`.string` error rather than being coerced. -/
-def isTrue (cfg : ExternalBackendM m) : Value → m Bool
+/-- Laurel-owned truthiness. Every non-`bool` value, `.external` included, is stuck
+    rather than coerced. -/
+def isTrue (_cfg : ExternalBackendM m) : Value → m Bool
   | .bool p     => pure p.b
-  | .external e => cfg.externalTruthy e
   | v           => InterpHost.stuck (s!"expected Bool for truthiness, got: {v.display}")
 
 /-- Structural equality on primitives. External-vs-external comparison

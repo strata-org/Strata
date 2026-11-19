@@ -6,6 +6,7 @@
 module
 
 public import Strata.DL.Imperative.CFG
+public import Strata.Util.Name
 import Std.Data.HashSet
 
 /-! # CFG dominator analysis (generic)
@@ -17,8 +18,8 @@ traversal it builds on (`predMap`, `succMap`, `reversePostorderFrom`) lives in
 `Strata.DL.Imperative.CFG`; this file adds only the dominance layer. The entry
 points (`computeIdoms`, `dominatorsOfIdoms`, `computeDominators`, and the
 post-dominator analysis `computePostIdoms`) are in `Imperative.CFG`, so they
-read as `cfg.computeDominators`; so are `idomsFrom` (the algorithm on any
-successor and predecessor maps) and `freshLabel`. The other helpers are in
+read as `cfg.computeDominators`; so is `idomsFrom` (the algorithm on any
+successor and predecessor maps). The other helpers are in
 `Imperative.CFG.Dom`.
 
 `computeDominators` is not proved to compute true dominance; callers, including
@@ -189,23 +190,15 @@ def computeDominators (cfg : CFG String (DetBlock String CmdT P)) :
     Std.HashMap String (List String) :=
   cfg.dominatorsOfIdoms cfg.computeIdoms
 
-/-- A label not in `labels`: `base`, extended by underscores until it is none of them. The
-fuel, `labels.length`, suffices: of the `labels.length + 1` candidates, at most
-`labels.length` are taken. -/
-def freshLabel (labels : List String) (base : String) : String :=
-  let rec go : Nat → String → String
-    | 0, l => l
-    | n + 1, l => if labels.contains l then go n (l ++ "_") else l
-  go labels.length base
-
 /-- The immediate post-dominator of each block of `cfg` from which a `finish` block is
 reachable: `some l` when it is the block `l`, and `none` when it is the end of the procedure
 (no other block lies on every path from the block to a `finish`). Blocks from which no
 `finish` is reachable are absent.
 
 The post-dominators are the dominators of the reversed graph from one added node (the end,
-labelled by `freshLabel`) that every `finish` block jumps to: `idomsFrom` over the reversed
-edges, as `computeIdoms` over the edges.
+labelled by `Strata.Name.freshName`, distinct from every block label and branch target) that every
+`finish` block jumps to: `idomsFrom` over the reversed edges, as `computeIdoms` over the
+edges.
 
 Like `computeDominators`, this is not proved to compute true post-dominance: no theorem states
 that every path from a block to a `finish` passes through its immediate post-dominator. The
@@ -213,14 +206,16 @@ evidence is a differential test against the textbook set-dataflow fixpoint
 (`StrataTest/Languages/Core/Tests/SymExecCFGTest.lean`). -/
 def computePostIdoms (cfg : CFG String (DetBlock String CmdT P)) :
     Std.HashMap String (Option String) := Id.run do
-  let exit := freshLabel cfg.labels "$__exit"
+  let preds := cfg.predMap
+  -- The keys of `preds` are every block label and every branch target.
+  let exit := Strata.Name.freshName (.ofList preds.keys) "$__exit"
   let finishes := cfg.blocks.filterMap fun (l, b) =>
     match b.transfer with
     | .finish _ => some l
     | .condGoto .. => none
   -- Reversed edges: a block's successors are its predecessors, and the end's are the
   -- `finish` blocks.
-  let rsuccs := cfg.predMap.insert exit finishes
+  let rsuccs := preds.insert exit finishes
   let mut rpreds := cfg.succMap.insert exit []
   for l in finishes do
     rpreds := rpreds.insert l (exit :: rpreds.getD l [])

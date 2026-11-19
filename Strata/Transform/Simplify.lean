@@ -154,12 +154,12 @@ def simpStmt (ctx : Ctx) (s : Statement) : List Statement × Ctx × (Writes → 
   | .cmd (.cmd c) =>
     let (c, ctx) := simpCmd ctx c
     ([.cmd (.cmd c)], ctx, .insertStmt s)
-  | .cmd (.call pname args md) =>
+  | .cmd (.call pname tyArgs args md) =>
     let args := args.map fun a =>
       match a with
       | .inArg e => CallArg.inArg (simplifyExpr ctx e)
       | other => other
-    ([Statement.call pname args md], forgetAssigned ctx [s], .insertStmt s)
+    ([Statement.call pname tyArgs args md], forgetAssigned ctx [s], .insertStmt s)
   | .block label ss md =>
     let (ss, inner, w) := simpStmts ctx ss
     -- Declarations inside the block leave scope with it; values that were known
@@ -460,6 +460,53 @@ def programFactory (p : Program) : Transform.CoreTransformM (Lambda.Factory Core
   F := Lambda.Factory.ofArray (F.toArray.map override)
   return declared.foldl Lambda.Factory.pushIfNew F
 
+/-- The live set of a procedure's final sweep: its outputs and the free variables of its
+    contract. -/
+def procLive (proc : Procedure) : Std.HashSet String :=
+  let specNames := ((Procedure.Spec.getCheckExprs
+    (proc.spec.preconditions ++ proc.spec.postconditions)).flatMap HasFvars.getFvars).map (·.name)
+  (proc.header.outputs.keys.map (·.name) ++ specNames).foldl
+    (fun (s : Std.HashSet String) n => s.insert n) {}
+
+/-- A body rewritten and swept as `simplifyProcedure` does. -/
+def sweptBody (base : Ctx) (proc : Procedure) (ss : List Statement) : List Statement :=
+  let ss' := (simpStmts base ss).1
+  dropDeadDefs base.factory (Defined.ofParams proc.header.inputs ss') (procLive proc) ss'
+
+/-- The simplified body `out` of `ss` is def-use well-formed from the variables `ss` reads or
+    writes without declaring, with the functions of `F` declared. The names `ss` declares and
+    its entry variables are kept in hash sets, since the check looks up every variable
+    occurrence. Every free-variable type annotation in `out` must also agree with its
+    declaration in scope or, for a variable `ss` reads without declaring, with its
+    annotation in `ss` (`Block.annotsAgreeB`), whose typing is built once in a hash map. Both
+    conjuncts are checked rather than
+    proved: proofs that Simplify's output is def-use well-formed and keeps annotations
+    agreeing would remove them. -/
+@[expose] def gateOK (F : Lambda.Factory CoreLParams) (ss out : List Statement) : Bool :=
+  let defs : Std.HashSet CoreIdent :=
+    Std.HashSet.ofList (Imperative.Block.definedVars (P := Expression) (C := Command) ss false)
+  let entry : Std.HashSet CoreIdent := Std.HashSet.ofList
+    ((Imperative.Block.touchedVars (P := Expression) (C := Command) ss).filter
+      (!defs.contains ·))
+  Imperative.Block.defUseWellFormedHashed (P := Expression) (C := Command) {}
+    (fun x : CoreIdent => entry.contains x) (fun f => decide (f.name ∈ F)) out &&
+  Imperative.Block.annotsAgreeHashed (P := Expression) (C := Command) ss out
+
+/-- The body `simplifyProcedure` installs: the swept body when it passes `gateOK`, the
+    original otherwise. On a body that fails, Simplify leaves it unchanged rather than
+    produce one whose entry well-formedness is not established. -/
+def checkedBody (base : Ctx) (proc : Procedure) (ss : List Statement) : List Statement :=
+  let out := sweptBody base proc ss
+  if gateOK base.factory ss out then out else ss
+
+/-- The procedure with its preconditions and postconditions simplified from `base`. -/
+def simplifySpec (base : Ctx) (proc : Procedure) : Procedure :=
+  let simpCheck (c : Procedure.Check) : Procedure.Check :=
+    { c with expr := simplifyExpr base c.expr }
+  { proc with spec := { proc.spec with
+    preconditions := proc.spec.preconditions.map (fun (l, c) => (l, simpCheck c))
+    postconditions := proc.spec.postconditions.map (fun (l, c) => (l, simpCheck c)) } }
+
 /-- Simplify a procedure's specification and body.
 
     A parameter has no known value, so nothing is substituted for it. The
@@ -473,21 +520,19 @@ def programFactory (p : Program) : Transform.CoreTransformM (Lambda.Factory Core
     dropped. The input parameters the body never writes are definitely defined
     throughout it (`Defined.ofParams`). -/
 def simplifyProcedure (base : Ctx) (proc : Procedure) : Procedure :=
-  let simpCheck (c : Procedure.Check) : Procedure.Check :=
-    { c with expr := simplifyExpr base c.expr }
-  let proc := { proc with spec := { proc.spec with
-    preconditions := proc.spec.preconditions.map (fun (l, c) => (l, simpCheck c))
-    postconditions := proc.spec.postconditions.map (fun (l, c) => (l, simpCheck c)) } }
+  let proc := simplifySpec base proc
   match proc.body with
   | .cfg _ => proc
-  | .structured ss =>
-    let (ss, _, _) := simpStmts base ss
-    let specNames := ((proc.spec.preconditions ++ proc.spec.postconditions).flatMap
-      (fun (_, c) => HasFvars.getFvars c.expr)).map (·.name)
-    let live := (proc.header.outputs.keys.map (·.name) ++ specNames).foldl
-      (fun (s : Std.HashSet String) n => s.insert n) {}
-    { proc with body :=
-      .structured (dropDeadDefs base.factory (Defined.ofParams proc.header.inputs ss) live ss) }
+  | .structured ss => { proc with body := .structured (checkedBody base proc ss) }
+
+/-- Whether Simplify keeps a procedure's original body: its simplified body, swept with the
+    liveness of the simplified specification as `simplifyProcedure` sweeps it, fails the
+    def-use check (`gateOK`). -/
+def bodyFallsBack (base : Ctx) (proc : Procedure) : Bool :=
+  let proc := simplifySpec base proc
+  match proc.body with
+  | .cfg _ => false
+  | .structured ss => !gateOK base.factory ss (sweptBody base proc ss)
 
 /-- Simplify a lemma's formula under its outer universal quantifiers.
 
@@ -506,11 +551,15 @@ where
       .quant m .all name ty tr (underBinder ty body fun b => go n b.val).fst
     | _, e => simplifyExpr base e
 
+/-- The context the phase simplifies the program `p` from. -/
+def baseCtx (p : Program) : Transform.CoreTransformM Ctx := do
+  return Ctx.ofFactory (← programFactory p) (lambdaCarriers p)
+
 /-- Simplify every procedure and lemma in a program. The context, and with it the folding factory,
     is built once and shared by every procedure, specification clause and lemma. The flag
     says whether the program changed, so a caller can iterate to a fixpoint. -/
 def runSimplify (p : Program) : Transform.CoreTransformM (Bool × Program) := do
-  let base := Ctx.ofFactory (← programFactory p) (lambdaCarriers p)
+  let base ← baseCtx p
   let decls := p.decls.map fun decl =>
     match decl with
     | .proc proc md => .proc (simplifyProcedure base proc) md

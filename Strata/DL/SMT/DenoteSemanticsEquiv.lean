@@ -13,8 +13,8 @@ This file bridges the two SMT-term denotations Strata carries:
   restricted-fragment semantics. It denotes a term gated on a `Term.typeCheck tyctx tm = .ok τ`
   proof, into `TermType.denoteTyped σ SmtArrayTheory τ` (bool ↦ `Bool`).
 * `denoteTerm` (`Strata.DL.SMT.Denote`) — the *partial* (`Option`) semantics, which denotes
-  bool ↦ `Prop`, uses positional list environments, and interprets `div`/`mod` with
-  Lean's total `/`,`%`.
+  bool ↦ `Prop`, uses positional list environments, and reads `div`/`mod` at a zero divisor
+  from the input's `divByZero`/`modByZero`.
 
 The headline result (`Term.denoteTyped_denoteTerm_agree`) says: under `EnvCorr`-related environments (the
 correspondence between the typed and positional-list environments), on any `Term.typeCheck`-well-typed term
@@ -25,8 +25,8 @@ returns `none` for `distinct` nodes, the statement is conditioned on `denoteTerm
 construct is covered vacuously. Its companion `Term.denoteTypedArgs_denoteTerms_agree` (proved mutually)
 extends the same agreement to argument lists via the pointwise relation `ArgsEquiv`.
 
-Div/mod agree only when `Term.denoteTyped`'s parameters are pinned to Lean's total behavior, so the
-theorem fixes `divByZero := fun _ => 0` and `modByZero := id`. Array theory treatments agree only when
+Div/mod agree when both denotations choose the same values at a zero divisor, which `EnvCorr` requires
+(`EnvCorr.hdz`, `EnvCorr.hmz`). Array theory treatments agree only when
 `Term.denoteTyped`'s `ArrayTheory` parameter is pinned to `SmtArray`.
 -/
 
@@ -43,7 +43,7 @@ import all Strata.DL.SMT.SmtArray
 
 namespace Strata.SMT.DenoteTyped
 
-variable {σ : SortInterp}
+variable {σ : SortInterp} {dz mz : Int → Int}
 
 /- ═══════════════════════════════════════════════════════════════════════════
    Sort denotation reductions
@@ -238,8 +238,8 @@ def ArgsValEquiv {sctx : SortContext} (sdi : SortDenoteInput sctx) :
   | _,          _,          _       => False
 
 /-- Correspondence between the typed denotation environments and a `denoteTerm` input `tdi`. -/
-structure EnvCorr {ctx : Context} (ufInterp : UFInterp σ SmtArrayTheory) (env : VarEnv σ SmtArrayTheory)
-    (tdi : TermDenoteInput ctx) : Prop where
+structure EnvCorr {ctx : Context} (divByZero modByZero : Int → Int) (ufInterp : UFInterp σ SmtArrayTheory)
+    (env : VarEnv σ SmtArrayTheory) (tdi : TermDenoteInput ctx) : Prop where
   /-- The environments agree on every variable entry that is not shadowed. -/
   hvar : ∀ (i : Nat) (hi : i < tdi.tΓ.vs.length),
     ctx.tctx.vs.findIdx? (· == (tdi.tΓ.vs[i]'hi).var) = some i →
@@ -264,6 +264,10 @@ structure EnvCorr {ctx : Context} (ufInterp : UFInterp σ SmtArrayTheory) (env :
             (h : (denoteSort ctx.sctx (.constr id args)).isSome),
             TermType.denoteTyped σ SmtArrayTheory (.constr id args)
               = (denoteSort ctx.sctx (.constr id args)).get h ⟨tdi.sΓ, tdi.hsΓ⟩
+  /-- Both denotations give integer `div` at a zero divisor the same value. -/
+  hdz : tdi.divByZero = divByZero
+  /-- Both denotations give integer `mod` at a zero divisor the same value. -/
+  hmz : tdi.modByZero = modByZero
 
 /-- Build `ValEquiv` at `bool` from an iff, given the raw denote value is `HEq` to a genuine `Prop`. -/
 private theorem ValEquiv_bool_mk {σ : SortInterp} {sctx : SortContext} {b : TermType.denoteTyped σ SmtArrayTheory (.prim .bool)} {h sdi} {g} {P : Prop}
@@ -748,13 +752,6 @@ private theorem denoteTerm_gt (ctx : Context) (t1 t2 : Term) (rty : TermType) :
       = (denoteTerms ctx [t1, t2]).bind (chainable ctx (.prim .int) rfl (fun _ => @GT.gt Int _)) := by
   rfl
 
-/-- Unfolding lemma for `denoteTerm` on int `div`. -/
-private theorem denoteTerm_div (ctx : Context) (t1 t2 : Term) (rty : TermType) :
-    denoteTerm ctx (.app (.num .div) [t1, t2] rty)
-      = (denoteTerms ctx [t1, t2]).bind
-          (leftAssoc ctx (.prim .int) rfl (fun _ => @HDiv.hDiv Int Int Int _)) := by
-  rfl
-
 /-- Unfolding lemma for `denoteTerm` on `not`, exposing the monadic bind on the argument. -/
 private theorem denoteTerm_not (ctx : Context) (t : Term) (rty : TermType) :
     denoteTerm ctx (.app (.core .not) [t] rty)
@@ -773,16 +770,16 @@ private theorem smt_combine_reindex_forall {tyctx : TypedContext}
     (body : Term) (hbody : Term.typeCheck tyctx body = .ok .bool) :
     (∀ ext : VarEnv σ SmtArrayTheory,
         Term.denoteTyped ufInterp (fun v => if v ∈ v0 :: rest then ext v else env v)
-          (fun _ => 0) id body .bool hbody = true)
+          dz mz body .bool hbody = true)
       ↔ (∀ (a : TermType.denoteTyped σ SmtArrayTheory v0.ty) (ext : VarEnv σ SmtArrayTheory),
           Term.denoteTyped ufInterp
             (fun v => if v ∈ rest then ext v else (if hv : v = v0 then hv ▸ a else env v))
-            (fun _ => 0) id body .bool hbody = true) := by
+            dz mz body .bool hbody = true) := by
   constructor
   · intro h a ext
     by_cases hv0 : v0 ∈ rest
     · rw [Term.denoteTyped_env_congr ufInterp _ (fun v => if v ∈ v0 :: rest then ext v else env v)
-            (fun _ => 0) id body .bool hbody ?_]
+            dz mz body .bool hbody ?_]
       · exact h ext
       · funext v
         by_cases hvv0 : v = v0
@@ -790,7 +787,7 @@ private theorem smt_combine_reindex_forall {tyctx : TypedContext}
         · by_cases hvr : v ∈ rest <;> simp_all [List.mem_cons]
     · rw [Term.denoteTyped_env_congr ufInterp _
             (fun v => if v ∈ v0 :: rest then (fun w => if hw : w = v0 then hw ▸ a else ext w) v else env v)
-            (fun _ => 0) id body .bool hbody ?_]
+            dz mz body .bool hbody ?_]
       · exact h (fun w => if hw : w = v0 then hw ▸ a else ext w)
       · funext v
         by_cases hvv0 : v = v0
@@ -799,7 +796,7 @@ private theorem smt_combine_reindex_forall {tyctx : TypedContext}
   · intro h ext
     rw [Term.denoteTyped_env_congr ufInterp _
           (fun v => if v ∈ rest then ext v else (if hv : v = v0 then hv ▸ ext v0 else env v))
-          (fun _ => 0) id body .bool hbody ?_]
+          dz mz body .bool hbody ?_]
     · exact h (ext v0) ext
     · funext v
       by_cases hvv0 : v = v0
@@ -814,16 +811,16 @@ private theorem smt_combine_reindex_exists {tyctx : TypedContext}
     (body : Term) (hbody : Term.typeCheck tyctx body = .ok .bool) :
     (∃ ext : VarEnv σ SmtArrayTheory,
         Term.denoteTyped ufInterp (fun v => if v ∈ v0 :: rest then ext v else env v)
-          (fun _ => 0) id body .bool hbody = true)
+          dz mz body .bool hbody = true)
       ↔ (∃ (a : TermType.denoteTyped σ SmtArrayTheory v0.ty) (ext : VarEnv σ SmtArrayTheory),
           Term.denoteTyped ufInterp
             (fun v => if v ∈ rest then ext v else (if hv : v = v0 then hv ▸ a else env v))
-            (fun _ => 0) id body .bool hbody = true) := by
+            dz mz body .bool hbody = true) := by
   constructor
   · rintro ⟨ext, h⟩
     refine ⟨ext v0, ext, ?_⟩
     rw [Term.denoteTyped_env_congr ufInterp _ (fun v => if v ∈ v0 :: rest then ext v else env v)
-          (fun _ => 0) id body .bool hbody ?_]
+          dz mz body .bool hbody ?_]
     · exact h
     · funext v
       by_cases hvv0 : v = v0
@@ -834,7 +831,7 @@ private theorem smt_combine_reindex_exists {tyctx : TypedContext}
     · refine ⟨ext, ?_⟩
       rw [Term.denoteTyped_env_congr ufInterp _
             (fun v => if v ∈ rest then ext v else (if hv : v = v0 then hv ▸ a else env v))
-            (fun _ => 0) id body .bool hbody ?_]
+            dz mz body .bool hbody ?_]
       · exact h
       · funext v
         by_cases hvv0 : v = v0
@@ -843,7 +840,7 @@ private theorem smt_combine_reindex_exists {tyctx : TypedContext}
     · refine ⟨fun w => if hw : w = v0 then hw ▸ a else ext w, ?_⟩
       rw [Term.denoteTyped_env_congr ufInterp _
             (fun v => if v ∈ rest then ext v else (if hv : v = v0 then hv ▸ a else env v))
-            (fun _ => 0) id body .bool hbody ?_]
+            dz mz body .bool hbody ?_]
       · exact h
       · funext v
         by_cases hvv0 : v = v0
@@ -893,8 +890,8 @@ private theorem tdi_transport_app {sctx : SortContext} {ufs' : UFContext}
 /-- `EnvCorr` transports along a body-context list equality. -/
 private theorem envcorr_transport {sctx : SortContext} {ufs' : UFContext}
     {L1 L2 : List TermVar} (h : L1 = L2) (ufInterp : UFInterp σ SmtArrayTheory) (env : VarEnv σ SmtArrayTheory)
-    (t : TermDenoteInput ⟨sctx, ⟨L2, ufs'⟩⟩) (he : EnvCorr ufInterp env t) :
-    EnvCorr ufInterp env (h ▸ t) := by
+    (t : TermDenoteInput ⟨sctx, ⟨L2, ufs'⟩⟩) (he : EnvCorr dz mz ufInterp env t) :
+    EnvCorr dz mz ufInterp env (h ▸ t) := by
   subst h; exact he
 
 /-- **Universal-quantifier body agreement.** Given that the body denotes agreeably under every
@@ -903,16 +900,16 @@ private theorem envcorr_transport {sctx : SortContext} {ufs' : UFContext}
 private theorem buildForall_agree {tyctx : TypedContext}
     (ufInterp : UFInterp σ SmtArrayTheory) (body : Term) (hbody : Term.typeCheck tyctx body = .ok .bool) :
     ∀ (vs : List TermVar) {ctx : Context} (env : VarEnv σ SmtArrayTheory) (tdi : TermDenoteInput ctx)
-      (_hEnv : EnvCorr ufInterp env tdi)
+      (_hEnv : EnvCorr dz mz ufInterp env tdi)
       (hTys : (denoteFunSort ctx.sctx (vs.map (·.ty)) (.prim .bool)).isSome)
       (bodyFt : TermDenoteInput ⟨ctx.sctx, ⟨vs.reverse ++ ctx.tctx.vs, ctx.tctx.ufs⟩⟩ → Prop)
       (_hbiff : ∀ (env' : VarEnv σ SmtArrayTheory)
           (tdi' : TermDenoteInput ⟨ctx.sctx, ⟨vs.reverse ++ ctx.tctx.vs, ctx.tctx.ufs⟩⟩),
-          EnvCorr ufInterp env' tdi' →
-          (Term.denoteTyped ufInterp env' (fun _ => 0) id body .bool hbody = true ↔ bodyFt tdi')),
+          EnvCorr dz mz ufInterp env' tdi' →
+          (Term.denoteTyped ufInterp env' dz mz body .bool hbody = true ↔ bodyFt tdi')),
       (∀ ext : VarEnv σ SmtArrayTheory,
           Term.denoteTyped ufInterp (fun v => if v ∈ vs then ext v else env v)
-            (fun _ => 0) id body .bool hbody = true)
+            dz mz body .bool hbody = true)
         ↔ buildForall ctx vs hTys bodyFt tdi := by
   intro vs
   induction vs with
@@ -921,11 +918,11 @@ private theorem buildForall_agree {tyctx : TypedContext}
     constructor
     · intro h
       have h0 := h env
-      rw [Term.denoteTyped_env_congr ufInterp _ env (fun _ => 0) id body .bool hbody
+      rw [Term.denoteTyped_env_congr ufInterp _ env dz mz body .bool hbody
             (by funext v; simp)] at h0
       exact (hbiff env tdi hEnv).mp h0
     · intro h ext
-      rw [Term.denoteTyped_env_congr ufInterp _ env (fun _ => 0) id body .bool hbody
+      rw [Term.denoteTyped_env_congr ufInterp _ env dz mz body .bool hbody
             (by funext v; simp)]
       exact (hbiff env tdi hEnv).mpr h
   | cons v0 rest ih =>
@@ -937,7 +934,7 @@ private theorem buildForall_agree {tyctx : TypedContext}
       case extEnv =>
         -- `EnvCorr` for the `bindForallVar`-extended input `tdi' x`.
         -- `hsort` transfers verbatim (same `sctx`/`sΓ`). Two obligations remain.
-        refine ⟨?_, ?_, hEnv.hsort⟩
+        refine ⟨?_, ?_, hEnv.hsort, hEnv.hdz, hEnv.hmz⟩
         · intro i hi hfind
           match i, hi, hfind with
           | 0, _, _ =>
@@ -979,16 +976,16 @@ private theorem buildForall_agree {tyctx : TypedContext}
 private theorem buildExists_agree {tyctx : TypedContext}
     (ufInterp : UFInterp σ SmtArrayTheory) (body : Term) (hbody : Term.typeCheck tyctx body = .ok .bool) :
     ∀ (vs : List TermVar) {ctx : Context} (env : VarEnv σ SmtArrayTheory) (tdi : TermDenoteInput ctx)
-      (_hEnv : EnvCorr ufInterp env tdi)
+      (_hEnv : EnvCorr dz mz ufInterp env tdi)
       (hTys : (denoteFunSort ctx.sctx (vs.map (·.ty)) (.prim .bool)).isSome)
       (bodyFt : TermDenoteInput ⟨ctx.sctx, ⟨vs.reverse ++ ctx.tctx.vs, ctx.tctx.ufs⟩⟩ → Prop)
       (_hbiff : ∀ (env' : VarEnv σ SmtArrayTheory)
           (tdi' : TermDenoteInput ⟨ctx.sctx, ⟨vs.reverse ++ ctx.tctx.vs, ctx.tctx.ufs⟩⟩),
-          EnvCorr ufInterp env' tdi' →
-          (Term.denoteTyped ufInterp env' (fun _ => 0) id body .bool hbody = true ↔ bodyFt tdi')),
+          EnvCorr dz mz ufInterp env' tdi' →
+          (Term.denoteTyped ufInterp env' dz mz body .bool hbody = true ↔ bodyFt tdi')),
       (∃ ext : VarEnv σ SmtArrayTheory,
           Term.denoteTyped ufInterp (fun v => if v ∈ vs then ext v else env v)
-            (fun _ => 0) id body .bool hbody = true)
+            dz mz body .bool hbody = true)
         ↔ buildExists ctx vs hTys bodyFt tdi := by
   intro vs
   induction vs with
@@ -996,12 +993,12 @@ private theorem buildExists_agree {tyctx : TypedContext}
     intro ctx env tdi hEnv hTys bodyFt hbiff
     constructor
     · rintro ⟨ext, h⟩
-      rw [Term.denoteTyped_env_congr ufInterp _ env (fun _ => 0) id body .bool hbody
+      rw [Term.denoteTyped_env_congr ufInterp _ env dz mz body .bool hbody
             (by funext v; simp)] at h
       exact (hbiff env tdi hEnv).mp h
     · intro h
       refine ⟨env, ?_⟩
-      rw [Term.denoteTyped_env_congr ufInterp _ env (fun _ => 0) id body .bool hbody
+      rw [Term.denoteTyped_env_congr ufInterp _ env dz mz body .bool hbody
             (by funext v; simp)]
       exact (hbiff env tdi hEnv).mpr h
   | cons v0 rest ih =>
@@ -1011,7 +1008,7 @@ private theorem buildExists_agree {tyctx : TypedContext}
     · intro a x hax
       refine ih (fun v => if hv : v = v0 then hv ▸ a else env v) _ ?extEnv _ _ ?hbiff'
       case extEnv =>
-        refine ⟨?_, ?_, hEnv.hsort⟩
+        refine ⟨?_, ?_, hEnv.hsort, hEnv.hdz, hEnv.hmz⟩
         · intro i hi hfind
           match i, hi, hfind with
           | 0, _, _ =>
@@ -1057,20 +1054,18 @@ mutual
     (`Term.typeCheck tyctx tm = .ok τ`) that `denoteTerm` also interprets (`denoteTerm ctx tm = some res`),
     the total typed denotation `Term.denoteTyped` and the partial `denoteTerm` agree: they assign the same
     sort (`τ = res.ty`), and the two values are related by the `ValEquiv` logical relation (which at `bool`
-    is the Bool-reflects-Prop correspondence). Assumes the environments correspond (`EnvCorr`), and pins
-    `divByZero`/`modByZero` to `fun _ => 0`/`id` and the array theory to `SmtArrayTheory` so the zero-divisor
-    and array cases coincide with `denoteTerm`. -/
+    is the Bool-reflects-Prop correspondence). Assumes the environments correspond (`EnvCorr`,
+    which includes agreeing on `div`/`mod` at a zero divisor), and pins the array theory to
+    `SmtArrayTheory` so the array cases coincide with `denoteTerm`. -/
 theorem Term.denoteTyped_denoteTerm_agree
     {ctx : Context} {ufInterp : UFInterp σ SmtArrayTheory} {env : VarEnv σ SmtArrayTheory} {tdi : TermDenoteInput ctx}
-    (hEnv : EnvCorr ufInterp env tdi)
+    (hEnv : EnvCorr dz mz ufInterp env tdi)
     {tyctx : TypedContext}
     (tm : Term) (τ : TermType) (htc : Term.typeCheck tyctx tm = .ok τ)
     (res : TermDenoteResult ctx) (hden : denoteTerm ctx tm = some res) :
     ∃ (hty : τ = res.ty),
       ValEquiv ctx.sctx res.ty
-        -- `(fun _ => 0)` and `id` pin `divByZero`/`modByZero` to the values `denoteTerm` uses
-        -- (Lean's total `/`,`%`: `x / 0 = 0`, `x % 0 = x`), so the zero-divisor cases coincide.
-        (hty ▸ Term.denoteTyped ufInterp env (fun _ => 0) id tm τ htc)
+        (hty ▸ Term.denoteTyped ufInterp env dz mz tm τ htc)
         res.h ⟨tdi.sΓ, tdi.hsΓ⟩ (res.res tdi) := by
   cases tm with
   | prim p =>
@@ -1134,7 +1129,7 @@ theorem Term.denoteTyped_denoteTerm_agree
           eq_of_beq (List.getElem_of_findIdx?_eq_some hfi)
         have hvarv : (tdi.tΓ.vs[i]'hivΓ).var = v := (tdi.htΓ.hv.ha i hi).symm.trans hiv
         have hvar := hEnv.hvar i hivΓ (by rw [hvarv]; exact hfi)
-        have hsmt : Term.denoteTyped ufInterp env (fun _ => 0) id (.var v) v.ty htc = env v := by
+        have hsmt : Term.denoteTyped ufInterp env dz mz (.var v) v.ty htc = env v := by
           apply eq_of_heq
           unfold Term.denoteTyped
           obtain ⟨hmem, heq⟩ := Term.typeCheck_var_inv htc
@@ -1167,7 +1162,7 @@ theorem Term.denoteTyped_denoteTerm_agree
       simp only [denoteTerm, hdt, bind, Option.bind, Option.pure_def, Option.some.injEq] at hden
       subst hden
       refine ⟨(Term.typeCheck_some_inv htc).2.2, ?_⟩
-      rw [Term.denoteTyped_some ufInterp env (fun _ => 0) id t τ htc,
+      rw [Term.denoteTyped_some ufInterp env dz mz t τ htc,
         denoteTyped_eqRec_eq_cast]
       simp only [ValEquiv, cast_cast, cast_eq, cast_eqRec_self]
       exact hrel_t
@@ -1203,20 +1198,20 @@ theorem Term.denoteTyped_denoteTerm_agree
                 have hufeq : (tdi.tΓ.ufs[i]'hi_ufs).uf = f :=
                   (tdi.htΓ.huf.ha i hi_ctx).symm.trans hidx
                 have argsrel : ArgsEquiv tdi f.args
-                    (Term.denoteTypedArgs ufInterp env (fun _ => 0) id args f.args hargs) as :=
+                    (Term.denoteTypedArgs ufInterp env dz mz args f.args hargs) as :=
                   Term.denoteTypedArgs_denoteTerms_agree hEnv args f.args hargs as hda
-                rw [Term.denoteTyped_uf ufInterp env (fun _ => 0) id f args rty f.out htc hargs rfl]
+                rw [Term.denoteTyped_uf ufInterp env dz mz f args rty f.out htc hargs rfl]
                 simp only [cast_eq]
                 apply uf_ValEquiv_transport ufInterp f (tdi.tΓ.ufs[i]'hi_ufs).uf hufeq
-                  (Term.denoteTypedArgs ufInterp env (fun _ => 0) id args f.args hargs) as hTys
+                  (Term.denoteTypedArgs ufInterp env dz mz args f.args hargs) as hTys
                   (tdi.tΓ.ufs[i]'hi_ufs).h (tdi.tΓ.ufs[i]'hi_ufs).ufΓ hufas
                   (by rw [hufeq])
                 exact hEnv.huf i hi_ufs
-                  (hufeq.symm ▸ (Term.denoteTypedArgs ufInterp env (fun _ => 0) id args f.args hargs))
+                  (hufeq.symm ▸ (Term.denoteTypedArgs ufInterp env dz mz args f.args hargs))
                   (as.map (fun a => ⟨a.ty, a.h, a.res tdi⟩))
                   (hufeq.symm ▸ argTypesAlign_to_valTypesAlign tdi as f.args hufas)
                   (hufeq.symm ▸ argsRel_to_argsValEquiv tdi f.args
-                    (Term.denoteTypedArgs ufInterp env (fun _ => 0) id args f.args hargs) as argsrel)
+                    (Term.denoteTypedArgs ufInterp env dz mz args f.args hargs) as argsrel)
               · simp at hden
           · simp at hden
         · simp at hden
@@ -1237,14 +1232,14 @@ theorem Term.denoteTyped_denoteTerm_agree
             subst hden
             refine ⟨rfl, ?_⟩
             simp only [ValEquiv, PrimValEquiv] at hrel ⊢
-            rw [Term.denoteTyped_not ufInterp env (fun _ => 0) id t rty .bool htc, cast_eq]
+            rw [Term.denoteTyped_not ufInterp env dz mz t rty .bool htc, cast_eq]
             have hc : toTVal ctx.sctx (.prim .bool) ah ⟨tdi.sΓ, tdi.hsΓ⟩ (af tdi) = af tdi :=
               eq_of_heq (by simp only [toTVal]; exact cast_heq _ _)
             rw [hc] at hrel
             rw [show toTVal ctx.sctx (.prim .bool) ah ⟨tdi.sΓ, tdi.hsΓ⟩ (¬ af tdi) = ¬ af tdi from
               eq_of_heq (by simp only [toTVal]; exact cast_heq _ _)]
             rw [← hrel]
-            cases Term.denoteTyped ufInterp env (fun _ => 0) id t .bool (Term.typeCheck_not_inv htc).1 <;> simp
+            cases Term.denoteTyped ufInterp env dz mz t .bool (Term.typeCheck_not_inv htc).1 <;> simp
         | [], htc => simp only [Term.typeCheck, reduceCtorEq] at htc
         | _ :: _ :: _, htc => simp only [Term.typeCheck, reduceCtorEq] at htc
       | and =>
@@ -1274,14 +1269,14 @@ theorem Term.denoteTyped_denoteTerm_agree
               subst hden
               refine ⟨rfl, ?_⟩
               simp only [ValEquiv, PrimValEquiv] at hrel1 hrel2 ⊢
-              rw [Term.denoteTyped_and ufInterp env (fun _ => 0) id t1 t2 rty .bool htc, cast_eq]
+              rw [Term.denoteTyped_and ufInterp env dz mz t1 t2 rty .bool htc, cast_eq]
               rw [show toTVal ctx.sctx (.prim .bool) ah1 ⟨tdi.sΓ, tdi.hsΓ⟩ (af1 tdi) = af1 tdi from
                     eq_of_heq (by simp only [toTVal]; exact cast_heq _ _)] at hrel1
               rw [show toTVal ctx.sctx (.prim .bool) ah2 ⟨tdi.sΓ, tdi.hsΓ⟩ (af2 tdi) = af2 tdi from
                     eq_of_heq (by simp only [toTVal]; exact cast_heq _ _)] at hrel2
-              have hkey1 : (Term.denoteTyped ufInterp env (fun _ => 0) id t1 .bool
+              have hkey1 : (Term.denoteTyped ufInterp env dz mz t1 .bool
                   (Term.typeCheck_boolBin_inv htc (.inl rfl)).1 = true) ↔ af1 tdi := hrel1
-              have hkey2 : (Term.denoteTyped ufInterp env (fun _ => 0) id t2 .bool
+              have hkey2 : (Term.denoteTyped ufInterp env dz mz t2 .bool
                   (Term.typeCheck_boolBin_inv htc (.inl rfl)).2.1 = true) ↔ af2 tdi := hrel2
               rw [show toTVal ctx.sctx (.prim .bool) _ ⟨tdi.sΓ, tdi.hsΓ⟩ (af1 tdi ∧ af2 tdi)
                     = (af1 tdi ∧ af2 tdi) from eq_of_heq (by simp only [toTVal]; exact cast_heq _ _)]
@@ -1316,14 +1311,14 @@ theorem Term.denoteTyped_denoteTerm_agree
               subst hden
               refine ⟨rfl, ?_⟩
               simp only [ValEquiv, PrimValEquiv] at hrel1 hrel2 ⊢
-              rw [Term.denoteTyped_or ufInterp env (fun _ => 0) id t1 t2 rty .bool htc, cast_eq]
+              rw [Term.denoteTyped_or ufInterp env dz mz t1 t2 rty .bool htc, cast_eq]
               rw [show toTVal ctx.sctx (.prim .bool) ah1 ⟨tdi.sΓ, tdi.hsΓ⟩ (af1 tdi) = af1 tdi from
                     eq_of_heq (by simp only [toTVal]; exact cast_heq _ _)] at hrel1
               rw [show toTVal ctx.sctx (.prim .bool) ah2 ⟨tdi.sΓ, tdi.hsΓ⟩ (af2 tdi) = af2 tdi from
                     eq_of_heq (by simp only [toTVal]; exact cast_heq _ _)] at hrel2
-              have hkey1 : (Term.denoteTyped ufInterp env (fun _ => 0) id t1 .bool
+              have hkey1 : (Term.denoteTyped ufInterp env dz mz t1 .bool
                   (Term.typeCheck_boolBin_inv htc (.inr (.inl rfl))).1 = true) ↔ af1 tdi := hrel1
-              have hkey2 : (Term.denoteTyped ufInterp env (fun _ => 0) id t2 .bool
+              have hkey2 : (Term.denoteTyped ufInterp env dz mz t2 .bool
                   (Term.typeCheck_boolBin_inv htc (.inr (.inl rfl))).2.1 = true) ↔ af2 tdi := hrel2
               rw [show toTVal ctx.sctx (.prim .bool) _ ⟨tdi.sΓ, tdi.hsΓ⟩ (af1 tdi ∨ af2 tdi)
                     = (af1 tdi ∨ af2 tdi) from eq_of_heq (by simp only [toTVal]; exact cast_heq _ _)]
@@ -1362,7 +1357,7 @@ theorem Term.denoteTyped_denoteTerm_agree
               subst hden
               refine ⟨rfl, ?_⟩
               simp only [ValEquiv, PrimValEquiv]
-              rw [Term.denoteTyped_eq ufInterp env (fun _ => 0) id t1 t2 rty .bool htc, cast_eq]
+              rw [Term.denoteTyped_eq ufInterp env dz mz t1 t2 rty .bool htc, cast_eq]
               rw [show toTVal ctx.sctx (.prim .bool) _ ⟨tdi.sΓ, tdi.hsΓ⟩ (af1 tdi = af2 tdi)
                     = (af1 tdi = af2 tdi) from eq_of_heq (by simp only [toTVal]; exact cast_heq _ _)]
               simp only [decide_eq_true_eq]
@@ -1396,10 +1391,10 @@ theorem Term.denoteTyped_denoteTerm_agree
                   Option.some.injEq] at hden
                 subst hden
                 refine ⟨rfl, ?_⟩
-                rw [Term.denoteTyped_ite ufInterp env (fun _ => 0) id c t e rty _ htc]
-                have hrelc' : (Term.denoteTyped ufInterp env (fun _ => 0) id c .bool (Term.typeCheck_ite_inv htc).1
+                rw [Term.denoteTyped_ite ufInterp env dz mz c t e rty _ htc]
+                have hrelc' : (Term.denoteTyped ufInterp env dz mz c .bool (Term.typeCheck_ite_inv htc).1
                     = true) ↔ cfp tdi := ValEquiv_bool_elim (HEq.refl _) hrelc
-                cases hsc : Term.denoteTyped ufInterp env (fun _ => 0) id c .bool (Term.typeCheck_ite_inv htc).1 with
+                cases hsc : Term.denoteTyped ufInterp env dz mz c .bool (Term.typeCheck_ite_inv htc).1 with
                 | true =>
                   simp only [Bool.cond_true]
                   rw [ite_eq_left (hrelc'.mp hsc)]
@@ -1440,21 +1435,21 @@ theorem Term.denoteTyped_denoteTerm_agree
               subst hden
               refine ⟨rfl, ?_⟩
               simp only [ValEquiv, PrimValEquiv] at hrel1 hrel2 ⊢
-              rw [Term.denoteTyped_implies ufInterp env (fun _ => 0) id t1 t2 rty .bool htc, cast_eq]
+              rw [Term.denoteTyped_implies ufInterp env dz mz t1 t2 rty .bool htc, cast_eq]
               rw [show toTVal ctx.sctx (.prim .bool) ah1 ⟨tdi.sΓ, tdi.hsΓ⟩ (af1 tdi) = af1 tdi from
                     eq_of_heq (by simp only [toTVal]; exact cast_heq _ _)] at hrel1
               rw [show toTVal ctx.sctx (.prim .bool) ah2 ⟨tdi.sΓ, tdi.hsΓ⟩ (af2 tdi) = af2 tdi from
                     eq_of_heq (by simp only [toTVal]; exact cast_heq _ _)] at hrel2
-              have hkey1 : (Term.denoteTyped ufInterp env (fun _ => 0) id t1 .bool
+              have hkey1 : (Term.denoteTyped ufInterp env dz mz t1 .bool
                   (Term.typeCheck_boolBin_inv htc (.inr (.inr rfl))).1 = true) ↔ af1 tdi := hrel1
-              have hkey2 : (Term.denoteTyped ufInterp env (fun _ => 0) id t2 .bool
+              have hkey2 : (Term.denoteTyped ufInterp env dz mz t2 .bool
                   (Term.typeCheck_boolBin_inv htc (.inr (.inr rfl))).2.1 = true) ↔ af2 tdi := hrel2
               rw [show toTVal ctx.sctx (.prim .bool) _ ⟨tdi.sΓ, tdi.hsΓ⟩ (af1 tdi → af2 tdi)
                     = (af1 tdi → af2 tdi) from eq_of_heq (by simp only [toTVal]; exact cast_heq _ _)]
               rw [← hkey1, ← hkey2]
-              cases Term.denoteTyped ufInterp env (fun _ => 0) id t1 .bool
+              cases Term.denoteTyped ufInterp env dz mz t1 .bool
                     (Term.typeCheck_boolBin_inv htc (.inr (.inr rfl))).1 <;>
-                cases Term.denoteTyped ufInterp env (fun _ => 0) id t2 .bool
+                cases Term.denoteTyped ufInterp env dz mz t2 .bool
                     (Term.typeCheck_boolBin_inv htc (.inr (.inr rfl))).2.1 <;> simp
         | [], htc => simp only [Term.typeCheck, reduceCtorEq] at htc
         | [_], htc => simp only [Term.typeCheck, reduceCtorEq] at htc
@@ -1481,7 +1476,7 @@ theorem Term.denoteTyped_denoteTerm_agree
             subst hden
             refine ⟨rfl, ?_⟩
             apply ValEquiv_int_mk
-            rw [Term.denoteTyped_neg ufInterp env (fun _ => 0) id t rty .int htc, ValEquiv_int_get hrelt]
+            rw [Term.denoteTyped_neg ufInterp env dz mz t rty .int htc, ValEquiv_int_get hrelt]
             exact eq_of_heq (cast_heq _ _)
         | [], htc => simp only [Term.typeCheck, reduceCtorEq] at htc
         | _ :: _ :: _, htc => simp only [Term.typeCheck, reduceCtorEq] at htc
@@ -1514,7 +1509,7 @@ theorem Term.denoteTyped_denoteTerm_agree
               subst hden
               refine ⟨rfl, ?_⟩
               apply ValEquiv_int_mk
-              rw [Term.denoteTyped_add ufInterp env (fun _ => 0) id t1 t2 rty .int htc, cast_eq,
+              rw [Term.denoteTyped_add ufInterp env dz mz t1 t2 rty .int htc, cast_eq,
                 ValEquiv_int_get hrel1, ValEquiv_int_get hrel2]
         | [], htc => simp only [Term.typeCheck, reduceCtorEq] at htc
         | [_], htc => simp only [Term.typeCheck, reduceCtorEq] at htc
@@ -1548,7 +1543,7 @@ theorem Term.denoteTyped_denoteTerm_agree
               subst hden
               refine ⟨rfl, ?_⟩
               apply ValEquiv_int_mk
-              rw [Term.denoteTyped_sub ufInterp env (fun _ => 0) id t1 t2 rty .int htc, cast_eq,
+              rw [Term.denoteTyped_sub ufInterp env dz mz t1 t2 rty .int htc, cast_eq,
                 ValEquiv_int_get hrel1, ValEquiv_int_get hrel2]
         | [], htc => simp only [Term.typeCheck, reduceCtorEq] at htc
         | [_], htc => simp only [Term.typeCheck, reduceCtorEq] at htc
@@ -1582,7 +1577,7 @@ theorem Term.denoteTyped_denoteTerm_agree
               subst hden
               refine ⟨rfl, ?_⟩
               apply ValEquiv_int_mk
-              rw [Term.denoteTyped_mul ufInterp env (fun _ => 0) id t1 t2 rty .int htc, cast_eq,
+              rw [Term.denoteTyped_mul ufInterp env dz mz t1 t2 rty .int htc, cast_eq,
                 ValEquiv_int_get hrel1, ValEquiv_int_get hrel2]
         | [], htc => simp only [Term.typeCheck, reduceCtorEq] at htc
         | [_], htc => simp only [Term.typeCheck, reduceCtorEq] at htc
@@ -1593,36 +1588,30 @@ theorem Term.denoteTyped_denoteTerm_agree
           have hτ : τ = .int := (Term.typeCheck_intBin_inv htc (.inr (.inr (.inr (.inl rfl))))).2.2
           subst hτ
           cases hd1 : denoteTerm ctx t1 with
-          | none => rw [denoteTerm_div, denoteTerms_cons, hd1] at hden; simp at hden
+          | none => simp only [denoteTerm, hd1, bind, Option.bind, reduceCtorEq] at hden
           | some r1 =>
+            obtain ⟨hty1, hrel1⟩ :=
+              Term.denoteTyped_denoteTerm_agree hEnv t1 .int (Term.typeCheck_intBin_inv htc (.inr (.inr (.inr (.inl rfl))))).1 r1 hd1
+            obtain ⟨aty1, ah1, af1⟩ := r1
+            cases hty1
+            dsimp only at hrel1
             cases hd2 : denoteTerm ctx t2 with
-            | none =>
-              rw [denoteTerm_div, denoteTerms_cons, hd1, denoteTerms_cons, hd2] at hden; simp at hden
+            | none => simp only [denoteTerm, hd1, hd2, bind, Option.bind, reduceCtorEq] at hden
             | some r2 =>
-              obtain ⟨hty1, hrel1⟩ :=
-                Term.denoteTyped_denoteTerm_agree hEnv t1 .int (Term.typeCheck_intBin_inv htc (.inr (.inr (.inr (.inl rfl))))).1 r1 hd1
               obtain ⟨hty2, hrel2⟩ :=
                 Term.denoteTyped_denoteTerm_agree hEnv t2 .int (Term.typeCheck_intBin_inv htc (.inr (.inr (.inr (.inl rfl))))).2.1 r2 hd2
-              obtain ⟨aty1, ah1, af1⟩ := r1
               obtain ⟨aty2, ah2, af2⟩ := r2
-              cases hty1; cases hty2
-              dsimp only at hrel1 hrel2
-              have hdts : denoteTerms ctx [t1, t2]
-                  = some [⟨.prim .int, ah1, af1⟩, ⟨.prim .int, ah2, af2⟩] := by
-                rw [denoteTerms_cons, hd1, denoteTerms_cons, hd2]; rfl
-              rw [denoteTerm_div, hdts, Option.bind_some,
-                @leftAssoc_two ctx (.prim .int) rfl (fun _ => @HDiv.hDiv Int Int Int _)
-                  ⟨.prim .int, ah1, af1⟩ ⟨.prim .int, ah2, af2⟩ rfl rfl, Option.some.injEq] at hden
+              cases hty2
+              dsimp only at hrel2
+              simp only [denoteTerm, hd1, hd2, bind, Option.bind, Option.pure_def,
+                Option.some.injEq] at hden
               subst hden
               refine ⟨rfl, ?_⟩
               apply ValEquiv_int_mk
-              rw [Term.denoteTyped_div ufInterp env (fun _ => 0) id t1 t2 rty .int htc, cast_eq]
+              rw [Term.denoteTyped_div ufInterp env dz mz t1 t2 rty .int htc, cast_eq]
               simp only [ValEquiv_int_get hrel1, ValEquiv_int_get hrel2]
-              split
-              · rename_i hz
-                have h2 : @Eq Int (af2 tdi) 0 := (ValEquiv_int_get hrel2).symm.trans hz
-                simp only [h2]; exact (Int.ediv_zero _).symm
-              · simp_all
+              simp only [hEnv.hdz]
+              rw [← ValEquiv_int_get hrel2]
         | [], htc => simp only [Term.typeCheck, reduceCtorEq] at htc
         | [_], htc => simp only [Term.typeCheck, reduceCtorEq] at htc
         | _ :: _ :: _ :: _, htc => simp only [Term.typeCheck, reduceCtorEq] at htc
@@ -1653,13 +1642,10 @@ theorem Term.denoteTyped_denoteTerm_agree
               subst hden
               refine ⟨rfl, ?_⟩
               apply ValEquiv_int_mk
-              rw [Term.denoteTyped_mod ufInterp env (fun _ => 0) id t1 t2 rty .int htc, cast_eq]
+              rw [Term.denoteTyped_mod ufInterp env dz mz t1 t2 rty .int htc, cast_eq]
               simp only [ValEquiv_int_get hrel1, ValEquiv_int_get hrel2]
-              split
-              · rename_i hz
-                have h2 : @Eq Int (af2 tdi) 0 := (ValEquiv_int_get hrel2).symm.trans hz
-                simp only [h2]; exact (Int.emod_zero _).symm
-              · simp_all
+              simp only [hEnv.hmz]
+              rw [← ValEquiv_int_get hrel2]
         | [], htc => simp only [Term.typeCheck, reduceCtorEq] at htc
         | [_], htc => simp only [Term.typeCheck, reduceCtorEq] at htc
         | _ :: _ :: _ :: _, htc => simp only [Term.typeCheck, reduceCtorEq] at htc
@@ -1693,7 +1679,7 @@ theorem Term.denoteTyped_denoteTerm_agree
               subst hden
               refine ⟨rfl, ?_⟩
               simp only [ValEquiv, PrimValEquiv]
-              rw [Term.denoteTyped_le ufInterp env (fun _ => 0) id t1 t2 rty .bool htc, cast_eq]
+              rw [Term.denoteTyped_le ufInterp env dz mz t1 t2 rty .bool htc, cast_eq]
               rw [show toTVal ctx.sctx (.prim .bool) _ ⟨tdi.sΓ, tdi.hsΓ⟩
                       (@LE.le Int _ (af1 tdi) (af2 tdi))
                     = (@LE.le Int _ (af1 tdi) (af2 tdi)) from
@@ -1732,7 +1718,7 @@ theorem Term.denoteTyped_denoteTerm_agree
               subst hden
               refine ⟨rfl, ?_⟩
               simp only [ValEquiv, PrimValEquiv]
-              rw [Term.denoteTyped_lt ufInterp env (fun _ => 0) id t1 t2 rty .bool htc, cast_eq]
+              rw [Term.denoteTyped_lt ufInterp env dz mz t1 t2 rty .bool htc, cast_eq]
               rw [show toTVal ctx.sctx (.prim .bool) _ ⟨tdi.sΓ, tdi.hsΓ⟩
                       (@LT.lt Int _ (af1 tdi) (af2 tdi))
                     = (@LT.lt Int _ (af1 tdi) (af2 tdi)) from
@@ -1771,7 +1757,7 @@ theorem Term.denoteTyped_denoteTerm_agree
               subst hden
               refine ⟨rfl, ?_⟩
               simp only [ValEquiv, PrimValEquiv]
-              rw [Term.denoteTyped_ge ufInterp env (fun _ => 0) id t1 t2 rty .bool htc, cast_eq]
+              rw [Term.denoteTyped_ge ufInterp env dz mz t1 t2 rty .bool htc, cast_eq]
               rw [show toTVal ctx.sctx (.prim .bool) _ ⟨tdi.sΓ, tdi.hsΓ⟩
                       (@GE.ge Int _ (af1 tdi) (af2 tdi))
                     = (@GE.ge Int _ (af1 tdi) (af2 tdi)) from
@@ -1810,7 +1796,7 @@ theorem Term.denoteTyped_denoteTerm_agree
               subst hden
               refine ⟨rfl, ?_⟩
               simp only [ValEquiv, PrimValEquiv]
-              rw [Term.denoteTyped_gt ufInterp env (fun _ => 0) id t1 t2 rty .bool htc, cast_eq]
+              rw [Term.denoteTyped_gt ufInterp env dz mz t1 t2 rty .bool htc, cast_eq]
               rw [show toTVal ctx.sctx (.prim .bool) _ ⟨tdi.sΓ, tdi.hsΓ⟩
                       (@GT.gt Int _ (af1 tdi) (af2 tdi))
                     = (@GT.gt Int _ (af1 tdi) (af2 tdi)) from
@@ -1848,10 +1834,10 @@ theorem Term.denoteTyped_denoteTerm_agree
                 Option.some.injEq] at hden
               subst hden
               refine ⟨(Term.typeCheck_select_inv htc).2.2.2.2.2, ?_⟩
-              rw [Term.denoteTyped_select ufInterp env (fun _ => 0) id xt it rty τ htc,
+              rw [Term.denoteTyped_select ufInterp env dz mz xt it rty τ htc,
                 denoteTyped_eqRec_eq_cast]
               simp only [cast_cast, cast_eq]
-              exact hrel_x (Term.denoteTyped ufInterp env (fun _ => 0) id it
+              exact hrel_x (Term.denoteTyped ufInterp env dz mz it
                 (Term.typeCheck_select_inv htc).1 (Term.typeCheck_select_inv htc).2.2.2.1)
                 (iff' tdi) hrel_i
         | [], htc => simp only [Term.typeCheck, reduceCtorEq] at htc
@@ -1893,10 +1879,10 @@ theorem Term.denoteTyped_denoteTerm_agree
                 simp only [ValEquiv, cast_eqRec_self]
                 intro ka kb hkab
                 rw [Term.denoteTyped_store_select]
-                have hcond : (ka = Term.denoteTyped ufInterp env (fun _ => 0) id it
+                have hcond : (ka = Term.denoteTyped ufInterp env dz mz it
                     (Term.typeCheck_store_inv htc).1 (Term.typeCheck_store_inv htc).2.2.2.1)
                     ↔ (kb = iff' tdi) := ValEquiv_eq_iff hEnv.hsort hkab hrel_i
-                by_cases hc : ka = Term.denoteTyped ufInterp env (fun _ => 0) id it
+                by_cases hc : ka = Term.denoteTyped ufInterp env dz mz it
                     (Term.typeCheck_store_inv htc).1 (Term.typeCheck_store_inv htc).2.2.2.1
                 · -- queried key IS the stored key on both sides
                   rw [ite_eq_left hc, hcond.mp hc, @SmtArray.select_store_self _ _ (Classical.typeDecidableEq _)]
@@ -1935,7 +1921,7 @@ theorem Term.denoteTyped_denoteTerm_agree
               subst hden
               refine ⟨rfl, ?_⟩
               apply ValEquiv_bool_mk (HEq.refl _)
-              rw [Term.denoteTyped_forall_eq_true ufInterp env (fun _ => 0) id vs tr body htc hbody]
+              rw [Term.denoteTyped_forall_eq_true ufInterp env dz mz vs tr body htc hbody]
               exact buildForall_agree ufInterp body hbody vs env tdi hEnv hTys tFt
                 (fun env' tdi' hEnv' => by
                   obtain ⟨hty', hrel'⟩ :=
@@ -1966,7 +1952,7 @@ theorem Term.denoteTyped_denoteTerm_agree
               subst hden
               refine ⟨rfl, ?_⟩
               apply ValEquiv_bool_mk (HEq.refl _)
-              rw [Term.denoteTyped_exists_eq_true ufInterp env (fun _ => 0) id vs tr body htc hbody]
+              rw [Term.denoteTyped_exists_eq_true ufInterp env dz mz vs tr body htc hbody]
               exact buildExists_agree ufInterp body hbody vs env tdi hEnv hTys tFt
                 (fun env' tdi' hEnv' => by
                   obtain ⟨hty', hrel'⟩ :=
@@ -1986,14 +1972,14 @@ theorem Term.denoteTyped_denoteTerm_agree
     semantics' argument list `ress` are pointwise related by `ValEquiv` (packaged as `ArgsEquiv`). -/
 theorem Term.denoteTypedArgs_denoteTerms_agree
     {ctx : Context} {ufInterp : UFInterp σ SmtArrayTheory} {env : VarEnv σ SmtArrayTheory} {tdi : TermDenoteInput ctx}
-    (hEnv : EnvCorr ufInterp env tdi)
+    (hEnv : EnvCorr dz mz ufInterp env tdi)
     {tyctx : TypedContext}
     (args : List Term) (argTys : List TermType)
     (htc : Term.typeCheckArgs tyctx args argTys = true)
     (ress : List (TermDenoteResult ctx))
     (hden : denoteTerms ctx args = some ress) :
     ArgsEquiv tdi argTys
-      (Term.denoteTypedArgs ufInterp env (fun _ => 0) id args argTys htc) ress := by
+      (Term.denoteTypedArgs ufInterp env dz mz args argTys htc) ress := by
   cases args with
   | nil =>
     cases argTys with

@@ -790,7 +790,7 @@ private def badAxOb : Imperative.ProofObligation Expression :=
       (res.assumptions, res.varDefs.length, res.varDecls.length, res.goal)
 
 -- Not pruning `bad_ax` surfaces the kept entry's deferred encoding error.
-/-- info: Except.error "Cannot encode .app expression (fun x : ($__unknown_type) => x)(0)" -/
+/-- info: Except.error "Cannot encode .app expression (fun x : $__unknown_type => x)(0)" -/
 #guard_msgs in
 #eval (encodeObligationToSMT Core.Factory (.init { ctx := SMT.Context.default })
     badAxOb []).mapError toString |>.map
@@ -837,14 +837,14 @@ private def prunedSummary (ob : Imperative.ProofObligation Expression)
 
 -- Pruning only the bad distinct leaves the bad assumption kept, so the
 -- *assumption* path's deferred error surfaces.
-/-- info: "ERROR: Cannot encode .app expression (fun x : ($__unknown_type) => x)(0)" -/
+/-- info: "ERROR: Cannot encode .app expression (fun x : $__unknown_type => x)(0)" -/
 #guard_msgs in
 #eval prunedSummary mixedOb ["bad_d"]
 
 -- Mirror image: pruning only the bad assumption leaves the bad distinct kept,
 -- so the *distinct* path's deferred error surfaces (the `y`/`7` redex). Pruning
 -- is by label, not "drop whatever fails".
-/-- info: "ERROR: Cannot encode .app expression (fun y : ($__unknown_type) => y)(7)" -/
+/-- info: "ERROR: Cannot encode .app expression (fun y : $__unknown_type => y)(7)" -/
 #guard_msgs in
 #eval prunedSummary mixedOb ["bad_ax"]
 

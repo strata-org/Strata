@@ -426,29 +426,10 @@ def substituteSynonyms (ctx : SanitizedContext) (ts : List Term) (t : Term) :
                 ifs := ctx.ifs.map (substituteIFIS iss), axms := ctx.axms.map (substituteTermIS iss) },
      ts.map (substituteTermIS iss), substituteTermIS iss t)
 
-mutual
-
 /-- Does the term apply a datatype constructor, tester or selector?  `denoteTerm`
     has no case for these, so a query containing one has no denotation. -/
 private def Term.hasDatatypeOp (t : Term) : Bool :=
-  match t with
-  | .app (.datatype_op ..) _ _ => true
-  | .app _ args _ => Term.anyHasDatatypeOp args
-  | .quant _ _ trs body => body.hasDatatypeOp || Term.anyHasDatatypeOps trs
-  | .some t => t.hasDatatypeOp
-  | _ => false
-
-private def Term.anyHasDatatypeOp (ts : List Term) : Bool :=
-  match ts with
-  | [] => false
-  | t :: ts => t.hasDatatypeOp || Term.anyHasDatatypeOp ts
-
-private def Term.anyHasDatatypeOps (tss : List (List Term)) : Bool :=
-  match tss with
-  | [] => false
-  | ts :: rest => Term.anyHasDatatypeOp ts || Term.anyHasDatatypeOps rest
-
-end
+  t.anyOp (· matches .datatype_op ..)
 
 def createGoal : SMTVC → MetaM MVarId := fun (label, ctx, ts, t) => do
   if t.hasDatatypeOp || ts.any Term.hasDatatypeOp || ctx.axms.any Term.hasDatatypeOp
@@ -884,7 +865,6 @@ partial def proveTermCore (env : Env) (ctx : Lean.Expr) (t : Term) (tE : Lean.Ex
     | .num .add, _, _ => leftAssocOp env ctx `den_add_op opE asE rtE as (.prim .int)
     | .num .sub, _, _ => leftAssocOp env ctx `den_sub_op opE asE rtE as (.prim .int)
     | .num .mul, _, _ => leftAssocOp env ctx `den_mul_op opE asE rtE as (.prim .int)
-    | .num .div, _, _ => leftAssocOp env ctx `den_div_op opE asE rtE as (.prim .int)
     | .num .neg, [a], [aE] =>
       let ra ← proveTerm env ctx a aE
       mkRes (.prim .int) (mkAppN (lem `den_neg) #[ctx, aE, rtE, ra.hE, ra.ftE, ra.pf])
@@ -949,10 +929,8 @@ partial def proveTermCore (env : Env) (ctx : Lean.Expr) (t : Term) (tE : Lean.Ex
       let tys ← arrayTypes rx
       mkRes rx.ty (mkAppN (lem `den_store)
         #[ctx, xE, iE, wE, rtE, tys.key, tys.val, rx.hE, ri.hE, rw.hE, rx.ftE, ri.ftE, rw.ftE, rx.pf, ri.pf, rw.pf])
-    | .num .mod, [a, b], [aE, bE] =>
-      let ra ← proveTerm env ctx a aE
-      let rb ← proveTerm env ctx b bE
-      mkRes (.prim .int) (mkAppN (lem `den_mod) #[ctx, aE, bE, rtE, ra.hE, rb.hE, ra.ftE, rb.ftE, ra.pf, rb.pf])
+    | .num .div, [a, b], [aE, bE] => intDivModOp env ctx `den_div a b aE bE rtE
+    | .num .mod, [a, b], [aE, bE] => intDivModOp env ctx `den_mod a b aE bE rtE
     | .core .implies, _, _ =>
       if as.length < 2 then throwError "proveQuery: implication needs at least two operands"
       let args ← proveTerms env ctx as asE
@@ -1032,6 +1010,13 @@ partial def leftAssocBV (env : Env) (ctx : Lean.Expr) (opLem : Name) (asE rtE : 
   let #[_, ty, h, opF, _] := (← hypLHS f 2).getAppArgs | throwError "proveQuery: unexpected leftAssoc"
   let chain ← leftAssocChain ctx ty h opF rs
   mkRes r₁.ty (mkAppN f #[chain.rhs, args.proof, chain.proof])
+
+/-- Integer `div` or `mod`, by the lemma `den_div`/`den_mod`. -/
+partial def intDivModOp (env : Env) (ctx : Lean.Expr) (lemName : Name) (a b : Term)
+    (aE bE rtE : Lean.Expr) : ProveM Res := do
+  let ra ← proveTerm env ctx a aE
+  let rb ← proveTerm env ctx b bE
+  mkRes (.prim .int) (mkAppN (lem lemName) #[ctx, aE, bE, rtE, ra.hE, rb.hE, ra.ftE, rb.ftE, ra.pf, rb.pf])
 
 /-- A unary operator lemma `den_X ctx a rt params h fa ha`. -/
 partial def unaryOp (env : Env) (ctx : Lean.Expr) (lemName : Name) (a : Term) (aE rtE : Lean.Expr)
@@ -1233,27 +1218,54 @@ where
     pure auxName
 
 /--
-Prove `denoteQuery sc.toCore ts t = some P` for the goal `P` built by
-`translateQuery`, using the proof-producing translation. If that fails, report
-an error naming the VC.
+Prove `D`, the denotation of a VC, from `h : P`, its Lean goal. `D` always
+quantifies over the values of integer `div` and `mod` at a zero divisor, right
+after the `nSorts` uninterpreted sorts (each bound with its `Nonempty`
+instance). `P` omits those two binders when the VC uses neither (`omitted`,
+from `goalBindsDivModByZero`), so `D` follows from `P` by ignoring them. That
+omission is only a convenience for the user: the kernel checks that `P`, with
+the binders put back, is `D`, so if `P` omits binders its body needed, this
+fails. Only the one check that `omitted` calls for is run.
+-/
+def denotationOfGoal (nSorts : Nat) (omitted : Bool) (D P h : Lean.Expr) : MetaM (Option Lean.Expr) := do
+  let defEq (a b : Lean.Expr) : MetaM Bool := do
+    match Lean.Kernel.isDefEq (← getEnv) {} a b with
+    | .ok r => pure r
+    | .error e => throwError "the kernel raised an error while checking the denotation: \
+        {e.toMessageData (← getOptions)}"
+  if !omitted then
+    return if ← defEq D P then some h else none
+  let intToInt := Lean.mkForall `x .default (.const ``Int []) (.const ``Int [])
+  let (wrapped, pf) ← Meta.forallBoundedTelescope P (some (2 * nSorts)) fun xs body => do
+    let wrapped ← Meta.mkForallFVars xs
+      (.forallE `divByZero intToInt (.forallE `modByZero intToInt body .default) .default)
+    let pf ← Meta.mkLambdaFVars xs
+      (.lam `divByZero intToInt (.lam `modByZero intToInt (mkAppN h xs) .default) .default)
+    pure (wrapped, pf)
+  if ← defEq D wrapped then return some pf
+  return none
+
+/--
+Prove `denoteQuery sc.toCore ts t = some D` for the denotation `D` of a VC
+whose Lean goal, built by `translateQuery`, is `P`, and prove `D` from `h : P`
+(`denotationOfGoal`). Returns `D` and both proofs. If either cannot be
+produced, report an error naming the VC.
 -/
 def denoteQueryProof (label : String) (sc : SMT.SanitizedContext) (scE : Lean.Expr)
-    (ts : List SMT.Term) (tsE : Lean.Expr) (t : SMT.Term) (tE : Lean.Expr) (P : Lean.Expr) :
-    MetaM Lean.Expr := do
+    (ts : List SMT.Term) (tsE : Lean.Expr) (t : SMT.Term) (tE : Lean.Expr) (P h : Lean.Expr) :
+    MetaM (Lean.Expr × Lean.Expr × Lean.Expr) := do
   let failure (why : MessageData) : MessageData :=
     m!"gen_smt_vcs: cannot prove that the goal for verification condition \
       '{label}' is its denotation: {why}"
   let den ← try SMT.ProofGen.proveQuery sc scE ts tsE t tE
     catch e => throwError failure e.toMessageData
-  -- Check the match with the kernel: it is the same check the kernel
-  -- performs on the final proof, and it is much faster than `Meta.isDefEq`.
-  match Lean.Kernel.isDefEq (← getEnv) {} den.rhs P with
-  | .ok true => pure ()
-  | .ok false =>
-    throwError failure m!"the denotation{indentExpr den.rhs}\ndoes not match the translated goal{indentExpr P}"
-  | .error e =>
-    throwError failure m!"the kernel raised an error while checking the denotation: {e.toMessageData (← getOptions)}"
-  return den.proof
+  -- Checked with the kernel: it is the same check the kernel performs on the
+  -- final proof, and it is much faster than `Meta.isDefEq`.
+  let omitted := !goalBindsDivModByZero sc.toCore ts t
+  let some hD ← (try denotationOfGoal sc.sorts.size omitted den.rhs P h
+      catch e => throwError failure e.toMessageData)
+    | throwError failure m!"the denotation{indentExpr den.rhs}\ndoes not match the translated goal{indentExpr P}"
+  return (den.rhs, den.proof, hD)
 
 /-- The expressions of the components of a VC `(label, ctx, assumptions, goal)`. -/
 private structure VCExprs where
@@ -1293,9 +1305,12 @@ private unsafe def genSMTVCsUnsafe (mv : MVarId) : MetaM (List MVarId) := do
     (mkApp2 (.const ``Option.some [0]) (.const ``Strata.SMT.SMTVCs []) evcsE))
   let mvs ← evcs.mapM SMT.createGoal
   trace[debug] m!"Created {mvs.length} SMT VC goals: {mvs}"
-  let ps ← mvs.mapM MVarId.getType
-  let hs ← (evcs.zip (vcEs.zip ps)).mapM fun ((l, sc, ts, t), vcE, P) =>
-    denoteQueryProof l sc vcE.ctx ts vcE.assums t vcE.goal P
+  let goals ← mvs.mapM MVarId.getType
+  let dens ← (evcs.zip (vcEs.zip (goals.zip mvs))).mapM fun ((l, sc, ts, t), vcE, P, m) =>
+    denoteQueryProof l sc vcE.ctx ts vcE.assums t vcE.goal P (.mvar m)
+  -- The denotations, their `denoteQuery` proofs, and their proofs from the goals.
+  let ps := dens.map (·.1)
+  let hs := dens.map (·.2.1)
   -- `denoteQueries evcs = some (andN ps)`
   let q := andN ps
   -- Each VC is paired with the literal of the VCs after it.
@@ -1317,7 +1332,7 @@ private unsafe def genSMTVCsUnsafe (mv : MVarId) : MetaM (List MVarId) := do
       pure <| mkAppN (.const ``Strata.denoteQueries_cons [])
         #[vc.label, vc.ctx, vc.assums, vc.goal, tailE, p, q, h, hgo]
     | _, [] => throwError "gen_smt_vcs: internal error"
-  let hP := andNIntro (List.zip ps (mvs.map Expr.mvar))
+  let hP := andNIntro (List.zip ps (dens.map (·.2.2)))
   mv.assign (mkAppN (.const ``Strata.smtVCsCorrect_of []) #[program, options, evcsE, andN ps, hgen, hq, hP])
   return mvs
 

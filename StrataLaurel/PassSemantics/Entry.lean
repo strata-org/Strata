@@ -161,7 +161,7 @@ macro "wit_tac" : tactic => `(tactic| (
   refine fs_bind (fs_modifyRel (fun a a' ha => by have := hs1.stack.regs hpl a.globals; strelw ha [])) (fun _ _ _ => ?_)
   cases r with
   | some r =>
-    refine fs_bind (fs_liftM (isTrue_pconst hp.cfg_ok r)) (fun b b' hb => ?_)
+    refine fs_bind (fs_liftM (isTrue_pconst r)) (fun b b' hb => ?_)
     subst hb
     refine fs_ite (fun _ => ?_) (fun _ => ?_)
     · first

@@ -63,13 +63,13 @@ the free variables of a call's input expressions. -/
 @[expose] def CmdExt.readVars [HasFvar P] [HasFvars P] (c : CmdExt P) : List P.Ident :=
   match c with
   | .cmd c => Cmd.getVars c
-  | .call _ args _ => (Calls.getInputExprs args).flatMap HasFvars.getFvars
+  | .call _ _ args _ => (Calls.getInputExprs args).flatMap HasFvars.getFvars
 
 /-- Operator/function names referenced by an extended command. -/
 @[expose] def CmdExt.getOps [HasFvar P] [HasOps P] (c : CmdExt P) : List P.Ident :=
   match c with
   | .cmd c => Cmd.getOps c
-  | .call _ args _ => (Calls.getInputExprs args).flatMap HasOps.getOps
+  | .call _ _ args _ => (Calls.getInputExprs args).flatMap HasOps.getOps
 
 /-- Variables defined (via `init`) by an extended command; a `call` defines
 none. -/
@@ -83,7 +83,7 @@ command, or the output/inout targets of a `call`. -/
 @[expose] def CmdExt.modifiedVars (c : CmdExt P) : List P.Ident :=
   match c with
   | .cmd c => Cmd.modifiedVars c
-  | .call _ args _ => CallArg.getLhs args
+  | .call _ _ args _ => CallArg.getLhs args
 
 /-- Variables modified or defined by an extended command (its write-set). -/
 @[expose] def CmdExt.modifiedOrDefinedVars (c : CmdExt P) : List P.Ident :=
@@ -95,7 +95,7 @@ command, or the output/inout targets of a `call`. -/
     List (P.Ident × P.Ty) :=
   match c with
   | .cmd c => Cmd.getTypedVars c
-  | .call _ args _ => (Calls.getInputExprs args).flatMap HasFvars.getTypedFvars
+  | .call _ _ args _ => (Calls.getInputExprs args).flatMap HasFvars.getTypedFvars
 
 /-- Variables an extended command defines, with their declared types. -/
 @[expose] def CmdExt.typedDefinedVars (c : CmdExt P) : List (P.Ident × P.Ty) :=

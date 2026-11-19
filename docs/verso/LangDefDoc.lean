@@ -425,6 +425,57 @@ registered in
 Equality (`==`) and if-then-else are provided as built-in `Lambda` expression
 constructors rather than operators.
 
+### Values outside a precondition
+
+An arithmetic built-in operator means its SMT-LIB function, and each safe
+arithmetic operator (`int.safe*`, `bvN.safe*`) equals its plain operator at every
+argument: `int.safeDiv(a, b)` is `int.div(a, b)`, `bv8.safeAdd(x, y)` is
+`bv8.add(x, y)`, and so on. A safe operator's precondition only adds a
+well-formedness check at each call and marks where the operator is expected to
+be used. It never changes the value. So every operator is total, with these
+values where a precondition would fail:
+
+- *Bit vector division by zero*: `uDiv(x, 0)` is all ones and `uMod(x, 0)` is
+  `x`. `sDiv(x, 0)` is `1` when `x` is negative and all ones otherwise, and
+  `sMod(x, 0)` is `x`. Here `sDiv` and `sMod` are SMT-LIB's `bvsdiv` and
+  `bvsrem` (the remainder takes the sign of the dividend), not `bvsmod`.
+- *Signed division overflow*: `sDiv(INT_MIN, -1)` is `INT_MIN` and
+  `sMod(INT_MIN, -1)` is `0`.
+- *Bit vector overflow*: `add`, `sub`, `mul` and `neg` wrap modulo `2^n`, for
+  the signed and the unsigned safe variants alike.
+- *Integer division by zero*: `int.div(a, 0)` and `int.mod(a, 0)` are values of
+  an unspecified total function: equal arguments give equal results, and
+  nothing else is known about them.
+- *Truncating integer division*: `int.divT(a, b)` is
+  `if a * b >= 0 then int.div(|a|, |b|) else -int.div(|a|, |b|)` and
+  `int.modT(a, b)` is `a - b * int.divT(a, b)`, at every `b`, including `0`.
+  At `b = 0` the formula leaves `int.divT(a, 0)` open: it is `int.div(|a|, 0)`,
+  an unspecified value, so only `int.divT(a, 0) == int.divT(-a, 0)` is known.
+  `int.modT(a, 0)` is fixed: it is `a`.
+- *Sequence access out of bounds*: `Sequence.select`, `update`, `take` and
+  `drop` and their unchecked variants (`select!` and so on) are declared
+  functions, not SMT-LIB functions. Inside the bounds, `select` and `select!`
+  are equal, and each of `update`, `take` and `drop` has the same length and
+  elements as its `!` variant (the two are not provably equal as sequences).
+  Outside the bounds, `select(s, i)` and `select!(s, i)` are unconstrained and
+  need not agree. The lengths of `take`, `drop` and their `!` variants can be
+  any non-negative value, while `update` and `update!` keep the length of `s`.
+  The element axioms still apply: `update(s, i, v)` keeps every element of `s`,
+  `take(s, n)` keeps the element of `s` at every `0 <= j < n`, and
+  `drop(s, n)` maps every index `j >= 0` to `j + n` while `j + n < length(s)`.
+
+A new operator with a precondition must say its value outside the
+precondition, and its concrete evaluation must either decline there or give
+that value.
+
+These values differ from Lean's where Lean defines a division by zero:
+`BitVec.udiv x 0` and `Int.tdiv a 0` are `0` in Lean, and Lean's `Int` division
+also gives `a / 0 = 0` and `a % 0 = a`. The concrete evaluator therefore leaves
+a division by a zero divisor unevaluated, so that it never commits to a value
+the solver does not give. The GOTO back end translates division, modulus and
+signed operations to C's, where division by zero and signed overflow are
+undefined (see `docs/CoreToGOTO_Gaps.md`).
+
 ## Type Declarations
 
 Strata Core supports three forms of type declaration:

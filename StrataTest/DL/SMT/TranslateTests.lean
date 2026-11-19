@@ -210,13 +210,22 @@ info: ∀ (α : Type → Type → Type) [inst : ∀ (α_1 α_2 : Type), Nonempty
 -- `Denote.denoteTerm`, so `translateTerm` now rejects any other arity rather
 -- than silently lowering e.g. `.app .mod [x, y, z]` to `(x % y) % z`.
 
-/-- info: 10 % 3 = 1 -/
+/-- info: ∀ (divByZero modByZero : Int → Int), (if 3 = 0 then modByZero 10 else 10 % 3) = 1 -/
 #guard_msgs in
 #eval
   elabQuery {} []
     (.app .eq
       [(.app .mod [(.prim (.int 10)), (.prim (.int 3))] (.prim .int)),
        (.prim (.int 1))]
+      (.prim .bool))
+
+/-- error: Error: 'div' expects exactly two operands, got '3' -/
+#guard_msgs in
+#eval
+  elabQuery {} []
+    (.app .eq
+      [(.app .div [(.prim (.int 12)), (.prim (.int 3)), (.prim (.int 2))] (.prim .int)),
+       (.prim (.int 2))]
       (.prim .bool))
 
 /-- error: Error: 'mod' expects exactly two operands, got '3' -/

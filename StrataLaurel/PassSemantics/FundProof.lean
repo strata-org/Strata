@@ -680,7 +680,7 @@ theorem fstep_clauses {n : Nat} (ih : FundAt cfg E Rw K Gl n) :
         rw [← hb1]
         exact win_unbind (Gl := Gl) h hres.1 hres.2.1
       · subst hxy
-        exact fs_bind (fs_liftM (isTrue_pconst hp.cfg_ok _)) (fun b b' hb => by subst hb; exact rest b)
+        exact fs_bind (fs_liftM (isTrue_pconst _)) (fun b b' hb => by subst hb; exact rest b)
 
 theorem fstep_iter {n : Nat} (ih : FundAt cfg E Rw K Gl n) :
     ∀ c c' b b' p ci ci' eb eb', E c c' → Reserved.vok E c c' → E b b' → OvOK G c → OvOK G b →
@@ -695,7 +695,7 @@ theorem fstep_iter {n : Nat} (ih : FundAt cfg E Rw K Gl n) :
   subst hv
   refine fs_ite (fun _ => ?_) (fun _ => fs_bind hci (fun _ _ _ => ?_))
   all_goals
-    refine fs_bind (fs_liftM (isTrue_pconst hp.cfg_ok _)) (fun x y hxy => ?_)
+    refine fs_bind (fs_liftM (isTrue_pconst _)) (fun x y hxy => ?_)
     subst hxy
     refine fs_ite (fun _ => ?_) (fun _ => fs_pure rfl)
     refine fs_ite (fun _ => fs_bind hci (fun _ _ _ => ?_)) (fun _ => ?_)
@@ -1369,7 +1369,7 @@ theorem fs_checkConds {n M : Nat} (ih : FundAt cfg E Rw K Gl n) (hM : K * n ≤ 
   refine fs_bind fs_get (fun σ σ' hσ => ?_)
   refine fs_bind (exprMdE hp ih hc.2.1 hc.2.2 (hov c hm) hM) (fun v v' hv => ?_)
   subst hv
-  refine fs_bind (fs_liftM (isTrue_pconst hp.cfg_ok _)) (fun b b' hb => ?_)
+  refine fs_bind (fs_liftM (isTrue_pconst _)) (fun b b' hb => ?_)
   subst hb
   refine fs_bind (fs_emit (evRel_fail (E := _)) ⟨rfl, hc.2.1, rfl, _, hσ⟩) (fun _ _ _ => ?_)
   refine fs_ite (fun _ => fs_pure rfl) (fun _ => ?_)
@@ -1493,7 +1493,7 @@ theorem fstep_post {n : Nat} (ih : FundAt cfg E Rw K Gl n) :
         exact fs_bind (fs_modifyRel (fun a a' ha => by strel ha)) (fun _ _ _ => fs_pure rfl)
     · refine fs_bind (exprMdE hp ih hgd (hgv _ _ rfl rfl) (hreg _ (hgo _ rfl)) hM) (fun v v' hv => ?_)
       subst hv
-      refine fs_bind (fs_liftM (isTrue_pconst hp.cfg_ok _)) (fun b b' hb => ?_)
+      refine fs_bind (fs_liftM (isTrue_pconst _)) (fun b b' hb => ?_)
       subst hb
       refine fs_ite (fun _ => ?_) (fun _ => fs_pure rfl)
       refine fs_bind (fs_mapM hts (fun t t' ht => ?_)) (fun cs cs' hcs => ?_)
@@ -2317,7 +2317,7 @@ theorem fstep_stmt {n : Nat} (ih : FundAt cfg E Rw K Gl n) (ihs : ∀ k ≤ n, F
       simp only [ValKids] at hvk
       refine fs_bind (exprMdE hp ih h1 hvk.1 (by ovk) hM) (fun v v' hv => ?_)
       subst hv
-      refine fs_bind (fs_liftM (isTrue_pconst hp.cfg_ok v)) (fun b b' hb => ?_)
+      refine fs_bind (fs_liftM (isTrue_pconst v)) (fun b b' hb => ?_)
       subst hb
       refine fs_ite (fun _ => ih.scoped_ _ _ (hp.closed _ _ h2) (by ovk) M hM) (fun _ => ?_)
       cases el <;> cases el' <;> simp only [ORel] at h3
@@ -2425,7 +2425,7 @@ theorem fstep_stmt {n : Nat} (ih : FundAt cfg E Rw K Gl n) (ihs : ∀ k ≤ n, F
       refine fs_bind (fs_emitE (S := Sm E Gl G) (evRel_fail (E := _)) ⟨hc, _, hσ⟩) (fun _ _ _ => ?_)
       refine fs_bind (exprMdE hp ih hc hvk (by ovk) hM) (fun v v' hv => ?_)
       subst hv
-      refine fs_bind (fs_liftM (isTrue_pconst hp.cfg_ok _)) (fun b b' hb => ?_)
+      refine fs_bind (fs_liftM (isTrue_pconst _)) (fun b b' hb => ?_)
       subst hb
       exact fs_ite (fun _ => fs_pure rfl) (fun _ => fs_throw _)
     | assert hc =>
@@ -2433,7 +2433,7 @@ theorem fstep_stmt {n : Nat} (ih : FundAt cfg E Rw K Gl n) (ihs : ∀ k ≤ n, F
       refine fs_bind fs_get (fun σ σ' hσ => ?_)
       refine fs_bind (exprMdE hp ih hc hvk (by ovk) hM) (fun v v' hv => ?_)
       subst hv
-      refine fs_bind (fs_liftM (isTrue_pconst hp.cfg_ok _)) (fun b b' hb => ?_)
+      refine fs_bind (fs_liftM (isTrue_pconst _)) (fun b b' hb => ?_)
       subst hb
       refine fs_bind (fs_emitE (S := Sm E Gl G) (evRel_fail (E := _)) ⟨rfl, hc, rfl, _, hσ⟩) (fun _ _ _ => ?_)
       exact fs_ite (fun _ => fs_pure rfl) (fun _ => fs_modifyRel (fun a a' ha => by strel ha))
@@ -2515,7 +2515,7 @@ theorem fstep_call {n : Nat} (ih : FundAt cfg E Rw K Gl n) {M : Nat} (hM : K * n
     have ev : ∀ a a', E a a' ∧ Reserved.vok E a a' ∧ OvOK G a → FS (Sm E Gl G) Eq (evalExprMd cfg n a) (evalExprMd cfg M a') :=
       fun a a' h => exprMdE hp ih h.1 h.2.1 h.2.2 hM
     have tr : ∀ v, FS (Sm E Gl G) Eq (liftM (Interpreter.isTrue cfg v) : EvalM PM Bool) (liftM (Interpreter.isTrue cfg v)) :=
-      fun v => fs_liftM (isTrue_pconst hp.cfg_ok v)
+      fun v => fs_liftM (isTrue_pconst v)
     have hcc : ∀ g : Identifier, opOf? g.text = some op → (g.text == coroCompletionName) = false := by
       intro g hg
       simp only [beq_eq_false_iff_ne]
@@ -2586,7 +2586,7 @@ theorem fstep_call {n : Nat} (ih : FundAt cfg E Rw K Gl n) {M : Nat} (hM : K * n
   have ev : ∀ a a', E a a' ∧ Reserved.vok E a a' ∧ OvOK G a → FS (Sm E Gl G) Eq (evalExprMd cfg n a) (evalExprMd cfg M a') :=
     fun a a' h => exprMdE hp ih h.1 h.2.1 h.2.2 hM
   have tr : ∀ v, FS (Sm E Gl G) Eq (liftM (Interpreter.isTrue cfg v) : EvalM PM Bool) (liftM (Interpreter.isTrue cfg v)) :=
-    fun v => fs_liftM (isTrue_pconst hp.cfg_ok v)
+    fun v => fs_liftM (isTrue_pconst v)
   simp only [evalExpr]
   refine fs_bind fs_get (fun σ σ' hσ => ?_)
   by_cases hcc : (f.text == coroCompletionName) = true
@@ -2719,7 +2719,7 @@ theorem fstep_expr {n : Nat} (ih : FundAt cfg E Rw K Gl n) (ihs : ∀ k ≤ n, F
       simp only [evalExpr]
       refine fs_bind (exprMdE hp ih h1 hvk.1 (by ovk) hM) (fun v v' hv => ?_)
       subst hv
-      refine fs_bind (fs_liftM (isTrue_pconst hp.cfg_ok v)) (fun b b' hb => ?_)
+      refine fs_bind (fs_liftM (isTrue_pconst v)) (fun b b' hb => ?_)
       subst hb
       refine fs_ite (fun _ => fs_wbs1 hp (hp.closed _ _ h2) ((ih.exprMd _ _ (hp.closed _ _ h2) (OvOK.relax (by ovk) _) M hM).weaken
           (fun _ _ h hv => h (hvk.2 hv).1)))
@@ -2782,7 +2782,7 @@ theorem fstep_expr {n : Nat} (ih : FundAt cfg E Rw K Gl n) (ihs : ∀ k ≤ n, F
       rw [isInstance_congr hσ hty]
       refine fs_bind (fs_liftM (hostOfExcept_pconst _)) (fun r r' hr => ?_)
       subst hr
-      refine fs_bind (fs_liftM (isTrue_pconst hp.cfg_ok _)) (fun b b' hb => ?_)
+      refine fs_bind (fs_liftM (isTrue_pconst _)) (fun b b' hb => ?_)
       subst hb
       rw [hσ.muted]
       refine fs_ite (fun _ => fs_pure rfl) (fun _ => ?_)
@@ -2976,7 +2976,7 @@ theorem fstep_expr {n : Nat} (ih : FundAt cfg E Rw K Gl n) (ihs : ∀ k ≤ n, F
       · subst hvv
         refine fs_bind (fs_modifyRel (fun a a' ha => ha.with_stack (ha.stack.bindCatch hr hvq v))) (fun _ _ _ => ?_)
         refine fs_bind (fs_tryCatch (fs_bind (exprMdE hp ih hb hvk (by ovk) hM)
-          (fun x y hxy => by subst hxy; exact fs_liftM (isTrue_pconst hp.cfg_ok x))) (fun sig hsig => ?_) ?_
+          (fun x y hxy => by subst hxy; exact fs_liftM (isTrue_pconst x))) (fun sig hsig => ?_) ?_
           (fun L hL hok => fs_bind (fs_modifyRel (fun a a' ha => ha.with_stack (ha.stack.unbindCatch hr hvq)))
             (fun _ _ _ => fs_throwM hL hok))
           (fun w => fs_bind (fs_modify (S := (Sm E Gl G).atWin w)

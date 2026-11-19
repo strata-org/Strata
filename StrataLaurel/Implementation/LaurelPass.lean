@@ -91,9 +91,6 @@ structure LaurelTranslateOptions where
   /-- How procedures are lowered. Defaults to `Verify`, the
       analyze/verify behavior. See `AnalysisMode`. -/
   analysisMode : AnalysisMode := .Verify
-  /-- Type names treated as the gradual/dynamic top type in `isConsistent`.
-      Used by language frontends (e.g. Python registers "Any" here). -/
-  gradualTypes : Std.HashSet String := {}
   /-- Frontend-supplied realizer for the abstract `Coercion` verdict of the
       proof-relevant subtyping judgment: maps a verdict + the coerced term to a
       rewritten term carrying the concrete box/unbox call. `none` = identity

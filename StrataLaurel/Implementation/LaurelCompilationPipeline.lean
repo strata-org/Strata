@@ -284,7 +284,7 @@ private def runLaurelPasses
   -- Initial resolution
   -- Inferred `throws` clauses are filled in here, so every check and pass below
   -- sees ordinary ones (see `InferThrows`).
-  let result := resolveWithInferredThrows program (gradualTypes := options.gradualTypes)
+  let result := resolveWithInferredThrows program
                   (realizeCoercion := options.realizeCoercion) (toBool := options.toBool)
                   (reservedNames := options.reservedNames)
   let resolutionErrors : Std.HashSet Message := Std.HashSet.ofArray result.errors
@@ -334,7 +334,7 @@ private def runLaurelPasses
     if pass.needsResolves && !unchanged then
       match program with
       | .Unordered p =>
-        let result := resolve p (some model) (gradualTypes := options.gradualTypes)
+        let result := resolve p (some model)
                         (realizeCoercion := options.realizeCoercion) (toBool := options.toBool)
                         (reservedNames := options.reservedNames)
         -- `newPostPassResolutionErrors` (mainline) subsumes poly's earlier explicit cascade guard:

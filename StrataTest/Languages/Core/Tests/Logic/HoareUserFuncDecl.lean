@@ -497,7 +497,7 @@ theorem compute_meets_contract :
       ?_ ?_
   · simpa [command] using compute_body_shape
   · intro ρ₀ σ' emitted hpre _hwf hstep
-    obtain ⟨hchecks, hfac, _hold, htyped⟩ := hpre
+    obtain ⟨hchecks, hfac, _hold, htyped, -⟩ := hpre
     obtain ⟨vx, hx, hvx⟩ := htyped xId .int (by native_decide)
     obtain ⟨vy, hy, hvy⟩ := htyped yId .int (by native_decide)
     obtain ⟨a, hva⟩ := Lambda.SemValue.exists_ofInt hvx
@@ -776,7 +776,7 @@ theorem checkProduct_meets_contract :
       testParams "" #[]
       (Core.Logic.Hoare.Procedure.contractPre specFactory checkProductProc))
     (fun _ hpre => hpre) (fun ρ hpre => ?_)
-  obtain ⟨hchecks, hfac, _hold, htyped⟩ := hpre
+  obtain ⟨hchecks, hfac, _hold, htyped, -⟩ := hpre
   obtain ⟨vx, hx, hvx⟩ := htyped xId .int (by native_decide)
   obtain ⟨vy, hy, hvy⟩ := htyped yId .int (by native_decide)
   obtain ⟨a, hva⟩ := Lambda.SemValue.exists_ofInt hvx

@@ -44,7 +44,7 @@ variable {P : PureExpr} [DecidableEq P.Ident] [BEq P.Ident] [LawfulBEq P.Ident]
 /-- Commands under the event semantics; calls have no step. -/
 @[expose] def EvalE : EvalCmdParamE P (CmdExt P) (Event P)
   | f, σ, .cmd c, σ', evs => EvalCmdE P f σ c σ' evs
-  | _, _, .call _ _ _, _, _ => False
+  | _, _, .call _ _ _ _, _, _ => False
 
 /-- How a statement list ends. -/
 inductive Outcome (P : PureExpr) where

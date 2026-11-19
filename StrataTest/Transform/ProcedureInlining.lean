@@ -165,7 +165,7 @@ def alphaEquivStatement (s1 s2: Core.Statement) (map:IdMap)
 
   | .cmd c1, .cmd c2 =>
     match c1, c2 with
-    | .call procName1 callArgs1 _, .call procName2 callArgs2 _ =>
+    | .call procName1 _ callArgs1 _, .call procName2 _ callArgs2 _ =>
       let lhs1 := Imperative.CallArg.getLhs callArgs1
       let lhs2 := Imperative.CallArg.getLhs callArgs2
       let args1 := Imperative.CallArg.getInArgs callArgs1
@@ -697,10 +697,10 @@ procedure idp<a> (x : a, out r : a)
 };
 procedure Caller<a> (z : a)
 {
-  var w : (a);
+  var w : a;
   $__inline1_idp$inlined: {
     var $__inline1_x : a := z;
-    var $__inline1_r : (a);
+    var $__inline1_r : a;
     $__inline1_r := $__inline1_x;
     w := $__inline1_r;
   }
@@ -719,11 +719,11 @@ procedure pair<a, b> (x : a, y : b, out r : a)
 };
 procedure Caller<a, b> (x : a, y : b)
 {
-  var w : (b);
+  var w : b;
   $__inline1_pair$inlined: {
     var $__inline1_x : b := y;
     var $__inline1_y : a := x;
-    var $__inline1_r : (b);
+    var $__inline1_r : b;
     $__inline1_r := $__inline1_x;
     w := $__inline1_r;
   }
@@ -739,7 +739,7 @@ info: program Core;
 type $__inlinety_0;
 procedure q<a> ()
 {
-  assume [refl]: forall y : (a) :: y == y;
+  assume [refl]: forall y : a :: y == y;
 };
 procedure Caller ()
 {
@@ -759,7 +759,7 @@ type $__inlinety_0;
 procedure r<a, b> (x : a)
 {
   assert [refl]: x == x;
-  assume [reflB]: forall y : (b) :: y == y;
+  assume [reflB]: forall y : b :: y == y;
 };
 procedure Caller ()
 {
@@ -774,6 +774,103 @@ procedure Caller ()
 #eval IO.println (toString (runInlineCall (rProg rP)))
 #guard (runInlineCall (rProg rP)).allExprs LExpr.fullyAnnotated
 
+-- Stored type arguments give the type of a parameter that the call's arguments do not determine,
+-- so no opaque type is declared.
+/--
+info: program Core;
+
+procedure q<a> ()
+{
+  assume [refl]: forall y : a :: y == y;
+};
+procedure Caller ()
+{
+  $__inline1_q$inlined: {
+    assume [$__inline1_refl]: forall y : int :: y == y;
+  }
+};
+-/
+#guard_msgs in
+#eval IO.println (toString (runInlineCall (qTyArgsProg qP (some [.forAll [] .int]))))
+#guard (runInlineCall (qTyArgsProg qP (some [.forAll [] .int]))).allExprs LExpr.fullyAnnotated
+
+-- A stored type that still contains a generated type variable is not used: `b` gets an opaque
+-- type, while `a` is read from the stored type arguments.
+/--
+info: program Core;
+
+type $__inlinety_0;
+procedure r<a, b> (x : a)
+{
+  assert [refl]: x == x;
+  assume [reflB]: forall y : b :: y == y;
+};
+procedure Caller ()
+{
+  $__inline1_r$inlined: {
+    var $__inline1_x : int := 7;
+    assert [$__inline1_refl]: $__inline1_x == $__inline1_x;
+    assume [$__inline1_reflB]: forall y : $__inlinety_0 :: y == y;
+  }
+};
+-/
+#guard_msgs in
+#eval IO.println (toString (runInlineCall
+  (rTyArgsProg rP (some [.forAll [] .int, .forAll [] (.ftvar "$__ty3")]))))
+#guard (runInlineCall
+  (rTyArgsProg rP (some [.forAll [] .int, .forAll [] (.ftvar "$__ty3")]))).allExprs
+  LExpr.fullyAnnotated
+
+-- Stored type arguments that are not one entry per type parameter are ignored, and the call's
+-- arguments determine the types as for a program that was not type-checked.
+/--
+info: program Core;
+
+type $__inlinety_0;
+procedure r<a, b> (x : a)
+{
+  assert [refl]: x == x;
+  assume [reflB]: forall y : b :: y == y;
+};
+procedure Caller ()
+{
+  $__inline1_r$inlined: {
+    var $__inline1_x : int := 7;
+    assert [$__inline1_refl]: $__inline1_x == $__inline1_x;
+    assume [$__inline1_reflB]: forall y : $__inlinety_0 :: y == y;
+  }
+};
+-/
+#guard_msgs in
+#eval IO.println (toString (runInlineCall (rTyArgsProg rP (some [.forAll [] .bool]))))
+#guard (runInlineCall (rTyArgsProg rP (some [.forAll [] .bool]))).allExprs LExpr.fullyAnnotated
+
+-- Stored type arguments with more entries than type parameters are ignored likewise.
+/--
+info: program Core;
+
+type $__inlinety_0;
+procedure r<a, b> (x : a)
+{
+  assert [refl]: x == x;
+  assume [reflB]: forall y : b :: y == y;
+};
+procedure Caller ()
+{
+  $__inline1_r$inlined: {
+    var $__inline1_x : int := 7;
+    assert [$__inline1_refl]: $__inline1_x == $__inline1_x;
+    assume [$__inline1_reflB]: forall y : $__inlinety_0 :: y == y;
+  }
+};
+-/
+#guard_msgs in
+#eval IO.println (toString (runInlineCall
+  (rTyArgsProg rP (some [.forAll [] .int, .forAll [] .bool, .forAll [] .int]))))
+#guard (runInlineCall
+  (rTyArgsProg rP (some [.forAll [] .int, .forAll [] .bool, .forAll [] .int]))).allExprs
+  LExpr.fullyAnnotated
+
 /--
 info: program Core;
 
@@ -782,7 +879,7 @@ type $__inlinety_1;
 procedure r<a, b> (x : a)
 {
   assert [refl]: x == x;
-  assume [reflB]: forall y : (b) :: y == y;
+  assume [reflB]: forall y : b :: y == y;
 };
 procedure Caller ()
 {
@@ -843,7 +940,7 @@ type $__inlinety_0;
 axiom [one]: forall x : $__inlinety_0 :: forall y : $__inlinety_0 :: x == y;
 procedure Q<a> ()
 {
-  assert [qa]: forall x : (a) :: forall y : (a) :: x == y;
+  assert [qa]: forall x : a :: forall y : a :: x == y;
 };
 procedure P ()
 {

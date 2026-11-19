@@ -59,7 +59,7 @@ theorem callElimBlockNoExcept :
   | cmd c =>
     cases c with
     | cmd c' => exists [Imperative.Stmt.cmd (CmdExt.cmd c')]
-    | call lhs procName args md =>
+    | call procName tyArgs args md =>
     split
     . -- call case
       next heq =>
@@ -2989,7 +2989,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr] :
     exact Inits.init InitVars.init_none
     simp [StateT.pure, StateT.bind, ExceptT.bindCont, pure, bind] at Helim
     simp_all
-  | call lhs procName args md =>
+  | call procName tyArgs args md =>
   split at Helim
   next pair l cs' Helim' =>
   -- NOTE: the simplifier must be invoked in two stages in this case

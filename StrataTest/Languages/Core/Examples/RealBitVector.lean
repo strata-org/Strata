@@ -118,15 +118,15 @@ spec {
 /--
 info: program Core;
 
-function x () : bv W8;
-function y () : bv W8;
+function x () : |bv| W8;
+function y () : |bv| W8;
 axiom [bv_x_ge_1]: bv8.uLe(bv{8}(1), x);
 axiom [bv_y_ge_2]: bv8.uLe(bv{8}(2), y);
 procedure P ()
 {
   assert [bv_add_ge]: bv8.add(x, y) == bv8.add(y, x);
 };
-procedure Q (a : bv W1, out r : bv W1)
+procedure Q (a : |bv| W1, out r : |bv| W1)
 spec {
   ensures [Q_ensures_0]: r == bv1.sub(a, a);
   } {

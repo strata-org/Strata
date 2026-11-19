@@ -433,7 +433,7 @@ private theorem brunS_frame {F : Expression.Factory} :
     refine ⟨w, fun x hx => f x ?_⟩
     simpa [Stmt.modifiedOrDefinedVars, Stmt.modifiedVars, Stmt.definedVars, HasVarsImp.modifiedVars,
       HasVarsImp.definedVars, CmdExt.modifiedVars, CmdExt.definedVars] using hx
-  | _, _, _, _, .cmd (c := .call _ _ _) h, _ => h.elim
+  | _, _, _, _, .cmd (c := .call _ _ _ _) h, _ => h.elim
   | _, _, _, _, .ite_true _ h, hσ => by
     refine leave_frame none (brun_frame h hσ) (fun x hx => ?_)
     simp only [Stmt.modifiedOrDefinedVars, Stmt.modifiedVars, Stmt.definedVars,

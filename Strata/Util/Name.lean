@@ -89,7 +89,8 @@ def firstUntaken (taken : String → Bool) (cand : Nat → String) : Nat → Nat
 
 /-- `base` if it is not `taken`, else the first of `base_1`, `base_2`, … that is not. The search
     stops after `fuel + 1` candidates, so it finds an untaken one when at most `fuel` names are
-    taken. -/
+    taken. The result avoids only what `taken` accepts: a caller must
+    make `taken` accept every name the new one must not clash with. -/
 def freshNameBy (taken : String → Bool) (fuel : Nat) (base : String) : String :=
   firstUntaken taken (fun k => if k = 0 then base else base ++ "_" ++ toString k) (fuel + 1) 0
 
@@ -102,15 +103,20 @@ def freshNamesBy (taken : String → Bool) (fuel : Nat) : List String → List S
     n :: freshNamesBy (fun m => taken m || m == n) (fuel + 1) rest
 
 /-- `base`, or `base_k` for the smallest `k ≥ 1` that makes it differ from
-every name in `taken`. Generated lemmas, abstracted calls and generated types
-are named this way, so that they never clash with a name of the program or
-with each other. -/
+every name in `taken`. Generated lemmas, abstracted calls
+and generated types are named this way, so that they never clash with a name of
+the program or with each other.
+
+The result avoids only the names in `taken`, so a caller must put in `taken`
+every name the new one must not clash with: for a new block label, for example,
+every jump target and the entry label as well as every block label. -/
 def freshName (taken : Std.HashSet String) (base : String) : String :=
   freshNameBy taken.contains taken.size base
 
 /-- A fresh name for each of `bases` in turn, as `freshName` picks it, avoiding
-the names in `taken` and the names picked before it. Returns the names and
-`taken` with them added. -/
+the names in `taken` and the names picked before it.
+Returns the names and `taken` with them added. As for `freshName`, `taken` must
+hold every name the new ones must not clash with. -/
 def freshNames (taken : Std.HashSet String) (bases : List String) :
     List String × Std.HashSet String :=
   let names := freshNamesBy taken.contains taken.size bases

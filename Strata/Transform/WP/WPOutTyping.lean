@@ -86,7 +86,7 @@ structure TypingLaws (Typ : P.Expr → P.Ty → Prop) (Ground : P.Ty → Prop) :
   | .cmd (.set x e _) => ∃ τ, Θ x = some τ ∧ Ground τ ∧ ∀ v, e = .det v → ExprOK Typ Θ v τ
   | .cmd (.assume _ e _) | .cmd (.assert _ e _) | .cmd (.cover _ e _) =>
     ExprOK Typ Θ e HasBool.boolTy
-  | .call _ _ _ => False
+  | .call _ _ _ _ => False
 
 mutual
 /-- A statement typed against `Θ`: a command typed against `Θ` (`CmdOK`), a block of such
@@ -210,7 +210,7 @@ theorem Stmt.wellTyped_of_tyOK [LawfulHasFvars P] (hL : TypingLaws Typ Ground) :
       fun _ => ⟨τ, hΓ x fv_set_tgt τ hτ, hg⟩⟩
   | .cmd (.cmd (.assume _ _ _)), _, h, hΓ | .cmd (.cmd (.assert _ _ _)), _, h, hΓ
   | .cmd (.cmd (.cover _ _ _)), _, h, hΓ => ⟨trivial, h.1, h.2.annotates hΓ, trivial⟩
-  | .cmd (.call _ _ _), _, h, _ => h.elim
+  | .cmd (.call _ _ _ _), _, h, _ => h.elim
   | .block _ b _, Γ, h, hΓ =>
     (Block.wellTyped_of_tyOK hL b Γ h hΓ).elim fun ⟨h1, h2, h3⟩ h4 => ⟨h1, h2, h3, h4⟩
   | .ite .nondet t e _, Γ, ⟨ht, he⟩, hΓ =>
