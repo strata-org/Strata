@@ -37,6 +37,9 @@ public section
 
 /-! ## Aggregate types -/
 
+/-- A total map from `keyTy` to `valTy`. Extensional only under the array encoding
+    (see `VerifyOptions.useArrayTheory`): with `useArrayTheory := false`, two maps
+    equal at every key are not provably equal. -/
 @[expose, match_pattern]
 def mapTy (keyTy : LMonoTy) (valTy : LMonoTy) : LMonoTy :=
   .tcons "Map" [keyTy, valTy]
@@ -45,13 +48,26 @@ def mapTy (keyTy : LMonoTy) (valTy : LMonoTy) : LMonoTy :=
 def seqTy (elemTy : LMonoTy) : LMonoTy :=
   .tcons "Sequence" [elemTy]
 
-/-- A mathematical (immutable, unordered, extensional) set of `elemTy`.
+/-- A mathematical (immutable, unordered) set of `elemTy`.
 
     A distinct sort rather than a `Map elemTy bool` alias: keeping it distinct is what
     lets the SMT encoder later target a dedicated set theory (or a specialized
-    axiomatization) without every `Map` paying for it. Until then it encodes as an
-    uninterpreted sort constrained by the `Set.*` axioms below, which is sound but not
-    especially efficient. -/
+    axiomatization) without every `Map` paying for it.
+
+    What a proof can conclude about two sets depends on the SMT encoding (see
+    `VerifyOptions.useArrayTheory`):
+    - With `useArrayTheory := false` (the `Core.verify` default; `gen_smt_vcs` defaults
+      to `true`), the encoder declares a fresh sort (named by `smtSortName`, since cvc5
+      and z3 already define a sort `Set`), and the `Set.*` operations are declared
+      functions constrained by the membership axioms below. This is sound but not
+      extensional: for two sets `s` and `t` with the same members, neither `s == t` nor
+      `f(s) == f(t)` for a function `f` over sets is provable.
+    - With `--use-array-theory`, `Set elemTy` encodes as `Array elemTy bool`.
+      `Set.contains`, `Set.insert` and `Set.remove` map to `select` and `store`;
+      `Set.empty`, `Set.union`, `Set.intersect` and `Set.difference` stay declared
+      functions with their membership axioms. The theory of arrays is extensional, so
+      any two sets with the same members, including the results of those functions,
+      are equal. -/
 @[expose, match_pattern]
 def setTy (elemTy : LMonoTy) : LMonoTy :=
   .tcons "Set" [elemTy]
@@ -342,9 +358,10 @@ def mapUpdateFunc : WFLFunc CoreLParams :=
 /-! ## `Set` operations
 
 Every operation is characterized *pointwise through membership*: each axiom states what
-`Set.contains` yields on the result. That is the whole specification — two sets with the
-same members are interchangeable in every `Set.contains` position, so no operation can
-observe anything else about them.
+`Set.contains` yields on the result. That is the whole specification: the axioms give
+two sets with the same members the same membership in the result of every `Set.*`
+operation. Equality and other functions over sets can still tell such sets apart unless
+the encoding is extensional (see `setTy`).
 
 `Set.contains` itself carries no axiom: it is the primitive the others are defined against.
 

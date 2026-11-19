@@ -391,6 +391,7 @@ Strata Core provides the following built-in types:
 - `bv<n>` — bit vectors of size `n` (e.g., `bv32`, `bv64`)
 - `Map<K, V>` — maps from keys of type `K` to values of type `V`
 - `Sequence<T>` — finite sequences of elements of type `T`
+- `Set<T>` — immutable sets of elements of type `T`
 
 In addition, function types (`a → b`) are supported as first-class types.
 Users can define additional types via type declarations (abstract types, type
@@ -421,6 +422,12 @@ registered in
 - *Map*: constant map, select (lookup), and update (store).
 - *Sequence*: length, empty, append, select (index), build, update, contains,
   take, and drop.
+- *Set*: empty, contains (membership), insert, remove, union, intersection, and
+  difference. Each operation is specified by what membership yields on its
+  result. Without `--use-array-theory` (the `strata verify` default), sets are
+  not extensional: two sets with the same members are not provably equal, and
+  neither are the results of a function applied to them. With `--use-array-theory`, a set encodes as an SMT array from elements to
+  booleans, so two sets with the same members are equal.
 
 Equality (`==`) and if-then-else are provided as built-in `Lambda` expression
 constructors rather than operators.

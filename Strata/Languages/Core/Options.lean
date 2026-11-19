@@ -225,7 +225,13 @@ structure VerifyOptions where
       without needing the solver). -/
   alwaysGenerateSMT : Bool
   -- Encoding options
-  /-- Use SMT-LIB Array theory instead of axiomatized maps. -/
+  /-- Use SMT-LIB Array theory instead of axiomatized maps.
+
+      With it, `Map` and `Set` encode as SMT arrays, which are extensional: two maps
+      equal at every key, or two sets with the same members, are equal. Without it,
+      they are declared sorts whose axioms speak only about `select` or membership,
+      so such an equality is not provable. `Core.verify` defaults to `false`;
+      `MetaVerifier.Options` (for `gen_smt_vcs`) defaults to `true`. -/
   useArrayTheory : Bool
   /-- With cvc5, fall back to enumerative quantifier instantiation once E-matching saturates
       (`--full-saturate-quant`). cvc5 then proves some goals whose quantifiers have no usable

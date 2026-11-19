@@ -130,6 +130,73 @@ deriving Repr, Inhabited
 
 def SMT.Context.default : SMT.Context := {}
 
+/-- Sort names that cvc5 or z3 already define. A `declare-sort` or `declare-datatype` of one
+    of them is not a fresh sort: z3 rejects it, and cvc5 can silently keep its own sort, with
+    that sort's equality and cardinality (cvc5's `Array`, `Nullable`, `Set` and `Tuple` do
+    this), so the solver could prove facts that do not hold for Strata's uninterpreted sort.
+    `Scripts/scan_solver_sort_names.sh` checks this list against the solver binaries; re-run
+    it whenever cvc5 or z3 is upgraded. -/
+def solverBuiltinSortNames : Std.HashSet String := .ofList
+  ["Array", "Bag", "BitVec", "Bool", "FiniteField", "Float128", "Float16", "Float32",
+   "Float64", "FloatingPoint", "Int", "List", "Nullable", "Real", "RegEx", "RegLan",
+   "Relation", "RoundingMode", "Seq", "Set", "String", "StringSequence", "Table", "Tuple",
+   "Unicode", "UnitTuple", "bv",
+   -- Symbols cvc5 rejects as a sort name.
+   "abs", "as", "let", "match", "par", "select", "store"]
+
+/-- Prefix that `smtSortName` adds to a sort name. -/
+@[expose] def smtSortPrefix : String := "$__Strata_"
+
+/-- The SMT-LIB name of the Core sort, datatype or datatype type parameter `id`: `id`
+    with `smtSortPrefix` when the solvers already define a sort of that name or when `id`
+    itself starts with `smtSortPrefix`, and `id` otherwise. Prefixing the names that
+    already carry the prefix keeps the mapping injective: a user type named
+    `$__Strata_Set` becomes `$__Strata_$__Strata_Set`, not Core's `Set`. -/
+def smtSortName (id : String) : String :=
+  if solverBuiltinSortNames.contains id || id.startsWith smtSortPrefix then smtSortPrefix ++ id
+  else id
+
+/-- The Core name of the SMT-LIB sort name `name`; the inverse of `smtSortName`. -/
+def coreSortName (name : String) : String :=
+  if name.startsWith smtSortPrefix then (name.drop smtSortPrefix.length).toString else name
+
+/-- The run of consecutive copies of `p` that starts `cs`: how many, and what follows. -/
+private def prefixRun (p : List Char) : Nat → List Char → Nat × List Char
+  | 0, cs => (0, cs)
+  | fuel + 1, cs =>
+    if !p.isEmpty && p.isPrefixOf cs then
+      let (k, rest) := prefixRun p fuel (cs.drop p.length)
+      (k + 1, rest)
+    else (0, cs)
+
+private def coreSortNamesInAux (p : List Char) : Nat → Option Char → List Char → List Char
+  | 0, _, cs => cs
+  | fuel + 1, prev, cs =>
+    -- `smtSortName` adds the prefix at the start of a name, so only a prefix there counts:
+    -- at the start of the string, or after a delimiter of the solvers' value syntax.
+    let atNameStart := prev.all (· ∈ ['(', ' ', '|', '@'])
+    if atNameStart && !p.isEmpty && p.isPrefixOf cs then
+      let (k, rest) := prefixRun p (cs.length + 1) cs
+      (List.replicate (k - 1) p).flatten ++ coreSortNamesInAux p fuel (some '_') rest
+    else
+      match cs with
+      | [] => []
+      | c :: cs' => c :: coreSortNamesInAux p fuel (some c) cs'
+
+/-- `s` with every SMT-LIB sort name in it mapped back by `coreSortName`. A solver names its
+    abstract values after their sort (cvc5's `@($__Strata_Set Int)_0`, z3's
+    `$__Strata_Set!val!0`); this shows them under the Core name (`@(Set Int)_0`). As
+    `coreSortName` does for one name, it drops one `smtSortPrefix` from each run of
+    consecutive prefixes that starts a name. -/
+def coreSortNamesIn (s : String) : String :=
+  String.ofList (coreSortNamesInAux smtSortPrefix.toList (s.length + 1) none s.toList)
+
+/-- A model value name with the sort names in it mapped back by `coreSortNamesIn`, if it is
+    an abstract value the solver made up (cvc5's `@(…)_n`, z3's `…!val!n`); any other
+    name, such as a user's, as it is. -/
+def coreValueName (id : String) : String :=
+  if id.startsWith "@" || (id.splitOn "!val!").length > 1 then coreSortNamesIn id else id
+
 def SMT.Context.addSort (ctx : SMT.Context) (sort : Strata.DL.SMT.Sort) : SMT.Context :=
   { ctx with sorts := ctx.sorts.insert sort }
 
@@ -177,7 +244,7 @@ def SMT.Context.preDeclaredNames (ctx : SMT.Context) : Std.HashSet String :=
   let dtNames := ctx.datatypes.factory.toList.foldl (init := sortNames) fun acc block =>
     block.foldl (init := acc) fun acc d =>
       if ctx.seenDatatypes.contains d.name then
-        let acc := acc.insert d.name
+        let acc := acc.insert (smtSortName d.name)
         -- Include constructor and selector names emitted by declareDatatype
         d.constrs.foldl (init := acc) fun acc c =>
           let acc := acc.insert c.name.name
@@ -224,13 +291,13 @@ def lMonoTyToTermType (useArrayTheory : Bool := false) (ty : LMonoTy) : TermType
     if useArrayTheory then
       .constr "Array" [lMonoTyToTermType useArrayTheory elem, .bool]
     else
-      .constr "Set" [lMonoTyToTermType useArrayTheory elem]
+      .constr (smtSortName "Set") [lMonoTyToTermType useArrayTheory elem]
   | .tcons name args =>
     if name == "Map" && useArrayTheory then
       .constr "Array" (args.map $ lMonoTyToTermType useArrayTheory)
     else
-      .constr name (args.map $ lMonoTyToTermType useArrayTheory)
-  | .ftvar tv => .constr tv []
+      .constr (smtSortName name) (args.map $ lMonoTyToTermType useArrayTheory)
+  | .ftvar tv => .constr (smtSortName tv) []
 
 /-- Convert a datatype's constructors to typed SMT constructors: the one place that names
     constructors and selectors and lowers field types, for every solver interface. -/
@@ -271,9 +338,12 @@ def SMT.Context.emitDatatypes (ctx : SMT.Context) : Strata.SMT.SolverEncodingM U
     | [] => pure ()
     | [d] =>
       let constructors := datatypeConstructorsToSMT d ctx.useArrayTheory
-      Strata.SMT.Solver.declareDatatype d.name d.typeArgs constructors
+      Strata.SMT.Solver.declareDatatype (smtSortName d.name) (d.typeArgs.map smtSortName)
+        constructors
     | _ =>
-      let dts := usedBlock.map fun d => (d.name, d.typeArgs, datatypeConstructorsToSMT d ctx.useArrayTheory)
+      let dts := usedBlock.map fun d =>
+        (smtSortName d.name, d.typeArgs.map smtSortName,
+          datatypeConstructorsToSMT d ctx.useArrayTheory)
       Strata.SMT.Solver.declareDatatypes dts
 
 /-- Emit a context's sort declarations, then its datatype declarations (whose
@@ -326,7 +396,7 @@ partial def SMT.Context.addType (id: String) (args: List LMonoTy) (ctx: SMT.Cont
         ) ctx
       ) ctx
   | none =>
-    ctx.addSort { name := id, arity := args.length }
+    ctx.addSort { name := smtSortName id, arity := args.length }
 
 mutual
 def LMonoTy.toSMTType (ty : LMonoTy) (ctx : SMT.Context) :
@@ -344,6 +414,7 @@ def LMonoTy.toSMTType (ty : LMonoTy) (ctx : SMT.Context) :
     let ctx := if ctx.useArrayTheory then ctx
                else SMT.Context.addType id args ctx
     let (args', ctx) ← LMonoTys.toSMTType args ctx
+    -- `id` is `Array` (the theory's own sort) or `Map`, which no solver defines.
     .ok ((.constr id args'), ctx)
   | .tcons "Set" [elem] =>
     -- Under array theory the sort is native, so it needs no `declare-sort` (and gains
@@ -355,11 +426,11 @@ def LMonoTy.toSMTType (ty : LMonoTy) (ctx : SMT.Context) :
     else
       let ctx := SMT.Context.addType "Set" [elem] ctx
       let (elem', ctx) ← LMonoTy.toSMTType elem ctx
-      .ok (.constr "Set" [elem'], ctx)
+      .ok (.constr (smtSortName "Set") [elem'], ctx)
   | .tcons id args =>
     let ctx := SMT.Context.addType id args ctx
     let (args', ctx) ← LMonoTys.toSMTType args ctx
-    .ok ((.constr id args'), ctx)
+    .ok ((.constr (smtSortName id) args'), ctx)
   | .ftvar tyv =>
     -- If the encoder sees a type variable, that's a bug — either
     -- MonomorphizeFunctions failed to reach this reference, or something
@@ -1240,7 +1311,7 @@ def smtTermToLExpr (t : Strata.SMT.Term)
     if constructorNames.contains v.id then
       .op smtModelLoc v.id none
     else
-      .fvar smtModelLoc v.id none
+      .fvar smtModelLoc (coreValueName v.id) none
   | .app (.core (.uf uf)) args _retTy =>
     match smtTermRational? t with
     | some r => .rationalConst smtModelLoc r
@@ -1259,7 +1330,8 @@ def smtTermToLExpr (t : Strata.SMT.Term)
         if constructorNames.contains uf.id then
           .op smtModelLoc uf.id none
         else
-          .fvar smtModelLoc uf.id none
+          -- An abstract value arrives as a zero-argument UF named after its sort.
+          .fvar smtModelLoc (coreValueName uf.id) none
     args.foldl (fun acc arg => .app smtModelLoc acc (smtTermToLExpr arg constructorNames)) fnExpr
   | .app (.datatype_op _kind name) args _retTy =>
     let fnExpr : LExpr CoreLParams.mono := .op smtModelLoc name none
@@ -1504,7 +1576,8 @@ def EncodeResult.declaredCtx (r : EncodeResult) (removeDatatypes : Bool) :
   let fieldTypes := fun d => match ctx.datatypes.getType d with
     | some dt => dt.fieldTypeRefs.filter seen.contains
     | none => []
-  match Strata.Worklist.reachable (seen.toList.filter used.contains)
+  -- `used` holds SMT-LIB sort names; `seen` holds Core datatype names.
+  match Strata.Worklist.reachable (seen.toList.filter (used.contains <| smtSortName ·))
       fieldTypes seen.size with
   | some kept => return { ctx with seenDatatypes := kept }
   | none => return ctx

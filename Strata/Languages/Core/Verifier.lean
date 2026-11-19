@@ -124,7 +124,7 @@ decreasing_by
 /-- Allocate a globally unique SMT-LIB identifier within the abstract encoder.
     Mirrors `Encoder.uniquify` but operates on `AbstractEncoderState`. -/
 private def uniquify (baseName : String) : AbstractEncoderM τ m String := do
-  let id := Strata.Name.findUnique baseName 1 (← get).base.usedNames
+  let id := findUniqueSMTName baseName (← get).base.usedNames
   modify fun st => { st with base.usedNames := st.base.usedNames.insert id }
   return id
 
@@ -334,10 +334,11 @@ def emitDatatypesAbstract [Monad m] [MonadExceptOf IO.Error m]
     | [] => pure ()
     | [d] =>
       let constrs ← datatypeConstrsM solver ctx.useArrayTheory d
-      let _ ← solver.declareDatatype d.name d.typeArgs
+      let _ ← solver.declareDatatype (Core.smtSortName d.name) (d.typeArgs.map Core.smtSortName)
         fun _ _ => .ok constrs
     | _ =>
-      let dtHeaders := usedBlock.map fun d => (d.name, d.typeArgs)
+      let dtHeaders := usedBlock.map fun d =>
+        (Core.smtSortName d.name, d.typeArgs.map Core.smtSortName)
       let allConstrs ← usedBlock.mapM (datatypeConstrsM solver ctx.useArrayTheory)
       let _ ← solver.declareDatatypes dtHeaders
         fun _ _ => .ok allConstrs
@@ -357,7 +358,7 @@ def declareContextAbstract [Monad m] [MonadExceptOf IO.Error m]
     (ufs : List UF) (ifs : List IF) (axms : List Term) (managed : Std.HashSet String) :
     AbstractEncoderM τ m Unit := do
   for s in sorts do
-    if !ctx.seenDatatypes.contains s.name then
+    if !ctx.seenDatatypes.contains (Core.coreSortName s.name) then
       let _ ← liftM (solver.declareSort s.name s.arity)
   if !datatypes.isEmpty then
     liftM (emitDatatypesAbstract solver { ctx with seenDatatypes := datatypes })
