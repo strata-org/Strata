@@ -191,7 +191,8 @@ precondition, body trace interpretation, and postcondition. -/
     `Core.Specification.ProcEntryEnv`, so a body proof may use them and the triple
     quantifies over the models that satisfy them.
     On a well-formed program, the factory contains Core's built-ins and exactly
-    the user-defined functions declared before the procedure. Partial correctness
+    the user-defined functions declared before the procedure and the functions
+    generated for the datatypes declared before it. Partial correctness
     means a diverging body satisfies any postcondition. -/
 @[expose] def Procedure.contractTriple (p : Core.Program) (params : InitEnvWFParams)
     (procName : String) : Prop :=

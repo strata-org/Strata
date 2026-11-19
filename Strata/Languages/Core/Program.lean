@@ -280,13 +280,14 @@ def Program.typeNamesWithPrefix (p : Program) (pfx : String) : Std.HashSet Strin
   | _ => decl.addFunctionsToFactory factory
 
 /-- The initial expression factory visible at entry to the procedure named
-    `procName`: Core's built-ins extended with user-defined functions declared
-    before that procedure. Later declarations are intentionally excluded.
-    `pushIfNew` makes this total on malformed programs; program type checking
-    rejects the name collisions that it would otherwise ignore. -/
+    `procName`: Core's built-ins extended with the functions declared before that
+    procedure, and with the constructors, testers, destructors and eliminators of the
+    datatypes declared before it (`Decl.addToRuntimeFactory`). Later declarations are
+    intentionally excluded. `pushIfNew` makes this total on malformed programs; program
+    type checking rejects the name collisions that it would otherwise ignore. -/
 @[expose] def Program.factoryBeforeProcedure
     (p : Program) (procName : String) : Lambda.Factory CoreLParams :=
-  (p.declsBeforeProcedure procName).foldl Decl.addFunctionsToFactory Core.Factory
+  (p.declsBeforeProcedure procName).foldl Decl.addToRuntimeFactory Core.Factory
 
 def Program.eraseTypes (p : Program) : Program :=
   { p with decls := p.decls.map Decl.eraseTypes }
