@@ -34,8 +34,9 @@ facts `addAssumption` learns from an assumption that evaluates to `true` hold
 The facts the walk carries hold, and record values whose operators are consistent with `F`
 (`FactsInv`). The rest is proved here: definitions record a true equation (the evaluator
 is monotone and reads variables from the store), writes and the end of a block or `if` keep
-the facts that do not mention what they write (`Facts.holds_forget`, `brunS_frame`), and the
-axioms give facts that hold where the ground axioms evaluate to `true`. Consequently, under
+the facts that do not mention what they write (`Facts.holds_forget`,
+`brunS_frame_modifiedOrDefined`), and the axioms give facts that hold where the ground axioms
+evaluate to `true`. Consequently, under
 the reference event semantics, a body without loops keeps its failures
 (`FailuresKept`, `stepStmts_failsE`): each assertion or cover (a label and metadata) it
 fails, its rewrite fails, and, where its goals have values (`GoalsDefined`), conversely.
@@ -305,11 +306,7 @@ private theorem Facts.ops_forget {F : Lambda.Factory CoreLParams} {fs : Facts}
       exact hh f ty b0 (by simpa using hb0) v (List.mem_filter.mp hm).1
 
 
-/-! ## What a statement writes -/
-
-/-- The store an outcome ends with. -/
-@[expose] def outStore : Outcome Expression → SemanticStore Expression
-  | .normal σ | .exit _ σ => σ
+/-! ## What a command writes -/
 
 /-- A store written at `x` with a value stays well formed. -/
 private theorem wf_write {F : Expression.Factory} {σ σ' : SemanticStore Expression}
@@ -354,132 +351,6 @@ private theorem cmd_frame {F : Expression.Factory} {σ σ' : SemanticStore Expre
       exact hy y (fun h => hy' (by simp only [Cmd.modifiedVars, Cmd.definedVars, h, List.mem_append,
         List.mem_cons, List.not_mem_nil, or_false]))
   | eval_assert | eval_assume | eval_cover => exact ⟨hσ, fun _ _ => rfl⟩
-
-/-- Leaving a scope keeps a well-formed store well formed and, outside what the scope
-    writes, the parent's values. -/
-private theorem proj_frame {F : Expression.Factory} {σ σ' : SemanticStore Expression}
-    {W : List CoreIdent} (hσ' : WellFormedStore σ' F) (hw : ∀ x, x ∉ W → σ' x = σ x) :
-    WellFormedStore (projectStore σ σ') F ∧ ∀ x, x ∉ W → projectStore σ σ' x = σ x := by
-  refine ⟨fun x v h => ?_, fun x hx => ?_⟩
-  · unfold projectStore at h
-    split at h
-    · exact hσ' x v h
-    · cases h
-  · unfold projectStore
-    split
-    · exact hw x hx
-    · rename_i h; simp only [Option.isSome_iff_ne_none, ne_eq, Decidable.not_not] at h
-      exact h.symm
-
-/-- The store an outcome leaves a scope with is its store projected on the parent's. -/
-private theorem outStore_leave (σ : SemanticStore Expression) (o : Outcome Expression)
-    (lb : Option String) :
-    outStore (match lb with | none => o.proj σ | some l => o.block l σ) =
-      projectStore σ (outStore o) := by
-  cases lb with
-  | none => cases o <;> rfl
-  | some l =>
-    cases o with
-    | normal => rfl
-    | exit l' _ => by_cases h : l' = l <;> simp [Outcome.block, h, outStore]
-
-/-- Leaving a scope whose body writes within `W` writes within any `W'` containing `W`. -/
-private theorem leave_frame {F : Expression.Factory} {σ : SemanticStore Expression}
-    {o : Outcome Expression} {W W' : List CoreIdent} (lb : Option String)
-    (h : WellFormedStore (outStore o) F ∧ ∀ x, x ∉ W → outStore o x = σ x)
-    (hW : ∀ x, x ∈ W → x ∈ W') :
-    WellFormedStore (outStore (match lb with | none => o.proj σ | some l => o.block l σ)) F ∧
-      ∀ x, x ∉ W' → outStore (match lb with | none => o.proj σ | some l => o.block l σ) x =
-        σ x := by
-  rw [outStore_leave]
-  exact proj_frame h.1 (fun x hx => h.2 x (fun hm => hx (hW x hm)))
-
-mutual
-
-/-- **A run writes only what the list defines or modifies**, and keeps the store well
-    formed. -/
-private theorem brun_frame {F : Expression.Factory} :
-    ∀ {ss : Statements} {σ : SemanticStore Expression}
-    {evs : List (Event Expression)} {o : Outcome Expression}, BRun F ss σ evs o →
-    WellFormedStore σ F →
-    WellFormedStore (outStore o) F ∧
-      ∀ x, x ∉ Block.modifiedOrDefinedVars ss false → outStore o x = σ x
-  | _, _, _, _, .nil, hσ => ⟨hσ, fun _ _ => rfl⟩
-  | _, _, _, _, .cons_normal h1 h2, hσ => by
-    obtain ⟨w1, f1⟩ := brunS_frame h1 hσ
-    obtain ⟨w2, f2⟩ := brun_frame h2 w1
-    refine ⟨w2, fun x hx => ?_⟩
-    simp only [Block.modifiedOrDefinedVars, Block.modifiedVars, Block.definedVars,
-      Stmt.modifiedOrDefinedVars, List.mem_append, not_or] at hx f1 f2
-    rw [f2 x ⟨hx.1.2, hx.2.2⟩]
-    exact f1 x ⟨hx.1.1, hx.2.1⟩
-  | _, _, _, _, .cons_exit h1, hσ => by
-    obtain ⟨w1, f1⟩ := brunS_frame h1 hσ
-    refine ⟨w1, fun x hx => ?_⟩
-    simp only [Block.modifiedOrDefinedVars, Block.modifiedVars, Block.definedVars,
-      Stmt.modifiedOrDefinedVars, List.mem_append, not_or] at hx f1
-    exact f1 x ⟨hx.1.1, hx.2.1⟩
-
-/-- **A run writes only what the statement defines or modifies**, and keeps the store well
-    formed. -/
-private theorem brunS_frame {F : Expression.Factory} :
-    ∀ {s : Statement} {σ : SemanticStore Expression}
-    {evs : List (Event Expression)} {o : Outcome Expression}, BRunS F s σ evs o →
-    WellFormedStore σ F →
-    WellFormedStore (outStore o) F ∧
-      ∀ x, x ∉ Stmt.modifiedOrDefinedVars s false → outStore o x = σ x
-  | _, _, _, _, .cmd (c := .cmd _) h, hσ => by
-    obtain ⟨w, f⟩ := cmd_frame h hσ
-    refine ⟨w, fun x hx => f x ?_⟩
-    simpa [Stmt.modifiedOrDefinedVars, Stmt.modifiedVars, Stmt.definedVars, HasVarsImp.modifiedVars,
-      HasVarsImp.definedVars, CmdExt.modifiedVars, CmdExt.definedVars] using hx
-  | _, _, _, _, .cmd (c := .call _ _ _ _) h, _ => h.elim
-  | _, _, _, _, .ite_true _ h, hσ => by
-    refine leave_frame none (brun_frame h hσ) (fun x hx => ?_)
-    simp only [Stmt.modifiedOrDefinedVars, Stmt.modifiedVars, Stmt.definedVars,
-      Block.modifiedOrDefinedVars, List.mem_append, Bool.false_eq_true, ite_false] at hx ⊢
-    rcases hx with hx | hx <;> simp [hx]
-  | _, _, _, _, .ite_false _ h, hσ => by
-    refine leave_frame none (brun_frame h hσ) (fun x hx => ?_)
-    simp only [Stmt.modifiedOrDefinedVars, Stmt.modifiedVars, Stmt.definedVars,
-      Block.modifiedOrDefinedVars, List.mem_append, Bool.false_eq_true, ite_false] at hx ⊢
-    rcases hx with hx | hx <;> simp [hx]
-  | _, _, _, _, .ite_nondet_true h, hσ => by
-    refine leave_frame none (brun_frame h hσ) (fun x hx => ?_)
-    simp only [Stmt.modifiedOrDefinedVars, Stmt.modifiedVars, Stmt.definedVars,
-      Block.modifiedOrDefinedVars, List.mem_append, Bool.false_eq_true, ite_false] at hx ⊢
-    rcases hx with hx | hx <;> simp [hx]
-  | _, _, _, _, .ite_nondet_false h, hσ => by
-    refine leave_frame none (brun_frame h hσ) (fun x hx => ?_)
-    simp only [Stmt.modifiedOrDefinedVars, Stmt.modifiedVars, Stmt.definedVars,
-      Block.modifiedOrDefinedVars, List.mem_append, Bool.false_eq_true, ite_false] at hx ⊢
-    rcases hx with hx | hx <;> simp [hx]
-  | _, _, _, _, .block (l := l) h, hσ => by
-    refine leave_frame (some l) (brun_frame h hσ) (fun x hx => ?_)
-    simp only [Stmt.modifiedOrDefinedVars, Stmt.modifiedVars, Stmt.definedVars,
-      Block.modifiedOrDefinedVars, List.mem_append, Bool.false_eq_true, ite_false] at hx ⊢
-    rcases hx with hx | hx <;> simp [hx]
-  | _, _, _, _, .exit, hσ => ⟨hσ, fun _ _ => rfl⟩
-  | _, _, _, _, .typeDecl, hσ => ⟨hσ, fun _ _ => rfl⟩
-  | _, _, _, _, .loop_exit _, hσ => ⟨hσ, fun _ _ => rfl⟩
-  | _, _, _, _, .loop_iter _ h1 h2, hσ => by
-    obtain ⟨w1, f1⟩ := brun_frame h1 hσ
-    have hp := proj_frame w1 f1
-    obtain ⟨w2, f2⟩ := brunS_frame h2 hp.1
-    refine ⟨w2, fun x hx => ?_⟩
-    rw [f2 x hx]
-    refine hp.2 x ?_
-    simpa only [Stmt.modifiedOrDefinedVars, Stmt.modifiedVars, Stmt.definedVars,
-      Block.modifiedOrDefinedVars, List.mem_append, Bool.false_eq_true, ite_false] using hx
-  | _, _, _, _, .loop_break _ h1, hσ => by
-    obtain ⟨w1, f1⟩ := brun_frame h1 hσ
-    have hp := proj_frame w1 f1
-    refine ⟨hp.1, fun x hx => hp.2 x ?_⟩
-    simpa only [Stmt.modifiedOrDefinedVars, Stmt.modifiedVars, Stmt.definedVars,
-      Block.modifiedOrDefinedVars, List.mem_append, Bool.false_eq_true, ite_false] using hx
-
-end
-
 
 /-! ## The phase's walk is sound -/
 
@@ -732,7 +603,8 @@ theorem pass_sound {F : Lambda.Factory CoreLParams} {Fs : Expression.Factory} {f
       exact ⟨Facts.holds_forget h.1 _ hσ' (fun y hy' => (hfr y (by
         simpa [Cmd.modifiedVars, Cmd.definedVars] using hy')).symm), Facts.ops_forget h.2 _⟩
   forget_post fs s σ evs σ' h hr := by
-    obtain ⟨hσ', hfr⟩ := brunS_frame hr h.1.1
+    have hσ' := (brunS_typed hr h.1.1).1
+    have hfr := brunS_frame_modifiedOrDefined hr
     exact ⟨Facts.holds_forget h.1 _ hσ' (fun y hy' => (hfr y (by
       simpa [forgetWritten] using hy')).symm), Facts.ops_forget h.2 _⟩
 

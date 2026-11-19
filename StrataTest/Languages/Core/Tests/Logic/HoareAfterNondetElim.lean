@@ -378,16 +378,10 @@ theorem walk_meets_contract :
   refine Core.Logic.Hoare.consequence _ _
     (Pre := Core.Logic.Hoare.Procedure.contractPre Core.Factory walkProc) ?_
     (fun _ h => h.1) (fun _ h => h)
-  have hvars : Block.definedVars (C := Core.Command) walkBody false ++
-      Block.modifiedVars (C := Core.Command) walkBody = [rId, rId, rId] := by decide +kernel
   have hsrc := Core.NondetElim.triple π testParams (ss := walkBody)
     (by simp [Core.Statements.noCalls, Block.allSubstmts_cons, Stmt.allSubstmts_loop,
       Stmt.allSubstmts_ite, Stmt.allSubstmts_cmd, Block.allSubstmts_nil,
       Core.Statement.isNotCall])
-    (fun name hname hmem => by
-      rw [hvars] at hmem
-      simp only [List.mem_cons, List.not_mem_nil, or_false, or_self] at hmem
-      exact r_not_generated name hname hmem)
     (fun _ hp _ _ => by simp [testParams] at hp)
     (fun _ h => h.2.1) (fun _ _ h hx => inv_of_extends h hx)
     (walk_nondetElim ▸ walkTgt_triple)

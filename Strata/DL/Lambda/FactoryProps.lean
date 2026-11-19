@@ -10,6 +10,7 @@ import all Strata.DL.Lambda.LExprType
 public import Strata.Util.ListUtils
 public import Strata.DL.Lambda.TypeFactory
 import Strata.Util.ListUtilsProps
+import Strata.DL.Lambda.LExprWFProps
 import Strata.DL.Lambda.LTyUnifyProps
 
 /-!
@@ -184,6 +185,17 @@ theorem LExpr.applyTypeSubst_eq_replaceUserProvidedType {T : LExprParams}
     rw [h_id]
     induction e <;> unfold replaceUserProvidedType <;> grind
   case isFalse => rfl
+
+/-- The empty type substitution leaves an expression unchanged. -/
+theorem LExpr.applyTypeSubst_nil {T : LExprParams} (e : LExpr T.mono) :
+    e.applyTypeSubst [] = e := by
+  simp [LExpr.applyTypeSubst, Subst.hasEmptyScopes]
+
+/-- Applying a type substitution keeps an expression's operators. -/
+theorem LExpr.getOps_applyTypeSubst {T : LExprParams} (S : Subst) (e : LExpr T.mono) :
+    (e.applyTypeSubst S).getOps = e.getOps := by
+  rw [LExpr.applyTypeSubst_eq_replaceUserProvidedType]
+  exact LExpr.getOps_replaceUserProvidedType e _
 
 /-- An unannotated free variable is fixed by `applyTypeSubst`. -/
 theorem LExpr.applyTypeSubst_fvar_none {T : LExprParams} (S : Subst) (m : T.Metadata)
@@ -1018,6 +1030,49 @@ theorem lookup_tryAddAll_congr {T : LExprParams} [Inhabited T.Metadata] [Std.ToF
     · rename_i G hG
       rw [tryPush_eq_pushIfNew hG] at hok
       exact lookup_tryAddAll_congr l (lookup_pushIfNew_congr h f) hok
+
+/-- A function of a factory after `pushIfNew` of a list was in the factory or in the list. -/
+theorem mem_foldl_pushIfNew {T : LExprParams} :
+    ∀ (l : List (LFunc T)) (F : Lambda.Factory T) (f : LFunc T),
+      f ∈ (l.foldl Lambda.Factory.pushIfNew F).toArray → f ∈ F.toArray ∨ f ∈ l
+  | [], F, f, h => .inl h
+  | g :: l, F, f, h => by
+    rcases mem_foldl_pushIfNew l _ f h with h' | h'
+    · unfold Lambda.Factory.pushIfNew at h'
+      split at h'
+      · exact .inl h'
+      · simp only [Lambda.Factory.push, Array.mem_push] at h'
+        rcases h' with h' | rfl
+        · exact .inl h'
+        · exact .inr List.mem_cons_self
+    · exact .inr (List.mem_cons_of_mem _ h')
+
+/-- `pushIfNew` keeps the function found under a name. -/
+private theorem getElem?_pushIfNew_of {T : LExprParams} {F : Lambda.Factory T} {g f : LFunc T}
+    {x : String} (h : F[x]? = some f) : (F.pushIfNew g)[x]? = some f := by
+  unfold Lambda.Factory.pushIfNew
+  split
+  · exact h
+  · rename_i hnew
+    rw [Lambda.Factory.push_mem_match]
+    split
+    · rename_i hx
+      subst hx
+      exact absurd (Lambda.Factory.getElem?_some_implies_mem h) hnew
+    · exact h
+
+/-- Pushing a list with `pushIfNew` keeps the function found under a name. -/
+theorem getElem?_foldl_pushIfNew_of {T : LExprParams} :
+    ∀ (l : List (LFunc T)) {F : Lambda.Factory T} {f : LFunc T} {x : String},
+      F[x]? = some f → (l.foldl Lambda.Factory.pushIfNew F)[x]? = some f
+  | [], _, _, _, h => h
+  | _ :: l, _, _, _, h => getElem?_foldl_pushIfNew_of l (getElem?_pushIfNew_of h)
+
+/-- A function found by name belongs to the factory's array. -/
+theorem getElem_mem_toArray {T : LExprParams} (F : Lambda.Factory T) (n : String) (hn : n ∈ F) :
+    F[n]'hn ∈ F.toArray := by
+  simp +instances only [Lambda.Factory.instGetElem?, Lambda.Factory.get]
+  exact Array.getElem_mem _
 
 end Maps
 

@@ -9,7 +9,7 @@ public import Strata.Transform.CoreSpecification
 public import Strata.DL.Imperative.Analysis.Assertions
 public import Strata.DL.Imperative.Logic.Termination
 public import Strata.Languages.Core.Logic.TraceInterpUsingDenote
-public import Strata.Languages.Core.Logic.FactoryInterp
+public import Strata.Languages.Core.FactoryInterp
 
 public section
 

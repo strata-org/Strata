@@ -52,6 +52,9 @@ by `Rtrace_full`, and the one-relation members (`OverapproximatesTracesUptoWhen`
 - `OverapproximatesTraces2UptoWhen.comp_trans_eq` /
   `OverapproximatesTracesUptoWhen.comp_trans_eq` — shared-start composition with
   stage-specific trace relations and a transitive output-state relation.
+- `OverapproximatesTraces2UptoWhen.of_pre_and_initEnvWF` /
+  `OverapproximatesTracesUptoWhen.of_pre_and_initEnvWF` — drop from the precondition the
+  assumption that some entry environment meets the source gate.
 - `overapproximatesTraces2UptoWhen_assertValid` / `overapproximatesTracesUptoWhen_assertValid`
   / `overapproximatesTraces_assertValid` and `overapproximatesTraces2UptoWhen_allAsserts` /
   `overapproximatesTraces_allAsserts` — transport per-identifier or whole-trace assertion
@@ -383,6 +386,36 @@ theorem OverapproximatesTracesUptoWhen.comp_trans_eq
     OverapproximatesTracesUptoWhen (RComp Rtrace₁ Rtrace₂) (· = ·) Rout
       L₁ L₃ (fun s => T₁ s >>= T₂) pre₁ params₁ params₃ :=
   OverapproximatesTraces2UptoWhen.comp_trans_eq houtTrans hpre h₁ h₂
+
+omit [HasFvar P] [HasFvars P] [HasOps P] [HasBool P] [HasBoolOps P]
+  [HasSubstFvar P] [HasInt P] [HasIntOps P] in
+/-- A statement precondition may assume that some entry environment meets the source gate:
+    the overapproximation only ever applies it to statements run from such an environment. -/
+theorem OverapproximatesTraces2UptoWhen.of_pre_and_initEnvWF
+    {EventT : Type _}
+    {Rtrace Rtrace_full : Relation (List EventT)} {Rin Rout : Relation (Env P)}
+    {L₁ L₂ : EventLang P EventT} {T : L₁.StmtT → Option L₂.StmtT} {pre : L₁.StmtT → Prop}
+    {params₁ : L₁.InitEnvWFParamsTy} {params₂ : L₂.InitEnvWFParamsTy}
+    (h : OverapproximatesTraces2UptoWhen Rtrace Rtrace_full Rin Rout L₁ L₂ T
+      (fun st => pre st ∧ ∃ ρ, L₁.initEnvWF params₁ st ρ) params₁ params₂) :
+    OverapproximatesTraces2UptoWhen Rtrace Rtrace_full Rin Rout L₁ L₂ T pre params₁ params₂ :=
+  fun st st' ht hpre ρ₀ ρ₀' hin hinit => h st st' ht ⟨hpre, ρ₀, hinit⟩ ρ₀ ρ₀' hin hinit
+
+omit [HasFvar P] [HasFvars P] [HasOps P] [HasBool P] [HasBoolOps P]
+  [HasSubstFvar P] [HasInt P] [HasIntOps P] in
+/-- A single-relation trace overapproximation whose precondition also assumes that some
+    entry environment meets the source gate is one under the precondition alone: the
+    overapproximation only applies the precondition to statements run from such an
+    environment. -/
+theorem OverapproximatesTracesUptoWhen.of_pre_and_initEnvWF
+    {EventT : Type _}
+    {Rtrace : Relation (List EventT)} {Rin Rout : Relation (Env P)}
+    {L₁ L₂ : EventLang P EventT} {T : L₁.StmtT → Option L₂.StmtT} {pre : L₁.StmtT → Prop}
+    {params₁ : L₁.InitEnvWFParamsTy} {params₂ : L₂.InitEnvWFParamsTy}
+    (h : OverapproximatesTracesUptoWhen Rtrace Rin Rout L₁ L₂ T
+      (fun st => pre st ∧ ∃ ρ, L₁.initEnvWF params₁ st ρ) params₁ params₂) :
+    OverapproximatesTracesUptoWhen Rtrace Rin Rout L₁ L₂ T pre params₁ params₂ :=
+  OverapproximatesTraces2UptoWhen.of_pre_and_initEnvWF h
 
 omit [HasFvar P] [HasFvars P] [HasOps P] [HasBool P] [HasBoolOps P]
   [HasSubstFvar P] [HasInt P] [HasIntOps P] in

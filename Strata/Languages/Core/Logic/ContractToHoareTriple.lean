@@ -5,7 +5,7 @@
 -/
 module
 
-public import Strata.Languages.Core.Logic.FactoryInterp
+public import Strata.Languages.Core.FactoryInterp
 public import Strata.Languages.Core.Logic.HoareUnstructured
 public import Strata.Languages.Core.Logic.HoareTotal
 public import Strata.Languages.Core.Program

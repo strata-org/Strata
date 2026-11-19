@@ -75,7 +75,7 @@ these assumptions are intended to hold if these axioms are consistent. If the
 assumptions do not hold (for instance, if the typing rules are too permissive),
 then validity becomes trivial. Proving that consistent interpretations exist
 is possible but very difficult with recursive functions.
-`Core.factoryInterp` (in `Strata/Languages/Core/Logic/FactoryInterp.lean`) is a
+`Core.factoryInterp` (in `Strata/Languages/Core/FactoryInterp.lean`) is a
 consistent interpretation of the built-in `Core.Factory`, axioms included.
 
 Note that the semantics does not handle function preconditions at the moment.

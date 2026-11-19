@@ -1411,6 +1411,17 @@ theorem getOps_replaceUserProvidedType (e : LExpr T.mono)
     LExpr.getOps (LExpr.replaceUserProvidedType e φ) = LExpr.getOps e := by
   induction e <;> simp_all [LExpr.replaceUserProvidedType, LExpr.getOps]
 
+/-- The operator of an annotated operator node of an expression is among its operators. -/
+theorem mem_getOps_of_opAnnots {T : LExprParamsT} :
+    ∀ {e : LExpr T} {p}, p ∈ e.opAnnots → p.1 ∈ e.getOps := by
+  intro e
+  induction e with
+  | op m o ty =>
+    intro p hp
+    cases ty <;> simp_all [LExpr.opAnnots, LExpr.getOps]
+  | const | bvar | fvar => intro p hp; simp [LExpr.opAnnots] at hp
+  | _ => intro p hp; simp_all [LExpr.opAnnots, LExpr.getOps] <;> grind
+
 omit [DecidableEq T.IDMeta] in
 /-- Rewriting annotations by `φ` rewrites the annotation of each free-variable occurrence by
     `φ`. -/

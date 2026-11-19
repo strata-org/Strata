@@ -24,7 +24,7 @@ import all Strata.Languages.Core.InterpreterCallSound
 import all Strata.Languages.Core.StatementSemantics
 import Strata.Languages.Core.InterpreterProps
 import Strata.DL.Imperative.InterpreterReplayTactics
-import Strata.Languages.Core.Logic.FactoryInterp
+import Strata.Languages.Core.FactoryInterp
 import Strata.Languages.Core.FactoryWF
 import Strata.Languages.Core.InterpreterDomainProps
 

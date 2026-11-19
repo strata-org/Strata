@@ -4,7 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 import Strata.Languages.Core.InterpreterReachCheck
-import Strata.Languages.Core.Logic.FactoryInterp
+import Strata.Languages.Core.FactoryInterp
 import Strata.Languages.Core.InterpreterReplay
 import Strata.DL.Imperative.InterpreterConfig
 import Strata.DL.Imperative.InterpreterCFGProps

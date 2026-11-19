@@ -23,6 +23,7 @@ import Strata.Util.RealProps
 import Strata.Util.IonDeserializer
 import Strata.Util.Sarif
 import Strata.Util.Worklist
+import Strata.Util.WorklistProps
 
 /- Strata Languages -/
 import Strata.Languages.Core.BitVecEvalProps
@@ -30,6 +31,7 @@ import Strata.Languages.Core.IntEvalProps
 import Strata.Languages.Core.InstWellFormedSemanticsEval
 import Strata.Languages.Core.InstExprTyping
 import Strata.Languages.Core.FactoryWF
+import Strata.Languages.Core.FactoryInterp
 import Strata.Languages.Core.SeqModel
 import Strata.Languages.Core.SMTEncoderProps
 import Strata.Languages.Core.SMTEmitter
@@ -51,9 +53,7 @@ import Strata.Languages.Core.Analysis.DeductiveVerificationProps
 import Strata.Languages.Core.Analysis.FragmentFactory
 import Strata.DL.Lambda.LFuncEvalSound
 import Strata.DL.Lambda.LExprRenameOps
-import Strata.Transform.MonomorphizeBasics
-import Strata.Transform.MonomorphizeWorklist
-import Strata.Transform.MonomorphizeInstances
+import Strata.Transform.MonomorphizeFunctionsProps
 import Strata.Transform.MonomorphizeFunctionsCorrect
 import Strata.Languages.Core.ProcedureProps
 import Strata.Languages.Core.ProgramProps
@@ -103,7 +103,6 @@ import Strata.Transform.StructuredToUnstructuredPipelineCoreCorrect
 import Strata.DL.Imperative.Logic.HoareTemplate
 import Strata.DL.Imperative.Logic.HoareTotalTemplate
 import Strata.Languages.Core.Logic.LangDefProps
-import Strata.Languages.Core.Logic.FactoryInterp
 import Strata.Languages.Core.Logic.TraceInterpUsingDenote
 import Strata.Languages.Core.Logic.TraceInterpUsingDenoteProps
 import Strata.Languages.Core.Logic.Hoare

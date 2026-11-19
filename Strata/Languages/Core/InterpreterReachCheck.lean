@@ -13,8 +13,8 @@ import Strata.DL.Imperative.StmtCFGCallSemanticsProps
 import Strata.DL.Imperative.CmdSemanticsProps
 import all Strata.Languages.Core.Factory
 import all Strata.Languages.Core.FactoryEvalSoundWF
-public import Strata.Languages.Core.Logic.FactoryInterp
-import all Strata.Languages.Core.Logic.FactoryInterp
+public import Strata.Languages.Core.FactoryInterp
+import all Strata.Languages.Core.FactoryInterp
 
 /-! # A static criterion on Core programs for computable evaluation
 

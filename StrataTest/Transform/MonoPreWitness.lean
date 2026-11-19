@@ -5,8 +5,7 @@
 -/
 module
 
-import all Strata.Transform.MonomorphizeInstances
-import Strata.Transform.MonomorphizeFunctionsCorrect
+import all Strata.Transform.MonomorphizeFunctionsCorrect
 import Strata.DL.Lambda.FactoryProps
 meta import Strata.Transform.MonomorphizeFunctions
 

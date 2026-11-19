@@ -22,7 +22,7 @@ import all Strata.DL.Imperative.InterpreterSound
 import all Strata.Languages.Core.InterpreterSound
 import Strata.Languages.Core.InterpreterReplayTactics
 import Strata.Languages.Core.InterpreterProps
-import Strata.Languages.Core.Logic.FactoryInterp
+import Strata.Languages.Core.FactoryInterp
 import Strata.Languages.Core.FactoryWF
 import Strata.Languages.Core.InterpreterDomainProps
 
