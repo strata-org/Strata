@@ -7,24 +7,19 @@ $(BOOKS): %: build-% serve-%
 
 build-%:
 	lake exe $* --with-html-single --output _out/$*
-	./apply-verso-update.sh _out/$*
 
 build-langdef:
 	lake exe langdef --with-html-single --output _out/langdef
-	./apply-verso-update.sh _out/langdef
 	cp strata-hourglass.png _out/langdef/html-single/
 
 build-laurelguide:
 	lake exe laurelguide --with-html-multi --output _out/laurelguide
-	./apply-verso-update.sh _out/laurelguide
 
 build-laureldesign:
 	lake exe laureldesign --with-html-multi --output _out/laureldesign
-	./apply-verso-update.sh _out/laureldesign
 
 build-laurelimpl:
 	lake exe laurelimpl --with-html-multi --output _out/laurelimpl
-	./apply-verso-update.sh _out/laurelimpl
 
 serve-%:
 	@(sleep 1 && open http://localhost:$(PORT)/) &
