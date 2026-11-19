@@ -239,8 +239,6 @@ private def seqP : Decl :=
 private def pairP : Decl :=
   mkProc "pair" ["a", "b"] [("x", tv "a"), ("y", tv "b")] [("r", tv "a")]
     (post := [eqE (v "r" (tv "a")) (v "x" (tv "a"))])
-/-- `q<a>()` requires `forall y : a :: y == y`. -/
-private def qP : Decl := mkProc "q" ["a"] [] [] (pre := [reflAll (tv "a")])
 /-- `r<a, b>(x : a)` with `b` only in a precondition. -/
 private def rP : Decl :=
   mkProc "r" ["a", "b"] [("x", tv "a")] []
@@ -325,7 +323,7 @@ spec {
 };
 procedure Caller<a> (z : a)
 {
-  var w : (a);
+  var w : a;
   var tmp_arg_0 : a := z;
   var tmp_w_1 : a := w;
   havoc w;
@@ -347,7 +345,7 @@ spec {
 };
 procedure Caller<a, b> (x : a, y : b)
 {
-  var w : (b);
+  var w : b;
   var tmp_arg_0 : b := y;
   var tmp_arg_1 : a := x;
   var tmp_w_2 : b := w;
@@ -365,7 +363,7 @@ info: program Core;
 type $__cety_0;
 procedure q<a> ()
 spec {
-  requires [q_requires_0]: forall y : (a) :: y == y;
+  requires [q_requires_0]: forall y : a :: y == y;
   } {
   
 };
@@ -375,8 +373,8 @@ procedure Caller ()
 };
 -/
 #guard_msgs in
-#eval IO.println (toString (callElim (qProg qP)))
-#guard (callElim (qProg qP)).allExprs LExpr.fullyAnnotated
+#eval IO.println (toString (callElim (qProg qReflDecl)))
+#guard (callElim (qProg qReflDecl)).allExprs LExpr.fullyAnnotated
 
 /--
 info: program Core;
@@ -385,7 +383,7 @@ type $__cety_0;
 procedure r<a, b> (x : a)
 spec {
   requires [r_requires_0]: x == x;
-  requires [r_requires_1]: forall y : (b) :: y == y;
+  requires [r_requires_1]: forall y : b :: y == y;
   } {
   
 };
@@ -400,6 +398,177 @@ procedure Caller ()
 #eval IO.println (toString (callElim (rProg rP)))
 #guard (callElim (rProg rP)).allExprs LExpr.fullyAnnotated
 
+-- Stored type arguments give the type of a parameter that the call's arguments do not determine,
+-- so no opaque type is declared.
+/--
+info: program Core;
+
+procedure q<a> ()
+spec {
+  requires [q_requires_0]: forall y : a :: y == y;
+  } {
+  
+};
+procedure Caller ()
+{
+  assert [callElimAssert_q_requires_0_0]: forall y : int :: y == y;
+};
+-/
+#guard_msgs in
+#eval IO.println (toString (callElim (qTyArgsProg qReflDecl (some [.forAll [] .int]))))
+#guard (callElim (qTyArgsProg qReflDecl (some [.forAll [] .int]))).allExprs LExpr.fullyAnnotated
+
+-- Call elimination on the checked program: the stored type argument of `a` is a generated type
+-- variable, so `a` gets an opaque type.
+/--
+info: program Core;
+
+type $__cety_0;
+procedure q<a> ()
+spec {
+  requires [q_requires_0]: forall y : a :: y == y;
+  } {
+  
+};
+procedure Caller ()
+{
+  assert [callElimAssert_q_requires_0_1]: forall y : $__cety_0 :: y == y;
+};
+-/
+#guard_msgs in
+#eval match Core.typeCheck .quiet (qProg qReflDecl) with
+  | .ok p => IO.println (toString (callElim p).stripMetaData)
+  | .error e => IO.println e.message
+
+-- The caller `P<b>(y : b)` calls `q<a>(x : a)` with `y`, so `a` is the caller's own type
+-- parameter `b`.
+/-- info: [some ["b"]] -/
+#guard_msgs in
+#eval tyArgsOfResult (Core.typeCheck .quiet (qParamProg qArgDecl))
+
+/--
+info: program Core;
+
+procedure q<a> (x : a)
+spec {
+  requires [q_requires_0]: forall y : a :: y == y;
+  } {
+  
+};
+procedure P<b> (y : b)
+{
+  var tmp_arg_0 : b := y;
+  assert [callElimAssert_q_requires_0_1]: forall y : b :: y == y;
+};
+-/
+#guard_msgs in
+#eval match Core.typeCheck .quiet (qParamProg qArgDecl) with
+  | .ok p => IO.println (toString (callElim p).stripMetaData)
+  | .error e => IO.println e.message
+
+-- The pipeline order: type check, call elimination, then opaque type parameters.
+/--
+info: program Core;
+
+type $__opaque_q_a_0;
+procedure q (x : $__opaque_q_a_0)
+spec {
+  requires [q_requires_0]: forall y : $__opaque_q_a_0 :: y == y;
+  } {
+  
+};
+type $__opaque_P_b_1;
+procedure P (y : $__opaque_P_b_1)
+{
+  var tmp_arg_0 : $__opaque_P_b_1 := y;
+  assert [callElimAssert_q_requires_0_1]: forall y : $__opaque_P_b_1 :: y == y;
+};
+-/
+#guard_msgs in
+#eval match Core.typeCheck .quiet (qParamProg qArgDecl) with
+  | .ok p =>
+    match Core.Transform.run (callElim p) Core.genOpaqueTypeParams with
+    | .ok (_, p') => IO.println (toString p'.stripMetaData)
+    | .error e => IO.println e.message
+  | .error e => IO.println e.message
+
+-- A stored type that still contains a generated type variable is not used: `b` gets an opaque
+-- type, while `a` is read from the stored type arguments.
+/--
+info: program Core;
+
+type $__cety_0;
+procedure r<a, b> (x : a)
+spec {
+  requires [r_requires_0]: x == x;
+  requires [r_requires_1]: forall y : b :: y == y;
+  } {
+  
+};
+procedure Caller ()
+{
+  var tmp_arg_1 : int := 7;
+  assert [callElimAssert_r_requires_0_2]: tmp_arg_1 == tmp_arg_1;
+  assert [callElimAssert_r_requires_1_3]: forall y : $__cety_0 :: y == y;
+};
+-/
+#guard_msgs in
+#eval IO.println (toString (callElim
+  (rTyArgsProg rP (some [.forAll [] .int, .forAll [] (.ftvar "$__ty3")]))))
+#guard (callElim
+  (rTyArgsProg rP (some [.forAll [] .int, .forAll [] (.ftvar "$__ty3")]))).allExprs
+  LExpr.fullyAnnotated
+
+-- Stored type arguments that are not one entry per type parameter are ignored, and the call's
+-- arguments determine the types as for a program that was not type-checked.
+/--
+info: program Core;
+
+type $__cety_0;
+procedure r<a, b> (x : a)
+spec {
+  requires [r_requires_0]: x == x;
+  requires [r_requires_1]: forall y : b :: y == y;
+  } {
+  
+};
+procedure Caller ()
+{
+  var tmp_arg_1 : int := 7;
+  assert [callElimAssert_r_requires_0_2]: tmp_arg_1 == tmp_arg_1;
+  assert [callElimAssert_r_requires_1_3]: forall y : $__cety_0 :: y == y;
+};
+-/
+#guard_msgs in
+#eval IO.println (toString (callElim (rTyArgsProg rP (some [.forAll [] .bool]))))
+#guard (callElim (rTyArgsProg rP (some [.forAll [] .bool]))).allExprs LExpr.fullyAnnotated
+
+-- Stored type arguments with more entries than type parameters are ignored likewise.
+/--
+info: program Core;
+
+type $__cety_0;
+procedure r<a, b> (x : a)
+spec {
+  requires [r_requires_0]: x == x;
+  requires [r_requires_1]: forall y : b :: y == y;
+  } {
+  
+};
+procedure Caller ()
+{
+  var tmp_arg_1 : int := 7;
+  assert [callElimAssert_r_requires_0_2]: tmp_arg_1 == tmp_arg_1;
+  assert [callElimAssert_r_requires_1_3]: forall y : $__cety_0 :: y == y;
+};
+-/
+#guard_msgs in
+#eval IO.println (toString (callElim
+  (rTyArgsProg rP (some [.forAll [] .int, .forAll [] .bool, .forAll [] .int]))))
+#guard (callElim
+  (rTyArgsProg rP (some [.forAll [] .int, .forAll [] .bool, .forAll [] .int]))).allExprs
+  LExpr.fullyAnnotated
+
 /--
 info: program Core;
 
@@ -408,7 +577,7 @@ type $__cety_1;
 procedure r<a, b> (x : a)
 spec {
   requires [r_requires_0]: x == x;
-  requires [r_requires_1]: forall y : (b) :: y == y;
+  requires [r_requires_1]: forall y : b :: y == y;
   } {
   
 };
@@ -468,7 +637,7 @@ type $__cety_0;
 axiom [one]: forall x : $__cety_0 :: forall y : $__cety_0 :: x == y;
 procedure Q<a> ()
 spec {
-  requires [Q_requires_0]: forall x : (a) :: forall y : (a) :: x == y;
+  requires [Q_requires_0]: forall x : a :: forall y : a :: x == y;
   } {
   
 };
@@ -595,7 +764,7 @@ private def outTyP : Decl := mkProc "p" ["a", "b"] [("x", tv "a")] [("y", tv "b"
 private def cfgOutTyProg : Program :=
   let blk : Imperative.DetBlock String Command Expression :=
     { cmds := [.cmd (.init "r" (.forAll [] .bool) (.det (.boolConst Core.coreLoc true)) .empty),
-               .call "p" [.inArg (v "n" .int), .outArg "r"] .empty],
+               .call "p" none [.inArg (v "n" .int), .outArg "r"] .empty],
       transfer := .condGoto (v "r" .bool) "up" "down" .empty }
   let fin : Imperative.DetBlock String Command Expression :=
     { cmds := [], transfer := .finish .empty }

@@ -45,7 +45,7 @@ private def calleeEnv : String → Option Procedure :=
   fun n => if n = "callee" then some callee else none
 
 /-- The call command `call callee()`. -/
-private def callCmd : Command := .call "callee" [] .empty
+private def callCmd : Command := .call "callee" none [] .empty
 
 /-- The assertion event of label `label` and condition `true`, captured at the
     empty store and factory `fac`. -/
@@ -79,7 +79,7 @@ private theorem callCmd_sem (fac : Expression.Factory)
   have hbody : BigStepE calleeEnv callee.body ⟨emptyStore, fac⟩ emptyStore
       [trueEvent fac "body"] :=
     .structured (ρ' := ⟨emptyStore, fac⟩) (body_run fac)
-  have h := EvalCmdExtE.call_sem (n := "callee") (callArgs := []) (md := .empty)
+  have h := EvalCmdExtE.call_sem (n := "callee") (tyArgs := none) (callArgs := []) (md := .empty)
     (π := calleeEnv) (fac := fac) (σ := σ) (σ' := σ) (σAO := emptyStore)
     (by simp [calleeEnv])
     ⟨[], [], .eval_none, .read_none, ⟨emptyStore, emptyStore, .init_none, .init_none, rfl⟩⟩
@@ -97,7 +97,7 @@ private theorem callCmd_semCore
   have hbody : CoreBodyExecE calleeEnv callee.body ⟨emptyStore, fac⟩ emptyStore
       [trueEvent fac "body"] :=
     CoreBodyExecE.structured (ρ' := ⟨emptyStore, fac⟩) (body_run fac)
-  have h := EvalCommandE.call_sem (n := "callee") (callArgs := []) (md := .empty)
+  have h := EvalCommandE.call_sem (n := "callee") (tyArgs := none) (callArgs := []) (md := .empty)
     (π := calleeEnv) (fac := fac) (σ := σ) (σ' := σ) (σAO := emptyStore)
     (by simp [calleeEnv])
     ⟨[], [], .eval_none, .read_none, ⟨emptyStore, emptyStore, .init_none, .init_none, rfl⟩⟩

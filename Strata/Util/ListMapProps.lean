@@ -772,6 +772,58 @@ theorem Map.find?_zip [DecidableEq α] {m : Map α β} {a : α} {b : β}
         refine ⟨c', i + 1, ?_, by simpa using hsnd, by simpa using hcs⟩
         simp [Map.find?, heq, hfind]
 
+/-- Every key of a zip of equal-length lists is found in it. -/
+theorem Map.find?_zip_isSome [DecidableEq α] :
+    ∀ (ks : List α) (vs : List β), ks.length = vs.length → ∀ x ∈ ks,
+      (Map.find? (ks.zip vs) x).isSome := by
+  intro ks
+  induction ks with
+  | nil => intro _ _ x hx; cases hx
+  | cons k ks ih =>
+    intro vs hl x hx
+    cases vs with
+    | nil => cases hl
+    | cons v vs =>
+      simp only [List.zip_cons_cons, Map.find?]
+      split
+      · rfl
+      · rename_i hne
+        simp only [List.length_cons, Nat.add_right_cancel_iff] at hl
+        rcases List.mem_cons.mp hx with rfl | hx
+        · exact absurd rfl hne
+        · exact ih vs hl x hx
+
+/-- What a zip of lists maps a key to is among its values. -/
+theorem Map.find?_zip_mem [DecidableEq α] :
+    ∀ (ks : List α) (vs : List β) x r, Map.find? (ks.zip vs) x = some r → r ∈ vs := by
+  intro ks
+  induction ks with
+  | nil => intro _ _ _ h; cases h
+  | cons k ks ih =>
+    intro vs x r h
+    cases vs with
+    | nil => cases h
+    | cons v vs =>
+      simp only [List.zip_cons_cons, Map.find?] at h
+      split at h
+      · cases h; exact List.mem_cons_self
+      · exact List.mem_cons_of_mem _ (ih vs x r h)
+
+/-- A key of a binding in a list is found in it. -/
+theorem Map.find?_isSome_of_mem [DecidableEq α] {x : α} {r : β} :
+    ∀ (l : List (α × β)), (x, r) ∈ l → (Map.find? l x).isSome := by
+  intro l
+  induction l with
+  | nil => intro h; cases h
+  | cons p l ih =>
+    intro h
+    obtain ⟨a, b⟩ := p
+    simp only [Map.find?]
+    split
+    · rfl
+    · rcases List.mem_cons.mp h with h | h
+      · cases h; contradiction
+      · exact ih h
 
 /-- `Map.erase` on a key not in the map is identity. -/
 theorem Map.erase_of_find?_none [DecidableEq α]

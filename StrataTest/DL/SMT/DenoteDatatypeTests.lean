@@ -149,19 +149,20 @@ private noncomputable def denoteColorBox (t : Term) : Option Prop :=
 
 /-- A tester on a constructor without fields, and on one with a field. -/
 example : ∃ P, denoteColorBox (testerT "Red" redT) = some P ∧ P := by
-  refine ⟨_, rfl, ?_⟩; intro _; rfl
+  refine ⟨_, rfl, ?_⟩; intro _ _ _; rfl
 example : ∃ P, denoteColorBox (testerT "Box" box3) = some P ∧ P := by
-  refine ⟨_, rfl, ?_⟩; intro _; rfl
+  refine ⟨_, rfl, ?_⟩; intro _ _ _; rfl
 example : ∃ P, denoteColorBox (testerT "Green" redT) = some P ∧ ¬ P := by
   refine ⟨_, rfl, ?_⟩
   intro h
-  have := h (fun _ => 0)
+  have := h (fun _ => 0) (fun _ => 0) (fun _ => 0)
   simp [tester, DVal.ctor] at this
 
 /-- A selector on its own constructor reads the field back: `IntBox..v(Box(3)) = 3`
 denotes `3 = 3`, whatever the selector's value on other constructors. -/
 example : denoteColorBox (eqT (selT "IntBox..v" box3 (.prim .int)) (.prim (.int 3)))
-    = some (∀ _ : Carrier colorBox (dtSorted sctx ⟨[], ⟨rfl, nofun⟩⟩) "IntBox" → Int,
+    = some (∀ (_divByZero _modByZero : Int → Int)
+        (_ : Carrier colorBox (dtSorted sctx ⟨[], ⟨rfl, nofun⟩⟩) "IntBox" → Int),
         (3 : Int) = 3) := by
   rfl
 
@@ -181,13 +182,15 @@ private def bVal : Carrier ab (dtSorted abCtx ⟨[], ⟨rfl, nofun⟩⟩) "T" :=
 the function the denotation quantifies over is `0` at `B`. That holds of no query-given
 function, so the denotation is false, as the query is invalid for a solver. -/
 example : denoteAB (eqT (selT "T..x" (ctorT "T" "B" []) (.prim .int)) (.prim (.int 0)))
-    = some (∀ unspec : Carrier ab (dtSorted abCtx ⟨[], ⟨rfl, nofun⟩⟩) "T" → Int,
+    = some (∀ (_divByZero _modByZero : Int → Int)
+        (unspec : Carrier ab (dtSorted abCtx ⟨[], ⟨rfl, nofun⟩⟩) "T" → Int),
         unspec bVal = 0) := by
   rfl
 
-example : ¬ ∀ unspec : Carrier ab (dtSorted abCtx ⟨[], ⟨rfl, nofun⟩⟩) "T" → Int,
+example : ¬ ∀ (_divByZero _modByZero : Int → Int)
+    (unspec : Carrier ab (dtSorted abCtx ⟨[], ⟨rfl, nofun⟩⟩) "T" → Int),
     unspec bVal = 0 :=
-  fun h => absurd (h fun _ => 1) (by decide)
+  fun h => absurd (h (fun _ => 0) (fun _ => 0) fun _ => 1) (by decide)
 
 /-- Ill-formed applications have no denotation: a tester with a constructor of another
 datatype, a constructor with too few or too many arguments or with an argument of another

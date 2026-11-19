@@ -169,6 +169,14 @@ private def earlyG := graph "E" [("E", ["A", "B"]), ("A", []), ("B", ["J"]), ("J
 #guard ipdomList earlyG == [("E", none), ("A", none), ("B", some "J"), ("J", none)]
 #guard postIdomsAgree earlyG
 
+/-- `A` jumps to `$__exit`, which is no block (the type checker refuses this; the analysis
+    does not rely on it): the end node gets another label, so `A` reaches no `finish` and the
+    fork at `E` reaches one only through `B`. -/
+private def danglingG := graph "E" [("E", ["A", "B"]), ("A", ["$__exit"]), ("B", [])]
+/-- info: [("E", some "B"), ("B", none)] -/
+#guard_msgs in
+#eval ipdomList danglingG
+
 /-- A loop `H ⇄ L` with exit `X`. -/
 private def loopG := graph "E" [("E", ["H"]), ("H", ["L", "X"]), ("L", ["H"]), ("X", [])]
 #guard ipdomList loopG == [("E", some "H"), ("H", some "X"), ("L", some "H"), ("X", none)]
@@ -357,6 +365,33 @@ cfg entry {
 #guard_msgs (whitespace := lax) in
 #eval obls branchLocal .always
 
+-- One local declared in two blocks, `d1` and `d2`, neither of which dominates the other. `d1`
+-- dominates `j`, so `t` is still in scope at `j` and the merge there keeps it, though `d2` does
+-- not dominate `j`. Under `.always` (merged) the run finishes and `t`'s value reaches the `assert`.
+private def twoDecls := procOf <|
+#strata
+program Core;
+procedure P(x : int, out r : int)
+cfg entry {
+  entry: { branch (int.gt(x, 0)) goto d1 else goto d2; }
+  d1: { var t : int := 1; branch (int.gt(x, 5)) goto a else goto b; }
+  d2: { var t : int := 1; r := 0; return; }
+  a: { r := 1; goto j; }
+  b: { r := 2; goto j; }
+  j: { assert [tpos]: int.gt(t, 0); return; }
+};
+#end
+
+/-- info: some { finished := 3, stopped := 0, obligations := 2, merges := 0, unreached := 0 } -/
+#guard_msgs in
+#eval summary twoDecls
+/-- info: some { finished := 1, stopped := 0, obligations := 1, merges := 2, unreached := 0 } -/
+#guard_msgs in
+#eval summary twoDecls .always
+/-- info: [tpos] under [int.gt($__symx_0, 0)]  check: true -/
+#guard_msgs (whitespace := lax) in
+#eval obls twoDecls .always
+
 /-! ## A loop runs out of budget -/
 
 -- `y` counts up to `n`: each pass round the loop forks at `loop`, one path leaving and one
@@ -459,6 +494,48 @@ private def diamondChain (k : Nat) : Option Procedure :=
                      outputs := [(id "r", .int)] }
          spec := { preconditions := [], postconditions := [] }
          body := .cfg { entry := "e0", blocks := blocks ++ [(s!"e{k}", blk [] (.finish #[]))] } }
+
+/-- A body whose only block jumps to `$__symexec_exit`, which is no block (the type checker
+    refuses this). The explorer wraps a CFG body in a new entry and exit block whose labels are
+    neither labels nor jump targets of the body, so the jump is not taken as one to the
+    wrapper's exit: the path stops instead of finishing. -/
+private def danglingExit : Option Procedure :=
+  some { header := { name := ⟨"P", ()⟩, typeArgs := [], inputs := [], outputs := [] }
+         spec := { preconditions := [], postconditions := [] }
+         body := .cfg { entry := "s",
+                        blocks := [("s", { cmds := [], transfer := .goto "$__symexec_exit" })] } }
+
+/-- info: some { finished := 0, stopped := 1, obligations := 0, merges := 0, unreached := 0 } -/
+#guard_msgs in
+#eval summary danglingExit
+
+/-- A body whose entry label, `$__symexec_exit`, is no block. The wrapper's entry jumps to the
+    body's entry, so the wrapper's labels avoid that label too: the jump is not taken as one to
+    the wrapper's exit, and the path stops instead of finishing without running the body. -/
+private def danglingEntry : Option Procedure :=
+  some { header := { name := ⟨"P", ()⟩, typeArgs := [], inputs := [], outputs := [] }
+         spec := { preconditions := [], postconditions := [] }
+         body := .cfg { entry := "$__symexec_exit",
+                        blocks := [("s", { cmds := [], transfer := .finish #[] })] } }
+
+/-- info: some { finished := 0, stopped := 1, obligations := 0, merges := 0, unreached := 0 } -/
+#guard_msgs in
+#eval summary danglingEntry
+
+/-- Like `danglingEntry`, with the entry label `$__symexec_entry`: the wrapper's own entry does
+    not take that label, so it does not jump to itself (which would run until the step budget is
+    spent); the path stops at the missing block. -/
+private def danglingSelfEntry : Option Procedure :=
+  some { header := { name := ⟨"P", ()⟩, typeArgs := [], inputs := [], outputs := [] }
+         spec := { preconditions := [], postconditions := [] }
+         body := .cfg { entry := "$__symexec_entry",
+                        blocks := [("s", { cmds := [], transfer := .finish #[] })] } }
+
+/--
+info: some (Core.SymExec.Completeness.notAnalyzed ["a path stopped: CFG: missing block label"])
+-/
+#guard_msgs in
+#eval (run danglingSelfEntry).map (·.completeness)
 
 -- Merging at each of 200 joins in a row: one path, complete.
 /-- info: some (1, 200, Core.SymExec.Completeness.complete) -/
@@ -858,8 +935,9 @@ caller_post: ✅ pass
 
 /-! ## Where the branches of a fork first meet
 
-In a CFG with no cycle, a fork joins at the first block both of its successors reach, or at the
-forking block's immediate post-dominator if no single block is first; a join never lies outside
+In a CFG with no cycle, a fork joins at the block of those both its successors reach that has no
+predecessor among them (a path may bypass it), or at the forking block's immediate
+post-dominator if there is no single such block; a join never lies outside
 the path's innermost open join; a path has left the branches once its block cannot reach the
 join's block. In a CFG with a cycle, a fork joins at the immediate post-dominator. On a body
 lowered from structured statements (`Core.stmtsToCFG`), the CFG run merges wherever the

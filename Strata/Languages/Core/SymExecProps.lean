@@ -671,7 +671,7 @@ private theorem extendsPcOneConsistent_symStepCmd (c : ExploreCfg) (fuel : Nat)
     ExtendsPcOneConsistent holds (symStepCmd c fuel env cmd) := by
   letI := symLang c
   cases cmd with
-  | call _ _ _ => exact extendsPcOneConsistent_throw _
+  | call _ _ _ _ => exact extendsPcOneConsistent_throw _
   | cmd base =>
     show ExtendsPcOneConsistent holds (stepBase c fuel env base >>= fun store => pure _)
     refine extendsPcOneConsistent_bind ?_ fun _ => extendsPcOneConsistent_pure _

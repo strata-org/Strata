@@ -7,6 +7,7 @@ module
 
 public import Strata.DL.Imperative.Logic.Termination
 import Strata.Util.RelationsProps
+import Strata.DL.Imperative.Logic.TraceInterpProps
 
 /-! # Event-language termination properties
 
@@ -35,6 +36,14 @@ finish, diverging and getting stuck.
   configuration that must diverge can, and does not must-terminate.
 - `EventLang.traceStar_iff_reachesWithin`: a finite execution is one within some
   bound.
+- `EventLang.MustTerminateAndAssertsValid.of_step`,
+  `EventLang.MustTerminateAndAssertsValid.of_traceStar`: must-termination with valid
+  assertions in `w` propagates along executions whose assumptions hold in `w`.
+- `EventLang.MustTerminateAndAssertsValid.assertionsHoldIn`: along every execution, finished
+  or not, the assertions hold in `w`.
+- `EventLang.MustTerminateAndAssertsValid.reaches_final`: a configuration that must terminate
+  with valid assertions in `w` has a finished execution when an invariant keeps every step's
+  assumptions true in `w`.
 -/
 
 public section
@@ -267,6 +276,76 @@ theorem EventLang.traceStar_iff_reachesWithin
     {cfg cfg' : EL.CfgT} {trace : List EventT} :
     EL.traceStar cfg trace cfg' ↔ ∃ n, EL.ReachesWithin n cfg trace cfg' :=
   reflTransTrace_iff_reflTransTraceN
+
+/-! ## Must-termination with valid assertions -/
+
+section AndAssertsValid
+
+variable {P : PureExpr} {EL : EventLang P (Event P)} {I : ConditionInterp P} {w : I.World}
+
+/-- Every successor of a configuration that must terminate with valid assertions in `w`, reached by
+    a step whose assumptions hold in `w`, must terminate with valid assertions in `w`. -/
+theorem EventLang.MustTerminateAndAssertsValid.of_step {cfg cfg' : EL.CfgT}
+    {emitted : List (Event P)} (h : EL.MustTerminateAndAssertsValid I w cfg)
+    (hstep : EL.step cfg emitted cfg') (hassume : Trace.AssumptionsHold P I w emitted) :
+    EL.MustTerminateAndAssertsValid I w cfg' := by
+  cases h with
+  | terminal ρ => exact (EL.terminal_no_step ρ emitted cfg' hstep).elim
+  | exiting label ρ => exact (EL.exiting_no_step label ρ emitted cfg' hstep).elim
+  | step _ _ successors => exact successors emitted cfg' hstep hassume
+
+/-- Every configuration reached from one that must terminate with valid assertions in `w`, by an
+    execution whose assumptions hold in `w`, must terminate with valid assertions in `w`. -/
+theorem EventLang.MustTerminateAndAssertsValid.of_traceStar {cfg cfg' : EL.CfgT}
+    {trace : List (Event P)} (h : EL.MustTerminateAndAssertsValid I w cfg)
+    (hrun : EL.traceStar cfg trace cfg') (hassume : Trace.AssumptionsHold P I w trace) :
+    EL.MustTerminateAndAssertsValid I w cfg' := by
+  induction hrun with
+  | refl => exact h
+  | step _ emitted _ rest _ hstep _ ih =>
+    have hsplit := (Trace.AssumptionsHold_append I w emitted rest).mp hassume
+    exact ih (h.of_step hstep hsplit.1) hsplit.2
+
+/-- **Assertions hold along every execution.**  Along every execution from a configuration
+    that must terminate with valid assertions in `w`, finished or not, the assertions hold in
+    `w`, each where the assumptions before it do. -/
+theorem EventLang.MustTerminateAndAssertsValid.assertionsHoldIn {cfg cfg' : EL.CfgT}
+    {trace : List (Event P)} (h : EL.MustTerminateAndAssertsValid I w cfg)
+    (hrun : EL.traceStar cfg trace cfg') : Trace.AssertionsHoldIn P I w trace := by
+  induction hrun with
+  | refl => trivial
+  | step _ emitted _ rest _ hstep _ ih =>
+    cases h with
+    | terminal ρ => exact (EL.terminal_no_step ρ _ _ hstep).elim
+    | exiting label ρ => exact (EL.exiting_no_step label ρ _ _ hstep).elim
+    | step _ asserts successors =>
+      exact Trace.AssertionsHoldIn.append (asserts _ _ hstep)
+        fun hassume => ih (successors _ _ hstep hassume)
+
+/-- **A finished execution.**  A configuration that must terminate with valid assertions in `w` has
+    an execution to a terminal or exiting configuration when an invariant `Q` holds of it,
+    and every step from a configuration satisfying `Q` emits assumptions that hold in `w` and
+    leads to a configuration satisfying `Q`. -/
+theorem EventLang.MustTerminateAndAssertsValid.reaches_final {cfg : EL.CfgT}
+    (h : EL.MustTerminateAndAssertsValid I w cfg) (Q : EL.CfgT → Prop) (hQ : Q cfg)
+    (hstep : ∀ c emitted c', Q c → EL.step c emitted c' →
+      Q c' ∧ Trace.AssumptionsHold P I w emitted) :
+    ∃ (trace : List (Event P)) (ρ' : Env P),
+      EL.traceStar cfg trace (EL.terminalCfg ρ') ∨
+      ∃ label, EL.traceStar cfg trace (EL.exitingCfg label ρ') := by
+  induction h with
+  | terminal ρ => exact ⟨[], ρ, .inl (.refl _)⟩
+  | exiting label ρ => exact ⟨[], ρ, .inr ⟨label, .refl _⟩⟩
+  | step progress _ _ ih =>
+    obtain ⟨emitted, next, hs⟩ := progress
+    obtain ⟨hQ', hassume⟩ := hstep _ _ _ hQ hs
+    obtain ⟨trace, ρ', hfinal⟩ := ih emitted next hs hassume hQ'
+    refine ⟨emitted ++ trace, ρ', ?_⟩
+    rcases hfinal with hterm | ⟨label, hexit⟩
+    · exact .inl (.step _ _ _ _ _ hs hterm)
+    · exact .inr ⟨label, .step _ _ _ _ _ hs hexit⟩
+
+end AndAssertsValid
 
 end Strata.Logic
 

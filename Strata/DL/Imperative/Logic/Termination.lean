@@ -6,6 +6,7 @@
 module
 
 public import Strata.DL.Imperative.Logic.LangDef
+public import Strata.DL.Imperative.Logic.TraceInterp
 
 /-! # Event-language termination
 
@@ -16,6 +17,14 @@ Defines two complementary termination notions for `EventLang`:
 - `EventLang.Terminates` requires every possible execution to terminate without
   getting stuck, while allowing nondeterministic executions to produce different
   traces and final environments.
+
+`EventLang.TerminatesAndAssertsValid` restricts `Terminates` to the executions an `assume` does
+not rule out, and adds that their assertions hold: in every world of a condition
+interpretation, every execution whose `assume` events hold in that world terminates without
+getting stuck, and its assertions hold in that world
+(`EventLang.MustTerminateAndAssertsValid`).  An execution whose assumptions no single world
+satisfies is unreachable (`Trace.Reachable`), and past its first failing assumption it may
+diverge, get stuck, or fail an assertion.
 
 It also names the two ways an execution can fail to finish: `EventLang.CanDiverge`,
 saying some infinite sequence of steps starts at a configuration, and
@@ -49,9 +58,13 @@ non-final configurations; the definition excludes infinite executions,
 including divergent nondeterministic branches. -/
 inductive EventLang.MustTerminate
     {P : PureExpr} {EventT : Type _} (EL : EventLang P EventT) : EL.CfgT → Prop where
+  /-- A terminal configuration has finished, so it must terminate. -/
   | terminal (ρ : Env P) : EL.MustTerminate (EL.terminalCfg ρ)
+  /-- An exiting configuration has finished, so it must terminate. -/
   | exiting (label : String) (ρ : Env P) :
       EL.MustTerminate (EL.exitingCfg label ρ)
+  /-- A configuration that can step, and whose every successor must terminate, must
+      terminate. -/
   | step {cfg : EL.CfgT}
       (progress : ∃ emitted cfg', EL.step cfg emitted cfg')
       (successors : ∀ emitted cfg', EL.step cfg emitted cfg' → EL.MustTerminate cfg') :
@@ -82,6 +95,38 @@ abbrev EventLang.Terminates
     {P : PureExpr} {EventT : Type _} (EL : EventLang P EventT)
     (s : EL.StmtT) (ρ₀ : Env P) : Prop :=
   EL.MustTerminate (EL.stmtCfg s ρ₀)
+
+/-- **Must-termination with valid assertions** of the executions whose `assume` events hold in
+    the world `w`: a configuration satisfies it when it is final, or when it can take a step,
+    the assertions of every step hold in `w` where the step's own assumptions before them do
+    (`Trace.AssertionsHoldIn`), and every successor reached by a step whose assumptions hold
+    in `w` satisfies it.  The progress premise is operational, so a configuration with no step
+    is excluded even when no world reaches it.  A step whose assumption fails in `w` leaves
+    the rest of the execution unconstrained, so `assume false` followed by a divergent loop
+    satisfies it. -/
+inductive EventLang.MustTerminateAndAssertsValid {P : PureExpr} (EL : EventLang P (Event P))
+    (I : ConditionInterp P) (w : I.World) : EL.CfgT → Prop where
+  /-- A terminal configuration has finished. -/
+  | terminal (ρ : Env P) : EL.MustTerminateAndAssertsValid I w (EL.terminalCfg ρ)
+  /-- An exiting configuration has finished. -/
+  | exiting (label : String) (ρ : Env P) :
+      EL.MustTerminateAndAssertsValid I w (EL.exitingCfg label ρ)
+  /-- A configuration that can step, whose every step has its assertions hold in `w`, and
+      whose every successor reached by a step whose assumptions hold in `w` satisfies the
+      predicate, satisfies it. -/
+  | step {cfg : EL.CfgT}
+      (progress : ∃ emitted cfg', EL.step cfg emitted cfg')
+      (asserts : ∀ emitted cfg', EL.step cfg emitted cfg' →
+        Trace.AssertionsHoldIn P I w emitted)
+      (successors : ∀ emitted cfg', EL.step cfg emitted cfg' →
+        Trace.AssumptionsHold P I w emitted → EL.MustTerminateAndAssertsValid I w cfg') :
+      EL.MustTerminateAndAssertsValid I w cfg
+
+/-- In every world of `I`, every execution of `s` from `ρ₀` whose `assume` events hold in
+    that world terminates without getting stuck, and its assertions hold in that world. -/
+abbrev EventLang.TerminatesAndAssertsValid {P : PureExpr} (EL : EventLang P (Event P))
+    (I : ConditionInterp P) (s : EL.StmtT) (ρ₀ : Env P) : Prop :=
+  ∀ w, EL.MustTerminateAndAssertsValid I w (EL.stmtCfg s ρ₀)
 
 /-- `cfg` reaches `cfg'` in at most `n` steps, emitting `trace`. -/
 abbrev EventLang.ReachesWithin {P : PureExpr} {EventT : Type _} (EL : EventLang P EventT) :

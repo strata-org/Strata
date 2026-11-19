@@ -82,8 +82,8 @@ variable (L : EventLang P (Event P))
     `{True} (assert false; loop_forever) {anything}` holds vacuously because the
     program never completes, even though the `assert` fails.
 
-    TODO: We will want to define Triple for total correctness. It will be useful
-    when proving preservation of termination after program transformation. -/
+    The total-correctness counterpart is `Strata.Logic.HoareTotal.TripleWith`, in
+    `Strata.DL.Imperative.Logic.HoareTotalTemplate`. -/
 @[expose] def TripleWith (conditionInterp : ConditionInterp P)
     (params : L.InitEnvWFParamsTy)
     (Pre : Env P → Prop) (s : L.StmtT) (Post : Env P → Prop) : Prop :=

@@ -128,9 +128,9 @@ theorem varEnv_cons_wf {sΓ : SortDenoteInput sctx} {vs : TermVarContext} {Γ : 
       | i + 1 => by simpa using h.ha i (Nat.lt_of_succ_lt_succ hi) }
 
 /-- The empty term environment, as used by `denoteBoolTermFromContext`. -/
-abbrev emptyInput : TermDenoteInput ⟨{}, ⟨[], []⟩⟩ :=
+abbrev emptyInput (divByZero modByZero : Int → Int) : TermDenoteInput ⟨{}, ⟨[], []⟩⟩ :=
   { sΓ := [], hsΓ := sortEnv_nil_wf ∅, tΓ := { vs := [], ufs := [] },
-    htΓ := termEnv_nil_wf _ }
+    htΓ := termEnv_nil_wf _, divByZero, modByZero }
 
 /-- Extend a term environment with the realization of a UF symbol. -/
 abbrev pushUF {ctx : Context} (tdi : TermDenoteInput ctx) (uf : UF)
@@ -139,7 +139,8 @@ abbrev pushUF {ctx : Context} (tdi : TermDenoteInput ctx) (uf : UF)
     TermDenoteInput ⟨ctx.sctx, ⟨ctx.tctx.vs, uf :: ctx.tctx.ufs⟩⟩ :=
   { sΓ := tdi.sΓ, hsΓ := tdi.hsΓ,
     tΓ := { vs := tdi.tΓ.vs, ufs := ⟨uf, h, f⟩ :: tdi.tΓ.ufs },
-    htΓ := { hv := tdi.htΓ.hv, huf := ufEnv_cons_wf tdi.htΓ.huf ⟨uf, h, f⟩ } }
+    htΓ := { hv := tdi.htΓ.hv, huf := ufEnv_cons_wf tdi.htΓ.huf ⟨uf, h, f⟩ },
+    divByZero := tdi.divByZero, modByZero := tdi.modByZero }
 
 /-- Extend a term environment with the value of a bound variable. -/
 abbrev pushVar {ctx : Context} (tdi : TermDenoteInput ctx) (v : TermVar)
@@ -148,7 +149,8 @@ abbrev pushVar {ctx : Context} (tdi : TermDenoteInput ctx) (v : TermVar)
     TermDenoteInput ⟨ctx.sctx, ⟨v :: ctx.tctx.vs, ctx.tctx.ufs⟩⟩ :=
   { sΓ := tdi.sΓ, hsΓ := tdi.hsΓ,
     tΓ := { vs := ⟨v, h, x⟩ :: tdi.tΓ.vs, ufs := tdi.tΓ.ufs },
-    htΓ := { hv := varEnv_cons_wf tdi.htΓ.hv ⟨v, h, x⟩, huf := tdi.htΓ.huf } }
+    htΓ := { hv := varEnv_cons_wf tdi.htΓ.hv ⟨v, h, x⟩, huf := tdi.htΓ.huf },
+    divByZero := tdi.divByZero, modByZero := tdi.modByZero }
 
 
 /-! ## Type-synonym substitution is the identity for the empty context -/
@@ -252,7 +254,7 @@ theorem denoteBoolTermFromContext_of (uss : USContext) (iss : ISContext) (ufs : 
     (hif : denoteBoolTermFromContext.bindIFs ⟨uss, iss, dts⟩ [] ufs' ifs' ft = some ft₁)
     (huf : denoteBoolTermFromContext.bindUFs ⟨uss, iss, dts⟩ [] ufs' ft₁ = some ft₂)
     (hus : denoteBoolTermFromContext.bindUSs uss []
-      (fun sdi => ft₂ ⟨sdi.sΓ, sdi.hsΓ, ⟨[], []⟩, termEnv_nil_wf _⟩) = some ft₃) :
+      (fun sdi => denoteBoolTermFromContext.closeTermEnv ft₂ ⟨sdi.sΓ, sdi.hsΓ⟩) = some ft₃) :
     denoteBoolTermFromContext uss iss ufs ifs t dts = some (PLift.up (ft₃ ⟨[], sortEnv_nil_wf []⟩)) := by
   subst hufs hifs htt
   rw [denoteBoolTermFromContext]
@@ -265,7 +267,7 @@ theorem denoteBoolTermFromContext_of (uss : USContext) (iss : ISContext) (ufs : 
   show Option.bind (denoteBoolTermFromContext.bindISs uss iss _) _ = _
   rw [denoteBoolTermFromContext.bindISs, Option.pure_def, Option.bind_some]
   show Option.bind (denoteBoolTermFromContext.bindUSs uss []
-    (fun sdi => ft₂ ⟨sdi.sΓ, sdi.hsΓ, ⟨[], []⟩, termEnv_nil_wf _⟩)) _ = _
+    (fun sdi => denoteBoolTermFromContext.closeTermEnv ft₂ ⟨sdi.sΓ, sdi.hsΓ⟩)) _ = _
   rw [hus, Option.bind_some]
   rfl
 
@@ -479,11 +481,6 @@ theorem den_mul_op (ctx : Context) (rt : TermType) (as : List Term) :
     denoteTerm ctx (.app .mul as rt) =
       (denoteTerms ctx as).bind (leftAssoc ctx (.prim .int) rfl (fun _ => @HMul.hMul Int Int Int _)) := by
   simp [denoteTerm]
-/-- Unfold integer `/` to a left-fold of division over its operands. -/
-theorem den_div_op (ctx : Context) (rt : TermType) (as : List Term) :
-    denoteTerm ctx (.app .div as rt) =
-      (denoteTerms ctx as).bind (leftAssoc ctx (.prim .int) rfl (fun _ => @HDiv.hDiv Int Int Int _)) := by
-  simp [denoteTerm]
 
 /-- Integer negation denotes `-` of its argument's denotation. -/
 theorem den_neg (ctx : Context) (a : Term) (rt : TermType) (h : (denoteSort ctx.sctx (.prim .int)).isSome)
@@ -491,13 +488,26 @@ theorem den_neg (ctx : Context) (a : Term) (rt : TermType) (h : (denoteSort ctx.
     denoteTerm ctx (.app .neg [a] rt) = some ⟨.prim .int, rfl, fun Γ => @Neg.neg Int _ (fa Γ)⟩ := by
   simp [denoteTerm, ha]
 
-/-- Integer modulo denotes `%` of its two arguments' denotations. -/
+/-- Integer division denotes `/` of its two arguments' denotations, and the
+environment's `divByZero` of the dividend at a zero divisor. -/
+theorem den_div (ctx : Context) (a b : Term) (rt : TermType)
+    (h₁ h₂ : (denoteSort ctx.sctx (.prim .int)).isSome)
+    (fa : SemFun ctx (.prim .int) h₁) (fb : SemFun ctx (.prim .int) h₂)
+    (ha : denoteTerm ctx a = some ⟨.prim .int, h₁, fa⟩) (hb : denoteTerm ctx b = some ⟨.prim .int, h₂, fb⟩) :
+    denoteTerm ctx (.app .div [a, b] rt) =
+      some ⟨.prim .int, rfl, fun Γ =>
+        @ite Int (@Eq Int (fb Γ) 0) (Int.decEq (fb Γ) 0) (Γ.divByZero (fa Γ)) (@HDiv.hDiv Int Int Int _ (fa Γ) (fb Γ))⟩ := by
+  simp [denoteTerm, ha, hb]
+
+/-- Integer modulo denotes `%` of its two arguments' denotations, and the
+environment's `modByZero` of the dividend at a zero divisor. -/
 theorem den_mod (ctx : Context) (a b : Term) (rt : TermType)
     (h₁ h₂ : (denoteSort ctx.sctx (.prim .int)).isSome)
     (fa : SemFun ctx (.prim .int) h₁) (fb : SemFun ctx (.prim .int) h₂)
     (ha : denoteTerm ctx a = some ⟨.prim .int, h₁, fa⟩) (hb : denoteTerm ctx b = some ⟨.prim .int, h₂, fb⟩) :
     denoteTerm ctx (.app .mod [a, b] rt) =
-      some ⟨.prim .int, rfl, fun Γ => @HMod.hMod Int Int Int _ (fa Γ) (fb Γ)⟩ := by
+      some ⟨.prim .int, rfl, fun Γ =>
+        @ite Int (@Eq Int (fb Γ) 0) (Int.decEq (fb Γ) 0) (Γ.modByZero (fa Γ)) (@HMod.hMod Int Int Int _ (fa Γ) (fb Γ))⟩ := by
   simp [denoteTerm, ha, hb]
 
 /-! ### Implication (right-associative) -/

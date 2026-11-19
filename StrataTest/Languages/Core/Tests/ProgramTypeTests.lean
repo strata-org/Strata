@@ -509,7 +509,7 @@ private def bodyLocalTypeShadowsLaterSynonymPgm : Program := { decls := [
           body := .structured [
             .typeDecl { name := "MyInt", params := [] } .empty,
             Statement.init "x" (.forAll [] (.tcons "MyInt" [])) .nondet .empty,
-            .cmd (.call "callee" [.inArg (.fvar Core.coreLoc "x" none)] .empty)
+            .cmd (.call "callee" none [.inArg (.fvar Core.coreLoc "x" none)] .empty)
           ] } .empty,
   .type (.syn { name := "MyInt", typeArgs := [], type := mty[int] }) .empty,
   .proc { header := { name := "callee", typeArgs := [],

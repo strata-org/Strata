@@ -113,8 +113,8 @@ abbrev CoreBodyRel :=
     (`Calls.WriteBackOK`). -/
 @[expose] def CoreCallArmEng (π : String → Option Procedure) (B : CoreBodyRel) : CoreCmdRel :=
   fun fac σ c σ' emitted =>
-    ∃ nm p callArgs md σAO σ_final bodyEvents,
-      c = CmdExt.call nm callArgs md
+    ∃ nm tyArgs p callArgs md σAO σ_final bodyEvents,
+      c = CmdExt.call nm tyArgs callArgs md
       ∧ π nm = some p
       ∧ CallEntry fac σ p callArgs σAO
       ∧ B p.body ⟨σAO, fac⟩ σ_final bodyEvents
@@ -159,14 +159,14 @@ private theorem evalCommandEngAtE_toGeneric :
   induction n with
   | zero => exact id
   | succ _ ih =>
-    rintro _ _ _ _ _ (h | ⟨_, ⟨_, _, _ | _⟩, _, _, _, _, _, rfl, k, l, hb, s, t, ha, hw⟩)
+    rintro _ _ _ _ _ (h | ⟨_, _, ⟨_, _, _ | _⟩, _, _, _, _, _, rfl, k, l, hb, s, t, ha, hw⟩)
     · exact .inl h
     · obtain ⟨_, o, p⟩ := hb
-      exact .inr ⟨_, _, _, _, _, _, _, rfl, k, (callEntry_iff ..).1 l,
+      exact .inr ⟨_, _, _, _, _, _, _, _, rfl, k, (callEntry_iff ..).1 l,
         ⟨_, o.imp fun _ _ _ => Calls.stepEngParamE_imp (P := Expression) fun _ _ _ _ _ => ih, p⟩,
         (callExit_iff ..).1 s, t, ha, hw⟩
     · obtain ⟨_, o, p⟩ := hb
-      exact .inr ⟨_, _, _, _, _, _, _, rfl, k, (callEntry_iff ..).1 l,
+      exact .inr ⟨_, _, _, _, _, _, _, _, rfl, k, (callEntry_iff ..).1 l,
         ⟨_, o.imp fun _ _ _ => StepCFGEngE.imp fun _ _ _ _ _ => ih, p⟩, (callExit_iff ..).1 s, t,
         ha, hw⟩
 

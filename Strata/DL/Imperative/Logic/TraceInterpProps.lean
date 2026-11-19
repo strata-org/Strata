@@ -50,6 +50,11 @@ together with basic assumption-prefix algebra.
 - `Trace.AssertionsValidFromP_iff_occurrences`, `Trace.AssertionValid_iff_occurrences` and
   `Trace.AssertionsValid_iff_occurrences` — validity holds exactly when every kept
   assertion occurrence holds in every world satisfying the assumptions before it.
+- `Trace.AssertionsValid_iff_assertionsHoldIn` — validity holds exactly when the assertions
+  hold in every world, each where the assumptions before it hold there
+  (`Trace.AssertionsHoldIn`).
+- `Trace.AssertionsHoldIn.append` — assertions holding in a world compose along a
+  concatenation, the second part constrained only when the first part's assumptions hold.
 -/
 
 namespace Imperative
@@ -674,6 +679,58 @@ theorem Trace.AssertionsValid_iff_occurrences {P : PureExpr} (I : ConditionInter
   rw [Trace.AssertionsValidFromP_iff_occurrences]
   exact ⟨fun h pre c post hp w hw => h pre c post hp trivial w (by simpa using hw),
     fun h pre c post hp _ w hw => h pre c post hp w (by simpa using hw)⟩
+
+/-- With assumptions `acc` before it, a trace has valid assertions exactly when, in every
+    world satisfying `acc`, its assertions hold there. -/
+private theorem Trace.AssertionsValidFrom_iff_assertionsHoldIn {P : PureExpr}
+    (I : ConditionInterp P) :
+    ∀ (acc trace : Trace P), Trace.AssertionsValidFrom P I acc trace ↔
+      ∀ world, Trace.AssumptionsHold P I world acc → Trace.AssertionsHoldIn P I world trace
+  | _, [] => by simp [Trace.AssertionsValidFrom, Trace.AssertionsValidFromP,
+      Trace.AssertionsHoldIn]
+  | acc, Event.assume c :: rest => by
+    simp only [Trace.AssertionsValidFrom, Trace.AssertionsValidFromP, Trace.AssertionsHoldIn]
+    rw [show Trace.AssertionsValidFromP P I (fun _ => True) (acc ++ [Event.assume c]) rest ↔ _
+      from Trace.AssertionsValidFrom_iff_assertionsHoldIn I (acc ++ [Event.assume c]) rest]
+    simp only [Trace.AssumptionsHold_append, Trace.assumptionsHold_cons_assume]
+    exact ⟨fun h w ha hc => h w ⟨ha, hc, fun _ h => nomatch h⟩,
+      fun h w ⟨ha, hc, _⟩ => h w ha hc⟩
+  | acc, Event.assert c :: rest => by
+    simp only [Trace.AssertionsValidFrom, Trace.AssertionsValidFromP, Trace.AssertionsHoldIn]
+    rw [show Trace.AssertionsValidFromP P I (fun _ => True) acc rest ↔ _
+      from Trace.AssertionsValidFrom_iff_assertionsHoldIn I acc rest]
+    exact ⟨fun ⟨h1, h2⟩ w ha => ⟨h1 trivial w ha, h2 w ha⟩,
+      fun h => ⟨fun _ w ha => (h w ha).1, fun w ha => (h w ha).2⟩⟩
+  | acc, Event.cover _ :: rest => by
+    simp only [Trace.AssertionsValidFrom, Trace.AssertionsValidFromP, Trace.AssertionsHoldIn]
+    exact Trace.AssertionsValidFrom_iff_assertionsHoldIn I acc rest
+
+/-- **Assertion validity, world by world.**  A trace has valid assertions exactly when, in
+    every world, its assertions hold there, each where the assumptions before it hold. -/
+theorem Trace.AssertionsValid_iff_assertionsHoldIn {P : PureExpr} (I : ConditionInterp P)
+    (trace : Trace P) :
+    Trace.AssertionsValid P I trace ↔ ∀ world, Trace.AssertionsHoldIn P I world trace := by
+  unfold Trace.AssertionsValid
+  rw [Trace.AssertionsValidFrom_iff_assertionsHoldIn I [] trace]
+  exact ⟨fun h w => h w (fun _ h => nomatch h), fun h w _ => h w⟩
+
+/-- The assertions of `left ++ right` hold in `world` when those of `left` do, and those of
+    `right` do whenever the assumptions of `left` hold in `world`. -/
+theorem Trace.AssertionsHoldIn.append {P : PureExpr} {I : ConditionInterp P}
+    {world : I.World} :
+    ∀ {left : Trace P} {right : Trace P}, Trace.AssertionsHoldIn P I world left →
+      (Trace.AssumptionsHold P I world left → Trace.AssertionsHoldIn P I world right) →
+      Trace.AssertionsHoldIn P I world (left ++ right)
+  | [], _, _, hr => hr (fun _ h => nomatch h)
+  | Event.assume _ :: _, _, hl, hr => fun hc =>
+    Trace.AssertionsHoldIn.append (hl hc) fun ha =>
+      hr ((Trace.assumptionsHold_cons_assume I world _ _).2 ⟨hc, ha⟩)
+  | Event.assert _ :: _, _, hl, hr =>
+    ⟨hl.1, Trace.AssertionsHoldIn.append hl.2 fun ha =>
+      hr ((Trace.assumptionsHold_cons_assert I world _ _).2 ha)⟩
+  | Event.cover _ :: tail, _, hl, hr =>
+    Trace.AssertionsHoldIn.append (left := tail) hl
+      fun ha => hr ((Trace.assumptionsHold_cons_cover I world _ _).2 ha)
 
 end -- public section
 end Imperative

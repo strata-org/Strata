@@ -164,14 +164,21 @@ run_meta do
     | .ok P =>
       try
         let den ← SMT.ProofGen.proveQuery sc (toExpr sc) ts (toExpr ts) t (toExpr t)
-        unless (Lean.Kernel.isDefEq (← getEnv) {} den.rhs P matches .ok true) do
-          throwError "denotation does not match translation"
+        -- The translation implies the denotation (they differ only by the unused
+        -- binders of `div`/`mod` at a zero divisor).
+        let some hD ← withLocalDeclD `h P fun h => do
+            match ← Strata.Meta.denotationOfGoal sc.sorts.size (!goalBindsDivModByZero sc0.toCore ts0 t0) den.rhs P h with
+            | some pf => some <$> mkLambdaFVars #[h] pf
+            | none => pure none
+          | throwError "denotation does not match translation"
         let ty := mkApp3 (.const ``Eq [1]) (mkApp (.const ``Option [0]) (.sort 0))
           (mkApp4 (.const ``denoteQuery []) (mkApp (.const ``Strata.SMT.SanitizedContext.toCore []) (toExpr sc)) (toExpr ts) (toExpr t)
             -- `dts?`, left to its default: the datatypes come from the context
             (mkApp (.const ``Option.none [Lean.Level.zero]) (.const ``Strata.SMT.DT.Decls [])))
-          (mkApp2 (.const ``Option.some [0]) (.sort 0) P)
+          (mkApp2 (.const ``Option.some [0]) (.sort 0) den.rhs)
         addDecl (.thmDecl { name := `Strata.DenoteProofTests.thm ++ label.toName, levelParams := [], type := ty, value := den.proof })
+        let ofGoalTy := Lean.mkForall `h .default P den.rhs
+        addDecl (.thmDecl { name := `Strata.DenoteProofTests.ofGoal ++ label.toName, levelParams := [], type := ofGoalTy, value := hD })
         ok := ok + 1
       catch e => logInfo m!"{label}: FAIL {e.toMessageData}"
   logInfo m!"{ok}/{Strata.DenoteProofTests.cases.length} kernel-checked"
@@ -199,9 +206,43 @@ run_meta do
   let wrong := Lean.mkConst ``False
   try
     let _ ← Strata.Meta.denoteQueryProof "wrong" sc (toExpr sc) [] (toExpr ([] : List Strata.SMT.Term))
-      t (toExpr t) wrong
+      t (toExpr t) wrong (Lean.mkConst ``True.intro)
     logInfo "unexpectedly proved"
   catch e =>
     let msg ← e.toMessageData.toString
     if msg.contains "does not match the translated goal" then logInfo "caught: mismatch reported"
     else logInfo m!"unexpected error: {msg}"
+
+/-! The goal of a VC may omit the binders of `div`/`mod` at a zero divisor only
+when its body does not use them: the kernel check in `denotationOfGoal` refuses a
+goal that drops them from a query that divides. Below, each goal is what a
+wrongly computed `usesIntDivMod` would give, with Lean's division standing in
+for the model's: by a variable divisor, and by a literal zero divisor (where
+reduction goes furthest, yet `divByZero x` is still not `x / 0`). -/
+
+namespace Strata.DenoteProofTests
+def x := c "x" I
+def y := c "y" I
+def uXY : List UF := [⟨"x", [], I⟩, ⟨"y", [], I⟩]
+def mutantVarGoal : Prop := ∀ x y : Int, x / y = x / y
+def mutantZeroGoal : Prop := ∀ x _y : Int, x / 0 = 0
+end Strata.DenoteProofTests
+
+/--
+info: div_var: refused
+---
+info: div_zero: refused
+-/
+#guard_msgs in
+open Strata.DenoteProofTests in
+run_meta do
+  let cases : List (String × SMT.Term × Lean.Name) := [
+      ("div_var", eq (ap .div [x, y] I) (ap .div [x, y] I), ``mutantVarGoal),
+      ("div_zero", eq (ap .div [x, .prim (.int 0)] I) (.prim (.int 0)), ``mutantZeroGoal)]
+  for (label, t, goal) in cases do
+    let sc := ctxOf uXY
+    let den ← SMT.ProofGen.proveQuery sc (toExpr sc) [] (toExpr ([] : List SMT.Term)) t (toExpr t)
+    let P := Lean.mkConst goal
+    -- `true`: the goal claims to omit the binders, as a wrong gate would.
+    let r ← withLocalDeclD `h P fun h => Strata.Meta.denotationOfGoal 0 true den.rhs P h
+    logInfo m!"{label}: {if r.isSome then "accepted" else "refused"}"

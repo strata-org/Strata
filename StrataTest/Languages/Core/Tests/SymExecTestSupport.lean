@@ -36,9 +36,7 @@ def progOf (pgm : StrataDDM.Program) : Option Program :=
 /-- The procedure `name` of `progOf pgm`; `none` if type checking fails or there is no such
     procedure. -/
 def procOf (pgm : StrataDDM.Program) (name : String := "P") : Option Procedure :=
-  (progOf pgm).bind fun prog => prog.decls.findSome? fun
-    | .proc p _ => if p.header.name.name == name then some p else none
-    | _ => none
+  (progOf pgm).bind (·.findProcByString? name)
 
 /-- One line per obligation: `[label] under [path condition, oldest first]  check: condition`,
     in Core's text. -/

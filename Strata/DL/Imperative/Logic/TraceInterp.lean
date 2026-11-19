@@ -84,6 +84,15 @@ namespace Trace
     (world : I.World) (trace : Trace P) : Prop :=
   ∀ condition, Event.assume condition ∈ trace → I.holds world condition
 
+/-- The assertions of `trace` hold in `world`, each where the assumptions before it in
+    `trace` hold in `world`: an assertion after an assumption that fails in `world` is not
+    constrained. -/
+@[expose] def AssertionsHoldIn (I : ConditionInterp P) (world : I.World) : Trace P → Prop
+  | [] => True
+  | Event.assume condition :: rest => I.holds world condition → AssertionsHoldIn I world rest
+  | Event.assert condition :: rest => I.holds world condition ∧ AssertionsHoldIn I world rest
+  | Event.cover _ :: rest => AssertionsHoldIn I world rest
+
 /-- Given a trace, the program state after execution of the trace is reachable
   when its assumptions are jointly satisfiable in one shared semantic world. -/
 @[expose] def Reachable (I : ConditionInterp P) (trace : Trace P) : Prop :=

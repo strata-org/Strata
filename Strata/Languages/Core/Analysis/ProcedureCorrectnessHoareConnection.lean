@@ -44,13 +44,17 @@ theorem ProcEntryEnv.contractPre {params : InitEnvWFParams} {entryProcName : Str
     Hoare.Procedure.contractPre (p.factoryBeforeProcedure entryProcName) proc ρ₀ ∧
       AxiomsBeforeProcedureDecl entryProcName p ρ₀ := by
   obtain ⟨hwf, hax, hfac⟩ := h
-  refine ⟨⟨?_, hfac, ?_, ?_⟩, hax⟩
+  refine ⟨⟨?_, hfac, ?_, ?_, ?_⟩, hax⟩
   · intro label check hmem world
     exact Or.inl ⟨hfac, hwf.preconditionsHold label check hmem⟩
   · intro id hid
     exact (hwf.oldInoutMatchesInout id hid).symm
   · intro id ty hmem
     obtain ⟨v, hv, -, hty⟩ := hwf.inputTyped hmem
+    simp only [Lambda.LTy.toMonoType?, Option.some.injEq] at hty
+    exact ⟨v, hv, hty.symm⟩
+  · intro id ty hmem
+    obtain ⟨v, hv, -, hty⟩ := hwf.outputTyped hmem
     simp only [Lambda.LTy.toMonoType?, Option.some.injEq] at hty
     exact ⟨v, hv, hty.symm⟩
 

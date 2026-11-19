@@ -146,7 +146,7 @@ private def twoCalls : Core.Program := translateCore twoCallsPgm
 private def callMdsOf (p : Core.Program) (name : String) :
     List (Imperative.MetaData Core.Expression) :=
   (bodyOf p name).filterMap fun
-    | .cmd (.call _ _ md) => some md
+    | .cmd (.call _ _ _ md) => some md
     | _ => none
 
 /-- The label and metadata of the precondition events a call to `g` with call

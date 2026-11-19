@@ -93,7 +93,7 @@ private theorem Statement.typeCheckAux_go_WF :
     cases h with
     | cmd c =>
       cases c with
-      | call lhs procName args md =>
+      | call procName tyArgs args md =>
         -- Show that the called procedure is declared.
         simp [Except.bind] at tcok
         split at tcok <;> try contradiction
@@ -191,7 +191,7 @@ theorem Statement.typeCheckWF :
     cases h with
     | cmd c =>
       cases c with
-      | call lhs procName args md =>
+      | call procName tyArgs args md =>
         -- Show that the called procedure is declared
         simp [Except.bind, Statement.typeCheckCmd] at tcok
         split at tcok <;> simp_all

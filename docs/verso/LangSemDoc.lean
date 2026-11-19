@@ -43,6 +43,8 @@ import Strata.Transform.SpecHoareConnection
 import Strata.Transform.SpecificationProps
 import Strata.Transform.InsertLoopInvariantAssertsCoreCorrect
 import Strata.Languages.Core.Logic.LangDef
+import Strata.DL.Imperative.Logic.HoareTotalTemplate
+import Strata.Languages.Core.Logic.ContractToHoareTriple
 
 open Lambda
 open Imperative
@@ -356,17 +358,17 @@ the name conditions.
 
 Core's commands are the imperative commands plus a procedure `call`. Procedure
 bodies are typed by
-{name Core.TypeSpec.CmdExtHasTypeΔ'}`CmdExtHasTypeΔ'`, which extends the
-imperative commands' relation {name Core.TypeSpec.CmdHasTypeΔ'}`CmdHasTypeΔ'`
+{name Core.TypeSpec.CmdExtHasType}`CmdExtHasType`, which extends the
+imperative commands' relation {name Core.TypeSpec.CmdHasType}`CmdHasType`
 with `call`. Both relations read each expression's annotations through the
 environment of written type variables in scope. A type variable written in a
 variable declaration's type denotes one type until the end of its block, branch
 or loop body: after `var x : a := …`, a later annotation `a` in the same block
 means the same type.
 
-{docstring Core.TypeSpec.CmdExtHasTypeΔ'}
+{docstring Core.TypeSpec.CmdExtHasType}
 
-{docstring Core.TypeSpec.CmdHasTypeΔ'}
+{docstring Core.TypeSpec.CmdHasType}
 
 ### Datatypes
 
@@ -380,22 +382,22 @@ is compatible with the written one
 ### Functions
 
 Function declarations (recursive or not) are governed by
-{name Core.TypeSpec.FuncHasType'}`FuncHasType'`, applied to a renaming of their
-reserved type parameters
+{name Core.TypeSpec.FuncHasTypeExact}`FuncHasTypeExact`, applied to a renaming
+of their reserved type parameters
 ({name Core.TypeSpec.FuncAlphaVariant}`FuncAlphaVariant`).
 
-{docstring Core.TypeSpec.FuncHasType'}
+{docstring Core.TypeSpec.FuncHasTypeExact}
 
 ### Procedures
 
 Procedure declarations are governed by
-{name Core.TypeSpec.ProcHasType'}`ProcHasType'`, applied to a renaming of their
-reserved type parameters
+{name Core.TypeSpec.ProcHasTypeExact}`ProcHasTypeExact`, applied to a renaming
+of their reserved type parameters
 ({name Core.TypeSpec.ProcAlphaVariant}`ProcAlphaVariant`); its `bodyTyped` field
-defers to {name Core.TypeSpec.ProcBodyHasType'}`ProcBodyHasType'`,
-which accepts only structured bodies (CFG bodies carry no typing obligation).
+defers to {name Core.TypeSpec.ProcBodyHasType}`ProcBodyHasType`,
+which types structured bodies and places no obligation on CFG bodies.
 
-{docstring Core.TypeSpec.ProcHasType'}
+{docstring Core.TypeSpec.ProcHasTypeExact}
 
 ### Programs
 
@@ -589,7 +591,8 @@ Core procedure can be translated into a Hoare triple.
 [`Core/Logic/ContractToHoareTriple.lean`](https://github.com/strata-org/Strata/blob/main/Strata/Languages/Core/Logic/ContractToHoareTriple.lean),
 `Procedure.contractTriple` reads a `spec { requires ...; ensures ...; }` as a triple
 over the body — the `requires` clauses (including `free` ones, which the caller
-guarantees) as precondition, and the checked, non-`free` `ensures` clauses as
+guarantees) together with the typing of the inputs and outputs as precondition, and the
+checked, non-`free` `ensures` clauses as
 postcondition (`free` postconditions are assumed at call sites, not proved by the
 body) — so that "this procedure meets its contract" is a single Hoare judgement.
 The precondition also assumes the axioms and `distinct` declarations that precede
@@ -600,6 +603,90 @@ a proved `Procedure.contractTriple` gives the contract part of that property
 derived from procedure contracts and their proofs, and
 `StrataTest/Languages/Core/Tests/Logic/HoareAxioms.lean` has contracts that rest on
 an axiom or a `distinct` declaration.
+
+### Total Correctness
+
+The partial triple says nothing about a run that never finishes, so a program that
+diverges or gets stuck meets every partial triple. Termination is stated with the
+must-termination predicate of `EventLang`: a configuration must terminate when it has
+finished, or when it can step and every successor must terminate. It is inductive, so it
+excludes infinite executions, and its progress premise excludes stuck ones.
+`EventLang.Terminates s ρ₀` is must-termination of the configuration that starts `s` at
+`ρ₀`, while `EventLang.TerminatesAt` above describes one finished run.
+
+{docstring Strata.Logic.EventLang.MustTerminate}
+
+An `assume` does not block a run: it emits its condition and the run continues, so a run
+whose assumptions no single world satisfies is unreachable. Total correctness asks for
+termination only of the executions an `assume` does not rule out, and for their assertions
+to hold. Must-termination with valid assertions fixes a world of the condition
+interpretation, follows only the steps whose `assume` events hold in it, and asks that the
+assertions of every step it follows hold in it; `EventLang.TerminatesAndAssertsValid s ρ₀`
+asks for it in every world. Its progress premise stays operational, so a configuration with
+no step is still excluded.
+
+{docstring Strata.Logic.EventLang.MustTerminateAndAssertsValid}
+
+The total-correctness triple `Strata.Logic.HoareTotal.TripleWith`
+([`Logic/HoareTotalTemplate.lean`](https://github.com/strata-org/Strata/blob/main/Strata/DL/Imperative/Logic/HoareTotalTemplate.lean))
+asks for `TerminatesAndAssertsValid` from every admitted entry satisfying `Pre`, and for
+`Post` at the end of every finished run whose trace is reachable. It amounts to the partial
+triple together with `TerminatesAndAssertsValid`, since that condition gives the validity of
+the assertions of every finished run. Since only reachable runs owe `Post`, an `assume` may
+feed the postcondition: `{True} havoc x; assume x > 0 {x > 0}` holds, and so does
+`{True} assume false; while (true) {} {False}`, whose divergent run is
+unreachable. The rules compose because the condition is per world: in a fixed world, the
+prefix of a run whose assumptions hold there is reachable, so the intermediate assertion or
+the loop invariant holds where the rest of the run starts. Because assertions are checked
+step by step, a total triple validates the assertions of every finite execution, finished
+or not. Checking them only on finished runs would let
+`assume x > 0; assert false; assume x < 0; while (true) {}` meet any total triple: it has no
+finished run, and it diverges only after an assumption that fails in every world reaching
+the failing assertion.
+
+{docstring Strata.Logic.HoareTotal.TripleWith}
+
+{docstring Strata.Logic.HoareTotal.TripleWith.to_partial}
+
+{docstring Strata.Logic.HoareTotal.TripleWith.of_partial_of_true}
+
+{docstring Strata.Logic.HoareTotal.TripleWith.allAssertsValidOnTracesWhen}
+
+The rules in `Imperative.Logic.HoareTotal` are the partial rules with a proof of
+termination with valid assertions.
+Rules that choose a branch also require that the condition evaluates to a Boolean, since a
+run whose condition does not evaluate is stuck, and the loop rule takes a natural-number
+measure that every iteration decreases. A loop's `decreases` clause can supply that measure,
+read off the integer it evaluates to.
+
+{docstring Imperative.Logic.HoareTotal.while_rule}
+
+Strata Core instantiates it as `Core.Logic.HoareTotal.Triple`
+([`Core/Logic/HoareTotal.lean`](https://github.com/strata-org/Strata/blob/main/Strata/Languages/Core/Logic/HoareTotal.lean)),
+whose command rules are the partial ones together with the condition that the command can
+execute (for an assignment, that the right-hand side evaluates to a value of the type of the
+value the variable holds). `Procedure.contractTripleTotal` reads a procedure's contract under
+total correctness, with the same precondition and postcondition as `Procedure.contractTriple`:
+it is `contractTriple` together with termination with valid assertions of the body
+(`Procedure.contractTripleTotal_iff`), for either body kind. `TripleUnstructured` has no proof
+rules yet, so a procedure with a CFG body proves its total contract from its partial contract
+and a direct proof of that termination.
+
+The termination a Core total triple guarantees counts a call as one step: `call_sem` runs the
+callee's body to completion inside a single command step, so a call steps as soon as some run
+of the callee finishes. `Core.Logic.HoareTotal.Procedure.call_of_contract` is the partial call
+rule together with the premises that make the call execute: a callee entry store, a finished
+run of the body, and a write-back. A finished run can come from the callee's
+`contractTripleTotal` when no `assume` of its body can fail.
+`StrataTest/Languages/Core/Tests/Logic/HoareTotal.lean` proves the total-correctness contracts
+of two counting loops, the two examples above about `assume`, and that the program above
+with a reachable failing assertion meets no total triple, and
+`StrataTest/Languages/Core/Tests/Logic/HoareTotalCall.lean` applies `call_of_contract` to a
+call of one of the loops.
+
+{docstring Core.Logic.HoareTotal.Triple}
+
+{docstring Core.Logic.Hoare.Procedure.contractTripleTotal}
 
 ## Satisfiability and Validity of Assertions
 

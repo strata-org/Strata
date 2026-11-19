@@ -16,10 +16,11 @@ import all Strata.DL.Lambda.FactoryProps
 
 The operators of `Core.Factory` whose concrete evaluator computes every call on literals
 (`ComputableOp`): integer arithmetic without division, integer comparisons, the Boolean
-connectives, the string operations with concrete evaluators, and the bit-vector operations
-without a guard at every width the factory defines, named by `isComputableBuiltin`. Division,
-remainder and shifts are excluded: their concrete evaluators leave a zero divisor or an
-out-of-range shift undecided, while the reference model gives such calls a value.
+connectives, the string operations with concrete evaluators other than `Str.FromCode`, and the
+bit-vector operations without a guard at every width the factory defines, named by
+`isComputableBuiltin`. Division, remainder, shifts and `Str.FromCode` are excluded: their
+concrete evaluators leave a zero divisor, an out-of-range shift or a surrogate code point
+undecided, while the reference model gives such calls a value.
 
 Key definitions: `computableScalarOps`, `computableBVOps`, `isComputableBuiltin`,
 `isComputableBuiltinFn`. Key theorem: `computableOp_of_builtin`. -/
@@ -85,12 +86,12 @@ private theorem decodesLits_bitvec (n : Nat) : DecodesLits (InV := BitVec n) (.b
     exact ⟨b, by simp [LambdaLeanType.cevalTy, LExpr.denoteBitVec]⟩
   | _ => simp [LConst.sort, LSort.toMonoTy, LSort.toMonoTy.map] at hc
 
-/-- A `unaryOp` over primitive types whose decoder decodes every literal of its input type and
-    whose builder builds literals of its output type is computed on literals. -/
+/-- A `unaryOp` over primitive types without a guard, whose decoder decodes every literal of its
+    input type and whose builder builds literals of its output type, is computed on literals. -/
 private theorem computableOp_unaryOp {inTy outTy : LMonoTy} {InV OutV : Type} [ToString OutV]
     [LambdaLeanType inTy InV] [LambdaLeanType outTy OutV] [hdec : LitCodec inTy InV]
     [hmk : LitCodec outTy OutV] {n : CoreLParams.Identifier} {f : InV → OutV} {pre hI hO hp} :
-    ComputableOp (unaryOp n f pre hI hO hp).func := by
+    ComputableOp (unaryOp n f (fun _ => true) pre hI hO hp).func := by
   refine ⟨rfl, rfl, rfl, ⟨_, rfl, ?_⟩⟩
   change CevalTotal _ _
   intro md _ args h
@@ -100,7 +101,7 @@ private theorem computableOp_unaryOp {inTy outTy : LMonoTy} {InV OutV : Type} [T
   obtain ⟨m, c, rfl, hc, hcd⟩ := h1
   obtain ⟨a, ha⟩ := hdec.decodes m c (LConst.wt_of_isPrimitive hcd) hc
   obtain ⟨m', c', hmc, hc'⟩ := hmk.builds md (f a)
-  exact ⟨m', c', by simp only [ha, hmc], hc'⟩
+  exact ⟨m', c', by simp only [ha, hmc, ↓reduceIte], hc'⟩
 
 /-- A `binaryOp` over primitive types without a guard, whose decoder decodes every literal of its
     input type and whose builder builds literals of its output type, is computed on literals. -/
@@ -121,6 +122,30 @@ private theorem computableOp_binaryOp {inTy outTy : LMonoTy} {InV OutV : Type} [
   obtain ⟨m2, c2, rfl, hc2, hcd2⟩ := h3
   obtain ⟨a, ha⟩ := hdec.decodes m c (LConst.wt_of_isPrimitive hcd) hc
   obtain ⟨b, hb⟩ := hdec.decodes m2 c2 (LConst.wt_of_isPrimitive hcd2) hc2
+  obtain ⟨m', c', hmc, hc'⟩ := hmk.builds md (g a b)
+  exact ⟨m', c', by simp only [ha, hb, hmc, ↓reduceIte], hc'⟩
+
+/-- A `heteroBinaryOp` over primitive types without a guard, whose decoders decode every literal
+    of its two input types and whose builder builds literals of its output type, is computed on
+    literals. -/
+private theorem computableOp_heteroBinaryOp {inTy1 inTy2 outTy : LMonoTy} {InV1 InV2 OutV : Type}
+    [ToString OutV] [LambdaLeanType inTy1 InV1] [LambdaLeanType inTy2 InV2]
+    [LambdaLeanType outTy OutV] [hdec1 : LitCodec inTy1 InV1] [hdec2 : LitCodec inTy2 InV2]
+    [hmk : LitCodec outTy OutV] {n : CoreLParams.Identifier} {g : InV1 → InV2 → OutV}
+    {pre hI1 hI2 hO hp} :
+    ComputableOp (heteroBinaryOp n g (fun _ => true) pre hI1 hI2 hO hp).func := by
+  refine ⟨rfl, rfl, rfl, ⟨_, rfl, ?_⟩⟩
+  change CevalTotal _ _
+  intro md _ args h
+  cases h with
+  | cons h1 h2 =>
+  cases h2 with
+  | cons h3 h4 =>
+  cases h4
+  obtain ⟨m, c, rfl, hc, hcd⟩ := h1
+  obtain ⟨m2, c2, rfl, hc2, hcd2⟩ := h3
+  obtain ⟨a, ha⟩ := hdec1.decodes m c (LConst.wt_of_isPrimitive hcd) hc
+  obtain ⟨b, hb⟩ := hdec2.decodes m2 c2 (LConst.wt_of_isPrimitive hcd2) hc2
   obtain ⟨m', c', hmc, hc'⟩ := hmk.builds md (g a b)
   exact ⟨m', c', by simp only [ha, hb, hmc, ↓reduceIte], hc'⟩
 
@@ -179,11 +204,13 @@ private instance (n : Nat) : LitCodec (.bitvec n) (BitVec n) :=
 
 /-- The operators of `Core.Factory`, other than the bit-vector ones, its concrete evaluators
     compute on literals: integer arithmetic without division, integer comparisons, the Boolean
-    connectives, and the string operations with concrete evaluators. -/
+    connectives, and the string operations with concrete evaluators that have no guard.
+    `Str.FromCode` is guarded: a surrogate code point is left to the solver. -/
 @[expose] def computableScalarOps : List String :=
   ["Int.Add", "Int.Sub", "Int.Mul", "Int.Neg", "Int.Lt", "Int.Le", "Int.Gt", "Int.Ge",
     "Bool.And", "Bool.Or", "Bool.Implies", "Bool.Equiv", "Bool.Not", "Str.Length", "Str.Concat",
-    "Str.PrefixOf", "Str.SuffixOf", "Str.Lt", "Str.Le"]
+    "Str.PrefixOf", "Str.SuffixOf", "Str.At", "Str.Lt", "Str.Le", "Str.ToCode",
+    "Str.FromInt", "Str.ToInt"]
 
 /-- The bit-vector operators of `Core.Factory`, at every width it defines, its concrete evaluators
     compute on literals: arithmetic without division, bitwise operations, comparisons, overflow
@@ -223,7 +250,8 @@ private def scalarFns0 : List (WFLFunc CoreLParams) :=
    boolImpliesFunc (T := CoreLParams), boolEquivFunc (T := CoreLParams),
    boolNotFunc (T := CoreLParams), strLengthFunc, strConcatFunc, strSubstrFunc,
    strToRegexFunc, strInRegexFunc, strPrefixOfFunc, strSuffixOfFunc, strContainsFunc,
-   strIndexOfFunc, strReplaceFunc, strAtFunc, strLtFunc, strLeFunc, reAllFunc, reAllCharFunc,
+   strIndexOfFunc, strReplaceFunc, strAtFunc, strLtFunc, strLeFunc, strToCodeFunc,
+   strFromCodeFunc, strFromIntFunc, strToIntFunc, reAllFunc, reAllCharFunc,
    reRangeFunc, reConcatFunc, reStarFunc, rePlusFunc, reLoopFunc, reUnionFunc, reInterFunc,
    reCompFunc, reNoneFunc, mapConstFunc]
 
@@ -239,6 +267,7 @@ private theorem computableOp_scalar0 :
     first
     | exact fun h => absurd h (by decide +kernel)
     | exact fun _ => computableOp_binaryOp
+    | exact fun _ => computableOp_heteroBinaryOp
     | exact fun _ => computableOp_unaryOp
     | exact fun _ => computableOp_shortCircuitOp
 
@@ -270,6 +299,7 @@ private theorem computableOp_scalar1 :
     first
     | exact fun h => absurd h (by decide +kernel)
     | exact fun _ => computableOp_binaryOp
+    | exact fun _ => computableOp_heteroBinaryOp
     | exact fun _ => computableOp_unaryOp
     | exact fun _ => computableOp_shortCircuitOp
 
@@ -286,6 +316,7 @@ private theorem computableOp_bv1 :
     first
     | exact fun h => absurd h (by decide +kernel)
     | exact fun _ => computableOp_binaryOp
+    | exact fun _ => computableOp_heteroBinaryOp
     | exact fun _ => computableOp_unaryOp
     | exact fun _ => computableOp_shortCircuitOp
 
@@ -302,6 +333,7 @@ private theorem computableOp_bv8 :
     first
     | exact fun h => absurd h (by decide +kernel)
     | exact fun _ => computableOp_binaryOp
+    | exact fun _ => computableOp_heteroBinaryOp
     | exact fun _ => computableOp_unaryOp
     | exact fun _ => computableOp_shortCircuitOp
 
@@ -318,6 +350,7 @@ private theorem computableOp_bv16 :
     first
     | exact fun h => absurd h (by decide +kernel)
     | exact fun _ => computableOp_binaryOp
+    | exact fun _ => computableOp_heteroBinaryOp
     | exact fun _ => computableOp_unaryOp
     | exact fun _ => computableOp_shortCircuitOp
 
@@ -334,6 +367,7 @@ private theorem computableOp_bv32 :
     first
     | exact fun h => absurd h (by decide +kernel)
     | exact fun _ => computableOp_binaryOp
+    | exact fun _ => computableOp_heteroBinaryOp
     | exact fun _ => computableOp_unaryOp
     | exact fun _ => computableOp_shortCircuitOp
 
@@ -350,6 +384,7 @@ private theorem computableOp_bv64 :
     first
     | exact fun h => absurd h (by decide +kernel)
     | exact fun _ => computableOp_binaryOp
+    | exact fun _ => computableOp_heteroBinaryOp
     | exact fun _ => computableOp_unaryOp
     | exact fun _ => computableOp_shortCircuitOp
 
@@ -366,6 +401,7 @@ private theorem computableOp_bv128 :
     first
     | exact fun h => absurd h (by decide +kernel)
     | exact fun _ => computableOp_binaryOp
+    | exact fun _ => computableOp_heteroBinaryOp
     | exact fun _ => computableOp_unaryOp
     | exact fun _ => computableOp_shortCircuitOp
 

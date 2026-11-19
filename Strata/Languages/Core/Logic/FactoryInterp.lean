@@ -447,7 +447,8 @@ class OutPrim (outTy : LMonoTy) (OutV : outParam Type) where
       LExpr.denote tcInterp opInterp fvarVal vt .nil (mkOut md w) outTy h
         = decodeAt (LMonoTy.substTyVars vt outTy) (some (mkOut md' w))
 
-/-- Generic `concreteEval` consistency for a unary op over primitive types. -/
+/-- Generic `concreteEval` consistency for a unary op over primitive types; `guard` is checked
+on the argument. -/
 private theorem unaryOp_consistent
     {inTy outTy : LMonoTy} {InV OutV : Type}
     (func : LFunc T)
@@ -457,11 +458,11 @@ private theorem unaryOp_consistent
     (hce : func.concreteEval = some ceval)
     (hlook : Core.Factory.get? func.name.name = some func)
     [ip : InPrim inTy InV] [op : OutPrim outTy OutV]
-    (f : InV → OutV)
+    (f : InV → OutV) (guard : InV → Bool)
     (hmono : func.typeArgs = [])
     (hbeh : ∀ md opTy x, ceval md opTy [x] =
       (match InPrim.cevalIn (inTy := inTy) x with
-       | some a => some (OutPrim.mkOut (outTy := outTy) md (f a))
+       | some a => if guard a then some (OutPrim.mkOut (outTy := outTy) md (f a)) else none
        | _ => none)) :
     LFunc.InterpConsistentEval tcInterp opInterp func ceval := by
   intro vt fvarVal md tySubst argExprs resultExpr
@@ -485,14 +486,19 @@ private theorem unaryOp_consistent
     | none => rw [hca] at heval; simp at heval
     | some av =>
       rw [hca] at heval
-      simp only [Option.some.injEq] at heval
-      subst heval
-      simp only [opInterp, hlook, hce, hmono, List.isEmpty_nil, ↓reduceIte, denoteArgs]
-      show LExpr.denote tcInterp opInterp fvarVal vt HList.nil (OutPrim.mkOut outTy md (f av)) outTy h_result
-          = gatherEval ceval [reifyAt (LMonoTy.substTyVars vt inTy)
-              (LExpr.denote tcInterp opInterp fvarVal vt HList.nil a inTy hx)] (LMonoTy.substTyVars vt outTy)
-      rw [OutPrim.gather_eq, hbeh default none, InPrim.reify_ceval fvarVal vt a hx av hca]
-      rw [OutPrim.denote_decode fvarVal vt md default (f av) h_result]
+      simp only at heval
+      split at heval
+      · rename_i hg
+        simp only [Option.some.injEq] at heval
+        subst heval
+        simp only [opInterp, hlook, hce, hmono, List.isEmpty_nil, ↓reduceIte, denoteArgs]
+        show LExpr.denote tcInterp opInterp fvarVal vt HList.nil (OutPrim.mkOut outTy md (f av)) outTy h_result
+            = gatherEval ceval [reifyAt (LMonoTy.substTyVars vt inTy)
+                (LExpr.denote tcInterp opInterp fvarVal vt HList.nil a inTy hx)] (LMonoTy.substTyVars vt outTy)
+        rw [OutPrim.gather_eq, hbeh default none, InPrim.reify_ceval fvarVal vt a hx av hca]
+        rw [OutPrim.denote_decode fvarVal vt md default (f av) h_result]
+        simp only [hg, ite_true]
+      · simp at heval
 
 /-- Generic `concreteEval` consistency for a binary op over primitive types.
 Both inputs share type `inTy`; `guard` is checked on the second argument. -/
@@ -551,6 +557,73 @@ private theorem binaryOp_consistent
                         (LExpr.denote tcInterp opInterp fvarVal vt HList.nil a inTy hx),
                      reifyAt (LMonoTy.substTyVars vt inTy)
                         (LExpr.denote tcInterp opInterp fvarVal vt HList.nil a2 inTy hy)]
+                    (LMonoTy.substTyVars vt outTy)
+            rw [OutPrim.gather_eq, hbeh default none,
+                InPrim.reify_ceval fvarVal vt a hx av hca,
+                InPrim.reify_ceval fvarVal vt a2 hy bv hcb,
+                OutPrim.denote_decode fvarVal vt md default (g av bv) h_result]
+            simp only [hg, ite_true]
+          · simp at heval
+
+/-- Generic `concreteEval` consistency for a binary op over primitive types whose inputs have
+different types `inTy1` and `inTy2`; `guard` is checked on the second argument. -/
+private theorem heteroBinaryOp_consistent
+    {inTy1 inTy2 outTy : LMonoTy} {InV1 InV2 OutV : Type}
+    (func : LFunc T)
+    (ceval : ConcreteEval T)
+    (hin : (List.map Prod.snd func.inputs) = [inTy1, inTy2])
+    (hout : func.output = outTy)
+    (hce : func.concreteEval = some ceval)
+    (hlook : Core.Factory.get? func.name.name = some func)
+    [ip1 : InPrim inTy1 InV1] [ip2 : InPrim inTy2 InV2] [opr : OutPrim outTy OutV]
+    (g : InV1 → InV2 → OutV) (guard : InV2 → Bool)
+    (hmono : func.typeArgs = [])
+    (hbeh : ∀ md opTy x y, ceval md opTy [x, y] =
+      (match InPrim.cevalIn (inTy := inTy1) x, InPrim.cevalIn (inTy := inTy2) y with
+       | some a, some b => if guard b then some (OutPrim.mkOut (outTy := outTy) md (g a b)) else none
+       | _, _ => none)) :
+    LFunc.InterpConsistentEval tcInterp opInterp func ceval := by
+  intro vt fvarVal md tySubst argExprs resultExpr
+  simp only []
+  intro heval h_args h_result
+  have hci1 : LMonoTy.subst tySubst inTy1 = inTy1 :=
+    LMonoTy.subst_no_relevant_keys _ _ (by rw [ip1.closed]; simp)
+  have hci2 : LMonoTy.subst tySubst inTy2 = inTy2 :=
+    LMonoTy.subst_no_relevant_keys _ _ (by rw [ip2.closed]; simp)
+  have hco : LMonoTy.subst tySubst outTy = outTy :=
+    LMonoTy.subst_no_relevant_keys _ _ (by rw [opr.closed]; simp)
+  have hIT : (List.map (LMonoTy.subst tySubst) (List.map Prod.snd func.inputs)) = [inTy1, inTy2] := by
+    rw [hin]; simp [hci1, hci2]
+  have hOT : LMonoTy.subst tySubst func.output = outTy := by rw [hout]; exact hco
+  revert h_args h_result
+  rw [hIT, hOT]
+  intro h_args h_result
+  cases h_args with
+  | @cons a b as bs hx htail =>
+    cases htail with
+    | @cons a2 b2 as2 bs2 hy htail2 =>
+      cases htail2
+      rw [hbeh md _ a a2] at heval
+      cases hca : InPrim.cevalIn (inTy := inTy1) a with
+      | none => rw [hca] at heval; simp at heval
+      | some av =>
+        cases hcb : InPrim.cevalIn (inTy := inTy2) a2 with
+        | none => rw [hca, hcb] at heval; simp at heval
+        | some bv =>
+          rw [hca, hcb] at heval
+          simp only at heval
+          split at heval
+          · rename_i hg
+            simp only [Option.some.injEq] at heval
+            subst heval
+            simp only [opInterp, hlook, hce, hmono, List.isEmpty_nil, ↓reduceIte, denoteArgs]
+            show LExpr.denote tcInterp opInterp fvarVal vt HList.nil
+                  (OutPrim.mkOut outTy md (g av bv)) outTy h_result
+                = gatherEval ceval
+                    [reifyAt (LMonoTy.substTyVars vt inTy1)
+                        (LExpr.denote tcInterp opInterp fvarVal vt HList.nil a inTy1 hx),
+                     reifyAt (LMonoTy.substTyVars vt inTy2)
+                        (LExpr.denote tcInterp opInterp fvarVal vt HList.nil a2 inTy2 hy)]
                     (LMonoTy.substTyVars vt outTy)
             rw [OutPrim.gather_eq, hbeh default none,
                 InPrim.reify_ceval fvarVal vt a hx av hca,
@@ -777,14 +850,14 @@ private theorem unaryOp_func_consistent
     [ip : InPrim inTy InV] [opr : OutPrim outTy OutV]
     (hcin : ip.cevalIn = LambdaLeanType.cevalTy T := by rfl)
     (hmk : opr.mkOut = LambdaLeanType.mkConst T := by rfl)
-    {n : T.Identifier} {f : InV → OutV} {pre hI hO hp}
+    {n : T.Identifier} {f : InV → OutV} {guard pre hI hO hp}
     {ceval : ConcreteEval T}
-    (hce : (unaryOp n f pre hI hO hp).func.concreteEval = some ceval)
-    (hlook : Core.Factory.get? n.name = some (unaryOp n f pre hI hO hp).func) :
-    LFunc.InterpConsistentEval tcInterp opInterp (unaryOp n f pre hI hO hp).func ceval := by
+    (hce : (unaryOp n f guard pre hI hO hp).func.concreteEval = some ceval)
+    (hlook : Core.Factory.get? n.name = some (unaryOp n f guard pre hI hO hp).func) :
+    LFunc.InterpConsistentEval tcInterp opInterp (unaryOp n f guard pre hI hO hp).func ceval := by
   injection hce with hce
   subst hce
-  refine unaryOp_consistent (inTy := inTy) (outTy := outTy) _ _ rfl rfl rfl hlook f rfl ?_
+  refine unaryOp_consistent (inTy := inTy) (outTy := outTy) _ _ rfl rfl rfl hlook f guard rfl ?_
   intro md opTy x
   rw [hcin, hmk]
   rfl
@@ -808,6 +881,30 @@ private theorem binaryOp_func_consistent
   refine binaryOp_consistent (inTy := inTy) (outTy := outTy) _ _ rfl rfl rfl hlook g guard rfl ?_
   intro md opTy x y
   rw [hcin, hmk]
+  rfl
+
+/-- `concreteEval` consistency for any `heteroBinaryOp`-built function whose
+`LambdaLeanType` decoders/builder agree with the `InPrim`/`OutPrim` bridges.
+Stated over `heteroBinaryOp` itself so a factory entry unifies with it directly. -/
+private theorem heteroBinaryOp_func_consistent
+    {inTy1 inTy2 outTy : LMonoTy} {InV1 InV2 OutV : Type} [ToString OutV]
+    [LambdaLeanType inTy1 InV1] [LambdaLeanType inTy2 InV2] [LambdaLeanType outTy OutV]
+    [ip1 : InPrim inTy1 InV1] [ip2 : InPrim inTy2 InV2] [opr : OutPrim outTy OutV]
+    (hcin1 : ip1.cevalIn = LambdaLeanType.cevalTy T := by rfl)
+    (hcin2 : ip2.cevalIn = LambdaLeanType.cevalTy T := by rfl)
+    (hmk : opr.mkOut = LambdaLeanType.mkConst T := by rfl)
+    {n : T.Identifier} {g : InV1 → InV2 → OutV} {guard pre hI1 hI2 hO hp}
+    {ceval : ConcreteEval T}
+    (hce : (heteroBinaryOp n g guard pre hI1 hI2 hO hp).func.concreteEval = some ceval)
+    (hlook : Core.Factory.get? n.name = some (heteroBinaryOp n g guard pre hI1 hI2 hO hp).func) :
+    LFunc.InterpConsistentEval tcInterp opInterp (heteroBinaryOp n g guard pre hI1 hI2 hO hp).func
+      ceval := by
+  injection hce with hce
+  subst hce
+  refine heteroBinaryOp_consistent (inTy1 := inTy1) (inTy2 := inTy2) (outTy := outTy) _ _ rfl rfl rfl
+    hlook g guard rfl ?_
+  intro md opTy x y
+  rw [hcin1, hcin2, hmk]
   rfl
 
 /-- `concreteEval` consistency for any `shortCircuitOp`-built function.
@@ -1418,7 +1515,7 @@ private theorem sound_seqDrop (name : String) (hname : checkedName name = "Seque
 private theorem eval_consistent :
     ∀ (f : String), (hf : f ∈ Core.Factory) → ∀ ceval, (Core.Factory[f]).concreteEval = some ceval →
       LFunc.InterpConsistentEval tcInterp opInterp (Core.Factory[f]) ceval := by
-  -- Each entry is either evaluator-free or built by `unaryOp`/`binaryOp`.
+  -- Each entry is either evaluator-free or built by `unaryOp`/`binaryOp`/`heteroBinaryOp`.
   have hall : ∀ wf ∈ Core.WFFactoryArray.toList, ∀ ceval,
       wf.func.concreteEval = some ceval →
       Core.Factory.get? wf.func.name.name = some wf.func →
@@ -1434,6 +1531,7 @@ private theorem eval_consistent :
       first
       | (injection hce; done)
       | exact binaryOp_func_consistent (hce := hce) (hlook := hlook)
+      | exact heteroBinaryOp_func_consistent (hce := hce) (hlook := hlook)
       | exact unaryOp_func_consistent (hce := hce) (hlook := hlook)
       | exact shortCircuit_func_consistent (hce := hce) (hlook := hlook)
       | exact litOp_consistent rfl sound_mapConst hce hlook

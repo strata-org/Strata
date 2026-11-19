@@ -78,8 +78,8 @@ def renameReservedWith {α : Type} (typeArgs : List String) (avoid : Unit → Li
 def scopeTyVars (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv) : List String :=
   C.rigidTypeVars ++ Env.context.knownTypeVars
 
-/-- The type annotations of a command: the declared type of a variable and the annotations of
-    its expressions. -/
+/-- The type annotations of a command: the declared type of a variable, the type arguments of a
+    call, and the annotations of its expressions. -/
 def cmdAnnotTys (c : Command) : List LMonoTy :=
   cmdCollect exprAnnotTys ([·]) c
 

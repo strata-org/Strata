@@ -145,8 +145,8 @@ abbrev CallBodyRel (P : PureExpr) :=
 @[expose] def CallArmEng (π : String → Option (Procedure P (CmdExt P) Hdr))
     (B : CallBodyRel P) : CallCmdRel P :=
   fun fac σ c σ' emitted =>
-    ∃ nm p callArgs md σAO σ_final bodyEvents,
-      c = CmdExt.call nm callArgs md
+    ∃ nm tyArgs p callArgs md σAO σ_final bodyEvents,
+      c = CmdExt.call nm tyArgs callArgs md
       ∧ π nm = some p
       ∧ CallEntry fac σ p callArgs σAO
       ∧ B p.body ⟨σAO, fac⟩ σ_final bodyEvents
@@ -324,7 +324,7 @@ theorem evalCommandEngAtE_cmdDefsSound
     hc ▸ evalCmdE_cmdDefsSound _ _ _ _ _ h.toEvalCmdE
   rcases n with _ | n
   · exact hcmd
-  rintro _ _ _ _ _ (h | ⟨_, _, _, _, _, _, _, rfl, -, -, -, ⟨_, _, _, hup, -⟩, -⟩)
+  rintro _ _ _ _ _ (h | ⟨_, _, _, _, _, _, _, _, rfl, -, -, -, ⟨_, _, _, hup, -⟩, -⟩)
   · exact hcmd _ _ _ _ _ h
   exact fun x hx => .inl (UpdateStatesDefMonotone' (vs := [x])
     (fun _ hv => List.mem_singleton.1 hv ▸ hx) hup x (List.mem_singleton_self x))
@@ -351,6 +351,7 @@ theorem stepCmd_call_complete (obs : InterpObs P m)
         Pend st' o ∧ obs.trace st' = revs.reverse ++ obs.trace st)
     {ρ : IEnv P} (hd : RStore.Denoting F ρ.store.get) (hf : ρ.factory = InterpLang.rfactory F)
     {nm : String} {args : List (CallArg P)} {md : MetaData P} {p : Procedure P (CmdExt P) Hdr}
+    {tyArgs : Option (List P.Ty)}
     {σAO σf σ' : SemanticStore P} {evB : List (Event P)} {o o' : List P.Val}
     (hπ : π nm = some p) (hentry : CallEntry F (InterpLang.absStore F ρ.store.get) p args σAO)
     (hexit : CallExit F (InterpLang.absStore F ρ.store.get) p args σf σ')
@@ -367,7 +368,7 @@ theorem stepCmd_call_complete (obs : InterpObs P m)
     (st : obs.St) (hst : Pend st o) :
     ∃ (f0 : Nat) (σi : IStore P) (st' : obs.St), InterpLang.absStore F σi.get = σ' ∧
       RStore.Denoting F σi.get ∧
-      (∀ i j, f0 ≤ i → f0 ≤ j → obs.run (stepCmd π i j ρ (.call nm args md)) cfgr st
+      (∀ i j, f0 ≤ i → f0 ≤ j → obs.run (stepCmd π i j ρ (.call nm tyArgs args md)) cfgr st
         = (.ok (.terminal { ρ with store := σi }), st')) ∧ Pend st' o' ∧
       obs.TraceExt F st st' (defaultAssertEvents F σAO (checksAtCall md p.spec.preconditions) ++
         evB ++ defaultAssertEvents F σf p.spec.postconditions) := by
@@ -454,7 +455,7 @@ private theorem call_cmdArmComplete_call (obs : InterpObs P m)
     CmdArmComplete obs π cfgr F
       (CallArmEng π (BodyExecEngOf R (EvalCommandEngAtE π R n))) := by
   rintro ρ _ _ _ st ⟨hd, hf⟩
-    ⟨nm, ⟨hdr, spec, body⟩, args, md, σAO, σf, evB, rfl, hπ, hentry, hB, hexit, rfl, hargs, hwb⟩
+    ⟨nm, _, ⟨hdr, spec, body⟩, args, md, σAO, σf, evB, rfl, hπ, hentry, hB, hexit, rfl, hargs, hwb⟩
   refine (stepCmd_call_complete obs π cfgr hMono (Pend := fun _ _ => True)
     (Q := fun _ => True) (o := []) (o' := []) (fun revs _ st _ _ =>
       (obs_forM_emit_complete obs cfgr hemit revs st).imp fun _ ⟨a, b⟩ => ⟨a, trivial, b⟩)
@@ -691,8 +692,8 @@ inductive OracleStepE (E : OracleCmdRel P) :
     relation, and its final store is the halting store projected through the entry frame. -/
 @[expose] def OracleCallArm (π : String → Option (Procedure P (CmdExt P) Hdr))
     (E : OracleCmdRel P) : OracleCmdRel P := fun f σ c σ' evs o o' =>
-  (∃ nm p args md σAO ss ρ' bodyEvs,
-    c = .call nm args md ∧ π nm = some p ∧ p.body = .structured ss ∧
+  (∃ nm tyArgs p args md σAO ss ρ' bodyEvs,
+    c = .call nm tyArgs args md ∧ π nm = some p ∧ p.body = .structured ss ∧
     CallEntry f σ p args σAO ∧
     ReflTransTrace (OracleStepE E)
       (.stmt (Stmt.block "" ss #[]) ⟨σAO, f⟩, o) bodyEvs (.terminal ρ', o') ∧
@@ -700,8 +701,8 @@ inductive OracleStepE (E : OracleCmdRel P) :
     evs = defaultAssertEvents f σAO (checksAtCall md p.spec.preconditions) ++ bodyEvs ++
       defaultAssertEvents f ρ'.store p.spec.postconditions ∧
     CallArgsReach f σ args ∧ WriteBackOK f σ p args ρ'.store) ∨
-  ∃ nm p args md σAO g ρEnd bodyEvs,
-    c = .call nm args md ∧ π nm = some p ∧ p.body = .cfg g ∧
+  ∃ nm tyArgs p args md σAO g ρEnd bodyEvs,
+    c = .call nm tyArgs args md ∧ π nm = some p ∧ p.body = .cfg g ∧
     CallEntry f σ p args σAO ∧
     ReflTransTrace (OracleCFGStepE E)
       (.atBlock g g.entry ⟨σAO, f⟩, o) bodyEvs (.terminal ρEnd, o') ∧
@@ -741,7 +742,7 @@ inductive OracleStepE (E : OracleCmdRel P) :
 /-- A call-aware command that resolves no choice: a deterministic base command, or a call. -/
 @[expose] def CmdExtDeterministic : CmdExt P → Bool
   | .cmd c => CmdDeterministic c
-  | .call _ _ _ => true
+  | .call _ _ _ _ => true
 
 /-- **A deterministic call-aware program**: no `.nondet` guard and no nondeterministic base
     command, in the statements still to be executed in `c`, in every structured callee body of

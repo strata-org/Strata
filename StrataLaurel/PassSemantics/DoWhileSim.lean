@@ -25,7 +25,6 @@ replaces each post-test loop `do body while c` by a block labelled `L` that cont
 * `PDW`: what every term of the input must satisfy: `Basic`, no exit to a label starting
   with `$dowhile_exit_`, and every post-test loop body is a block.
 * `E`, `Rw`, `target`: the term relation, the rewrite step and the rewritten loop.
-* `hext_default`: the default backend satisfies the hypothesis on `externalTruthy`.
 -/
 
 namespace Strata.Laurel.PassSemantics.DoWhileSim
@@ -371,11 +370,10 @@ private theorem of_not : opOf? (mkId Operation.Not.procName).text = some .Not :=
 
 section Loop
 variable {cfg : ExternalBackendM PM} (hc : CfgB cfg)
-  (hext : ∀ e, ∃ msg, ∀ τ, cfg.externalTruthy e τ = .error (.stuck msg))
   {n : Nat} (ihs : ∀ k ≤ n, FundAt cfg E Rw 6 Gl k)
   {h : Control → EvalM PM Unit} (hh : ∀ c, CtlOK Gl G c → h c = throw c)
 
-omit hc hext ihs hh in
+omit hc ihs hh in
 private theorem loop_step {c' body' : StmtExprMd} {src : FileRange} {L : String}
     {ci' : EvalM PM Unit} (j : Nat) :
     evalWhileIter cfg (trueE src) (loopBody c' body' src L) false ci' (pure ()) (j + 3) =
@@ -392,17 +390,13 @@ private theorem loop_step {c' body' : StmtExprMd} {src : FileRange} {L : String}
   simp only [h1, h2, pure_bind, ite_true]
 
 omit hc ihs hh in
-include hext in
 private theorem isTrue_not_fails {v : Value} (hv : ¬ ∃ b, v = .bool ⟨b⟩) (τ τ' : Trace) :
     ∃ e e', Interpreter.isTrue cfg v τ = .error e ∧ opCall cfg .Not [v] τ' = .error e' ∧ (Stuck e' → Stuck e) := by
   cases v with
-  | external e =>
-    obtain ⟨m, hm⟩ := hext e
-    exact ⟨_, _, hm τ, rfl, fun _ => .mk m⟩
   | bool b => exact absurd ⟨b.b, rfl⟩ hv
   | _ => exact ⟨_, _, rfl, rfl, fun _ => .mk _⟩
 
-omit hc hext ihs in
+omit hc ihs in
 private theorem fsc_fail_both {X : PM α} {Y : PM β} {g : α → EvalM PM Unit} {f : β → EvalM PM Unit}
     (hXY : ∀ τ τ', ∃ e e', X τ = .error e ∧ Y τ' = .error e' ∧ (Stuck e' → Stuck e)) :
     FS (SmO E Gl G ol) Eq (liftM X >>= g) (tryCatch (liftM Y >>= f) h) := by
@@ -412,7 +406,7 @@ private theorem fsc_fail_both {X : PM α} {Y : PM β} {g : α → EvalM PM Unit}
   rw [he, he']
   exact hs
 
-omit hc hext ihs hh in
+omit hc ihs hh in
 private theorem fsc_exit {L : String} {src : FileRange} {j : Nat} (hL0 : L ∈ ol) {rest : Unit → EvalM PM Unit}
     (hexit : ∀ σ τ, ∃ σ'', run (h (.exit_ L)) σ τ = .ok ((.ok (), σ''), τ) ∧
       ∀ s, (SmO E Gl G ol).st s σ → (SmO E Gl G ol).st s σ'') :
@@ -437,7 +431,7 @@ private theorem fsc_exit {L : String} {src : FileRange} {j : Nat} (hL0 : L ∈ o
   rw [he, run_pure]
   exact ⟨rfl, hst σ hs, ht⟩
 
-omit hc hext ihs hh in
+omit hc ihs hh in
 private theorem scoped_block {body : StmtExprMd} (hb : ∃ ss lab, body.val = .Block ss lab [] none) (k : Nat) :
     evalScopedStmt cfg (k + 1) body = evalStmt cfg k body := by
   obtain ⟨ss, lab, hv⟩ := hb
@@ -446,19 +440,19 @@ private theorem scoped_block {body : StmtExprMd} (hb : ∃ ss lab, body.val = .B
   subst hv
   rfl
 
-omit hc hext ihs hh in
+omit hc ihs hh in
 private theorem wbs_nil {l : List StmtExprMd} (hl : blockDeclarations l = []) (x : EvalM PM α) :
     withBlockScope l x = x := by
   unfold withBlockScope
   simp only [hl, List.isEmpty_nil, ite_true]
 
-omit hc hext ihs hh in
+omit hc ihs hh in
 private theorem decl_block {body : StmtExprMd} (hb : ∃ ss lab, body.val = .Block ss lab [] none) (rest : List StmtExprMd) :
     blockDeclarations (body :: rest) = blockDeclarations rest := by
   obtain ⟨ss, lab, hv⟩ := hb
   simp [blockDeclarations, hv]
 
-omit hext ihs hh in
+omit ihs hh in
 include hc in
 /-- Negating a condition is an operator call: it lets no `jump_` out, so the boundary of the expression
 evaluation around it changes nothing. -/
@@ -479,7 +473,7 @@ private theorem exprMd_notC (k : Nat) (c : StmtExprMd) (src : FileRange) :
     | with_reducible apply NoJ.bind
     | refine fun _ => ?_)
 
-omit hc hext ihs hh in
+omit hc ihs hh in
 /-- The exit `exitL src L` run with `L` open leaves `L`: it returns no `jump_`. -/
 private theorem exitL_noJ {m : Nat} {src : FileRange} {L : String} {σ : EvalState} (hL : L ∈ σ.openLabels) :
     NoJAt (evalStmt cfg m (exitL src L)) σ := by
@@ -494,7 +488,7 @@ private theorem exitL_noJ {m : Nat} {src : FileRange} {L : String} {σ : EvalSta
     simp only [hco, ite_true]
     exact NoJAt.ofNoJ (NoJ.throw (fun _ _ h => by cases h))
 
-omit hc hext ihs hh in
+omit hc ihs hh in
 /-- The guard `guard c' src L` run outside a coroutine body with `L` open returns no `jump_`: its condition is
 an expression, which lets none out, and its exit leaves the open block `L`. -/
 private theorem guard_noJ {m : Nat} {c' : StmtExprMd} {src : FileRange} {L : String} {σ : EvalState}
@@ -527,7 +521,7 @@ private theorem guard_noJ {m : Nat} {c' : StmtExprMd} {src : FileRange} {L : Str
         exact NoJAt.withOperandWindow (fun σ' hol _ => exitL_noJ (by rw [hol, hol3]; exact hL))
     · exact NoJAt.ofNoJ (NoJ.pure _)
 
-omit hc hext ihs hh in
+omit hc ihs hh in
 /-- Running the statements `[body', guard c' src L]` of the rewritten loop's body one after the other, outside a
 coroutine body with `L` open, returns no `jump_` to a label they hold: the body's own statement list lands those,
 and the guard returns no `jump_`. -/
@@ -585,7 +579,7 @@ private theorem loopBody_noLand {m : Nat} {body' c' : StmtExprMd} {src : FileRan
       rw [run_pure] at h
       cases h
 
-omit hc hext ihs hh in
+omit hc ihs hh in
 private theorem fsc_list_eq {X : EvalM PM Unit} {Y Y' : EvalM PM α} {R : α → EvalM PM Unit}
     (heq : ∀ σ σ' τ', (SmO E Gl G ol).st σ σ' → run Y σ' τ' = run Y' σ' τ')
     (hf : FS (SmO E Gl G ol) Eq X (tryCatch (Y' >>= R) h)) : FS (SmO E Gl G ol) Eq X (tryCatch (Y >>= R) h) := by
@@ -593,14 +587,14 @@ private theorem fsc_list_eq {X : EvalM PM Unit} {Y Y' : EvalM PM α} {R : α →
   rw [run_tryCatch_bind', heq σ σ' τ' hs, ← run_tryCatch_bind']
   exact hf.sim σ σ' τ τ' hs ht hn
 
-include hc hext ihs hh in
+include hc ihs hh in
 /-- The iterations of a source post-test loop are simulated by the iterations of the target's
 `while true` loop inside a `tryCatch` handler `h`. If the condition and body are related by `E`,
 both bodies are blocks, `h` rethrows every signal that may escape and turns `exit L` into a normal
 exit with related states, and the invariant checks `ci` and `ci'` simulate, then running `ci`, the
 body and the remaining loop with fuel `fb ≤ n` is simulated by the target loop with fuel `j + 1`
-for every `j ≥ 6 * fb + 2`. It needs `FundAt` for every fuel up to `n`, a backend satisfying
-`CfgB`, and an `externalTruthy` that always gets stuck. -/
+for every `j ≥ 6 * fb + 2`. It needs `FundAt` for every fuel up to `n` and a backend satisfying
+`CfgB`. -/
 private theorem loop {c c' body body' : StmtExprMd} {src : FileRange} {L : String}
     (hcc : E c c') (hbb : E body body') (hB : ∃ ss lab, body.val = .Block ss lab [] none)
     (hB' : ∃ ss lab, body'.val = .Block ss lab [] none)
@@ -670,9 +664,9 @@ private theorem loop {c c' body body' : StmtExprMd} {src : FileRange} {L : Strin
     · simp only [Bool.not_true, Bool.false_eq_true, ite_false, ite_true, pure_bind]
       exact ih (j + 5) (by omega) (by omega)
   · exact fsc_fail_both (X := Interpreter.isTrue cfg v) (Y := opCall cfg .Not [v])
-      (fun τ τ' => isTrue_not_fails hext hv τ τ')
+      (fun τ τ' => isTrue_not_fails hv τ τ')
 
-omit hc hext ihs hh in
+omit hc ihs hh in
 private theorem fs_target_eq {x y y' : EvalM PM α} {g : EvalState → EvalState}
     (heq : ∀ σ' τ', σ'.coroSelf = none → σ'.seek = none → run y σ' τ' = run y' (g σ') τ')
     (hg : ∀ σ σ', (SmO E Gl G ol).st σ σ' → (SmO E Gl G ol).st σ (g σ')) (h : FS (SmO E Gl G ol) Eq x y') :
@@ -682,7 +676,7 @@ private theorem fs_target_eq {x y y' : EvalM PM α} {g : EvalState → EvalState
   rw [heq σ' τ' hs'.coroSelf' hs'.seek']
   exact h.sim σ (g σ') τ τ' (hg σ σ' hs) ht hn
 
-omit hc hext ihs in
+omit hc ihs in
 private theorem fsc_stmtList1 {X : EvalM PM Unit} (x : StmtExprMd) (m : Nat) (k : Value → EvalM PM Unit)
     (hlab : statementLabels x = []) (hann : (stackAnnotation? x).isNone = true)
     (hf : FS (SmO E Gl G ol) Eq X (tryCatch (evalStmt cfg m x >>= fun _ => k default) h)) :
@@ -698,7 +692,7 @@ private theorem fsc_stmtList1 {X : EvalM PM Unit} (x : StmtExprMd) (m : Nat) (k 
   refine fsc_modify_r (fun σ σ' hs => ?_) (fsc_wow_r hf)
   exact ⟨by strel hs.1, hs.2⟩
 
-omit hc hext ihs in
+omit hc ihs in
 private theorem fsc_loopW {X : EvalM PM Unit} {c' : StmtExprMd} {invs' : List StmtExprMd}
     {dec' : Option StmtExprMd} {body' : StmtExprMd} {src : FileRange} {L : String} (m : Nat)
     (k : Unit → EvalM PM Unit)
@@ -717,14 +711,14 @@ private theorem fsc_loopW {X : EvalM PM Unit} {c' : StmtExprMd} {invs' : List St
     pure_bind]
   exact hf.sim σ σ' τ τ' hs ht hn
 
-omit hc hext ihs hh in
+omit hc ihs hh in
 private theorem fs_get_rS {x : EvalM PM α} {f : EvalState → EvalM PM α} (hf : ∀ s, FS (Sm E Gl G) Eq x (f s)) :
     FS (Sm E Gl G) Eq x (get >>= f) := by
   refine ⟨fun σ σ' τ τ' hs ht hn => ?_⟩
   rw [run_bind, run_get]
   exact (hf σ').sim σ σ' τ τ' hs ht hn
 
-omit hc hext ihs hh in
+omit hc ihs hh in
 private theorem fs_get_r {x : EvalM PM α} {f : EvalState → EvalM PM α}
     (hf : ∀ s, s.coroSelf = none → s.seek = none → FS (SmO E Gl G ol) Eq x (f s)) :
     FS (SmO E Gl G ol) Eq x (get >>= f) := by
@@ -733,11 +727,11 @@ private theorem fs_get_r {x : EvalM PM α} {f : EvalState → EvalM PM α}
   rw [run_bind, run_get]
   exact (hf σ' hs'.coroSelf' hs'.seek').sim σ σ' τ τ' hs ht hn
 
-include hc hext ihs in
+include hc ihs in
 /-- A rewrite step of `EliminateDoWhile` simulates as a statement: if `s` is a post-test loop and `t` is
 its rewrite (`Rw s t`), then `evalStmt` on `s` with fuel `n + 1` is simulated by `evalStmt` on `t`
-with any fuel `M ≥ 6 * (n + 1)`. It needs `FundAt` for every fuel up to `n`, a backend satisfying
-`CfgB`, and an `externalTruthy` that always gets stuck. -/
+with any fuel `M ≥ 6 * (n + 1)`. It needs `FundAt` for every fuel up to `n` and a backend satisfying
+`CfgB`. -/
 private theorem dw_stmt {s t : StmtExprMd} (hrw : Rw s t) (M : Nat) (hM : 6 * (n + 1) ≤ M) :
     FS (Sm E Gl G) Eq (evalStmt cfg (n + 1) s) (evalStmt cfg M t) := by
   obtain ⟨c, invs, dec, body, src, c', invs', dec', body', src', L, rfl, rfl, hcc, his, hbb, hL, hB, hB'⟩ := hrw
@@ -775,7 +769,7 @@ private theorem dw_stmt {s t : StmtExprMd} (hrw : Rw s t) (M : Nat) (hM : 6 * (n
         (nr_triv (fun _ _ => trivial) (fun _ _ => trivial) (.assert ha) (fun _ _ h => by cases h)) (ovOK_none rfl _ _) _
           (by omega)) (fun _ _ _ => fs_pure rfl)))
         (fun _ _ _ => fs_pure rfl))
-  refine loop hc hext ihs (fun c hc => ?_) hcc hbb hB hB' hol (fun σ τ => ?_) hci _ n M (Nat.le_refl n) (by omega)
+  refine loop hc ihs (fun c hc => ?_) hcc hbb hB hB' hol (fun σ τ => ?_) hci _ n M (Nat.le_refl n) (by omega)
   · cases c with
     | exit_ l => simp only [hL' l hc, Bool.false_eq_true, ite_false]
     | goto_ l => simp only [hL' l hc, Bool.false_eq_true, ite_false]
@@ -820,10 +814,9 @@ private theorem dw_errs {s t : StmtExprMd} (hrw : Rw s t) (M : Nat) (hM : 6 * (n
 
 end Loop
 
-/-- `EliminateDoWhile` satisfies `PassRel cfg E Rw 6 Gl` for every backend `cfg` that satisfies `CfgB`
-and whose `externalTruthy` always gets stuck. -/
+/-- `EliminateDoWhile` satisfies `PassRel cfg E Rw 6 Gl` for every backend `cfg` that satisfies `CfgB`. -/
 theorem dw_rel {cfg : ExternalBackendM PM} (hc : CfgB cfg)
-    (hext : ∀ e, ∃ msg, ∀ τ, cfg.externalTruthy e τ = .error (.stuck msg)) : PassRel cfg E Rw 6 Gl where
+    : PassRel cfg E Rw 6 Gl where
   K_pos := by omega
   cfg_ok := hc
   closed := closed
@@ -854,7 +847,7 @@ theorem dw_rel {cfg : ExternalBackendM PM} (hc : CfgB cfg)
     scoped_ := fun _ _ hrw _ M hM => dw_scoped ihs hrw M hM
     exprMd := fun _ _ hrw _ M hM => FS.vr ((dw_errs hrw M hM).2.1)
     expr := fun _ _ hrw _ M hM => FS.vr ((dw_errs hrw M hM).1)
-    stmt := fun _ _ hrw _ M hM => dw_stmt hc hext ihs hrw M hM
+    stmt := fun _ _ hrw _ M hM => dw_stmt hc ihs hrw M hM
     outputs := fun _ _ hrw _ M hM => FS.vr ((dw_errs hrw M hM).2.2)
     exStmt := fun _ _ h => h.elim
     exLast := fun _ _ h => h.elim }
@@ -892,35 +885,26 @@ private theorem dw_trav : TravOK rewriteNode := travOK_mk dw_hc
 /-- `mapLaurelProgramStmtExprM rewriteNode` preserves a whole-program run of any program satisfying
 `ProgOK (Hered PDW)`: running the rewritten program with 6 times the fuel gives an `ERel`-related
 result to running the input, unless the input gets stuck or runs out of fuel. The backend satisfies
-`CfgB` and its `externalTruthy` always gets stuck, neither run uses a step budget, both use the same
+`CfgB`, neither run uses a step budget, both use the same
 entry procedure and `printAsserts`, and the traces are related. -/
 private theorem eliminateDoWhile_correct {cfg : ExternalBackendM PM} (hc : CfgB cfg)
-    (hext : ∀ e, ∃ msg, ∀ τ, cfg.externalTruthy e τ = .error (.stuck msg))
     {p : LaurelProgram} (hp : ProgOK (Hered PDW) p) {o o' : Options} {n : Nat}
     (hn : o.fuel = n) (hM : 6 * n ≤ o'.fuel) (he : o.entryProcedure = o'.entryProcedure)
     (hl : o.limitSteps = false) (hl' : o'.limitSteps = false) (hq : o.printAsserts = o'.printAsserts)
     {τ τ' : Trace} (ht : TrRel (Sm E Gl {}) τ τ') (hnf : NotOOFEntry (runEntry cfg o p τ)) :
     ERel (Sm E Gl {}) (runEntry cfg o p τ)
       (runEntry cfg o' ((mapLaurelProgramStmtExprM rewriteNode p).run {}).1 τ') :=
-  entry_sim (dw_rel hc hext) (prog_trav (g := rewriteNode) dw_trav (fun _ _ _ => trivial) rfl rfl (fun _ _ => trivial) (fun _ _ _ => trivial) id (fun _ _ h => (h : False).elim) hp dw_lit {}) hn hM he hl hl' hq (fun h => h) (fun h => absurd rfl h) (fun h => absurd rfl h) (fun _ _ => valued_none rfl _) ht hnf
+  entry_sim (dw_rel hc) (prog_trav (g := rewriteNode) dw_trav (fun _ _ _ => trivial) rfl rfl (fun _ _ => trivial) (fun _ _ _ => trivial) id (fun _ _ h => (h : False).elim) hp dw_lit {}) hn hM he hl hl' hq (fun h => h) (fun h => absurd rfl h) (fun h => absurd rfl h) (fun _ _ => valued_none rfl _) ht hnf
 
 
 private theorem eliminateDoWhile_procAt {cfg : ExternalBackendM PM} (hc : CfgB cfg)
-    (hext : ∀ e, ∃ msg, ∀ τ, cfg.externalTruthy e τ = .error (.stuck msg))
     {p : LaurelProgram} (hp : ProgOK (Hered PDW) p) {o o' : Options} {n : Nat}
     (hn : o.fuel = n + 1) (hM : 6 * (n + 1) ≤ o'.fuel)
     (hl : o.limitSteps = false) (hl' : o'.limitSteps = false) (hq : o.printAsserts = o'.printAsserts)
     {P : Procedure} (hPm : P ∈ p.staticProcedures) :
     ∃ P' ∈ ((mapLaurelProgramStmtExprM rewriteNode p).run {}).1.staticProcedures, ∀ τ τ', TrRel (Sm E Gl {}) τ τ' → NotOOFEntry (runProcAt cfg o p P τ) →
       ERel (Sm E Gl {}) (runProcAt cfg o p P τ) (runProcAt cfg o' ((mapLaurelProgramStmtExprM rewriteNode p).run {}).1 P' τ') :=
-  procAt_all (dw_rel hc hext) (prog_trav (g := rewriteNode) dw_trav (fun _ _ _ => trivial) rfl rfl (fun _ _ => trivial) (fun _ _ _ => trivial) id (fun _ _ h => (h : False).elim) hp dw_lit {}) hn hM hl hl' hq rfl hPm
-
-/-- The default backend `{}` satisfies the hypothesis on `externalTruthy` that
-`eliminateDoWhilePass_correct` and `eliminateDoWhilePass_procAt` take: its `externalTruthy`
-always gets stuck. -/
-theorem hext_default :
-    ∀ e, ∃ msg, ∀ τ, ({} : ExternalBackendM PM).externalTruthy e τ = .error (.stuck msg) :=
-  fun _ => ⟨_, fun _ => rfl⟩
+  procAt_all (dw_rel hc) (prog_trav (g := rewriteNode) dw_trav (fun _ _ _ => trivial) rfl rfl (fun _ _ => trivial) (fun _ _ _ => trivial) id (fun _ _ h => (h : False).elim) hp dw_lit {}) hn hM hl hl' hq rfl hPm
 
 private theorem pass_out {opts : LaurelTranslateOptions} {p q : LaurelProgram} {m : SemanticModel} {d : List Message}
     {st : Statistics} (hrun : eliminateDoWhilePass.run opts (.Unordered p) m = (.Unordered q, d, st)) :
@@ -933,7 +917,7 @@ private theorem pass_out {opts : LaurelTranslateOptions} {p q : LaurelProgram} {
 fuel ends with the same outcome and the same number of failed checks as running the input, unless
 the input gets stuck. The interpreter runs without a step budget (`limitSteps = false`). -/
 theorem eliminateDoWhilePass_correct {cfg : ExternalBackendM PM} (hc : CfgB cfg)
-    (hext : ∀ e, ∃ msg, ∀ τ, cfg.externalTruthy e τ = .error (.stuck msg)) (opts : LaurelTranslateOptions)
+    (opts : LaurelTranslateOptions)
     {p q : LaurelProgram} {m : SemanticModel} {d : List Message} {st : Statistics}
     (hrun : eliminateDoWhilePass.run opts (.Unordered p) m = (.Unordered q, d, st))
     (hp : ProgOK (Hered PDW) p) {o o' : Options} {n : Nat}
@@ -942,14 +926,14 @@ theorem eliminateDoWhilePass_correct {cfg : ExternalBackendM PM} (hc : CfgB cfg)
     {τ τ' : Trace} (ht : TrRel (Sm E Gl {}) τ τ') (hnf : NotOOFEntry (runEntry cfg o p τ)) :
     ERel (Sm E Gl {}) (runEntry cfg o p τ) (runEntry cfg o' q τ') := by
   rw [pass_out hrun]
-  exact eliminateDoWhile_correct hc hext hp hn hM he hl hl' hq ht hnf
+  exact eliminateDoWhile_correct hc hp hn hM he hl hl' hq ht hnf
 
 /-- `EliminateDoWhile` preserves a run started at any static procedure: running the pass's output
 from that procedure with 6 times the fuel ends with the same outcome and the same number of failed
 checks as running the input from it, unless the input gets stuck. The interpreter runs without a
 step budget (`limitSteps = false`). -/
 theorem eliminateDoWhilePass_procAt {cfg : ExternalBackendM PM} (hc : CfgB cfg)
-    (hext : ∀ e, ∃ msg, ∀ τ, cfg.externalTruthy e τ = .error (.stuck msg)) (opts : LaurelTranslateOptions)
+    (opts : LaurelTranslateOptions)
     {p q : LaurelProgram} {m : SemanticModel} {d : List Message} {st : Statistics}
     (hrun : eliminateDoWhilePass.run opts (.Unordered p) m = (.Unordered q, d, st))
     (hp : ProgOK (Hered PDW) p) {o o' : Options} {n : Nat}
@@ -959,6 +943,6 @@ theorem eliminateDoWhilePass_procAt {cfg : ExternalBackendM PM} (hc : CfgB cfg)
     ∃ P' ∈ q.staticProcedures, ∀ τ τ', TrRel (Sm E Gl {}) τ τ' → NotOOFEntry (runProcAt cfg o p P τ) →
       ERel (Sm E Gl {}) (runProcAt cfg o p P τ) (runProcAt cfg o' q P' τ') := by
   rw [pass_out hrun]
-  exact eliminateDoWhile_procAt hc hext hp hn hM hl hl' hq hPm
+  exact eliminateDoWhile_procAt hc hp hn hM hl hl' hq hPm
 
 end Strata.Laurel.PassSemantics.DoWhileSim

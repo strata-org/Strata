@@ -400,12 +400,8 @@ private def nonValueName? (target : StmtExprMd) :
     lookup. This is what makes a CHAINED access through a generic composite field
     resolve — e.g. `p#b#az` where `p : Pair<int,Z>` and field `b : B` (a type
     variable): the receiver `p#b` synthesizes to the concrete `Z` (via
-    `concretizeFieldType`), so `#az` finds `Z`'s field.
-
-    The receiver's declared type, from `targetTypeName`, only tells a gradual receiver
-    apart: it is not substituted, so through an alias its name can denote another
-    composite. -/
-def resolveFieldRef (target : StmtExprMd) (fieldName : Identifier)
+    `concretizeFieldType`), so `#az` finds `Z`'s field. -/
+def resolveFieldRef (fieldName : Identifier)
     (source : FileRange) (holderTy : HighTypeMd) : ResolveM Identifier := do
   match ((← get).typeLattice.unfold holderTy).val with
   | .TInt =>
@@ -418,19 +414,11 @@ def resolveFieldRef (target : StmtExprMd) (fieldName : Identifier)
     if let some baseName := highBaseName? holder then
       if let some (defId, _) := (← get).typeScopes.get? baseName.text >>= (·.get? fieldName.text) then
         return { fieldName with uniqueId := some defId }
-  let typeName? ← targetTypeName target
   -- The field name (an attribute, not a variable) did not resolve in the holder's type scope.
-  -- Leave it unresolved with no diagnostic ONLY for a genuinely gradual receiver, one
-  -- declared with a type registered in `gradualTypes` (the dynamic top).
-  -- Such a field access is sound-but-uninterpreted. For every other receiver — a known
-  -- composite that lacks this field, OR a primitive (`int`/`bool`/… whose `targetTypeName`
-  -- is `none`) — a missing field is a real bug (typo'd attribute), so fall through to
-  -- `resolveRef` and preserve the "Resolution failed: 'field' is not defined" diagnostic.
+  -- A missing field is a real bug (typo'd attribute), so fall through to `resolveRef` and
+  -- preserve the "Resolution failed: 'field' is not defined" diagnostic.
   -- `resolveRef` also binds a variable of the field's name.
-  if typeName?.any (← get).typeLattice.gradualTypes.contains then
-    return { fieldName with uniqueId := none }
-  else
-    resolveRef fieldName source
+  resolveRef fieldName source
 
 /-- Save and restore scope around a block (for lexical scoping). -/
 def withScope (action : ResolveM α) : ResolveM α := do
@@ -2475,17 +2463,16 @@ def Check.resolveStmtExpr (exprMd : StmtExprMd) (expected : HighTypeMd) : Resolv
     let ctx ← (do pure (← get).typeLattice)
     -- Refl-gate for the truthiness hook: fire `toBool` when the slot is `TBool`, the actual is
     -- not already bool, and `coerce` yields either no witness (there is no `int <: bool`) or only
-    -- a spurious gradual `refl` — i.e. a gradual-registered `UserDefined` that the gradual-top
-    -- fallback declares consistent-with-bool, which would otherwise let the raw value land in the bool
-    -- slot. A real `inject`/`project`/`upcast` witness (e.g. `Any → bool`) is not diverted: it
-    -- flows through `coerceTo`. Truthiness is a boolean-context coercion, not subtyping.
+    -- a gradual `refl` (a wildcard declared consistent-with-bool), which would otherwise let the
+    -- raw value land in the bool slot. Any other witness flows through `coerceTo`. Truthiness is
+    -- a boolean-context coercion, not subtyping.
     --
     -- The "not already bool" clause is load-bearing and tested against the UNFOLDED actual:
     -- `coerce TBool TBool` returns `some .refl` (via `highEq`), so without this guard an operand
     -- that is already `bool` (or a phantom `UserDefined "bool"` that `unfold` canonicalizes to
     -- `TBool`) would spuriously route through `toBool` and get wrapped in a redundant truthiness
     -- call whenever a frontend installs the hook. Native Laurel (`toBool = none`) is unaffected
-    -- either way, but the Python frontend's `Any_to_bool` must not double-wrap native `bool`s.
+    -- either way, but a frontend's truthiness call must not double-wrap native `bool`s.
     let actualStripped := stripTrailingErrors actual
     let fireToBool := expected.val == .TBool &&
       (ctx.unfold actualStripped).val != .TBool &&
@@ -2554,7 +2541,7 @@ def Synth.varField (exprMd : StmtExprMd)
     (h : exprMd.val = .Var (.Field target fieldName)) :
     ResolveM (StmtExpr × HighTypeMd) := do
   let (target', holderTy) ← Synth.resolveStmtExpr target
-  let fieldName' ← resolveFieldRef target' fieldName source holderTy
+  let fieldName' ← resolveFieldRef fieldName source holderTy
   -- Concretize the field's `.TVar` against the holder's instantiation. `holderTy` is
   -- the synthesized holder type — already concretized for a nested `g#inner` because
   -- that read came through this same rule — so chains concretize transitively.
@@ -3392,7 +3379,7 @@ def Synth.assign (exprMd : StmtExprMd)
       pure (Sum.inl ((⟨.Local ref', vs⟩ : VariableMd), ty))
     | ⟨.Field target fieldName, vs⟩ =>
       let (target', holderTy) ← Synth.resolveStmtExpr target
-      let fieldName' ← resolveFieldRef target' fieldName source holderTy
+      let fieldName' ← resolveFieldRef fieldName source holderTy
       pure (Sum.inl ((⟨.Field target' fieldName', vs⟩ : VariableMd),
         ← concretizeFieldType holderTy fieldName'))
     | ⟨.Stack t, vs⟩ => do
@@ -3579,7 +3566,7 @@ def Synth.incrDecr (exprMd : StmtExprMd)
       pure ((⟨.Local ref', target.source⟩ : VariableMd), ← getVarType ref)
     | .Field tgt fieldName =>
       let (tgt', holderTy) ← Synth.resolveStmtExpr tgt
-      let fieldName' ← resolveFieldRef tgt' fieldName source holderTy
+      let fieldName' ← resolveFieldRef fieldName source holderTy
       pure ((⟨.Field tgt' fieldName', target.source⟩ : VariableMd), ← concretizeFieldType holderTy fieldName')
     | .Stack t => do
       stackNotUpdatable target.source
@@ -3627,7 +3614,7 @@ def Synth.compoundAssign (exprMd : StmtExprMd)
       pure (⟨.Local ref', target.source⟩ : VariableMd)
     | .Field tgt fieldName =>
       let (tgt', holderTy) ← Synth.resolveStmtExpr tgt
-      let fieldName' ← resolveFieldRef tgt' fieldName source holderTy
+      let fieldName' ← resolveFieldRef fieldName source holderTy
       pure (⟨.Field tgt' fieldName', target.source⟩ : VariableMd)
     | .Stack t => do
       stackNotUpdatable target.source
@@ -4455,17 +4442,7 @@ def Synth.new (ref : Identifier) (typeArgs : List HighTypeMd) (source : FileRang
     `unfold` first, so an alias/constrained type is judged by its base (an alias OF a composite is
     fine). That is why the type-parameter wording says the target *resolves to* one: `type I<T> = T`
     makes `x as I<T>` take that arm, and `I<T>` is an alias, not a type parameter.
-    `.Unknown` (a prior error) passes through, stacking no cascading diagnostic.
-    A gradual dynamic-top `.UserDefined` (e.g. Python's `Any`, registered in `gradualTypes`) is
-    deliberately NOT exempted here: it IS rejected as a non-composite target. `coerce` would accept
-    it at resolution (it is a boxable wildcard), but there is no downstream lowering for `as`/`is`
-    against a gradual top — `LowerComposite` would synthesize a `downcast$Any` call and
-    an `Any_TypeTag`, neither of which is minted (both are composite-only), so a
-    leaked gradual top faults as an internal error after re-resolution. Rejecting it up front keeps
-    the guard and the (composite-only) lowering consistent and yields a clean user diagnostic.
-    Reachability is nil today (no frontend builds `as`/`is` nodes against a gradual name), so this
-    is defensive; if such lowering is ever added, give the gradual top a real lowering
-    (`as Any` ↦ identity, `is Any` ↦ `true`) rather than relaxing this guard. -/
+    `.Unknown` (a prior error) passes through, stacking no cascading diagnostic. -/
 def castTargetRejection? (op : String) (ctx : TypeLattice) (ty : HighTypeMd) : Option String :=
   let rule := s!"'{op}' is only supported for composite (class) types"
   match (ctx.unfold ty).val with
@@ -4617,7 +4594,7 @@ def Synth.pureFieldUpdate (exprMd : StmtExprMd)
     (h : exprMd.val = .PureFieldUpdate target fieldName newVal) :
     ResolveM (StmtExpr × HighTypeMd) := do
   let (target', targetTy) ← Synth.resolveStmtExpr target
-  let fieldName' ← resolveFieldRef target' fieldName target.source targetTy
+  let fieldName' ← resolveFieldRef fieldName target.source targetTy
   -- Concretize against the holder's instantiation.
   let fieldTy ← concretizeFieldType targetTy fieldName'
   let newVal' ← Check.resolveStmtExpr newVal fieldTy
@@ -5216,7 +5193,7 @@ private def resolveModifiesEntry (e : StmtExprMd) : ResolveM (Option StmtExprMd)
     -- gate still reports "non-composite owner type". `NonCompositeModifies.lean`'s
     -- `fieldTargetOnValueOwner` pins that pair of diagnostics for `Box<int>`.
     let (target', ownerTy) ← Synth.resolveStmtExpr target
-    let fieldName' ← resolveFieldRef target' fieldName e.source ownerTy
+    let fieldName' ← resolveFieldRef fieldName e.source ownerTy
     let e' : StmtExprMd := { val := .Var (.Field target' fieldName'), source := e.source }
     let ownerTy' := (ctx.unfold ownerTy).val
     let isHeapField := match fieldName'.uniqueId.bind st.idToNode.get? with
@@ -5318,7 +5295,7 @@ def resolveBody (body : Body) : ResolveM Body := withBodyLabels body do
   | .Opaque posts impl mods =>
     -- Postconditions are boolean: check against `TBool` (like preconditions and loop
     -- invariants) so a non-bool `ensures` errors instead of silently synthesizing, and
-    -- the truthiness coercion is inserted for an `Any`-typed condition.
+    -- the frontend's truthiness coercion is inserted for a non-bool condition.
     let posts' ← posts.mapM (·.mapM (fun c =>
       Check.resolveStmtExpr c { val := .TBool, source := c.source }))
     let impl' ← impl.mapM fun b => do finishUntypedDecls (← Check.statement b)
@@ -5413,10 +5390,7 @@ def resolveProcedure (proc : Procedure) : ResolveM Procedure := do
     let yields' ← proc.yields.mapM resolveParameter
     let resumes' ← proc.resumes.mapM resolveParameter
     -- Preconditions/relies/guarantees are boolean: check each against `TBool` so
-    -- the coercion (`Any_to_bool` via the frontend realizer) is inserted when the
-    -- condition is an `Any`-typed expression (a Python `assert` → `PLt(...) : Any`
-    -- lifted into a `bool`-returning `$pre` function). The elaborator no longer
-    -- coerces; the resolver owns it.
+    -- the frontend's truthiness coercion is inserted when the condition is not a `bool`.
     let resolveBoolCond := fun (c : StmtExprMd) =>
       Check.resolveStmtExpr c { val := .TBool, source := c.source }
     let pres' ← proc.preconditions.mapM (·.mapM resolveBoolCond)
@@ -5501,10 +5475,7 @@ def resolveInstanceProcedure (typeName : Identifier) (proc : Procedure) : Resolv
     let inputNames := inputs'.map (·.name.text)
     let outputs' ← resolveOutputParameters inputNames proc.outputs
     -- Preconditions are boolean: check the condition against `TBool` so the
-    -- coercion (`Any_to_bool` via the frontend realizer) is inserted when the
-    -- condition is an `Any`-typed expression (a Python `assert` → `PLt(...) : Any`
-    -- lifted into a `bool`-returning `$pre` function). The elaborator no longer
-    -- coerces; the resolver owns it.
+    -- frontend's truthiness coercion is inserted when the condition is not a `bool`.
     let pres' ← proc.preconditions.mapM (·.mapM (fun c =>
       Check.resolveStmtExpr c { val := .TBool, source := c.source }))
     -- The coroutine clauses go through the same boolean check as the preconditions,
@@ -7844,7 +7815,6 @@ private def validateInvokeOnGlobalWrites (program : LaurelProgram)
     (see `validateEntryConstrainedGlobalUse`). Set it only for a pipeline that checks a
     global's constraint inside the entry procedure's body; the Laurel pipeline does not. -/
 public def resolve (program : LaurelProgram) (existingModel: Option SemanticModel := none)
-    (gradualTypes : Std.HashSet String := {})
     (realizeCoercion : Option (Coercion → StmtExprMd → StmtExprMd) := none)
     (toBool : Option (HighType → StmtExprMd → StmtExprMd) := none)
     (reservedNames : Std.HashSet String := {})
@@ -7866,7 +7836,7 @@ public def resolve (program : LaurelProgram) (existingModel: Option SemanticMode
                           types := types', constants := constants' }
   let nextId := existingModel.elim 1 (fun m => m.nextId)
   let typeLattice := { TypeLattice.ofTypes program.types with
-    gradualTypes := gradualTypes, realizeCoercion := realizeCoercion, toBool := toBool,
+    realizeCoercion := realizeCoercion, toBool := toBool,
     reservedNames := reservedNames }
   let (program', finalState) := phase1.run { nextId := nextId, typeLattice, usesStack := programTouchesStack program }
   -- Phase 2: build refToDef from the resolved program (all definitions now have UUIDs)

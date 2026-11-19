@@ -587,7 +587,8 @@ theorem noReq_violates_contract :
   have ⟨_hvalid, hpostF⟩ := htbm (xIs1Env model) (xIs1Env model) []
     ⟨⟨preAsPredicate_of_no_pre _ noReqProc (xIs1Env model) (by native_decide), rfl,
       oldInoutAsPredicate_of_no_inout noReqProc (xIs1Env model) (by native_decide),
-      inputAsPredicate_xIs1 model noReqProc (by native_decide)⟩,
+      inputAsPredicate_xIs1 model noReqProc (by native_decide),
+      Core.Logic.Hoare.Procedure.outputAsPredicate_of_no_outputs _ (by native_decide)⟩,
       Core.Specification.axiomsBeforeProcedureDecl_of_noAxioms (by decide +kernel) _⟩
     (blockWF_nil (xIs1Env model) rfl (xIs1Env_storeWellDefined model))
     (.inl (run_procBlock_nil _ (xIs1Env model) "" #[]))
@@ -657,7 +658,8 @@ theorem offByOne_violates_contract :
         (by native_decide)
         (fun b hb => by simp only [List.mem_singleton] at hb; subst hb; simp [xIs1Env]), rfl,
       oldInoutAsPredicate_of_no_inout offByOneProc (xIs1Env model) (by native_decide),
-      inputAsPredicate_xIs1 model offByOneProc (by native_decide)⟩,
+      inputAsPredicate_xIs1 model offByOneProc (by native_decide),
+      Core.Logic.Hoare.Procedure.outputAsPredicate_of_no_outputs _ (by native_decide)⟩,
       Core.Specification.axiomsBeforeProcedureDecl_of_noAxioms (by decide +kernel) _⟩
     (blockWF_nil (xIs1Env model) rfl (xIs1Env_storeWellDefined model))
     (.inl (run_procBlock_nil _ (xIs1Env model) "" #[]))
@@ -1563,7 +1565,7 @@ theorem chk_meets_contract :
   obtain ⟨hρ', htr⟩ := assume_assert_run_inv chkPgmAST.findProcByString? hrun
   subst ρ'
   subst htr
-  obtain ⟨_hpre, hfac, _hold, hinput⟩ := hpre
+  obtain ⟨_hpre, hfac, _hold, hinput, -⟩ := hpre
   obtain ⟨v, hx, hv⟩ := hinput chkX Lambda.LMonoTy.int chk_input_mem
   obtain ⟨i, hvi⟩ := Lambda.SemValue.exists_ofInt hv
   have htc : v.tc = ρ₀.factory.model.tcInterp := hwf.storeWellDefined chkX v hx
@@ -1874,7 +1876,7 @@ theorem loopTerm_meets_contract :
       loopTermParts.1 _ _
       (fun _ρ₀ _σ' hpre hnew _hoth => ⟨⟨0, hnew, by decide, by decide⟩, hpre.2.1⟩)
   · -- The loop preserves `0 ≤ y ≤ 10`; the exit's `¬ (y ≤ 9)` then forces `y = 10`.
-    refine Core.Logic.Hoare.consequence loopTermPgmAST.findProcByString? testParams
+    refine Core.Logic.Hoare.consequence _ _
       (Core.Logic.Hoare.while_rule loopTermPgmAST.findProcByString? testParams
         ?_ ?_ ?_)
       (fun _ h => h)

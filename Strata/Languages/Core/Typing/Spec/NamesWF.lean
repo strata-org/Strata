@@ -53,7 +53,7 @@ mutual
     declaration. -/
 def StatementNamesWF (P : Program) (fns : String → Prop) : Statement → Prop
   | .cmd (.cmd c) => CmdNamesWF fns c
-  | .cmd (.call _ _ _) => True
+  | .cmd (.call _ _ _ _) => True
   | .block _ body _ => StatementsNamesWF P fns body
   | .ite _ thenb elseb _ => StatementsNamesWF P fns thenb ∧ StatementsNamesWF P fns elseb
   | .loop _ _ _ body _ => StatementsNamesWF P fns body

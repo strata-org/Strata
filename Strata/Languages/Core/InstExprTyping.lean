@@ -28,6 +28,8 @@ inference: `Core.Specification.Analysis.TypeCheckWellTypes` states that connecti
 - `Core.annotateFvars_store_eq_self` — in such a store, evaluation's annotation from the
   stored sorts gives back the program's annotations
 - `Core.valueOfTy_unique` — a value has at most one type
+- `Core.ty_eq_of_valueOfTy`, `Core.sort_eq_of_valueOfTy` — a value's type is the monotype of
+  its sort, and two values of one type have sorts with the same monotype
 - `Core.valueOfTy_bool` — Boolean values are `true` and `false`
 -/
 
@@ -136,6 +138,19 @@ theorem valueOfTy_unique {f : Expression.Factory} {v : Expression.Val} {T₁ T�
   obtain ⟨-, h₂⟩ := h₂
   rcases T₁ with ⟨_ | _, τ₁⟩ <;> rcases T₂ with ⟨_ | _, τ₂⟩ <;>
     simp_all [Lambda.LTy.toMonoType?]
+
+/-- A type of a Core value is the monotype of the value's sort. -/
+theorem ty_eq_of_valueOfTy {M : Expression.Factory} {v : Expression.Val} {ty : Expression.Ty}
+    (h : HasVal.valueOfTy M v ty) : ty = Lambda.LTy.forAll [] v.sort.toMonoTy := by
+  obtain ⟨-, h⟩ := h
+  match ty, h with
+  | .forAll [] _, h => simp only [Lambda.LTy.toMonoType?, Option.some.injEq] at h; rw [h]
+
+/-- Two Core values of the same type have sorts with the same monotype. -/
+theorem sort_eq_of_valueOfTy {M : Expression.Factory} {v w : Expression.Val}
+    {ty : Expression.Ty} (hv : HasVal.valueOfTy M v ty) (hw : HasVal.valueOfTy M w ty) :
+    v.sort.toMonoTy = w.sort.toMonoTy := by
+  have := hv.2.symm.trans hw.2; simpa using this
 
 /-- The values of Core's Boolean type are `true` and `false`. -/
 theorem valueOfTy_bool (f : Expression.Factory) (v : Expression.Val)

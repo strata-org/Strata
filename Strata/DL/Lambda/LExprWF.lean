@@ -727,6 +727,11 @@ defined. -/
 
 end LExpr
 
+/-- Every free variable of `e` satisfies `S`. -/
+@[expose] def LExpr.NamesIn {T : LExprParams} (S : T.Identifier → Prop) (e : LExpr T.mono) :
+    Prop :=
+  ∀ x ty, (x, ty) ∈ LExpr.freeVars e → S x
+
 /-- Apply a function to every user-provided type annotation in an expression. -/
 def mapExprTys {T : LExprParams} (f : LMonoTy → LMonoTy)
     (e : LExpr T.mono) : LExpr T.mono :=

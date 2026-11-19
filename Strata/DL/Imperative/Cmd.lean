@@ -344,15 +344,25 @@ Extend Imperative's commands by adding a procedure call.
 inductive CmdExt (P : PureExpr) where
   /-- A standard imperative command. -/
   | cmd (c : Cmd P)
-  /-- A procedure call with the given name and arguments. -/
-  | call (procName : String) (args : List (CallArg P))
+  /-- A procedure call with the given name and arguments.  `tyArgs` is the
+      instantiation of the callee's type parameters, positionally, when the call
+      is type-annotated (`some []` for a monomorphic callee), and `none` when it
+      is not.  Each type argument is a monotype (for Core, `.forAll [] _`), which
+      may mention the caller's own type variables.  Only the type checker
+      annotates a call: front ends and transforms that build a call pass `none`,
+      and the checker overwrites any `tyArgs` it is given with one monotype per
+      callee type parameter, in order.  Printing and parsing ignore `tyArgs`, as
+      they do the other annotations the type checker infers, so a printed checked
+      program reads back with `none`. -/
+  | call (procName : String) (tyArgs : Option (List P.Ty)) (args : List (CallArg P))
          (md : MetaData P)
 
 @[grind] def CmdExt.beq [BEq P.Ident] [BEq P.Ty] [BEq P.Expr] [BEq (MetaData P)]
     (a b : CmdExt P) : Bool :=
   match a, b with
   | .cmd c1, .cmd c2 => c1 == c2
-  | .call n1 args1 md1, .call n2 args2 md2 => n1 == n2 && args1 == args2 && md1 == md2
+  | .call n1 tys1 args1 md1, .call n2 tys2 args2 md2 =>
+    n1 == n2 && tys1 == tys2 && args1 == args2 && md1 == md2
   | _, _ => false
 
 instance [BEq P.Ident] [BEq P.Ty] [BEq P.Expr] [BEq (MetaData P)] : BEq (CmdExt P) where
@@ -380,7 +390,7 @@ instance : HasInit P (CmdExt P) where
 @[expose] def CmdExt.initTypes (c : CmdExt P) : List P.Ty :=
   match c with
   | .cmd c => Cmd.initTypes c
-  | .call _ _ _ => []
+  | .call _ _ _ _ => []
 
 instance (P : PureExpr) : HasInitTypesImp P (CmdExt P) where
   initTypes := CmdExt.initTypes

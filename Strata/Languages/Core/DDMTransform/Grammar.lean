@@ -230,6 +230,10 @@ fn str_replace (s : string, t : string, u : string) : string => "str.replace" "(
 fn str_at (s : string, i : int) : string => "str.at" "(" s ", " i ")";
 fn str_lt (s : string, t : string) : bool => "str.lt" "(" s ", " t ")";
 fn str_le (s : string, t : string) : bool => "str.le" "(" s ", " t ")";
+fn str_to_code (s : string) : int => "str.to_code" "(" s ")";
+fn str_from_code (n : int) : string => "str.from_code" "(" n ")";
+fn str_from_int (n : int) : string => "str.from_int" "(" n ")";
+fn str_to_int (s : string) : int => "str.to_int" "(" s ")";
 // ---- Regexes ----
 fn re_allchar () : regex => "re.allchar" "(" ")";
 fn re_all () : regex => "re.all" "(" ")";

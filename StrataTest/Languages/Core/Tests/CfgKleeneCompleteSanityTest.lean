@@ -122,7 +122,7 @@ private theorem ttE_engEval (σ : SemanticStore Expression) :
     to `b1`, which finishes; `b2` finishes too. -/
 def gC : DetCFG Expression Command :=
   { entry := "b0",
-    blocks := [("b0", ⟨[.cmd (.init bId HasBool.boolTy .nondet md), .call "w" [] md],
+    blocks := [("b0", ⟨[.cmd (.init bId HasBool.boolTy .nondet md), .call "w" none [] md],
         .condGoto ttE "b1" "b2" md⟩),
       ("b1", ⟨[], .finish md⟩), ("b2", ⟨[], .finish md⟩)] }
 
@@ -141,7 +141,7 @@ private theorem cfgRun : ∃ evs final, ReflTransTrace
       (HasBool.boolIsValOfTy _).2 (HasBool.boolIsValOfTy _).2
       (coreEvaluator_WellFormedSemanticEvalVar _),
       .inr ⟨bId, HasBool.ffVal M0, rfl, by simp [SemanticStore.update], .inl ⟨_, _, rfl⟩⟩⟩))
-    (.step _ _ _ _ _ (.step_cmd (.inr (.inr ⟨"w", wProc, [], md, _, wCfg, _, _, rfl, rfl, rfl,
+    (.step _ _ _ _ _ (.step_cmd (.inr (.inr ⟨"w", none, wProc, [], md, _, wCfg, _, _, rfl, rfl, rfl,
         ⟨[], [], .eval_none, .read_none, ⟨_, _, .init_none, .init_none, rfl⟩⟩,
         .step _ _ _ _ _ (.step_admin (.fetch rfl)) (.step _ _ _ _ _ (.step_admin .finish)
           (.refl _)),
@@ -227,13 +227,13 @@ theorem cfgSound : ∃ (fuel d : Nat) (final' : ICFGConfig String Command Expres
 /-! ## A Kleene program -/
 
 /-- The start configuration: `loop { call w() }` in `env0`. -/
-def kStart : IKleeneConfig Expression Command := .stmt (.loop (.cmd (.call "w" [] md))) env0
+def kStart : IKleeneConfig Expression Command := .stmt (.loop (.cmd (.call "w" none [] md))) env0
 
 /-- The call `call w()` from any caller store `σ`: the callee's CFG body halts at once and the
     call leaves the store unchanged. -/
 private theorem wCallArm (σ : SemanticStore Expression) (o : List Expression.Val) :
-    Calls.OracleCmdAt wPi 1 M0 σ (.call "w" [] md) σ [] o o :=
-  .inr (.inr ⟨"w", wProc, [], md, _, wCfg, _, _, rfl, rfl, rfl,
+    Calls.OracleCmdAt wPi 1 M0 σ (.call "w" none [] md) σ [] o o :=
+  .inr (.inr ⟨"w", none, wProc, [], md, _, wCfg, _, _, rfl, rfl, rfl,
     ⟨[], [], .eval_none, .read_none, ⟨_, _, .init_none, .init_none, rfl⟩⟩,
     .step _ _ _ _ _ (.step_admin (.fetch rfl)) (.step _ _ _ _ _ (.step_admin .finish) (.refl _)),
     ⟨List.nodup_nil, [], .read_none, .update_none, .nil⟩, rfl, nofun,
@@ -409,7 +409,7 @@ private theorem cfgRunEng : ∃ evs final, StepCFGEngStarE Expression
     (.step _ _ _ _ _ (.step_cmd (.inl ⟨_, rfl,
       .eval_init_nondet (v := HasBool.ffVal M0) (env0_abs_none _) ⟨rfl, rfl⟩
       (HasBool.boolIsValOfTy _).2 (coreEvaluator_WellFormedSemanticEvalVar _)⟩))
-    (.step _ _ _ _ _ (.step_cmd (.inr ⟨"w", wProc, [], md, _, _, _, rfl, rfl,
+    (.step _ _ _ _ _ (.step_cmd (.inr ⟨"w", none, wProc, [], md, _, _, _, rfl, rfl,
         ⟨[], [], .eval_none, .read_none, ⟨_, _, .init_none, .init_none, rfl⟩⟩,
         ⟨_, .step _ _ _ _ _ (.fetch rfl) (.step _ _ _ _ _ .finish (.refl _)), rfl⟩,
         ⟨List.nodup_nil, [], .read_none, .update_none, .nil⟩, rfl, nofun,
@@ -435,7 +435,7 @@ theorem cfgCompleteE : ∃ (evs : List (Event Expression))
 
 /-- The Kleene start configuration: `choice { call w() } { call w() }` in `env0`. -/
 def kChoiceStart : IKleeneConfig Expression Command :=
-  .stmt (.choice (.cmd (.call "w" [] md)) (.cmd (.call "w" [] md))) env0
+  .stmt (.choice (.cmd (.call "w" none [] md)) (.cmd (.call "w" none [] md))) env0
 
 /-- **`Core.runCoreInterpKleene_completeE` applies.**  At `obsFF`, with every premise discharged
     (`EmitTotal`, `ChooseResolves` of `ffRecord`), the engine-realizable run of `kChoiceStart`
@@ -449,8 +449,8 @@ theorem kleeneCompleteE : ∃ (evs : List (Event Expression))
         obsFF.run (runCoreInterpKleene wPi fuel kChoiceStart d) () [] = (.ok final', st'))
       ∧ obsFF.TraceExt M0 [] st' evs := by
   have hcall : StepKleeneEngStarE ffRecord (Calls.EvalCommandEngAtE wPi ffRecord 1)
-      (.stmt (.cmd (.call "w" [] md)) (env0.abs M0)) _ _ :=
-    .step _ _ _ _ _ (.step_cmd (Or.inr ⟨"w", wProc, [], md, _, _, _, rfl, rfl,
+      (.stmt (.cmd (.call "w" none [] md)) (env0.abs M0)) _ _ :=
+    .step _ _ _ _ _ (.step_cmd (Or.inr ⟨"w", none, wProc, [], md, _, _, _, rfl, rfl,
       ⟨[], [], .eval_none, .read_none, ⟨_, _, .init_none, .init_none, rfl⟩⟩,
       ⟨_, .step _ _ _ _ _ (.fetch rfl) (.step _ _ _ _ _ .finish (.refl _)), rfl⟩,
       ⟨List.nodup_nil, [], .read_none, .update_none, .nil⟩, rfl, nofun,

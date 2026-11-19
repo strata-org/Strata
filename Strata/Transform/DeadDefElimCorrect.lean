@@ -170,7 +170,7 @@ private theorem dd_runS [LawfulBEq P.Ident] (hE : EvCongr F) :
   | _, _, _, _, .cmd (c := .cmd c) h, _, _, _, hC, hA => by
     obtain ⟨σ1', evs', h', hm, hA1, hC1⟩ := cmd_sim hE h hC hA
     exact ⟨evs', _, .cmd h', hm, hA1, hC1⟩
-  | _, _, _, _, .cmd (c := .call _ _ _) h, _, _, _, _, _ => h.elim
+  | _, _, _, _, .cmd (c := .call _ _ _ _) h, _, _, _, _, _ => h.elim
   | _, _, _, _, .ite_true (ess := ess) hc h, hs, live, σ', hC, hA => by
     rw [Stmt.noLoops_ite, Bool.and_eq_true] at hs
     simp only [deadDefElimS, Stmt.idents, List.append_assoc] at hA ⊢
@@ -266,7 +266,7 @@ private theorem dd_reachS [LawfulBEq P.Ident] (hE : EvCongr F) :
   | _, _, _, .cmd (c := .cmd c) h hne, _, _, _, hC, hA => by
     obtain ⟨σ1', evs', h', hm, -⟩ := cmd_sim hE h hC hA
     exact ⟨evs', .cmd h' (hm.ne_nil hne), hm⟩
-  | _, _, _, .cmd (c := .call _ _ _) h _, _, _, _, _, _ => h.elim
+  | _, _, _, .cmd (c := .call _ _ _ _) h _, _, _, _, _, _ => h.elim
   | _, _, _, .ite_true (ess := ess) hc h, hs, live, σ', hC, hA => by
     rw [Stmt.noLoops_ite, Bool.and_eq_true] at hs
     simp only [deadDefElimS, Stmt.idents, List.append_assoc] at hA ⊢

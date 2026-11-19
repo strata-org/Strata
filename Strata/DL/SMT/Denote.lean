@@ -505,6 +505,12 @@ structure TermDenoteInput (ctx : Context) where
   hsΓ : sΓ.WF ctx.sctx
   tΓ : TermEnvironment ⟨sΓ, hsΓ⟩
   htΓ : tΓ.WF ctx.tctx
+  /-- Value of integer `div` at a zero divisor, as a function of the dividend.
+  SMT-LIB leaves it unspecified, so every model chooses one. -/
+  divByZero : Int → Int
+  /-- Value of integer `mod` at a zero divisor, as a function of the dividend.
+  SMT-LIB leaves it unspecified, so every model chooses one. -/
+  modByZero : Int → Int
 
 /--
 Result of attempting to interpret a term: carries its type, a proof that the
@@ -626,7 +632,8 @@ def bindForallVar : QuantVarBinder := fun {n} {ty} ctx hTy =>
             (List.getElem_cons_succ _ ctx.tctx.vs i hivs).symm ▸ (List.getElem_cons_succ _ tdi.tΓ.vs i hivΓ).symm ▸ tdi.htΓ.hv.ha i hivs'
         { h := h', ha := ha' }
       let tdi' : TermDenoteInput ⟨ctx.sctx, tctx'⟩ :=
-        { sΓ := tdi.sΓ, hsΓ := tdi.hsΓ, tΓ := { ufs := tdi.tΓ.ufs, vs := vΓ' }, htΓ := { hv := hv', huf := tdi.htΓ.huf } }
+        { sΓ := tdi.sΓ, hsΓ := tdi.hsΓ, tΓ := { ufs := tdi.tΓ.ufs, vs := vΓ' }, htΓ := { hv := hv', huf := tdi.htΓ.huf },
+          divByZero := tdi.divByZero, modByZero := tdi.modByZero }
       ft' tdi'
 
 /--
@@ -658,7 +665,8 @@ def bindExistsVar : QuantVarBinder := fun {n} {ty} ctx hTy =>
             (List.getElem_cons_succ _ ctx.tctx.vs i hivs).symm ▸ (List.getElem_cons_succ _ tdi.tΓ.vs i hivΓ).symm ▸ tdi.htΓ.hv.ha i hivs'
         { h := h', ha := ha' }
       let tdi' : TermDenoteInput ⟨ctx.sctx, tctx'⟩ :=
-        { sΓ := tdi.sΓ, hsΓ := tdi.hsΓ, tΓ := { ufs := tdi.tΓ.ufs, vs := vΓ' }, htΓ := { hv := hv', huf := tdi.htΓ.huf } }
+        { sΓ := tdi.sΓ, hsΓ := tdi.hsΓ, tΓ := { ufs := tdi.tΓ.ufs, vs := vΓ' }, htΓ := { hv := hv', huf := tdi.htΓ.huf },
+          divByZero := tdi.divByZero, modByZero := tdi.modByZero }
       ft' tdi'
 
 def buildQuant (bindVar : QuantVarBinder) (ctx : Context) (vs : List TermVar)
@@ -866,15 +874,22 @@ and semantics when successful.
   | .app .mul as _ =>
     let as ← denoteTerms ctx as
     leftAssoc ctx (.prim .int) rfl (fun _ => @HMul.hMul Int Int Int _) as
-  | .app .div as _ =>
-    -- Semantic mismatch with SMT-Lib: `x / 0` is defined as `0` in Lean, but as UF in SMT-Lib.
-    let as ← denoteTerms ctx as
-    leftAssoc ctx (.prim .int) rfl (fun _ => @HDiv.hDiv Int Int Int _) as
+  -- SMT-LIB leaves `div` and `mod` by zero unspecified, so at a zero divisor they
+  -- read the environment's `divByZero`/`modByZero` instead of Lean's `x / 0 = 0`
+  -- and `x % 0 = x`. The test uses `Int.decEq`, so that the goal built for a
+  -- query is definitionally its denotation.
+  -- Both are binary, as in SMT-LIB and in what the encoder emits; any other arity
+  -- has no denotation, so `gen_smt_vcs` refuses it.
+  | .app .div [x, y] _ =>
+    let ⟨.prim .int, _, x⟩ ← denoteTerm ctx x | none
+    let ⟨.prim .int, _, y⟩ ← denoteTerm ctx y | none
+    return ⟨.prim .int, rfl, fun Γ =>
+      @ite Int (@Eq Int (y Γ) 0) (Int.decEq (y Γ) 0) (Γ.divByZero (x Γ)) (@HDiv.hDiv Int Int Int _ (x Γ) (y Γ))⟩
   | .app .mod [x, y] _ =>
     let ⟨.prim .int, _, x⟩ ← denoteTerm ctx x | none
     let ⟨.prim .int, _, y⟩ ← denoteTerm ctx y | none
-    -- Semantic mismatch with SMT-Lib: `x % 0` is defined as `x` in Lean, but as UF in SMT-Lib.
-    return ⟨.prim .int, rfl, fun Γ => @HMod.hMod Int Int Int _ (x Γ) (y Γ)⟩
+    return ⟨.prim .int, rfl, fun Γ =>
+      @ite Int (@Eq Int (y Γ) 0) (Int.decEq (y Γ) 0) (Γ.modByZero (x Γ)) (@HMod.hMod Int Int Int _ (x Γ) (y Γ))⟩
   | .app .abs [x] _ =>
     let ⟨.prim .int, _, x⟩ ← denoteTerm ctx x | none
     return ⟨.prim .int, rfl, fun Γ => @ite Int (@LT.lt Int _ (x Γ) 0) (Int.decLt (x Γ) 0) (@Neg.neg Int _ (x Γ)) (x Γ)⟩
@@ -1253,19 +1268,27 @@ private theorem denoteTerm_realize_eqns : True := by
   trivial
 
 
+/-! The ground interpreters below evaluate in one fixed model, which gives integer
+`div` and `mod` at a zero divisor Lean's values (`x / 0 = 0`, `x % 0 = x`). A
+fact they state holds in every SMT model only where no zero divisor is reached; a
+query's denotation (`denoteBoolTermFromContext`) quantifies over every choice
+instead. -/
+
 /--
 Interpret a ground boolean term in the empty context.
 -/
 @[expose, simp] noncomputable def denoteBoolTermAux (t : Term) : Option Prop := do
   let some ⟨.prim .bool, _, fi⟩ := denoteTerm {} t | none
-  pure (α := Prop) <| fi ⟨[], { h := rfl, ha := fun _ hi => nomatch hi }, ⟨[], []⟩, ⟨{ h := rfl, ha := fun _ hi => nomatch hi }, { h := rfl, ha := fun _ hi => nomatch hi }⟩⟩
+  pure (α := Prop) <| fi ⟨[], { h := rfl, ha := fun _ hi => nomatch hi }, ⟨[], []⟩, ⟨{ h := rfl, ha := fun _ hi => nomatch hi }, { h := rfl, ha := fun _ hi => nomatch hi }⟩,
+    fun _ => 0, id⟩
 
 /--
 Interpret a ground integer term in the empty context.
 -/
 @[expose, simp] noncomputable def denoteIntTermAux (t : Term) : Option Int := do
   let some ⟨.prim .int, _, fi⟩ := denoteTerm {} t | none
-  pure (α := Int) <| fi ⟨[], { h := rfl, ha := fun _ hi => nomatch hi }, ⟨[], []⟩, ⟨{ h := rfl, ha := fun _ hi => nomatch hi }, { h := rfl, ha := fun _ hi => nomatch hi }⟩⟩
+  pure (α := Int) <| fi ⟨[], { h := rfl, ha := fun _ hi => nomatch hi }, ⟨[], []⟩, ⟨{ h := rfl, ha := fun _ hi => nomatch hi }, { h := rfl, ha := fun _ hi => nomatch hi }⟩,
+    fun _ => 0, id⟩
 
 /--
 Interpret a ground bitvector term in the empty context.
@@ -1273,7 +1296,8 @@ Interpret a ground bitvector term in the empty context.
 @[expose, simp] noncomputable def denoteBVTermAux (n : Nat) (t : Term) : Option (BitVec n) := do
   let some ⟨.prim (.bitvec m), _, fi⟩ := denoteTerm {} t | none
   if h : m = n then
-    return h ▸ fi ⟨[], { h := rfl, ha := fun _ hi => nomatch hi }, ⟨[], []⟩, ⟨{ h := rfl, ha := fun _ hi => nomatch hi }, { h := rfl, ha := fun _ hi => nomatch hi }⟩⟩
+    return h ▸ fi ⟨[], { h := rfl, ha := fun _ hi => nomatch hi }, ⟨[], []⟩, ⟨{ h := rfl, ha := fun _ hi => nomatch hi }, { h := rfl, ha := fun _ hi => nomatch hi }⟩,
+    fun _ => 0, id⟩
   else
     none
 
@@ -1282,7 +1306,8 @@ Interpret a ground string term in the empty context.
 -/
 @[expose, simp] noncomputable def denoteStringTermAux (t : Term) : Option String := do
   let some ⟨.prim .string, _, fi⟩ := denoteTerm {} t | none
-  pure (α := String) <| fi ⟨[], { h := rfl, ha := fun _ hi => nomatch hi }, ⟨[], []⟩, ⟨{ h := rfl, ha := fun _ hi => nomatch hi }, { h := rfl, ha := fun _ hi => nomatch hi }⟩⟩
+  pure (α := String) <| fi ⟨[], { h := rfl, ha := fun _ hi => nomatch hi }, ⟨[], []⟩, ⟨{ h := rfl, ha := fun _ hi => nomatch hi }, { h := rfl, ha := fun _ hi => nomatch hi }⟩,
+    fun _ => 0, id⟩
 
 /--
 Eliminate one uninterpreted sort binder by quantifying over all of its
@@ -1339,7 +1364,8 @@ noncomputable def bindUF {n} {args out} (ctx : Context) (ft' :
               (List.getElem_cons_succ _ ctx.tctx.ufs i hiufs).symm ▸ (List.getElem_cons_succ _ tdi.tΓ.ufs i hiufΓ).symm ▸ tdi.htΓ.huf.ha i hiufs'
           { h := h', ha := ha' }
         let tdi' : TermDenoteInput ⟨ctx.sctx, tctx'⟩ :=
-          { sΓ := tdi.sΓ, hsΓ := tdi.hsΓ, tΓ := { ufs := ufΓ', vs := tdi.tΓ.vs }, htΓ := { hv := tdi.htΓ.hv, huf := huf' } }
+          { sΓ := tdi.sΓ, hsΓ := tdi.hsΓ, tΓ := { ufs := ufΓ', vs := tdi.tΓ.vs }, htΓ := { hv := tdi.htΓ.hv, huf := huf' },
+            divByZero := tdi.divByZero, modByZero := tdi.modByZero }
         ft' tdi'
     return ft
   else
@@ -1376,7 +1402,8 @@ noncomputable def bindIFVar (ctx : Context) {hTys hTyTys} :
             (List.getElem_cons_succ _ ctx.tctx.vs i hivs).symm ▸ (List.getElem_cons_succ _ tdi.tΓ.vs i hivΓ).symm ▸ tdi.htΓ.hv.ha i hivs'
         { h := h', ha := ha' }
       let tdi' : TermDenoteInput ⟨ctx.sctx, tctx'⟩ :=
-        { sΓ := tdi.sΓ, hsΓ := tdi.hsΓ, tΓ := { ufs := tdi.tΓ.ufs, vs := vΓ' }, htΓ := { hv := hv', huf := tdi.htΓ.huf } }
+        { sΓ := tdi.sΓ, hsΓ := tdi.hsΓ, tΓ := { ufs := tdi.tΓ.ufs, vs := vΓ' }, htΓ := { hv := hv', huf := tdi.htΓ.huf },
+          divByZero := tdi.divByZero, modByZero := tdi.modByZero }
       ft' tdi'
 
 /--
@@ -1435,7 +1462,8 @@ noncomputable def bindIF (iF : IF) (ctx : Context) (ft' :
               (List.getElem_cons_succ _ ctx.tctx.ufs i hiufs).symm ▸ (List.getElem_cons_succ _ tdi.tΓ.ufs i hiufΓ).symm ▸ tdi.htΓ.huf.ha i hiufs'
           { h := h', ha := ha' }
         let tdi' : TermDenoteInput ⟨ctx.sctx, tctx'⟩ :=
-          { sΓ := tdi.sΓ, hsΓ := tdi.hsΓ, tΓ := { ufs := ufΓ', vs := tdi.tΓ.vs }, htΓ := { hv := tdi.htΓ.hv, huf := huf' } }
+          { sΓ := tdi.sΓ, hsΓ := tdi.hsΓ, tΓ := { ufs := ufΓ', vs := tdi.tΓ.vs }, htΓ := { hv := tdi.htΓ.hv, huf := huf' },
+            divByZero := tdi.divByZero, modByZero := tdi.modByZero }
         ft' tdi'
       return ft
     else
@@ -1497,6 +1525,23 @@ noncomputable def denoteBoolTermFromContext.bindIFs (sctx : SortContext) (vs : T
     bindIFs sctx vs ufs ifs ft
 
 /--
+Close the term environment of a query's denotation `ft`: no variables or
+uninterpreted functions remain. SMT-LIB leaves integer `div` and `mod` by zero
+unspecified, so this quantifies over their values at a zero divisor. The
+quantifiers enclose the whole query, as in an SMT model: every occurrence of
+`x div 0` in it has the same value, and nothing else is known about that value.
+A query that uses neither denotes a proposition whose body ignores them.
+-/
+@[expose] def denoteBoolTermFromContext.closeTermEnv {sctx : SortContext}
+    (ft : TermDenoteInput ⟨sctx, ⟨[], []⟩⟩ → Prop) (sdi : SortDenoteInput sctx) : Prop :=
+  let tΓ : TermEnvironment sdi := { vs := {}, ufs := {} }
+  let htΓ : tΓ.WF { vs := {}, ufs := {} } :=
+    { hv := { h := rfl, ha := fun _ hi => nomatch hi },
+      huf := { h := rfl, ha := fun _ hi => nomatch hi } }
+  ∀ (divByZero modByZero : Int → Int),
+    ft { sΓ := sdi.sΓ, hsΓ := sdi.hsΓ, tΓ, htΓ, divByZero, modByZero }
+
+/--
 Interpret a closed boolean term under SMT declarations.
 
 `denoteTerm` is context-parametric: it interprets a term relative to explicit
@@ -1516,12 +1561,8 @@ noncomputable def denoteBoolTermFromContext
   let ⟨.prim .bool, _, ft⟩ ← denoteTerm ⟨⟨uss, iss, dts⟩, ⟨{}, ifs.map IF.toUF ++ ufs⟩⟩ t | none
   let ft ← denoteBoolTermFromContext.bindIFs ⟨uss, iss, dts⟩ {} ufs ifs ft
   let ft ← denoteBoolTermFromContext.bindUFs ⟨uss, iss, dts⟩ {} ufs ft
-  let ft ← denoteBoolTermFromContext.bindISs uss iss fun ⟨sΓ, hsΓ⟩ =>
-    let tΓ : TermEnvironment ⟨sΓ, hsΓ⟩ := { vs := {}, ufs := {} }
-    let htΓ : tΓ.WF { vs := {}, ufs := {} } :=
-      { hv := { h := rfl, ha := fun _ hi => nomatch hi },
-        huf := { h := rfl, ha := fun _ hi => nomatch hi } }
-    ft { sΓ, hsΓ, tΓ, htΓ }
+  let ft ← denoteBoolTermFromContext.bindISs uss iss
+    (denoteBoolTermFromContext.closeTermEnv ft)
   let ft ← denoteBoolTermFromContext.bindUSs uss [] ft
   let sΓ : SortEnvironment := {}
   let hsΓ : sΓ.WF {} := { h := rfl, ha := fun _ hi => nomatch hi }

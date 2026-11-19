@@ -6,13 +6,20 @@
 module
 import all Strata.Util.Name
 import Std.Data.HashSet.Lemmas
+import Strata.Util.ListUtilsProps
+import Std.Data.String.ToNat
 
 /-!
-# Proofs about `Strata.Name.findUnique`
+# Proofs about `Strata.Name.findUnique` and `Strata.Name.freshName`
 
 `findUniqueFast_not_mem` and `findUniqueSlow_not_mem` prove that both the
 fast and slow paths return a name not in `usedNames`.  `findUnique_not_mem`
 combines them into a single correctness theorem for `findUnique`.
+
+`freshNameBy_not_taken` proves that `freshNameBy` returns a name `taken` rejects when at most
+`fuel` names are taken, and `freshName_not_mem` that `freshName` returns a name not in `taken`.
+`freshNamesBy_fresh` and `freshNames_fresh` prove the same for several names at once, and that
+the names are pairwise distinct.
 -/
 
 namespace Strata.Name
@@ -116,5 +123,120 @@ theorem findUnique_not_mem (h_inj : DisambiguateInjective)
       exfalso
       exact findUniqueSlow_ne_none h_inj baseName (startSuffix + 1000000) usedNames
         usedNames.toList (fun s hs => Or.inl (Std.HashSet.mem_toList.mpr hs)) hslow
+
+/-- The candidates `freshNameBy` tries, `base`, `base_1`, `base_2`, …, are pairwise distinct. -/
+private theorem freshCandidate_inj (base : String) :
+    Function.Injective (fun k : Nat => if k = 0 then base else base ++ "_" ++ toString k) := by
+  intro j k h
+  have hlen := congrArg String.length h
+  have hu : ("_" : String).length = 1 := rfl
+  by_cases hj : j = 0 <;> by_cases hk : k = 0
+  · omega
+  · simp only [hj, hk, ↓reduceIte, String.length_append] at hlen
+    omega
+  · simp only [hj, hk, ↓reduceIte, String.length_append] at hlen
+    omega
+  · simp only [hj, hk, ↓reduceIte] at h
+    have h' := congrArg String.toList h
+    simp only [String.toList_append] at h'
+    exact Nat.repr_injective (String.toList_inj.1 (List.append_cancel_left h'))
+
+/-- `firstUntaken taken cand fuel i` is `cand k` for some `k` from `i` to `i + fuel`, and either
+    `taken` rejects `cand k`, or it accepts every candidate from `cand i` to `cand (i + fuel)`. -/
+private theorem firstUntaken_spec (taken : String → Bool) (cand : Nat → String) :
+    ∀ fuel i, ∃ k, firstUntaken taken cand fuel i = cand k ∧ i ≤ k ∧ k ≤ i + fuel ∧
+      (taken (cand k) = false ∨ ∀ j, i ≤ j → j ≤ i + fuel → taken (cand j) = true) := by
+  intro fuel
+  induction fuel with
+  | zero =>
+    intro i
+    refine ⟨i, rfl, Nat.le_refl _, by omega, ?_⟩
+    cases h : taken (cand i)
+    · exact .inl rfl
+    · exact .inr fun j hj hj' => by rw [show j = i by omega]; exact h
+  | succ fuel ih =>
+    intro i
+    unfold firstUntaken
+    cases h : taken (cand i)
+    · exact ⟨i, by simp, Nat.le_refl _, by omega, .inl h⟩
+    · obtain ⟨k, hk, hik, hki, hor⟩ := ih (i + 1)
+      refine ⟨k, by simp [hk], by omega, by omega, ?_⟩
+      rcases hor with hf | hall
+      · exact .inl hf
+      · refine .inr fun j hj hj' => ?_
+        by_cases hji : j = i
+        · rw [hji]; exact h
+        · exact hall j (by omega) (by omega)
+
+/-- If every name `taken` accepts is in `L`, and `L` has at most `fuel` names, then `taken`
+    rejects the name `freshNameBy taken fuel base` returns. -/
+theorem freshNameBy_not_taken (taken : String → Bool) (fuel : Nat) (base : String)
+    (L : List String) (hL : ∀ s, taken s = true → s ∈ L) (hlen : L.length ≤ fuel) :
+    taken (freshNameBy taken fuel base) = false := by
+  let cand := fun k : Nat => if k = 0 then base else base ++ "_" ++ toString k
+  obtain ⟨k, hk, -, -, hor⟩ := firstUntaken_spec taken cand (fuel + 1) 0
+  unfold freshNameBy
+  rw [hk]
+  rcases hor with hf | hall
+  · exact hf
+  · exfalso
+    have hnd : ((List.range (fuel + 2)).map cand).Nodup :=
+      List.nodup_range.map _ fun i j hne he => hne (freshCandidate_inj base he)
+    have hsub : (List.range (fuel + 2)).map cand ⊆ L := by
+      intro y hy
+      obtain ⟨j, hj, rfl⟩ := List.mem_map.1 hy
+      exact hL _ (hall j (Nat.zero_le _) (by simp at hj; omega))
+    have := List.subset_nodup_length hnd hsub
+    simp at this
+    omega
+
+/-- `freshName taken base` is not in `taken`. -/
+theorem freshName_not_mem (taken : Std.HashSet String) (base : String) :
+    freshName taken base ∉ taken := by
+  intro hmem
+  have h := freshNameBy_not_taken taken.contains taken.size base taken.toList
+    (fun s hs => Std.HashSet.mem_toList.2 (Std.HashSet.mem_iff_contains.2 hs))
+    (by simp [Std.HashSet.length_toList])
+  exact absurd (Std.HashSet.mem_iff_contains.1 hmem) (by simpa [freshName] using h)
+
+/-- If every name `taken` accepts is in a list of at most `fuel` names, the names
+    `freshNamesBy taken fuel bases` returns are pairwise distinct and `taken` rejects each. -/
+theorem freshNamesBy_fresh (bases : List String) :
+    ∀ (taken : String → Bool) (fuel : Nat) (L : List String),
+      (∀ s, taken s = true → s ∈ L) → L.length ≤ fuel →
+      (∀ n ∈ freshNamesBy taken fuel bases, taken n = false) ∧
+        (freshNamesBy taken fuel bases).Nodup := by
+  induction bases with
+  | nil => intro _ _ _ _ _; simp [freshNamesBy]
+  | cons b rest ih =>
+    intro taken fuel L hL hlen
+    have hn := freshNameBy_not_taken taken fuel b L hL hlen
+    obtain ⟨hrest, hnd⟩ := ih (fun m => taken m || m == freshNameBy taken fuel b) (fuel + 1)
+      (freshNameBy taken fuel b :: L)
+      (fun s hs => by
+        rcases Bool.or_eq_true _ _ ▸ hs with h | h
+        · exact List.mem_cons_of_mem _ (hL s h)
+        · exact (beq_iff_eq.1 h) ▸ List.mem_cons_self)
+      (by simp; omega)
+    simp only [freshNamesBy, List.mem_cons, List.nodup_cons]
+    refine ⟨fun m hm => ?_, fun hm => ?_, hnd⟩
+    · rcases hm with rfl | hm
+      · exact hn
+      · have := hrest m hm
+        simp only [Bool.or_eq_false_iff] at this
+        exact this.1
+    · have := hrest _ hm
+      simp at this
+
+/-- The names `freshNames taken bases` returns are pairwise distinct and none is in `taken`. -/
+theorem freshNames_fresh (taken : Std.HashSet String) (bases : List String) :
+    (∀ n ∈ (freshNames taken bases).1, n ∉ taken) ∧ (freshNames taken bases).1.Nodup := by
+  obtain ⟨hnt, hnd⟩ := freshNamesBy_fresh bases taken.contains taken.size taken.toList
+    (fun s hs => Std.HashSet.mem_toList.2 (Std.HashSet.mem_iff_contains.2 hs))
+    (by simp [Std.HashSet.length_toList])
+  refine ⟨fun n hn hmem => ?_, hnd⟩
+  have := hnt n hn
+  rw [Std.HashSet.mem_iff_contains.1 hmem] at this
+  cases this
 
 end Strata.Name

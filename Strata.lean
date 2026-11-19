@@ -76,6 +76,17 @@ import Strata.Transform.Simplify.Expr
 import Strata.Transform.Simplify.LiveSweep
 import Strata.Transform.Simplify.StmtShape
 import Strata.Transform.Simplify.DeadDefsShape
+import Strata.Transform.Simplify.Entry
+import Strata.Transform.Simplify.Precondition
+import Strata.Transform.Simplify.FoldFactory
+import Strata.Transform.Simplify.ExprCorrect
+import Strata.Transform.Simplify.StmtSim
+import Strata.Transform.Simplify.SimpRun
+import Strata.Transform.Simplify.SweepRun
+import Strata.Transform.Simplify.Compose
+import Strata.Transform.Simplify.TargetGate
+import Strata.Transform.Simplify.LawsFold
+import Strata.Transform.SimplifyCorrect
 import Strata.Transform.RecursiveFunctionAxioms
 import Strata.Transform.SpecHoareConnection
 import Strata.Transform.CoreSpecHoareConnection
@@ -90,11 +101,13 @@ import Strata.Transform.StructuredToUnstructuredPipelineCoreCorrect
 
 /- Program Logics -/
 import Strata.DL.Imperative.Logic.HoareTemplate
+import Strata.DL.Imperative.Logic.HoareTotalTemplate
 import Strata.Languages.Core.Logic.LangDefProps
 import Strata.Languages.Core.Logic.FactoryInterp
 import Strata.Languages.Core.Logic.TraceInterpUsingDenote
 import Strata.Languages.Core.Logic.TraceInterpUsingDenoteProps
 import Strata.Languages.Core.Logic.Hoare
+import Strata.Languages.Core.Logic.HoareTotal
 import Strata.Languages.Core.Logic.HoareCall
 import Strata.Languages.Core.Logic.ContractToHoareTriple
 import Strata.Languages.Core.Logic.ContractToHoareTripleProps

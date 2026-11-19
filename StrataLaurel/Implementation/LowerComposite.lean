@@ -161,7 +161,7 @@ private def flattenCallTypeArgs (composites : Std.HashSet String) (e : StmtExprM
   | _ => e
 
 def compositeConstrainedType (model : SemanticModel) (composites : List CompositeType)
-    (gradualTypes : Std.HashSet String) (ct : CompositeType) : Except String ConstrainedType := do
+    (ct : CompositeType) : Except String ConstrainedType := do
   let valueName : Identifier := mkId "$c"
   let src := ct.name.source
   let descendants ← composites.filterM fun d => do
@@ -170,7 +170,7 @@ def compositeConstrainedType (model : SemanticModel) (composites : List Composit
   let tagIs (d : CompositeType) : StmtExprMd :=
     mkMd (.Call none (mkId Operation.Eq.procName)
       [tag, mkMd (.Call none (mkId $ d.name.text ++ "_TypeTag") [] []) src] []) src
-  let constraint := if gradualTypes.contains ct.name.text then mkMd (.LiteralBool true) src else
+  let constraint :=
     match descendants.map tagIs with
     | [] => mkMd (.LiteralBool false) src
     | c :: cs => cs.foldl (fun acc x => mkMd (.Call none (mkId Operation.Or.procName) [acc, x] []) src) c
@@ -203,8 +203,8 @@ def heapFieldLocationOwner (ct : CompositeType) : String :=
   | some family => (family.text.drop genericFamilyPrefix.length).toString
   | none => ct.name.text
 
-def lowerComposite (model : SemanticModel) (program : LaurelProgram)
-    (gradualTypes : Std.HashSet String := {}) : Except String LaurelProgram := do
+def lowerComposite (model : SemanticModel) (program : LaurelProgram) :
+    Except String LaurelProgram := do
   let program := { program with types := program.types.filter fun td =>
     match td with
     | .Composite ct => !isGenericFamilyName ct.name.text
@@ -244,7 +244,7 @@ def lowerComposite (model : SemanticModel) (program : LaurelProgram)
     | _ => none
   let remainingTypes ← lowered.types.mapM fun td =>
     match td with
-    | .Composite ct => return .Constrained (← compositeConstrainedType model composites gradualTypes ct)
+    | .Composite ct => return .Constrained (← compositeConstrainedType model composites ct)
     | _ => return td
   let transformed : LaurelProgram :=
     { lowered with
@@ -305,10 +305,10 @@ public def lowerCompositePass : LaurelPass := .onUnordered {
     ]
   documentation := "Lowers composite types to the flat `Composite` datatype: every composite field becomes a heap field with a qualified name, accessed on the `int` reference of a `Composite`; allocation becomes `MkComposite($allocate(), C_TypeTag())`; each composite type becomes a free constrained type over `Composite` whose constraint is its tag being one of its descendants'; and reference equality compares the references."
   }
-  fun opts p m =>
+  fun _ p m =>
     match reservedCompositeNameCollisions p with
     | [] =>
-      match lowerComposite m p opts.gradualTypes with
+      match lowerComposite m p with
       | .ok p' => (p', [], {})
       | .error e => (p, [Message.fromString e .strataBug], {})
     | collisions => (p, collisions, {})

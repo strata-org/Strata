@@ -25,6 +25,11 @@ Translates Core procedures and functions into CProver GOTO contexts.
   procedure body.
 - **`Decl.distinct`**: Emitted as pairwise `!=` ASSUME instructions at the
   start of each procedure body.
+- Both are emitted into every procedure, wherever they are declared. `Core.verify`
+  instead scopes them by position (a lemma or procedure is checked only under the axioms
+  and `distinct` declarations before it, as the language reference states), so a
+  procedure that needs an axiom or `distinct` declared after it is not proved by
+  `Core.verify` but can pass here.
 
 #### Procedure contracts (`Core.Procedure.Spec`)
 Preconditions and postconditions are emitted as `#spec_requires` and
@@ -124,7 +129,7 @@ private partial def coreStmtsToGoto
   | [] => return trans
   | stmt :: rest =>
     let trans ← match stmt with
-      | .cmd (.call procName callArgs _md) =>
+      | .cmd (.call procName _ callArgs _md) =>
         let lhs := Imperative.CallArg.getLhs callArgs
         let args := Core.CallArg.getInputExprs callArgs
         let renamedLhs := lhs.map (renameIdent rn)
@@ -654,7 +659,7 @@ private def mkVerificationHarness (entry : Core.Procedure) : Core.Procedure :=
     (entry.header.outputs.toList.filter (fun (id, _) => id ∉ inKeys)).map (fun (id, _) =>
       .outArg id)
   let callStmt : Core.Statement :=
-    .call (Core.CoreIdent.toPretty entry.header.name) (inArgs ++ outArgs) md
+    .call (Core.CoreIdent.toPretty entry.header.name) none (inArgs ++ outArgs) md
   { header := { name := ⟨"main", ()⟩, typeArgs := [], inputs := [], outputs := [] },
     spec := { preconditions := [], postconditions := [] },
     body := .structured (inDecls ++ outOnlyDecls ++ assumes ++ [callStmt]) }

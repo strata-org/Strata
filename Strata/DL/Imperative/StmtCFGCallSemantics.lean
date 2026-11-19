@@ -221,13 +221,13 @@ inductive EvalCmdExtE
       alignment follows from the second because every inout formal is passed as
       `.inoutArg`. -/
   -- TODO: Instantiate procedure type variables for polymorphic calls.
-  | call_sem {σ n p callArgs σ' σ_final bodyEvents md fac σAO} :
+  | call_sem {σ n tyArgs p callArgs σ' σ_final bodyEvents md fac σAO} :
       π n = .some p →
       Calls.CallEntry fac σ p callArgs σAO →
       BigStepE π p.body ⟨σAO, fac⟩ σ_final bodyEvents →
       Calls.CallExit fac σ p callArgs σ_final σ' →
       ----
-      EvalCmdExtE π fac σ (.call n callArgs md) σ'
+      EvalCmdExtE π fac σ (.call n tyArgs callArgs md) σ'
         (Calls.defaultAssertEvents fac σAO (Calls.checksAtCall md p.spec.preconditions) ++
           bodyEvents ++
           Calls.defaultAssertEvents fac σ_final p.spec.postconditions)
@@ -253,13 +253,13 @@ inductive EvalCmdExtContractE [HasVal P]
 
   /-- Arguments are matched positionally as in `EvalCmdExtE.call_sem`. -/
   -- TODO: Instantiate procedure type variables for polymorphic calls.
-  | call_sem {σ σO n p callArgs σ' md fac σAO} :
+  | call_sem {σ σO n tyArgs p callArgs σ' md fac σAO} :
       π n = .some p →
       Calls.CallEntry fac σ p callArgs σAO →
       Calls.HavocVars fac σAO (ProcedureHeader.outputParams (P := P) p.header) σO →
       Calls.CallExit fac σ p callArgs σO σ' →
       ----
-      EvalCmdExtContractE π fac σ (.call n callArgs md) σ'
+      EvalCmdExtContractE π fac σ (.call n tyArgs callArgs md) σ'
         (Calls.defaultAssertEvents fac σAO (Calls.checksAtCall md p.spec.preconditions) ++
           Calls.assumeEvents fac σO p.spec.postconditions)
 

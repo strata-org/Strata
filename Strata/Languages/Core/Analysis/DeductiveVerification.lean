@@ -369,15 +369,15 @@ closed Boolean expressions (`declFormulasTyped`), one sort for a `distinct` decl
 expressions included; theorems take that per-program fact as a hypothesis
 (see `TypeCheckDeclFormulasTyped` for why they do not rely on type checking).
 
-A known divergence from `Core.verify`: this entry assumes a `distinct` declaration only for
-the lemmas after it, as the language reference states (`LangDefDoc.lean`: each lemma is
-checked under the axioms and `distinct` facts declared before it). `Core.verify` instead
-hoists every `distinct` declaration into every lemma's obligation (`Program.eval` keeps
-them apart from the path condition, and `evalProgramDecls` emits all of them ahead of the
-obligations), while axioms keep declaration order. So a lemma before a `distinct` it needs
-is reported proved, and this entry says nothing about it (`CoreEntriesTests` pins it).
-Until `Core.verify` scopes `distinct` declarations by position for lemmas, a theorem that
-reads its lemma verdicts takes `Program.distinctsBeforeLemmasB` as a hypothesis. -/
+This entry assumes a `distinct` declaration only for the lemmas after it, as the language
+reference states (`LangDefDoc.lean`: each lemma is checked under the axioms and `distinct` facts
+declared before it). `Core.verify` scopes them the same way, which tests check rather than a
+theorem (`WPAxiomScopeTest`, in both `--vcgen` modes, and `CoreEntriesTests`, which pins a lemma
+before a `distinct` it would need, not proved): `Program.eval` adds each `distinct` group to the
+top-level path condition, as it does an axiom, so each obligation records the groups declared
+before its lemma or procedure, and `toCoreProofObligationProgram` places each group before the
+obligations that record it. So a theorem that reads lemma verdicts needs no hypothesis on where
+the `distinct` declarations sit. -/
 
 /-- The condition of a declaration's event, captured in `ρ`. -/
 @[expose] def declArg (ρ : Imperative.Env Expression) (label : String) (e : Expression.Expr)

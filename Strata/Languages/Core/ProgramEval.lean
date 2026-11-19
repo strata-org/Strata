@@ -103,9 +103,18 @@ def eval (E : Env) : Except Strata.Message (List Env × Statistics) :=
           metadata := md }
       go rest { declsE with deferred := declsE.deferred.push ob } stats
 
-    | .distinct _ es _ =>
-        let declsE := { declsE with distinct := es :: declsE.distinct }
-      go rest declsE stats
+    | .distinct label es _ =>
+      -- Like an axiom, a `distinct` group goes into the top-level path condition, so each
+      -- obligation of a later declaration records it among its assumptions, and none of an
+      -- earlier one does, in whatever order the obligations are deferred.
+      if declsE.pathConditions.scopes.length != 1 then
+        .error (Strata.Message.fromString
+            "Internal error: path condition stack misaligned when adding a distinct declaration")
+      else
+        let declsE := { declsE with
+          distinct := es :: declsE.distinct
+          pathConditions := declsE.pathConditions.prepend (.distinct (toString label) es) }
+        go rest declsE stats
 
     | .proc proc _md =>
       -- `declsE` stays alive without the name supply, so the supply has one reference

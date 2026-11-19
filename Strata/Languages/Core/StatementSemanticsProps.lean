@@ -120,13 +120,14 @@ theorem EvalCommandE.cmd_sem
 theorem EvalCommandE.call_sem
     {π : String → Option Procedure}
     {σ : CoreStore} {n : String} {p : Procedure} {callArgs : List (CallArg Expression)}
+    {tyArgs : Option (List Expression.Ty)}
     {σ' σ_final : CoreStore} {bodyEvents : Trace Expression}
     {md : MetaData Expression} {fac : Expression.Factory} {σAO : CoreStore}
     (hπ : π n = some p)
     (hentry : CallEntry fac σ p callArgs σAO)
     (hbody : CoreBodyExecE π p.body ⟨σAO, fac⟩ σ_final bodyEvents)
     (hexit : CallExit fac σ p callArgs σ_final σ') :
-    EvalCommandE π fac σ (.call n callArgs md) σ'
+    EvalCommandE π fac σ (.call n tyArgs callArgs md) σ'
       (defaultAssertEvents fac σAO (Imperative.Calls.checksAtCall md p.spec.preconditions) ++
         bodyEvents ++
         defaultAssertEvents fac σ_final p.spec.postconditions) :=
@@ -152,12 +153,13 @@ theorem EvalCommandContractE.cmd_sem {π : String → Option Procedure}
 `HavocVars` / `CallExit` / `defaultAssertEvents` / `assumeEvents`. -/
 theorem EvalCommandContractE.call_sem {π : String → Option Procedure}
     {σ σO : CoreStore} {n : String} {p : Procedure} {callArgs : List (CallArg Expression)}
+    {tyArgs : Option (List Expression.Ty)}
     {σ' : CoreStore} {md : MetaData Expression} {fac : Expression.Factory} {σAO : CoreStore}
     (hπ : π n = .some p)
     (hentry : CallEntry fac σ p callArgs σAO)
     (hhavoc : HavocVars fac σAO (ListMap.keys p.header.outputs) σO)
     (hexit : CallExit fac σ p callArgs σO σ') :
-    EvalCommandContractE π fac σ (.call n callArgs md) σ'
+    EvalCommandContractE π fac σ (.call n tyArgs callArgs md) σ'
       (defaultAssertEvents fac σAO (Imperative.Calls.checksAtCall md p.spec.preconditions) ++
         assumeEvents fac σO p.spec.postconditions) :=
   EvalCmdExtContractE.call_sem hπ hentry hhavoc hexit
@@ -469,10 +471,11 @@ theorem EvalCommandE.store_eq_of_call_getLhs_nil
     {π : String → Option Procedure}
 
     {fac : Expression.Factory} {σ σ' : CoreStore} {n : String}
+    {tyArgs : Option (List Expression.Ty)}
     {callArgs : List (CallArg Expression)} {md : MetaData Expression}
     {emitted : Trace Expression}
     (hLhs : CallArg.getLhs callArgs = [])
-    (h : EvalCommandE π fac σ (.call n callArgs md) σ' emitted) : σ' = σ := by
+    (h : EvalCommandE π fac σ (.call n tyArgs callArgs md) σ' emitted) : σ' = σ := by
   cases h with
   | call_sem _ _ _ hExit => exact CallExit.store_eq_of_getLhs_nil hLhs hExit
 
@@ -481,9 +484,10 @@ arguments leaves the caller store unchanged. -/
 theorem EvalCommandContractE.store_eq_of_call_getLhs_nil
     {π : String → Option Procedure} {fac : Expression.Factory} {σ σ' : CoreStore}
     {n : String} {callArgs : List (CallArg Expression)} {md : MetaData Expression}
+    {tyArgs : Option (List Expression.Ty)}
     {emitted : Trace Expression}
     (hLhs : CallArg.getLhs callArgs = [])
-    (h : EvalCommandContractE π fac σ (.call n callArgs md) σ' emitted) : σ' = σ := by
+    (h : EvalCommandContractE π fac σ (.call n tyArgs callArgs md) σ' emitted) : σ' = σ := by
   cases h with
   | call_sem _ _ _ hExit => exact CallExit.store_eq_of_getLhs_nil hLhs hExit
 
@@ -491,17 +495,17 @@ theorem EvalCommandContractE.store_eq_of_call_getLhs_nil
 a unique caller store and event trace. -/
 theorem EvalCommandContractE.call_unique_of_outputs_nil
     {π : String → Option Procedure} {fac : Expression.Factory}
-    {σ σ₁ σ₂ : CoreStore} {n : String} {p : Procedure}
+    {σ σ₁ σ₂ : CoreStore} {n : String} {tyArgs : Option (List Expression.Ty)} {p : Procedure}
     {callArgs : List (CallArg Expression)} {md : MetaData Expression}
     {emitted₁ emitted₂ : Trace Expression}
     (hLookup : π n = some p) (hOutputs : ListMap.keys p.header.outputs = [])
-    (h₁ : EvalCommandContractE π fac σ (.call n callArgs md) σ₁ emitted₁)
-    (h₂ : EvalCommandContractE π fac σ (.call n callArgs md) σ₂ emitted₂) :
+    (h₁ : EvalCommandContractE π fac σ (.call n tyArgs callArgs md) σ₁ emitted₁)
+    (h₂ : EvalCommandContractE π fac σ (.call n tyArgs callArgs md) σ₂ emitted₂) :
     σ₁ = σ₂ ∧ emitted₁ = emitted₂ := by
   cases h₁ with
-  | @call_sem _ out₁ _ p₁ _ _ _ _ frame₁ lookup₁ entry₁ havoc₁ exit₁ =>
+  | @call_sem _ out₁ _ _ p₁ _ _ _ _ frame₁ lookup₁ entry₁ havoc₁ exit₁ =>
     cases h₂ with
-    | @call_sem _ out₂ _ p₂ _ _ _ _ frame₂ lookup₂ entry₂ havoc₂ exit₂ =>
+    | @call_sem _ out₂ _ _ p₂ _ _ _ _ frame₂ lookup₂ entry₂ havoc₂ exit₂ =>
       have hp₁ : p₁ = p := Option.some.inj (lookup₁.symm.trans hLookup)
       have hp₂ : p₂ = p := Option.some.inj (lookup₂.symm.trans hLookup)
       subst p₁
@@ -677,6 +681,7 @@ theorem EvalCommandE.call_unique_of_body_unique
 
     {fac : Expression.Factory} {σ σ₁ σ₂ : CoreStore}
     {n : String} {p : Procedure} {callArgs : List (CallArg Expression)}
+    {tyArgs : Option (List Expression.Ty)}
     {md : MetaData Expression} {emitted₁ emitted₂ : Trace Expression}
     (hLookup : π n = some p)
     (hBodyUnique : ∀ {frame end₁ end₂ : CoreStore}
@@ -684,14 +689,14 @@ theorem EvalCommandE.call_unique_of_body_unique
       CoreBodyExecE π p.body ⟨frame, fac⟩ end₁ bodyEvents₁ →
       CoreBodyExecE π p.body ⟨frame, fac⟩ end₂ bodyEvents₂ →
       end₁ = end₂ ∧ bodyEvents₁ = bodyEvents₂)
-    (h₁ : EvalCommandE π fac σ (.call n callArgs md) σ₁ emitted₁)
-    (h₂ : EvalCommandE π fac σ (.call n callArgs md) σ₂ emitted₂) :
+    (h₁ : EvalCommandE π fac σ (.call n tyArgs callArgs md) σ₁ emitted₁)
+    (h₂ : EvalCommandE π fac σ (.call n tyArgs callArgs md) σ₂ emitted₂) :
     σ₁ = σ₂ ∧ emitted₁ = emitted₂ := by
   cases h₁ with
-  | @call_sem _ _ p₁ _ _ end₁ bodyEvents₁ _ _ frame₁
+  | @call_sem _ _ _ p₁ _ _ end₁ bodyEvents₁ _ _ frame₁
       lookup₁ entry₁ bodyExec₁ exit₁ =>
     cases h₂ with
-    | @call_sem _ _ p₂ _ _ end₂ bodyEvents₂ _ _ frame₂
+    | @call_sem _ _ _ p₂ _ _ end₂ bodyEvents₂ _ _ frame₂
         lookup₂ entry₂ bodyExec₂ exit₂ =>
       have hp₁ : p₁ = p := Option.some.inj (lookup₁.symm.trans hLookup)
       have hp₂ : p₂ = p := Option.some.inj (lookup₂.symm.trans hLookup)
@@ -778,13 +783,14 @@ theorem EvalCommandE.empty_body_call_store_unique
 
     {fac : Expression.Factory} {σ σAO expected σ' : CoreStore}
     {n : String} {p : Procedure} {callArgs : List (CallArg Expression)}
+    {tyArgs : Option (List Expression.Ty)}
     {md : MetaData Expression} {emitted : Trace Expression}
     (hLookup : π n = some p) (hBody : p.body = .structured [])
     (hEntry : CallEntry fac σ p callArgs σAO)
     (hExit : CallExit fac σ p callArgs σAO expected)
-    (h : EvalCommandE π fac σ (.call n callArgs md) σ' emitted) : σ' = expected := by
+    (h : EvalCommandE π fac σ (.call n tyArgs callArgs md) σ' emitted) : σ' = expected := by
   cases h with
-  | @call_sem _ _ q _ _ σFinal bodyEvents _ _ frame
+  | @call_sem _ _ _ q _ _ σFinal bodyEvents _ _ frame
       hLookup' hEntry' hBodyExec hExit' =>
     have hp : q = p := Option.some.inj (hLookup'.symm.trans hLookup)
     subst q
@@ -2067,7 +2073,7 @@ private theorem Command.mapExpr_id (c : Command) : Command.mapExpr id c = c := b
     | assert _ _ _ | assume _ _ _ | cover _ _ _ => simp [Command.mapExpr]
     | init n ty e md => cases e <;> simp [Command.mapExpr]
     | set n e md => cases e <;> simp [Command.mapExpr]
-  | call pname args md =>
+  | call pname tyArgs args md =>
     simp only [mapExpr, CmdExt.call.injEq, and_true, true_and]
     induction args with
     | nil => rfl

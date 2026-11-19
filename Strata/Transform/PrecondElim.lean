@@ -160,7 +160,7 @@ private def transformCFG (g : DetCFG) : CoreTransformM (Bool × DetCFG) := do
   let (changed, g') ← runCFGCmds (g := g) fun cmd => do
     let asserts := match cmd with
       | .cmd c => collectCmdPrecondAssertCmds F c
-      | .call pname callArgs md =>
+      | .call pname _ callArgs md =>
         collectCallPrecondAssertCmds F pname (CallArg.getInputExprs callArgs) md
     incrementStat s!"{Stats.callSiteAssertsEmitted}" asserts.length
     return if asserts.isEmpty then none else some (asserts ++ [cmd])
@@ -319,10 +319,10 @@ def transformStmt (s : Statement)
     let asserts := collectCmdPrecondAsserts F c
     incrementStat s!"{Stats.callSiteAssertsEmitted}" asserts.length
     return (!asserts.isEmpty, asserts ++ [.cmd (.cmd c)])
-  | .cmd (.call pname callArgs md) =>
+  | .cmd (.call pname tyArgs callArgs md) =>
     let asserts := collectCallPrecondAsserts F pname (CallArg.getInputExprs callArgs) md
     incrementStat s!"{Stats.callSiteAssertsEmitted}" asserts.length
-    return (!asserts.isEmpty, asserts ++ [.call pname callArgs md])
+    return (!asserts.isEmpty, asserts ++ [.call pname tyArgs callArgs md])
   | .block lbl b md => do
     let savedF ← getFactory
     let (changed, b') ← transformStmts b

@@ -74,7 +74,7 @@ def callArgs (sig : Option Sig) (lhs : List Core.Expression.Ident) (args : List 
 def toCoreCmd (sigs : Std.HashMap String Sig) : IRCmd → Except String Core.Command
   | .cmd c => .ok (.cmd c)
   | .call lhs p args md => do
-    return .call p (← callArgs (sigs.get? p) lhs args) md
+    return .call p none (← callArgs (sigs.get? p) lhs args) md
   | .virtualCall .. => .error "Cortex `virtualCall` must be lowered by LowerDispatch before Core"
   | .new .. => .error "Cortex `new` must be lowered before Core"
   | .cast .. => .error "Cortex `cast` must be lowered by LowerCTE before Core"

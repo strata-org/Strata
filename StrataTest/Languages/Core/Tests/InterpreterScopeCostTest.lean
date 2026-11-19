@@ -71,7 +71,7 @@ private def env (k : Nat) : IEnv Expression :=
 
 /-- `call Count(k, out y); assert y == k + 1`: the loop runs `k` times inside the callee. -/
 private def cexCallee (k : Nat) : CexA Expression Command :=
-  { cfg := .stmts [.cmd (CmdExt.call "Count" [.inArg (int k), .outArg (id "y")] md),
+  { cfg := .stmts [.cmd (CmdExt.call "Count" none [.inArg (int k), .outArg (id "y")] md),
       tgt "y" (k + 1)] (env k), oracle := [] }
 
 /-- `loop (i < n) { var t := i; i := t + 1 }; assert i == k + 1` with `n = k`. -/

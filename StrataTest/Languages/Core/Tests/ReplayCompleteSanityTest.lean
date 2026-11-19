@@ -81,7 +81,7 @@ def wEnv : Imperative.IEnv Expression :=
 
 /-- The counterexample: the call, with an empty oracle. -/
 def wCex : CexA Expression Command :=
-  { cfg := .stmts [.cmd (.call "w" [] md)] wEnv, oracle := [] }
+  { cfg := .stmts [.cmd (.call "w" none [] md)] wEnv, oracle := [] }
 
 /-- The target: the callee's assert. -/
 def wTarget : AssertId Expression := { label := "fail", md := md }
@@ -96,7 +96,7 @@ private theorem wRun (F : Expression.Factory) :
   refine ⟨_, _, ⟨1, fun rest =>
     .step _ _ _ _ _ (.step_det .step_stmts_cons)
     (.step _ _ _ _ _ (.step_seq_inner (.step_cmd (.inr (.inl
-      ⟨"w", wProc, [], md, _, _, _, _, rfl, rfl, rfl,
+      ⟨"w", none, wProc, [], md, _, _, _, _, rfl, rfl, rfl,
         ⟨[], [], .eval_none, .read_none, ⟨_, _, .init_none, .init_none, rfl⟩⟩,
         .step _ _ _ _ _ (.step_det .step_block)
           (.step _ _ _ _ _ (.step_det (.step_block_body .step_stmts_cons))
@@ -148,7 +148,7 @@ def hEnv : Imperative.IEnv Expression :=
 /-- The counterexample: `if * then call h()`, with the oracle `[tt, ff]`: `tt` takes the
     then-branch, `ff` is the value the callee's `init b` writes. -/
 def hCex : CexA Expression Command :=
-  { cfg := .stmts [.ite .nondet [.cmd (.call "h" [] md)] [] md] hEnv,
+  { cfg := .stmts [.ite .nondet [.cmd (.call "h" none [] md)] [] md] hEnv,
     oracle := [HasBool.tt, HasBool.ff] }
 
 /-- The target: the callee's assert. -/
@@ -226,7 +226,7 @@ private theorem hRun (F : Expression.Factory) (hF : F.factory = Core.Factory) :
     (.step _ _ _ _ _ (.step_seq_inner .step_ite_then)
     (.step _ _ _ _ _ (.step_det (.step_seq_inner (.step_block_body .step_stmts_cons)))
     (.step _ _ _ _ _ (.step_seq_inner (.step_block_body (.step_seq_inner (.step_cmd (.inr (.inl
-      ⟨"h", hProc, [], md, _, _, _, _, rfl, rfl, rfl,
+      ⟨"h", none, hProc, [], md, _, _, _, _, rfl, rfl, rfl,
         ⟨[], [], .eval_none, .read_none, ⟨_, _, .init_none, .init_none, rfl⟩⟩,
         .step _ _ _ _ _ (.step_det .step_block)
             (.step _ _ _ _ _ (.step_det (.step_block_body .step_stmts_cons))
@@ -295,7 +295,7 @@ def wCallee : Procedure :=
 def wPi : String → Option Procedure := fun n => if n = "w" then some wCallee else none
 
 /-- The call site: one strict input actual and one output actual. -/
-def wCall : Command := .call "w" [.inArg (rd "x"), .outArg (vid "y")] mdE
+def wCall : Command := .call "w" none [.inArg (rd "x"), .outArg (vid "y")] mdE
 
 attribute [local simp] Block.allCmds.eq_1 Block.allCmds.eq_2 Stmt.allCmds.eq_1
   Calls.CmdCallOk Calls.StrictActual Calls.getInputExprs CallArg.getInputExprs CallArg.getLhs ListMap.keys

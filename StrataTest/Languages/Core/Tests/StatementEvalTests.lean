@@ -122,7 +122,7 @@ none
 Expression Env:
 State:
 [(minit : (arrow int int)) → _minit
-(m : (arrow int int)) → fun __q0 : ($__unknown_type) => (if __q0 == 3 then 30 else (fun __q1 : ($__unknown_type) => (if __q1 == 2 then 20 else (fun __q2 : ($__unknown_type) => (if __q2 == 1 then 10 else _minit(__q2)))(__q1)))(__q0))
+(m : (arrow int int)) → fun __q0 : $__unknown_type => (if __q0 == 3 then 30 else (fun __q1 : $__unknown_type => (if __q1 == 2 then 20 else (fun __q2 : $__unknown_type => (if __q2 == 1 then 10 else _minit(__q2)))(__q1)))(__q0))
 (m0 : int) → _minit(0)]
 
 Evaluation Config:
@@ -177,7 +177,7 @@ none
 Expression Env:
 State:
 [minit → _minit
-(m : (arrow int int)) → fun __q0 : ($__unknown_type) => (if __q0 == 3 then 30 else (fun __q1 : ($__unknown_type) => (if __q1 == 2 then 20 else (fun __q2 : ($__unknown_type) => (if __q2 == 1 then 10 else _minit(__q2)))(__q1)))(__q0))]
+(m : (arrow int int)) → fun __q0 : $__unknown_type => (if __q0 == 3 then 30 else (fun __q1 : $__unknown_type => (if __q1 == 2 then 20 else (fun __q2 : $__unknown_type => (if __q2 == 1 then 10 else _minit(__q2)))(__q1)))(__q0))]
 
 Evaluation Config:
 Eval Depth: 200
@@ -379,6 +379,11 @@ Deferred Proof Obligations:
                       .empty,
                     .assert "x_pos" eb[(x == #1)] .empty]) |> format
 
+/-- The proof obligations deferred in `E`, one per line. -/
+private def deferredFormat (E : Env) : Format :=
+  Format.joinSep (E.deferred.toList.map fun ob =>
+    (Lambda.LExpr.instToFormatLExpr CoreLParams.mono).format ob.obligation) Format.line
+
 /-! ### A call's contract does not depend on type variable names
 
 `p<a, b>(x : a, y : b)` requires `opPair(x, y)`, with `opPair : a → b → bool`. Calling `p(u, v)`
@@ -394,10 +399,9 @@ private def contractRenamed (tyU tyV : Lambda.LMonoTy) : Format :=
                   inputs := [("x", tvA), ("y", tvB)], outputs := [] },
       spec := { preconditions := [("pre", ⟨pre, .Default, #[]⟩)], postconditions := [] } }
   let E := { Env.init with program := { decls := [.proc proc .empty] } }
-  let (_, E) := Command.inlineCallContract E [] "p"
+  let (_, E) := Command.inlineCallContract E [] "p" none
     [.fvar Core.coreLoc "u" (some tyU), .fvar Core.coreLoc "v" (some tyV)] .empty
-  Format.joinSep (E.deferred.toList.map fun ob =>
-    (Lambda.LExpr.instToFormatLExpr CoreLParams.mono).format ob.obligation) Format.line
+  deferredFormat E
 
 /-- info: ((~opPair : (arrow b (arrow a bool))) (u : b) (v : a)) -/
 #guard_msgs in
@@ -428,10 +432,9 @@ private def contractRenamedOut (tyV tyW : Lambda.LMonoTy) : Format :=
       spec := { preconditions := [("pre", ⟨pre, .Default, #[]⟩)], postconditions := [] } }
   let E := { Env.init with program := { decls := [.proc proc .empty] } }
   let E := E.insertInContext ("w", some tyW) (.fvar Core.coreLoc "w" (some tyW))
-  let (_, E) := Command.inlineCallContract E ["w"] "q"
+  let (_, E) := Command.inlineCallContract E ["w"] "q" none
     [.fvar Core.coreLoc "u" none, .fvar Core.coreLoc "v" (some tyV)] .empty
-  Format.joinSep (E.deferred.toList.map fun ob =>
-    (Lambda.LExpr.instToFormatLExpr CoreLParams.mono).format ob.obligation) Format.line
+  deferredFormat E
 
 /--
 info: ((~opQ : (arrow b (arrow a (arrow $__callty2 bool)))) u (v : a) (~k : $__callty2))
@@ -444,6 +447,37 @@ info: ((~opQ : (arrow d (arrow c (arrow $__callty2 bool)))) u (v : c) (~k : $__c
 -/
 #guard_msgs in
 #eval contractRenamedOut (.ftvar "c") (.ftvar "d")
+
+/-! ### A call's stored type arguments give the callee's type instance
+
+`r<a>(x : a)` requires `opR(x)`, with `opR : a → bool`, and is called with an argument `u` whose
+type is unknown. A stored `int` instantiates `a`. A stored type that mentions a generated type
+variable is not used, so `a` becomes `$__callty0`, as for a call without stored type arguments. -/
+
+private def contractStored (tyArgs : Option (List Core.Expression.Ty)) : Format :=
+  let tvA : Lambda.LMonoTy := .ftvar "a"
+  let pre : Expression.Expr :=
+    .app Core.coreLoc (.op Core.coreLoc "opR" (some (.arrow tvA .bool)))
+      (.fvar Core.coreLoc "x" (some tvA))
+  let proc : Procedure :=
+    { header := { name := "r", typeArgs := ["a"], inputs := [("x", tvA)], outputs := [] },
+      spec := { preconditions := [("pre", ⟨pre, .Default, #[]⟩)], postconditions := [] } }
+  let E := { Env.init with program := { decls := [.proc proc .empty] } }
+  let (_, E) := Command.inlineCallContract E [] "r" tyArgs
+    [.fvar Core.coreLoc "u" none] .empty
+  deferredFormat E
+
+/-- info: ((~opR : (arrow int bool)) u) -/
+#guard_msgs in
+#eval contractStored (some [.forAll [] .int])
+
+/-- info: ((~opR : (arrow $__callty0 bool)) u) -/
+#guard_msgs in
+#eval contractStored (some [.forAll [] (.ftvar "$__ty3")])
+
+/-- info: ((~opR : (arrow $__callty0 bool)) u) -/
+#guard_msgs in
+#eval contractStored none
 
 end Tests
 ---------------------------------------------------------------------

@@ -268,7 +268,7 @@ abbrev SM (P : PureExpr) [DecidableEq P.Ident] [BEq P.Ident] [LawfulBEq P.Ident]
     | .block _ _ _ => throw "SSA: `block` (the input is not in tree form)"
     | .exit _ _ => throw "SSA: `exit` (the input is not in tree form)"
     | .loop _ _ _ _ _ => throw "SSA: loop (the input is not in tree form)"
-    | .cmd (.call p _ _) => throw s!"SSA: call to '{p}' (the input is not in tree form)"
+    | .cmd (.call p _ _ _) => throw s!"SSA: call to '{p}' (the input is not in tree form)"
   termination_by ss => sizeOf ss
 
 /-- **The SSA phase.**  The obligation program of the guarded program `lay` from the entry

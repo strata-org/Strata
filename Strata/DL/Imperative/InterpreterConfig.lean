@@ -53,7 +53,7 @@ instance : CmdDefs P (Cmd P) where
 instance : CmdDefs P (CmdExt P) where
   defs
     | .cmd c => c.definedVars
-    | .call _ args _ => CallArg.getLhs args
+    | .call _ _ args _ => CallArg.getLhs args
 
 /-- Every name `σ'` defines is defined in `σ` or listed in `L`. -/
 @[expose] def DefinesWithin (σ σ' : SemanticStore P) (L : List P.Ident) : Prop :=

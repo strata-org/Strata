@@ -587,7 +587,8 @@ theorem pNoAssume_contract_refuted :
   rw [pNoAssumeProc_body] at htriple
   have hpre : Core.Logic.Hoare.Procedure.contractPre Core.Factory pNoAssumeProc
       (xFalseEnv model) := by
-    refine ⟨?_, rfl, ?_, ?_⟩
+    refine ⟨?_, rfl, ?_, ?_,
+      Core.Logic.Hoare.Procedure.outputAsPredicate_of_no_outputs _ (by native_decide)⟩
     · intro label check hmem
       rw [show pNoAssumeProc.spec.preconditions.toList = [] from by native_decide] at hmem
       simp at hmem

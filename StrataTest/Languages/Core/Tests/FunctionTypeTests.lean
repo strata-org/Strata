@@ -42,7 +42,7 @@ private def inferredBinderFunc : Core.Function :=
 info: ok: typeArgs: [T]
 inputs: (x, T)
 output: T
-body: some (fun y : (T) => y)(x)
+body: some (fun y : T => y)(x)
 -/
 #guard_msgs in
 #eval do
@@ -94,7 +94,7 @@ info: [Strata.Core] Type checking succeeded.
 info: ok: program Core;
 
 function id<T> (x : T) : T {
-  (fun y : (T) => y)(x)
+  (fun y : T => y)(x)
 }
 -/
 #guard_msgs in
@@ -354,7 +354,7 @@ private def nonTrivialBwdFunc : Core.Function :=
 info: ok: typeArgs: [a, b]
 inputs: (f, (arrow a b)) (x, a)
 output: b
-body: some (fun y : (a) => f(y))(x)
+body: some (fun y : a => f(y))(x)
 -/
 #guard_msgs in
 #eval do
@@ -456,7 +456,7 @@ private def annotatedLambdaWrapperFunc : Core.Function :=
 info: ok: typeArgs: [a, b]
 inputs: (f, (arrow a b)) (x, a)
 output: b
-body: some (fun y : (a) => f(y))(x)
+body: some (fun y : a => f(y))(x)
 -/
 #guard_msgs in
 #eval checkedSummary annotatedLambdaWrapperFunc

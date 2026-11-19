@@ -24,14 +24,18 @@ public section
 namespace Core
 
 /-- Instantiate `h`'s type parameters with fresh type variables, shared by its
-    inputs and outputs. -/
+    inputs and outputs. Returns the instantiated inputs and outputs and the types
+    substituted for the type parameters, in the order of `h.typeArgs`. -/
 def Procedure.Header.instantiate (C : Lambda.LContext CoreLParams)
     (Env : Lambda.TEnv CoreLParams.IDMeta) (h : Procedure.Header) :
     Except Std.Format (@Lambda.LMonoTySignature Unit × @Lambda.LMonoTySignature Unit ×
-                       Lambda.TEnv CoreLParams.IDMeta) := do
-  let (sig, Env) ← Lambda.LMonoTySignature.instantiate C Env h.typeArgs (h.inputs ++ h.outputs)
+                       Lambda.LMonoTys × Lambda.TEnv CoreLParams.IDMeta) := do
+  let (sig, Env') ← Lambda.LMonoTySignature.instantiate C Env h.typeArgs (h.inputs ++ h.outputs)
+  -- Instantiating from the same environment generates the same fresh variables as the signature.
+  let (tyArgs, _) ←
+    Lambda.LMonoTys.instantiateEnv h.typeArgs (h.typeArgs.map Lambda.LMonoTy.ftvar) Env
   let (inp, out) := sig.splitAt h.inputs.length
-  return (inp, out, Env)
+  return (inp, out, tyArgs, Env')
 
 namespace Statement
 
@@ -64,7 +68,7 @@ def typeCheckCmd (C: LContext CoreLParams) (Env : TEnv Unit) (P : Program) (c : 
     -- locations.
     let (c, Env) ← Imperative.Cmd.typeCheck C Env c
     .ok (.cmd c, Env)
-  | .call pname callArgs md => try
+  | .call pname _ callArgs md => try
     let lhs := CallArg.getLhs callArgs
     let args := CallArg.getInputExprs callArgs
     -- `try`: to augment any errors with source location info.
@@ -85,7 +89,7 @@ def typeCheckCmd (C: LContext CoreLParams) (Env : TEnv Unit) (P : Program) (c : 
          | some (lhs_tys, Env) =>
            -- Every argument's free variables are reported before any later failure.
            let argsFreeVarErr := fun _ => Env.freeVarChecks args
-           let (inp_sig, ret_sig, Env) ←
+           let (inp_sig, ret_sig, instTys, Env) ←
              SourceExpr.orFreeVarError argsFreeVarErr (proc.header.instantiate C Env)
                |>.mapError Message.fromFormat
            let inp_mtys := LMonoTys.subst Env.stateSubstInfo.subst inp_sig.values
@@ -111,7 +115,8 @@ def typeCheckCmd (C: LContext CoreLParams) (Env : TEnv Unit) (P : Program) (c : 
                     ({proc.header.inputs.values}) → ({proc.header.outputs.values})")
            let Env := Env.updateSubst S
            let newCallArgs := CallArg.replaceInArgs callArgs args'
-           let s' := .call pname newCallArgs md
+           -- The incoming type arguments are not trusted: only the checker annotates a call.
+           let s' := .call pname (some (instTys.map (Lambda.LTy.forAll [] ·))) newCallArgs md
            .ok (s', Env)
       catch e =>
         -- Add source location to error messages if not already present.
@@ -171,8 +176,9 @@ where
           let rc := WrittenTyVarScope.renameCmd C.rigidTypeVars m st cmd
           let cmdMd := match cmd with
             | .cmd c => c.getMetaData
-            | .call _ _ md => md
-          -- An annotation reads the scope after a declaration's own bindings.
+            | .call _ _ _ md => md
+          -- An annotation reads the scope after a declaration's own bindings. A call's `tyArgs`
+          -- are not checked: `typeCheckCmd` discards them.
           let _ ← (checkAnnotsInScope false C.rigidTypeVars rc.2.1 (cmdExprs cmd)).mapError
             (errorWithSourceLoc · cmdMd)
           let (c', Env) ← typeCheckCmd C Env P rc.1
@@ -312,7 +318,8 @@ Apply type substitution `S` to a command.
 def Command.subst (S : Subst) (c : Command) : Command :=
   match c with
   | .cmd c => .cmd (Cmd.subst S c)
-  | .call pname callArgs md => .call pname (callArgs.map (CallArg.subst S)) md
+  | .call pname tyArgs callArgs md =>
+    .call pname (tyArgs.map (·.map (LTy.subst S))) (callArgs.map (CallArg.subst S)) md
 
 /--
 Apply type substitution `S` to a statement.

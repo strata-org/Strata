@@ -135,7 +135,6 @@ private def runLaurelInterpretDirect (ionBytes : ByteArray) (pflags : ParsedFlag
     { parsed with
       staticProcedures := Laurel.coreDefinitionsForLaurel.staticProcedures ++ parsed.staticProcedures,
       types := Laurel.coreDefinitionsForLaurel.types ++ parsed.types }
-    (gradualTypes := translateOptions.gradualTypes)
     (realizeCoercion := translateOptions.realizeCoercion) (toBool := translateOptions.toBool)
     (reservedNames := translateOptions.reservedNames)
   let rejected := resolved.errors.filter (·.kind != .warning)

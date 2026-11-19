@@ -87,6 +87,31 @@ def Env.InterpConsistentAt (env : T.Identifier → Option (LExpr T.mono)) : Prop
     ∀ (h : LExpr.HasTypeA [] e ty),
       LExpr.denote tcInterp opInterp fvarVal vt .nil e ty h = fvarVal x (ty.substTyVars vt)
 
+/-! ### Restricting interpretation consistency to a sub-environment -/
+
+/-- Consistency of an environment with a valuation restricts to a sub-environment. -/
+theorem Env.InterpConsistent.restrict {tcInterp : TyConstrInterp} {opInterp : OpInterp tcInterp}
+    {fvarVal : FreeVarVal T tcInterp} {env₁ env₂ : Env T}
+    (h : Env.InterpConsistent tcInterp opInterp env₂ fvarVal) (hsub : Env.Sub env₁ env₂) :
+    Env.InterpConsistent tcInterp opInterp env₁ fvarVal :=
+  fun vt x e ty hx hty => h vt x e ty (hsub x e hx) hty
+
+/-- Consistency of an environment with a valuation at one type-variable valuation restricts
+    to a sub-environment. -/
+theorem Env.InterpConsistentAt.restrict {tcInterp : TyConstrInterp}
+    {opInterp : OpInterp tcInterp} {vt : TyVarVal} {fvarVal : FreeVarVal T tcInterp}
+    {env₁ env₂ : Env T} (h : Env.InterpConsistentAt tcInterp opInterp fvarVal vt env₂)
+    (hsub : Env.Sub env₁ env₂) : Env.InterpConsistentAt tcInterp opInterp fvarVal vt env₁ :=
+  fun x e ty hx hty => h x e ty (hsub x e hx) hty
+
+/-- Interpretation consistency restricts to a sub-environment. -/
+theorem InterpConsistent.restrict [DecidableEq T.IDMeta] {tcInterp : TyConstrInterp}
+    {opInterp : OpInterp tcInterp}
+    {fvarVal : FreeVarVal T tcInterp} {F : @Factory T} {env₁ env₂ : Env T}
+    (h : InterpConsistent tcInterp opInterp fvarVal F env₂) (hsub : Env.Sub env₁ env₂) :
+    InterpConsistent tcInterp opInterp fvarVal F env₁ :=
+  ⟨h.factory, h.constr, h.env.restrict hsub⟩
+
 /-- Every concrete evaluator of the factory returns an `OpsConsistent` result on arguments that
 are `OpsConsistent`. -/
 def Factory.EvalOpsConsistentOn [DecidableEq T.IDMeta] (F : @Factory T) : Prop :=

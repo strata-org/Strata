@@ -97,7 +97,7 @@ claims hold: true
 /-- info: error: loopInitHoist: procedure '_' contains a call; loopInitHoist expects call-free structured bodies. -/
 #guard_msgs in
 #eval IO.println (runPhase LoopInitHoist.loopInitHoistPipelinePhase
-  (progOf [Statement.call "f" [] {}]))
+  (progOf [Statement.call "f" none [] {}]))
 
 /-- info: error: loopInitHoist: CFG procedure bodies are not supported (procedure '_'); loopInitHoist expects structured bodies. -/
 #guard_msgs in
@@ -128,7 +128,7 @@ claims hold: true
 /-- info: error: structuredToUnstructured: procedure '_' contains a call; structuredToUnstructured expects call-free structured bodies. -/
 #guard_msgs in
 #eval IO.println (runPhase StructuredToUnstructured.structuredToUnstructuredPipelinePhase
-  (progOf [Statement.call "f" [] {}]))
+  (progOf [Statement.call "f" none [] {}]))
 
 /-- info: error: structuredToUnstructured: procedure '_' already has a CFG body; structuredToUnstructured expects structured bodies. -/
 #guard_msgs in

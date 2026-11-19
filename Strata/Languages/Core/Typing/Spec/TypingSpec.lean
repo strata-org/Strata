@@ -13,10 +13,35 @@ public import Strata.DL.Lambda.LTyWFSpec
 
 /-! ## Typing relation: well-typedness of commands, statements, procedures, functions and programs
 
-The program typing rules of `ProgramTypeSpec` restated over variable scopes
-alone, with expressions typed by the annotated relation `LExpr.HasTypeA` and
-without the reserved-type-parameter and cross-kind name conditions; datatype
-blocks are registered with `LContext.addMutualBlock`. -/
+These relations describe the annotated program that type checking outputs. The
+typechecker spec in `ProgramTypeSpec` and the files beside it describes the
+program as the user wrote it, which is the checker's input.
+Each level pairs its typechecker spec relations with one typing relation:
+
+| Level | Typechecker spec (input) | Typing relation (output) |
+|---|---|---|
+| Expression | `HasType C Γ (instAnnots Δ e)` | `ExprWellTyped` |
+| Command | `CmdHasType` | `CmdWellTyped` |
+| Command with calls | `CmdExtHasType` | `CmdExtWellTyped` |
+| Statement | `StatementHasType` | `StatementWellTyped` |
+| Statements | `StatementsHasType` | `StatementsWellTyped` |
+| Procedure body | `ProcBodyHasType` | `ProcBodyWellTyped` |
+| Procedure | `ProcHasTypeExact`, `ProcHasType` | `ProcWellTyped` |
+| Function | `FuncHasTypeExact`, `FuncHasType` | `FuncWellTyped` |
+| Declaration | `DeclHasType` | `DeclWellTyped` |
+| Declarations | `DeclsHasType` | `DeclsWellTyped` |
+| Program | `ProgramHasType` | `ProgramWellTyped` |
+
+The two kinds differ in what they type and in what they check:
+* The spec types the program as written, with Lambda's `HasType`, in a
+  `TContext` that has type synonyms, and threads `Δ`,
+  the written type variables in scope. The typing relation types the annotated
+  output with `HasTypeA`, over `TypeScopes` only, with no synonyms and no `Δ`.
+* Only the spec checks what the user wrote: `WrittenAnnotsOk`, `AnnotsInScope`,
+  and the renaming of reserved type parameters (the `*AlphaVariant` relations).
+  The typing relation also leaves out the cross-kind name conditions.
+
+Datatype blocks are registered with `LContext.addMutualBlock`. -/
 
 namespace Core
 namespace TypeSpec
@@ -87,8 +112,9 @@ inductive CmdExtWellTyped (C : LContext CoreLParams) (P : Program) :
       CmdWellTyped C ts c ts' →
       CmdExtWellTyped C P ts (.cmd c) ts'
   /-- A well-formed call (`WF.WFcallProp`) of a procedure of `P` whose formals, instantiated by
-      `σ`, are the types of its arguments and of its declared left-hand sides. -/
-  | call : ∀ ts (pname : String) callArgs proc md (σ : List (TyIdentifier × LMonoTy)) ts',
+      `σ`, are the types of its arguments and of its declared left-hand sides. The call stores,
+      for each type parameter of the procedure in order, the monotype `σ` sends it to. -/
+  | call : ∀ ts (pname : String) tyArgs callArgs proc md (σ : List (TyIdentifier × LMonoTy)) ts',
       Program.Procedure.find? P pname = some proc →
       WF.WFcallProp P pname callArgs →
       (∀ v, v ∈ CallArg.getLhs callArgs → (ts.find? v).isSome) →
@@ -103,8 +129,10 @@ inductive CmdExtWellTyped (C : LContext CoreLParams) (P : Program) :
            (hj : i < proc.header.outputs.values.length),
         ts.find? ((CallArg.getLhs callArgs)[i]) =
           some (.forAll [] (LMonoTy.subst (HMaps.ofScopes [σ]) (proc.header.outputs.values[i])))) →
+      tyArgs = some (proc.header.typeArgs.map
+        (fun a => .forAll [] (LMonoTy.subst (HMaps.ofScopes [σ]) (.ftvar a)))) →
       HMaps.Equiv ts' ts →
-      CmdExtWellTyped C P ts (.call pname callArgs md) ts'
+      CmdExtWellTyped C P ts (.call pname tyArgs callArgs md) ts'
 
 /-- The kind of a declaration, counting a recursive function block as functions. -/
 @[expose] def declNameKind (d : Decl) : DeclKind :=

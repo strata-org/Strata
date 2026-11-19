@@ -46,7 +46,7 @@ theorem EvalCmdExtE.induct
     (h : EvalCmdExtE π fac σ c σ' evs)
     (cmd_sem : ∀ {fac σ c σ' emitted} (h : EvalCmdE (P := P) fac σ c σ' emitted),
       motive fac σ (.cmd c) σ' emitted (.cmd_sem h))
-    (call_sem : ∀ {σ n p callArgs σ' σFinal bodyEvents md fac σAO}
+    (call_sem : ∀ {σ n tyArgs p callArgs σ' σFinal bodyEvents md fac σAO}
       (hπ : π n = .some p)
       (hentry : Calls.CallEntry fac σ p callArgs σAO)
       (hbody : BigStepE π p.body ⟨σAO, fac⟩ σFinal bodyEvents)
@@ -57,7 +57,7 @@ theorem EvalCmdExtE.induct
        (∃ g ρ', p.body = .cfg g ∧ projectStore σAO ρ'.store = σFinal ∧
         StepCFGStarE P (fun fac σ c σ' evs => ∃ h, motive fac σ c σ' evs h)
           (.atBlock g g.entry ⟨σAO, fac⟩) bodyEvents (.terminal ρ'))) →
-      motive fac σ (.call n callArgs md) σ'
+      motive fac σ (.call n tyArgs callArgs md) σ'
         (Calls.defaultAssertEvents fac σAO (Calls.checksAtCall md p.spec.preconditions) ++
           bodyEvents ++
           Calls.defaultAssertEvents fac σFinal p.spec.postconditions)

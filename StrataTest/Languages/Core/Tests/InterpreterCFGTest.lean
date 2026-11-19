@@ -43,7 +43,7 @@ block, and the driver dispatches it through the procedure table `π`.  `π` reso
 procedure, so the run halts at the call with `unsupportedCalleeNotFound`. -/
 private def callCfg : CFG String (DetBlock String Command Expression) :=
   { entry := "b0",
-    blocks := [("b0", ⟨[CmdExt.call "callee" [] md], .finish md⟩)] }
+    blocks := [("b0", ⟨[CmdExt.call "callee" none [] md], .finish md⟩)] }
 
 /-- The start environment: store `store0` at `Core.Factory`. -/
 private def env0 : IEnv Expression := { store := .ofStore store0, factory := Core.Factory }

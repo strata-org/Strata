@@ -35,7 +35,7 @@ spec {
 };
 #end
 
-/-- info: [statistics] Evaluator.factoryOps: 363
+/-- info: [statistics] Evaluator.factoryOps: 367
 [statistics] Evaluator.procedures: 1
 [statistics] Evaluator.simulatedStmts: 2
 [statistics] Evaluator.verificationEnvironments: 1
@@ -76,7 +76,7 @@ spec {
 };
 #end
 
-/-- info: [statistics] Evaluator.factoryOps: 363
+/-- info: [statistics] Evaluator.factoryOps: 367
 [statistics] Evaluator.functions: 1
 [statistics] Evaluator.procedures: 2
 [statistics] Evaluator.simulatedStmts: 4
