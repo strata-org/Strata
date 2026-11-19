@@ -23,8 +23,10 @@ Properties of `LExpr.denoteEval` (`Strata.DL.Lambda.LExprDenoteEval`) and of the
 definitions it uses.
 
 - `LSort.toMonoTy_injective` — a sort is determined by its monomorphic type
-- `LExpr.annotateFvars_congr`, `LExpr.annotateFvars_eq_self`,
-  `LExpr.mem_freeVars_annotateFvars` — annotating free variables
+- `LExpr.annotateFvars_congr`, `LExpr.annotateFvars_eq_self_of_none`,
+  `LExpr.annotateFvars_eq_self`, `LExpr.annotateFvars_eq_self_freeVars`,
+  `LExpr.mem_freeVars_annotateFvars` — annotating free
+  variables
 - `LExpr.denoteEval_eq_some_iff` — characterization
 - `LExpr.denoteEval_congr`, `LExpr.denoteEval_mono` — dependence on the store
 - `LExpr.denoteEval_fvar`, `LExpr.denoteEval_fvar_none`, `LExpr.denoteEval_boolConst` —
@@ -133,16 +135,17 @@ theorem LExpr.annotateFvars_congr [DecidableEq T.IDMeta]
     simp only [annotateFvars]
     rw [iha (fun x ty hx => h x ty (.inl hx)), ihb (fun x ty hx => h x ty (.inr hx))]
 
-/-- Annotating with annotations that every free-variable occurrence of `e` already carries
+/-- Annotating with annotations that agree with every annotation `e` carries, or give none,
     leaves `e` unchanged. -/
-theorem LExpr.annotateFvars_eq_self [DecidableEq T.IDMeta]
+theorem LExpr.annotateFvars_eq_self_of_none [DecidableEq T.IDMeta]
     {ann : Identifier T.IDMeta → Option LMonoTy} (e : LExpr T.mono)
-    (h : ∀ x ty, (x, ty) ∈ e.freeVars → ∃ τ, ty = some τ ∧ ann x = some τ) :
+    (h : ∀ x ty, (x, ty) ∈ e.freeVars → ann x = none ∨ ann x = ty) :
     e.annotateFvars ann = e := by
   induction e with
   | fvar m x ty =>
-    obtain ⟨τ, rfl, hx⟩ := h x ty (by simp [LExpr.freeVars])
-    simp [annotateFvars, hx]
+    simp only [annotateFvars]
+    rcases h x ty (by simp [LExpr.freeVars]) with h | h <;> rw [h]
+    cases ty <;> rfl
   | const | op | bvar => rfl
   | abs m n ty e ih => simp only [annotateFvars]; rw [ih (by simpa [LExpr.freeVars] using h)]
   | quant m k n ty tr e ihtr ihe =>
@@ -162,6 +165,58 @@ theorem LExpr.annotateFvars_eq_self [DecidableEq T.IDMeta]
     simp only [LExpr.freeVars, List.mem_append] at h
     simp only [annotateFvars]
     rw [iha (fun x ty hx => h x ty (.inl hx)), ihb (fun x ty hx => h x ty (.inr hx))]
+
+/-- Annotating with annotations that every free-variable occurrence of `e` already carries
+    leaves `e` unchanged. -/
+theorem LExpr.annotateFvars_eq_self [DecidableEq T.IDMeta]
+    {ann : Identifier T.IDMeta → Option LMonoTy} (e : LExpr T.mono)
+    (h : ∀ x ty, (x, ty) ∈ e.freeVars → ∃ τ, ty = some τ ∧ ann x = some τ) :
+    e.annotateFvars ann = e :=
+  LExpr.annotateFvars_eq_self_of_none e fun x ty hx => by
+    obtain ⟨τ, rfl, hann⟩ := h x ty hx
+    exact .inr hann
+
+/-- If annotating with `ann` leaves `e` unchanged, every free-variable occurrence of `e` carries
+    the annotation `ann` gives it, when `ann` gives one. -/
+theorem LExpr.annotateFvars_eq_self_freeVars [DecidableEq T.IDMeta]
+    {ann : Identifier T.IDMeta → Option LMonoTy} :
+    ∀ {e : LExpr T.mono}, e.annotateFvars ann = e →
+      ∀ y a, (y, a) ∈ LExpr.freeVars e → ann y = none ∨ ann y = a := by
+  intro e
+  induction e with
+  | const | op | bvar => intro _ y a hy; simp [LExpr.freeVars] at hy
+  | fvar m x ty =>
+    intro h y a hy
+    simp only [LExpr.freeVars, List.mem_singleton, Prod.mk.injEq] at hy
+    obtain ⟨rfl, rfl⟩ := hy
+    simp only [LExpr.annotateFvars, LExpr.fvar.injEq, true_and] at h
+    cases hx : ann y with
+    | none => exact .inl rfl
+    | some t => rw [hx] at h; exact .inr h
+  | abs _ _ _ _ ih =>
+    intro h y a hy
+    simp only [LExpr.annotateFvars, LExpr.abs.injEq] at h
+    exact ih h.2.2.2 y a hy
+  | quant _ _ _ _ _ _ ih₁ ih₂ =>
+    intro h y a hy
+    simp only [LExpr.annotateFvars, LExpr.quant.injEq] at h
+    simp only [LExpr.freeVars, List.mem_append] at hy
+    exact hy.elim (ih₁ h.2.2.2.2.1 y a) (ih₂ h.2.2.2.2.2 y a)
+  | app _ _ _ ih₁ ih₂ =>
+    intro h y a hy
+    simp only [LExpr.annotateFvars, LExpr.app.injEq] at h
+    simp only [LExpr.freeVars, List.mem_append] at hy
+    exact hy.elim (ih₁ h.2.1 y a) (ih₂ h.2.2 y a)
+  | eq _ _ _ ih₁ ih₂ =>
+    intro h y a hy
+    simp only [LExpr.annotateFvars, LExpr.eq.injEq] at h
+    simp only [LExpr.freeVars, List.mem_append] at hy
+    exact hy.elim (ih₁ h.2.1 y a) (ih₂ h.2.2 y a)
+  | ite _ _ _ _ ih₁ ih₂ ih₃ =>
+    intro h y a hy
+    simp only [LExpr.annotateFvars, LExpr.ite.injEq] at h
+    simp only [LExpr.freeVars, List.mem_append] at hy
+    exact hy.elim (fun hy => hy.elim (ih₁ h.2.1 y a) (ih₂ h.2.2.1 y a)) (ih₃ h.2.2.2 y a)
 
 /-- Annotation keeps the free-variable names, and annotates every free variable `x`
 whose `ann x` is defined with it. -/

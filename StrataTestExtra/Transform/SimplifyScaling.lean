@@ -7,6 +7,8 @@ module
 
 meta import Strata.Languages.Core
 meta import StrataTest.Transform.SimplifyTests
+meta import Strata.Transform.Simplify
+meta import StrataTest.Util.Scaling
 
 meta section
 
@@ -62,5 +64,34 @@ private def scalesLinearly (chain : Nat → List Statement) (n : Nat := 125) :
 /-- info: (true, true) -/
 #guard_msgs in
 #eval scalesLinearly writeFreeIfs 500
+
+/-! ## Simplify's check scales linearly
+
+The check `simplifyProcedure` runs on every body (`gateOK`) looks up every variable
+occurrence among the names defined so far and among the declarations in scope, which it
+keeps in a hash set and a hash map. On `declChain`, a straight line of `n` declarations
+each reading the one before it and an entry variable, it costs time linear in `n`.
+Mainline's specifications of the two checks, `Block.defUseWellFormed` and
+`Block.fvarTypesWellAnnotatedB`, nest one closure per statement and cost time quadratic in
+`n`. The test times both at lengths 500 and 4000, fastest of five runs; the check must scale
+under 32 times, the bound the chains above use. -/
+
+/-- `var x1 : int := x0 + m; …; var xn : int := x(n-1) + m`, each use annotated `int`: each
+    statement reads the one before and the entry variable `m`, whose lookup passes every
+    definition in scope. -/
+private def declChain (n : Nat) : List Statement :=
+  (List.range n).map fun i =>
+    Statement.init ⟨s!"x{i+1}", ()⟩ (.forAll [] .int)
+      (.det (.app default (.app default (.op default ⟨"Int.Add", ()⟩ none)
+        (.fvar default ⟨s!"x{i}", ()⟩ (some .int))) (.fvar default ⟨"m", ()⟩ (some .int))))
+      .empty
+
+/-- The check on a body against itself, as Simplify runs it when nothing changes. -/
+private def gateOnSelf (ss : List Statement) : Bool :=
+  gateOK Core.Factory ss ss
+
+/-- info: true -/
+#guard_msgs in
+#eval StrataTest.Scaling.scalesUnder 32 gateOnSelf (declChain 500) (declChain 4000)
 
 end Core.Simplify.Tests

@@ -35,7 +35,20 @@ private def simplifyProgram (p : StrataDDM.Program) : Core.Program :=
   | .error e => panic! s!"Simplify failed: {e}"
   | .ok (_changed, program) => program
 
-private def simplifyAndPrint (p : StrataDDM.Program) : IO Unit :=
+/-- The procedures whose original body Simplify keeps because their simplified body fails
+    its def-use check. Every test here expects none. -/
+private def fallbacks (p : StrataDDM.Program) : List String :=
+  let cp := translateCore p
+  match Core.Transform.run cp Core.Simplify.baseCtx
+      { Core.Transform.CoreTransformState.emp with factory := Core.Factory } with
+  | .error _ => []
+  | .ok base => cp.decls.filterMap fun
+    | .proc q _ => if Core.Simplify.bodyFallsBack base q then some q.header.name.name else none
+    | _ => none
+
+private def simplifyAndPrint (p : StrataDDM.Program) : IO Unit := do
+  let fb := fallbacks p
+  unless fb.isEmpty do throw (IO.userError s!"Simplify kept the original body of {fb}")
   let s := (Core.formatProgram (simplifyProgram p)).pretty
   IO.print (s.toList.reverse.dropWhile (· == '\n') |>.reverse |> String.ofList)
 
@@ -1109,6 +1122,40 @@ procedure p (x : int)
 }; -/
 #guard_msgs in
 #eval simplifyAndPrint dependentForgets
+
+/-! ### An assignment forgets a value that mentions the assigned variable
+
+`x`'s recorded value is `y`. Assigning `y` makes that recording stale even though `x`
+itself was not written, so the assertion keeps reading `x`; only `y`, whose new value
+is known, is substituted. Substituting the stale `y` for `x` would turn the assertion
+into `2 == 2`, which the program does not guarantee. `y` is declared without a value
+on purpose: given one, it would be substituted into `x`'s definition and `x` would no
+longer mention `y`. -/
+
+/-- A body whose assertion reads a variable whose recorded value goes stale. -/
+private def assignmentForgetsDependent :=
+#strata
+program Core;
+procedure p ()
+{
+  var y : int;
+  var x : int := y;
+  y := 2;
+  assert [stale]: x == y;
+};
+#end
+
+/-- info: program Core;
+
+procedure p ()
+{
+  var y : int;
+  var x : int := y;
+  y := 2;
+  assert [stale]: x == 2;
+}; -/
+#guard_msgs in
+#eval simplifyAndPrint assignmentForgetsDependent
 
 /-! ### A chain of expansions completes within the budget
 

@@ -9,6 +9,7 @@ public import Strata.DL.Imperative.Cmd
 public import Strata.DL.Lambda.TypeConstructor
 public import Strata.Util.ListUtilsProps
 public import Std.Data.HashMap
+public import Std.Data.HashSet
 public import Strata.Util.OrderedSet
 
 namespace Imperative
@@ -561,6 +562,12 @@ def Block.touchedVars [HasVarsImp P C] [HasFvars P]
   Block.modifiedOrDefinedVars ss true ++ Block.getVars ss
 end
 
+/-- The variables the list `ss` reads or writes without declaring them: for a procedure body,
+    its parameters and the globals and old values it mentions. -/
+@[expose] def Block.entryVars [HasVarsImp P C] [HasFvars P] [DecidableEq P.Ident]
+    (ss : Block P C) : List P.Ident :=
+  (Block.touchedVars ss).filter (· ∉ Block.definedVars ss false)
+
 mutual
 /-- Collect all labeled `exit` targets occurring in a statement (recursive). -/
 @[expose] def Stmt.labels (s : Stmt P C) : List String :=
@@ -620,6 +627,14 @@ mutual
   | .exit _ _ => true
   | .typeDecl _ _ => true
 
+/-- Def-use well-formedness check for a block: each statement is checked with the names
+    defined by the statements before it counted as defined.
+
+    This is the specification that proofs use. Each statement adds a closure layer to
+    `definedVars`, so a lookup walks back through every earlier statement and the check is
+    quadratic in the length of the block. Executable code should call
+    `Block.defUseWellFormedHashed`, which is linear and computes the same result
+    (`Block.defUseWellFormedHashed_empty`). -/
 @[expose] def Block.defUseWellFormed [HasVarsImp P C] [HasFvars P] [HasOps P]
     [HasOpsImp P C] [DecidableEq P.Ident]
     (definedVars : P.Ident → Bool) (declaredFuncs : P.Ident → Bool)
@@ -631,6 +646,64 @@ mutual
       Block.defUseWellFormed
         (fun n => definedVars n || decide (n ∈ Stmt.definedVars s true))
         declaredFuncs rest
+end
+
+/-- `target` defines at least what `source` defines and agrees with it on the names in
+    `ns`: the relation between the defined-name predicates of a list and of a rewrite of it
+    that adds definitions it does not redeclare. -/
+@[expose] def Block.DefinedGrows (ns : List P.Ident) (source target : P.Ident → Bool) :
+    Prop :=
+  (∀ x, source x = true → target x = true) ∧ (∀ x ∈ ns, target x = source x)
+
+mutual
+/-- `Stmt.defUseWellFormed` with the names defined so far in a hash set `acc`, besides
+    `definedVars`, so that a lookup does not walk back through the earlier statements. It
+    computes the same result (`Stmt.defUseWellFormedHashed_eq`). -/
+@[expose] def Stmt.defUseWellFormedHashed [HasVarsImp P C] [HasFvars P] [HasOps P]
+    [HasOpsImp P C] [DecidableEq P.Ident] [Hashable P.Ident]
+    (acc : Std.HashSet P.Ident) (definedVars : P.Ident → Bool)
+    (declaredFuncs : P.Ident → Bool) (s : Stmt P C) : Bool :=
+  let d := fun n => definedVars n || acc.contains n
+  match s with
+  | .cmd c =>
+    (HasVarsImp.readVars (P := P) c).all d &&
+    (HasVarsImp.modifiedVars (P := P) c).all d &&
+    (HasVarsImp.definedVars (P := P) c false).all (fun n => ¬d n) &&
+    (HasOpsImp.getOps (P := P) c).all (fun n => declaredFuncs n)
+  | .block _ bss _ => Block.defUseWellFormedHashed acc definedVars declaredFuncs bss
+  | .ite cond tbss ebss _ =>
+    cond.getVars.all d &&
+    cond.getOps.all (fun n => declaredFuncs n) &&
+    Block.defUseWellFormedHashed acc definedVars declaredFuncs tbss &&
+    Block.defUseWellFormedHashed acc definedVars declaredFuncs ebss
+  | .loop guard measure invariants body _ =>
+    guard.getVars.all d &&
+    guard.getOps.all (fun n => declaredFuncs n) &&
+    ((measure.map HasFvars.getFvars).getD []).all d &&
+    ((measure.map (HasOps.getOps (P := P))).getD []).all
+      (fun n => declaredFuncs n) &&
+    (invariants.flatMap fun lp => HasFvars.getFvars lp.2).all d &&
+    (invariants.flatMap fun lp => HasOps.getOps (P := P) lp.2).all
+      (fun n => declaredFuncs n) &&
+    Block.defUseWellFormedHashed acc definedVars declaredFuncs body
+  | .exit _ _ => true
+  | .typeDecl _ _ => true
+
+/-- The efficient implementation of `Block.defUseWellFormed`: the names defined so far are
+    kept in a hash set `acc`, besides `definedVars`, which makes the check linear in the
+    length of the block. Executable code that needs speed should call it, from an empty
+    set. `Block.defUseWellFormed` stays the specification that proofs use;
+    `Block.defUseWellFormedHashed_empty` proves the two equal. -/
+@[expose] def Block.defUseWellFormedHashed [HasVarsImp P C] [HasFvars P] [HasOps P]
+    [HasOpsImp P C] [DecidableEq P.Ident] [Hashable P.Ident]
+    (acc : Std.HashSet P.Ident) (definedVars : P.Ident → Bool)
+    (declaredFuncs : P.Ident → Bool) (bss : Block P C) : Bool :=
+  match bss with
+  | [] => true
+  | s :: rest =>
+    Stmt.defUseWellFormedHashed acc definedVars declaredFuncs s &&
+      Block.defUseWellFormedHashed ((Stmt.definedVars s true).foldl (·.insert ·) acc)
+        definedVars declaredFuncs rest
 end
 
 
@@ -646,6 +719,23 @@ end
 @[expose] def Stmt.typedDefinedVars [HasTypedVarsImp P C] : Stmt P C → List (P.Ident × P.Ty)
   | .cmd c => HasTypedVarsImp.typedDefinedVars (P := P) c
   | _ => []
+
+mutual
+/-- The variables the statement declares, with their declared types, at any nesting level:
+    `Stmt.typedDefinedVars` collected through blocks, branches and loop bodies, as
+    `Stmt.initTypes` collects the types alone. -/
+@[expose] def Stmt.declaredTypes [HasTypedVarsImp P C] : Stmt P C → List (P.Ident × P.Ty)
+  | .cmd c => HasTypedVarsImp.typedDefinedVars (P := P) c
+  | .block _ ss _ => Block.declaredTypes ss
+  | .ite _ ts es _ => Block.declaredTypes ts ++ Block.declaredTypes es
+  | .loop _ _ _ body _ => Block.declaredTypes body
+  | .exit _ _ | .typeDecl _ _ => []
+
+/-- `Stmt.declaredTypes` of every statement of the list. -/
+@[expose] def Block.declaredTypes [HasTypedVarsImp P C] : Block P C → List (P.Ident × P.Ty)
+  | [] => []
+  | s :: rest => Stmt.declaredTypes s ++ Block.declaredTypes rest
+end
 
 mutual
 /-- **Annotation check.**  Every type annotation on a free-variable occurrence in `s` agrees
@@ -681,6 +771,199 @@ mutual
     Stmt.fvarTypesWellAnnotated Γ s ∧
       Block.fvarTypesWellAnnotated (Γ.extend (Stmt.typedDefinedVars s)) rest
 end
+
+/-- Decides `VarTyping.annotates`. -/
+@[expose] def VarTyping.annotatesB [DecidableEq P.Ty] (Γ : VarTyping P)
+    (occs : List (P.Ident × P.Ty)) : Bool :=
+  occs.all fun o => decide (Γ o.1 = some o.2)
+
+mutual
+/-- Decides `Stmt.fvarTypesWellAnnotated` for a typing `Γ` given explicitly, which may leave
+    variables untyped (`Stmt.fvarTypesWellAnnotatedB_iff`). -/
+@[expose] def Stmt.fvarTypesWellAnnotatedB [HasTypedVarsImp P C] [HasFvars P]
+    [DecidableEq P.Ty] (Γ : VarTyping P) (s : Stmt P C) : Bool :=
+  match s with
+  | .cmd c => Γ.annotatesB (HasTypedVarsImp.typedReadVars (P := P) c)
+  | .block _ bss _ => Block.fvarTypesWellAnnotatedB Γ bss
+  | .ite cond tbss ebss _ =>
+    Γ.annotatesB cond.getTypedVars &&
+    Block.fvarTypesWellAnnotatedB Γ tbss &&
+    Block.fvarTypesWellAnnotatedB Γ ebss
+  | .loop guard measure invariants body _ =>
+    Γ.annotatesB guard.getTypedVars &&
+    Γ.annotatesB ((measure.map HasFvars.getTypedFvars).getD []) &&
+    Γ.annotatesB (invariants.flatMap fun lp => HasFvars.getTypedFvars lp.2) &&
+    Block.fvarTypesWellAnnotatedB Γ body
+  | .exit _ _ => true
+  | .typeDecl _ _ => true
+
+/-- Decides `Block.fvarTypesWellAnnotated` (`Block.fvarTypesWellAnnotatedB_iff`). -/
+@[expose] def Block.fvarTypesWellAnnotatedB [HasTypedVarsImp P C] [HasFvars P]
+    [DecidableEq P.Ty] (Γ : VarTyping P) (bss : Block P C) : Bool :=
+  match bss with
+  | [] => true
+  | s :: rest =>
+    Stmt.fvarTypesWellAnnotatedB Γ s &&
+      Block.fvarTypesWellAnnotatedB (Γ.extend (Stmt.typedDefinedVars s)) rest
+end
+
+/-- The typing that gives each variable its first type in `E`, and leaves the others untyped. -/
+@[expose] def VarTyping.ofList (E : List (P.Ident × P.Ty)) : VarTyping P :=
+  VarTyping.extend (fun _ => none) E
+
+/-- The typing that gives each variable its type in the map `M`, or else its type in `Γ`. -/
+@[expose] def VarTyping.overlay [DecidableEq P.Ident] [Hashable P.Ident]
+    (M : Std.HashMap P.Ident P.Ty) (Γ : VarTyping P) : VarTyping P :=
+  fun x => match M[x]? with
+    | some t => some t
+    | none => Γ x
+
+/-- Adds the typed definitions `D` to the map `M`, the first definition of a name winning, as
+    in `VarTyping.extend`. -/
+@[expose] def VarTyping.insertDefs [DecidableEq P.Ident] [Hashable P.Ident]
+    (M : Std.HashMap P.Ident P.Ty) (D : List (P.Ident × P.Ty)) : Std.HashMap P.Ident P.Ty :=
+  D.reverse.foldl (fun m d => m.insert d.1 d.2) M
+
+mutual
+/-- The efficient implementation of `Stmt.fvarTypesWellAnnotatedB`: the definitions in scope
+    are kept in a hash map `M` over `Γ`, so a lookup does not walk back through the earlier
+    statements (`Stmt.fvarTypesWellAnnotatedHashed_eq`). -/
+@[expose] def Stmt.fvarTypesWellAnnotatedHashed [HasTypedVarsImp P C] [HasFvars P]
+    [DecidableEq P.Ty] [DecidableEq P.Ident] [Hashable P.Ident]
+    (M : Std.HashMap P.Ident P.Ty) (Γ : VarTyping P) (s : Stmt P C) : Bool :=
+  match s with
+  | .cmd c => (VarTyping.overlay M Γ).annotatesB (HasTypedVarsImp.typedReadVars (P := P) c)
+  | .block _ bss _ => Block.fvarTypesWellAnnotatedHashed M Γ bss
+  | .ite cond tbss ebss _ =>
+    (VarTyping.overlay M Γ).annotatesB cond.getTypedVars &&
+    Block.fvarTypesWellAnnotatedHashed M Γ tbss &&
+    Block.fvarTypesWellAnnotatedHashed M Γ ebss
+  | .loop guard measure invariants body _ =>
+    (VarTyping.overlay M Γ).annotatesB guard.getTypedVars &&
+    (VarTyping.overlay M Γ).annotatesB ((measure.map HasFvars.getTypedFvars).getD []) &&
+    (VarTyping.overlay M Γ).annotatesB
+      (invariants.flatMap fun lp => HasFvars.getTypedFvars lp.2) &&
+    Block.fvarTypesWellAnnotatedHashed M Γ body
+  | .exit _ _ => true
+  | .typeDecl _ _ => true
+
+/-- The efficient implementation of `Block.fvarTypesWellAnnotatedB`, linear in the length of
+    the block (`Block.fvarTypesWellAnnotatedHashed_empty`). Executable code that needs speed
+    should call it, from an empty map; proofs use `Block.fvarTypesWellAnnotatedB`. -/
+@[expose] def Block.fvarTypesWellAnnotatedHashed [HasTypedVarsImp P C] [HasFvars P]
+    [DecidableEq P.Ty] [DecidableEq P.Ident] [Hashable P.Ident]
+    (M : Std.HashMap P.Ident P.Ty) (Γ : VarTyping P) (bss : Block P C) : Bool :=
+  match bss with
+  | [] => true
+  | s :: rest =>
+    Stmt.fvarTypesWellAnnotatedHashed M Γ s &&
+      Block.fvarTypesWellAnnotatedHashed (VarTyping.insertDefs M (Stmt.typedDefinedVars s)) Γ
+        rest
+end
+
+/-- The occurrences in `occs` of variables the typed definitions `D` (innermost first) do not
+    define. -/
+@[expose] def entryTypedVarsOf (D occs : List (P.Ident × P.Ty)) : List (P.Ident × P.Ty) :=
+  occs.filter fun o => (D.find? (fun d => d.1 == o.1)).isNone
+
+mutual
+/-- The annotated occurrences in `s` of variables that neither `D`, the definitions in scope
+    (innermost first), nor `s` itself defines before them: the occurrences
+    `Stmt.fvarTypesWellAnnotated` checks against the typing it extends. -/
+@[expose] def Stmt.entryTypedVars [HasTypedVarsImp P C] [HasFvars P]
+    (D : List (P.Ident × P.Ty)) (s : Stmt P C) : List (P.Ident × P.Ty) :=
+  match s with
+  | .cmd c => entryTypedVarsOf D (HasTypedVarsImp.typedReadVars (P := P) c)
+  | .block _ bss _ => Block.entryTypedVars D bss
+  | .ite cond tbss ebss _ =>
+    entryTypedVarsOf D cond.getTypedVars ++ Block.entryTypedVars D tbss ++
+      Block.entryTypedVars D ebss
+  | .loop guard measure invariants body _ =>
+    entryTypedVarsOf D guard.getTypedVars ++
+      entryTypedVarsOf D ((measure.map HasFvars.getTypedFvars).getD []) ++
+      entryTypedVarsOf D (invariants.flatMap fun lp => HasFvars.getTypedFvars lp.2) ++
+      Block.entryTypedVars D body
+  | .exit _ _ => []
+  | .typeDecl _ _ => []
+
+/-- `Stmt.entryTypedVars` over a list, each statement's typed definitions in scope for the
+    statements after it. -/
+@[expose] def Block.entryTypedVars [HasTypedVarsImp P C] [HasFvars P]
+    (D : List (P.Ident × P.Ty)) (bss : Block P C) : List (P.Ident × P.Ty) :=
+  match bss with
+  | [] => []
+  | s :: rest => Stmt.entryTypedVars D s ++ Block.entryTypedVars (Stmt.typedDefinedVars s ++ D) rest
+end
+
+/-- The occurrences in `occs` of variables not in the set `defd`. -/
+@[expose] def entryTypedVarsOfHashed [DecidableEq P.Ident] [Hashable P.Ident]
+    (defd : Std.HashSet P.Ident) (occs : List (P.Ident × P.Ty)) : List (P.Ident × P.Ty) :=
+  occs.filter fun o => !defd.contains o.1
+
+mutual
+/-- `Stmt.entryTypedVars` with the names of the definitions in scope kept in a hash set
+    (`Stmt.entryTypedVarsHashed_eq`). -/
+@[expose] def Stmt.entryTypedVarsHashed [HasTypedVarsImp P C] [HasFvars P]
+    [DecidableEq P.Ident] [Hashable P.Ident]
+    (defd : Std.HashSet P.Ident) (s : Stmt P C) : List (P.Ident × P.Ty) :=
+  match s with
+  | .cmd c => entryTypedVarsOfHashed defd (HasTypedVarsImp.typedReadVars (P := P) c)
+  | .block _ bss _ => Block.entryTypedVarsHashed defd bss
+  | .ite cond tbss ebss _ =>
+    entryTypedVarsOfHashed defd cond.getTypedVars ++ Block.entryTypedVarsHashed defd tbss ++
+      Block.entryTypedVarsHashed defd ebss
+  | .loop guard measure invariants body _ =>
+    entryTypedVarsOfHashed defd guard.getTypedVars ++
+      entryTypedVarsOfHashed defd ((measure.map HasFvars.getTypedFvars).getD []) ++
+      entryTypedVarsOfHashed defd (invariants.flatMap fun lp => HasFvars.getTypedFvars lp.2) ++
+      Block.entryTypedVarsHashed defd body
+  | .exit _ _ => []
+  | .typeDecl _ _ => []
+
+/-- The efficient implementation of `Block.entryTypedVars`, linear in the length of the
+    block: the names defined in scope are kept in a hash set
+    (`Block.entryTypedVarsHashed_empty`). -/
+@[expose] def Block.entryTypedVarsHashed [HasTypedVarsImp P C] [HasFvars P]
+    [DecidableEq P.Ident] [Hashable P.Ident]
+    (defd : Std.HashSet P.Ident) (bss : Block P C) : List (P.Ident × P.Ty) :=
+  match bss with
+  | [] => []
+  | s :: rest =>
+    Stmt.entryTypedVarsHashed defd s ++
+      Block.entryTypedVarsHashed
+        (((Stmt.typedDefinedVars s).map Prod.fst).foldl (·.insert ·) defd) rest
+end
+
+/-- The typing the free-variable annotations of `ss` give: each variable `ss` reads without
+    defining it, at its first annotation. It may leave variables untyped. -/
+@[expose] def Block.entryTyping [HasTypedVarsImp P C] [HasFvars P] (ss : Block P C) :
+    VarTyping P :=
+  VarTyping.ofList (Block.entryTypedVars [] ss)
+
+/-- `ss'` is well annotated for `Γ`, and `Γ` agrees with the annotated occurrences `E`. -/
+@[expose] def Block.annotsAgreeWithB [HasTypedVarsImp P C] [HasFvars P] [DecidableEq P.Ty]
+    (Γ : VarTyping P) (E : List (P.Ident × P.Ty)) (ss' : Block P C) : Bool :=
+  Γ.annotatesB E && Block.fvarTypesWellAnnotatedB Γ ss'
+
+/-- **The annotations of `ss'` agree with those of `ss`.** `ss` annotates each variable it
+    reads without defining it one way, and every annotation in `ss'` agrees with that, or
+    with the definition in scope in `ss'`. A variable `ss'` reads without defining it that
+    `ss` does not read is rejected. Then `ss'` is well annotated for every typing `ss` is
+    well annotated for (`Block.annotsAgreeB_transport`), so a phase that rewrites `ss` into
+    `ss'` can check its output with it. -/
+@[expose] def Block.annotsAgreeB [HasTypedVarsImp P C] [HasFvars P] [DecidableEq P.Ty]
+    (ss ss' : Block P C) : Bool :=
+  let E := Block.entryTypedVars [] ss
+  Block.annotsAgreeWithB (VarTyping.ofList E) E ss'
+
+/-- The efficient implementation of `Block.annotsAgreeB`: the typing of `ss`'s annotations is
+    built once in a hash map, and the definitions in scope in `ss'` are kept in one
+    (`Block.annotsAgreeHashed_eq`). -/
+@[expose] def Block.annotsAgreeHashed [HasTypedVarsImp P C] [HasFvars P] [DecidableEq P.Ty]
+    [DecidableEq P.Ident] [Hashable P.Ident] (ss ss' : Block P C) : Bool :=
+  let E := Block.entryTypedVarsHashed {} ss
+  let Γ := VarTyping.overlay (VarTyping.insertDefs {} E) (fun _ => none)
+  Γ.annotatesB E && Block.fvarTypesWellAnnotatedHashed {} Γ ss'
 
 instance (P : PureExpr) [HasFvars P] [HasVarsImp P C] : HasVarsImp P (Stmt P C) where
   definedVars := Stmt.definedVars

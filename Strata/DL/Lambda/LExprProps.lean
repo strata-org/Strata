@@ -386,6 +386,38 @@ theorem LConst.ty_freeVars (c : LConst) : LMonoTy.freeVars c.ty = [] := by
   all_goals simp [LConst.ty, LMonoTy.int, LMonoTy.bool, LMonoTy.real, LMonoTy.string,
     LMonoTy.freeVars, LMonoTys.freeVars]
 
+
+/-- Expressions equal up to metadata are equal after giving every node one metadata `d`. -/
+theorem LExpr.replaceMetadata_const_of_beq {T : LExprParams} [DecidableEq T.IDMeta] {N : Type}
+    (d : N) : ∀ {a b : LExpr T.mono}, a.beqIgnoringMetadata b = true →
+      a.replaceMetadata (fun _ => d) = b.replaceMetadata (fun _ => d) := by
+  intro a
+  induction a with
+  | const | op | bvar | fvar =>
+    intro b h; cases b <;> simp_all [LExpr.beqIgnoringMetadata, LExpr.replaceMetadata]
+  | abs _ _ _ _ ih =>
+    intro b h; cases b <;> simp only [LExpr.beqIgnoringMetadata, Bool.false_eq_true,
+      Bool.and_eq_true, beq_iff_eq] at h
+    obtain ⟨⟨rfl, rfl⟩, h⟩ := h
+    simp [LExpr.replaceMetadata, ih h]
+  | quant _ _ _ _ _ _ iht ihe =>
+    intro b h; cases b <;> simp only [LExpr.beqIgnoringMetadata, Bool.false_eq_true,
+      Bool.and_eq_true, beq_iff_eq] at h
+    obtain ⟨⟨⟨⟨rfl, rfl⟩, rfl⟩, ht⟩, he⟩ := h
+    simp [LExpr.replaceMetadata, iht ht, ihe he]
+  | app _ _ _ ihf iha =>
+    intro b h; cases b <;> simp only [LExpr.beqIgnoringMetadata, Bool.false_eq_true,
+      Bool.and_eq_true] at h
+    simp [LExpr.replaceMetadata, ihf h.1, iha h.2]
+  | ite _ _ _ _ ihc iht ihe =>
+    intro b h; cases b <;> simp only [LExpr.beqIgnoringMetadata, Bool.false_eq_true,
+      Bool.and_eq_true] at h
+    simp [LExpr.replaceMetadata, ihc h.1.1, iht h.1.2, ihe h.2]
+  | eq _ _ _ iha ihb =>
+    intro b h; cases b <;> simp only [LExpr.beqIgnoringMetadata, Bool.false_eq_true,
+      Bool.and_eq_true] at h
+    simp [LExpr.replaceMetadata, iha h.1, ihb h.2]
+
 end -- public section
 
 end Lambda

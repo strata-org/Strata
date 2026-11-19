@@ -76,6 +76,17 @@ import Strata.Transform.Simplify.Expr
 import Strata.Transform.Simplify.LiveSweep
 import Strata.Transform.Simplify.StmtShape
 import Strata.Transform.Simplify.DeadDefsShape
+import Strata.Transform.Simplify.Entry
+import Strata.Transform.Simplify.Precondition
+import Strata.Transform.Simplify.FoldFactory
+import Strata.Transform.Simplify.ExprCorrect
+import Strata.Transform.Simplify.StmtSim
+import Strata.Transform.Simplify.SimpRun
+import Strata.Transform.Simplify.SweepRun
+import Strata.Transform.Simplify.Compose
+import Strata.Transform.Simplify.TargetGate
+import Strata.Transform.Simplify.LawsFold
+import Strata.Transform.SimplifyCorrect
 import Strata.Transform.RecursiveFunctionAxioms
 import Strata.Transform.SpecHoareConnection
 import Strata.Transform.CoreSpecHoareConnection
