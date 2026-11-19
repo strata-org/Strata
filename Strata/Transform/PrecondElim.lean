@@ -15,7 +15,7 @@ import Strata.Transform.TerminationCheck
 import Strata.Languages.Core.AbstractCalls
 import Strata.Util.Tactics
 import Strata.Util.Name
-import Strata.Languages.Core.CheckLabels
+import Strata.Languages.Core.NameSets
 
 /-! # Partial Function Precondition Elimination
 

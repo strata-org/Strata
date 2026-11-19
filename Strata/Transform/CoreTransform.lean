@@ -46,53 +46,56 @@ def genIdent (ident : Expression.Ident) (pf : String → String)
   : CoreGenM Expression.Ident :=
     CoreGenState.gen (pf ident.name)
 
-/--
-Generate identifiers in the form of arg_... that can be used to reduce argument expressions to temporary variables.
--/
-def genArgExprIdent
-  : CoreGenM Expression.Ident :=
-    genIdent "arg" tmpVarPrefix
+/-- A fresh variable named after `pf ident`, drawn from the generator's counter, and not in
+    `taken`. The counter alone keeps it apart from the names it generated before; `taken` must
+    hold the program's own variable names, which the counter does not know. -/
+def genTempIdent (taken : Std.HashSet String) (ident : Expression.Ident)
+    (pf : String → String) : CoreGenM Expression.Ident :=
+  CoreGenState.genAvoiding taken ⟨pf ident.name, ()⟩
 
-def genArgExprIdents (n:Nat)
+/-- A fresh temporary `tmp_arg_N`, not in `taken`, to hold an argument expression. -/
+def genArgExprIdent (taken : Std.HashSet String)
+  : CoreGenM Expression.Ident :=
+    genTempIdent taken "arg" tmpVarPrefix
+
+/-- `n` fresh argument temporaries (`genArgExprIdent`). -/
+def genArgExprIdents (taken : Std.HashSet String) (n : Nat)
   : CoreGenM (List Expression.Ident) :=
-  List.mapM (fun _ => genArgExprIdent) (List.replicate n ())
+  List.mapM (fun _ => genArgExprIdent taken) (List.replicate n ())
 
-/--
-Retrieves a fresh identifier from the counter generator the given identifier "ident" within old(...), or retrieve an existing one from the exprMap
-Assumes that ident contains no duplicates
--/
-def genOutExprIdent (ident : Expression.Ident)
+/-- A fresh temporary `tmp_<ident>_N`, not in `taken`, to hold the value of the output
+    variable `ident` before the call. -/
+def genOutExprIdent (taken : Std.HashSet String) (ident : Expression.Ident)
   : CoreGenM Expression.Ident :=
-    genIdent ident tmpVarPrefix
+    genTempIdent taken ident tmpVarPrefix
 
-def genOutExprIdents (idents : List Expression.Ident)
+/-- One fresh output temporary (`genOutExprIdent`) per identifier of `idents`. -/
+def genOutExprIdents (taken : Std.HashSet String) (idents : List Expression.Ident)
   : CoreGenM (List Expression.Ident)
-  := List.mapM genOutExprIdent idents
+  := List.mapM (genOutExprIdent taken) idents
 
-/--
-Retrieves a fresh identifier from the counter generator the given identifier "ident" within old(...), or retrieve an existing one from the exprMap
-Assumes that ident contains no duplicates
--/
-def genOldExprIdent (ident : Expression.Ident)
+/-- A fresh variable `old_<ident>_N`, not in `taken`, to hold the value of `ident` that
+    `old ident` denotes. -/
+def genOldExprIdent (taken : Std.HashSet String) (ident : Expression.Ident)
   : CoreGenM Expression.Ident :=
-    genIdent ident oldVarPrefix
+    genTempIdent taken ident oldVarPrefix
 
-def genOldExprIdents (idents : List Expression.Ident)
+/-- One fresh `old` variable (`genOldExprIdent`) per identifier of `idents`. -/
+def genOldExprIdents (taken : Std.HashSet String) (idents : List Expression.Ident)
   : CoreGenM (List Expression.Ident)
-  := List.mapM genOldExprIdent idents
+  := List.mapM (genOldExprIdent taken) idents
 
 /-- Generate one fresh type name (`TyIdentifier = String`) from the
     shared `CoreGenState` counter — the same monotonic counter that backs the
     term-temp generators — so names are deterministic, resume-safe, and unique
     across call sites without adding any new state; a name in `taken` is drawn again
-    (`CoreGenState.genAvoiding`). Mirrors `genIdent`.
+    (`CoreGenState.genAvoiding`). Mirrors `genTempIdent`.
 
     NOTE: `CoreGenState.gen` records every generated name in `γ.generated`,
-    including generated type names, which — unlike term temps — never get a
-    store binding. Any proof relying on
-    `∀ v, v ∈ γ.generated ↔ ((σ v).isSome ∧ CoreIdent.isTemp v)`
-    (e.g. `callElimStatementCorrect`) needs `generated` split by kind
-    (term-temp vs. type name) so that invariant ranges only over term temps. -/
+    including generated type names, which, unlike term temporaries, never get a
+    store binding. Call elimination keeps its temporaries apart from the program's
+    variables by `taken`, not by `generated`, so the extra
+    names are harmless. -/
 def genTyVarName (prefixStr : String) (taken : Std.HashSet String) :
     CoreGenM Lambda.TyIdentifier := do
   let id ← CoreGenState.genAvoiding taken ⟨prefixStr, ()⟩
@@ -276,28 +279,28 @@ def declareGeneratedTypes (prefixStr : String) (taken : Std.HashSet String)
 /--
 returned list has the shape
 ((generated_name, ty), original_expr)
-Only types of the 'inputs' parameter are used
+Only types of the 'inputs' parameter are used. The generated names avoid `taken`.
 -/
-def genArgExprIdentsTrip
+def genArgExprIdentsTrip (taken : Std.HashSet String)
   (inputs : @Lambda.LTySignature Visibility)
   (args : List Expression.Expr)
   : CoreTransformM (List ((Expression.Ident × Lambda.LTy) × Expression.Expr))
   := do
   if inputs.length ≠ args.length then throw (Strata.Message.fromString "input length and args length mismatch")
-  else let gen_idents ← genArgExprIdents args.length
+  else let gen_idents ← genArgExprIdents taken args.length
        return (gen_idents.zip inputs.unzip.2).zip args
 
 /--
 returned list has the shape
 `((generated_name, ty), original_name)`
-Only types of the 'outputs' parameter are used.
+Only types of the 'outputs' parameter are used. The generated names avoid `taken`.
 -/
-def genOutExprIdentsTrip
+def genOutExprIdentsTrip (taken : Std.HashSet String)
   (outputs : @Lambda.LTySignature Visibility)
   (lhs : List Expression.Ident)
   : CoreTransformM (List ((Expression.Ident × Expression.Ty) × Expression.Ident)) := do
   if outputs.length ≠ lhs.length then throw (Strata.Message.fromString "output length and lhs length mismatch")
-  else let gen_idents ← genOutExprIdents lhs
+  else let gen_idents ← genOutExprIdents taken lhs
        return (gen_idents.zip outputs.unzip.2).zip lhs
 
 /--

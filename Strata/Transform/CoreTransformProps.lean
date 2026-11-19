@@ -63,6 +63,9 @@ state satisfying `Q`). Key results:
   ranges, so facts about one call's types say nothing about another's.
 - `freshenTypeArgsSubst_empty` — monomorphic callees (`typeArgs = []`) yield
   `Subst.empty` without touching the generator.
+- `callElimTemps_spec` — the argument, output and `old` temporaries call elimination draws for
+  one call are pairwise distinct, new to the generator, and none is in `taken`, the program's
+  variable names, so initializing them overwrites no program variable.
 
 The theorems are generic in the prefix string; call elimination and procedure
 inlining instantiate it with `Core.CallElim.callElimTyPrefix` and
@@ -742,6 +745,117 @@ theorem freshenTypeArgsSubst_disjoint {S1 S2 : Lambda.Subst}
   have hgg : g = g' := by rw [hveq] at hveq'; injection hveq'
   rw [hgg] at hg_in1
   exact hg'_notin1 hg_in1
+
+/-! ## Call elimination temporaries
+
+Call elimination names a call's temporaries with `genTempIdent`, avoiding `taken`, the
+program's variable names (`Program.varNames`). The lemmas below show the temporaries of a call
+are pairwise distinct, new to the generator, and none is a program variable, so initializing
+them overwrites no variable. -/
+
+/-- A temporary `genTempIdent` draws is new to the generator and not in `taken`; the generator
+    stays well formed and keeps its names. -/
+private theorem genTempIdent_spec (ident : Expression.Ident) (pf : String → String)
+    {γ γ' : CoreGenState} {n : Expression.Ident} (hwf : γ.WF)
+    (h : genTempIdent taken ident pf γ = (n, γ')) :
+    γ'.WF ∧ n ∈ γ'.generated ∧ n ∉ γ.generated ∧ γ.generated ⊆ γ'.generated ∧
+      n.name ∉ taken := by
+  obtain ⟨hwf', hmem, hnot, hsub, hnt, -⟩ := CoreGenState.genAvoiding_spec taken _ hwf h
+  exact ⟨hwf', hmem, hnot, hsub, hnt⟩
+
+/-- Drawing one name per element of `xs` with a generator `g` whose names are new and not in
+    `taken` gives pairwise distinct names, each new to the generator and not in `taken`. -/
+private theorem mapM_fresh_spec {α : Type} (g : α → CoreGenM Expression.Ident)
+    (hg : ∀ x {γ γ' : CoreGenState} {n : Expression.Ident}, γ.WF → g x γ = (n, γ') →
+      γ'.WF ∧ n ∈ γ'.generated ∧ n ∉ γ.generated ∧ γ.generated ⊆ γ'.generated ∧
+        n.name ∉ taken) :
+    ∀ (xs : List α) {γ γ' : CoreGenState} {ns : List Expression.Ident}, γ.WF →
+      List.mapM g xs γ = (ns, γ') →
+      γ'.WF ∧ γ.generated ⊆ γ'.generated ∧ ns.Nodup ∧
+        ∀ n ∈ ns, n ∈ γ'.generated ∧ n ∉ γ.generated ∧ n.name ∉ taken
+  | [], γ, γ', ns, hwf, h => by
+    simp only [List.mapM_nil, pure, StateT.pure] at h
+    injection h with hns hγ
+    subst hns hγ
+    exact ⟨hwf, fun _ hx => hx, List.nodup_nil, fun _ hn => absurd hn List.not_mem_nil⟩
+  | x :: xs, γ, γ', ns, hwf, h => by
+    simp only [List.mapM_cons, bind, StateT.bind, pure, StateT.pure] at h
+    split at h
+    next n γ1 h1 =>
+      split at h
+      next ns' γ2 h2 =>
+        injection h with hns hγ
+        subst hns hγ
+        obtain ⟨hwf1, hmem1, hnot1, hsub1, hnt1⟩ := hg x hwf h1
+        obtain ⟨hwf2, hsub2, hnd2, hall⟩ := mapM_fresh_spec g hg xs hwf1 h2
+        refine ⟨hwf2, fun _ hx => hsub2 (hsub1 hx),
+          List.nodup_cons.mpr ⟨fun hn => (hall n hn).2.1 hmem1, hnd2⟩, ?_⟩
+        intro m hm
+        rcases List.mem_cons.mp hm with rfl | hm
+        · exact ⟨hsub2 hmem1, hnot1, hnt1⟩
+        · obtain ⟨hm1, hm2, hm3⟩ := hall m hm
+          exact ⟨hm1, fun hγ => hm2 (hsub1 hγ), hm3⟩
+
+/-- The argument temporaries `genArgExprIdents` draws are pairwise distinct, new, and not in
+    `taken`. -/
+private theorem genArgExprIdents_spec (k : Nat) {γ γ' : CoreGenState} {ns : List Expression.Ident}
+    (hwf : γ.WF) (h : genArgExprIdents taken k γ = (ns, γ')) :
+    γ'.WF ∧ γ.generated ⊆ γ'.generated ∧ ns.Nodup ∧
+      ∀ n ∈ ns, n ∈ γ'.generated ∧ n ∉ γ.generated ∧ n.name ∉ taken :=
+  mapM_fresh_spec taken (fun _ => genArgExprIdent taken)
+    (fun _ _ _ _ hwf h => genTempIdent_spec taken _ _ hwf h) _ hwf h
+
+/-- The output temporaries `genOutExprIdents` draws are pairwise distinct, new, and not in
+    `taken`. -/
+private theorem genOutExprIdents_spec (idents : List Expression.Ident) {γ γ' : CoreGenState}
+    {ns : List Expression.Ident} (hwf : γ.WF) (h : genOutExprIdents taken idents γ = (ns, γ')) :
+    γ'.WF ∧ γ.generated ⊆ γ'.generated ∧ ns.Nodup ∧
+      ∀ n ∈ ns, n ∈ γ'.generated ∧ n ∉ γ.generated ∧ n.name ∉ taken :=
+  mapM_fresh_spec taken (genOutExprIdent taken)
+    (fun _ _ _ _ hwf h => genTempIdent_spec taken _ _ hwf h) _ hwf h
+
+/-- The `old` variables `genOldExprIdents` draws are pairwise distinct, new, and not in
+    `taken`. -/
+private theorem genOldExprIdents_spec (idents : List Expression.Ident) {γ γ' : CoreGenState}
+    {ns : List Expression.Ident} (hwf : γ.WF) (h : genOldExprIdents taken idents γ = (ns, γ')) :
+    γ'.WF ∧ γ.generated ⊆ γ'.generated ∧ ns.Nodup ∧
+      ∀ n ∈ ns, n ∈ γ'.generated ∧ n ∉ γ.generated ∧ n.name ∉ taken :=
+  mapM_fresh_spec taken (genOldExprIdent taken)
+    (fun _ _ _ _ hwf h => genTempIdent_spec taken _ _ hwf h) _ hwf h
+
+/-- Names drawn in two consecutive runs, each giving pairwise distinct names new to its input
+    state, are pairwise distinct and new to the first input state. -/
+private theorem fresh_append {γ γ1 γ2 : CoreGenState} {ns1 ns2 : List Expression.Ident}
+    (hsub2 : γ1.generated ⊆ γ2.generated)
+    (hnd1 : ns1.Nodup) (h1 : ∀ n ∈ ns1, n ∈ γ1.generated ∧ n ∉ γ.generated ∧ n.name ∉ taken)
+    (hsub1 : γ.generated ⊆ γ1.generated)
+    (hnd2 : ns2.Nodup) (h2 : ∀ n ∈ ns2, n ∈ γ2.generated ∧ n ∉ γ1.generated ∧ n.name ∉ taken) :
+    (ns1 ++ ns2).Nodup ∧
+      ∀ n ∈ ns1 ++ ns2, n ∈ γ2.generated ∧ n ∉ γ.generated ∧ n.name ∉ taken := by
+  refine ⟨List.nodup_append.mpr ⟨hnd1, hnd2, ?_⟩, ?_⟩
+  · intro a ha b hb hab
+    subst hab
+    exact (h2 a hb).2.1 (h1 a ha).1
+  · intro n hn
+    rcases List.mem_append.mp hn with hn | hn
+    · exact ⟨hsub2 (h1 n hn).1, (h1 n hn).2.1, (h1 n hn).2.2⟩
+    · exact ⟨(h2 n hn).1, fun hγ => (h2 n hn).2.1 (hsub1 hγ), (h2 n hn).2.2⟩
+
+/-- The temporaries call elimination draws for one call (`callElimCall`): its argument
+    temporaries, then its output temporaries, then its `old` variables. Together they are
+    pairwise distinct, new to the generator, and none is in `taken`. -/
+theorem callElimTemps_spec (k : Nat) (outs olds : List Expression.Ident)
+    {γ γ1 γ2 γ3 : CoreGenState} {as os ds : List Expression.Ident} (hwf : γ.WF)
+    (ha : genArgExprIdents taken k γ = (as, γ1))
+    (ho : genOutExprIdents taken outs γ1 = (os, γ2))
+    (hd : genOldExprIdents taken olds γ2 = (ds, γ3)) :
+    γ3.WF ∧ (as ++ os ++ ds).Nodup ∧ ∀ n ∈ as ++ os ++ ds, n ∉ γ.generated ∧ n.name ∉ taken := by
+  obtain ⟨hwf1, hsub1, hnd1, h1⟩ := genArgExprIdents_spec taken k hwf ha
+  obtain ⟨hwf2, hsub2, hnd2, h2⟩ := genOutExprIdents_spec taken outs hwf1 ho
+  obtain ⟨hwf3, hsub3, hnd3, h3⟩ := genOldExprIdents_spec taken olds hwf2 hd
+  obtain ⟨hnd12, h12⟩ := fresh_append taken hsub2 hnd1 h1 hsub1 hnd2 h2
+  obtain ⟨hnd, h⟩ := fresh_append taken hsub3 hnd12 h12 (fun _ hx => hsub2 (hsub1 hx)) hnd3 h3
+  exact ⟨hwf3, hnd, fun n hn => (h n hn).2⟩
 
 /-! ## Statement builders and command builders -/
 
