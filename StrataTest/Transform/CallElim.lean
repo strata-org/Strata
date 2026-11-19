@@ -236,6 +236,14 @@ private def swapP : Decl :=
 private def seqP : Decl :=
   mkProc "p" ["a"] [("s", seqTy (seqTy (tv "a")))] []
     (pre := [eqE (v "s" (seqTy (seqTy (tv "a")))) (v "s" (seqTy (seqTy (tv "a"))))])
+/-- `Take<a>(x : a)` with a precondition on `x`. -/
+private def takeP : Decl :=
+  mkProc "Take" ["a"] [("x", tv "a")] []
+    (pre := [eqE (v "x" (tv "a")) (v "x" (tv "a"))])
+/-- `Both<a, b>(x : a, y : b)` with a precondition on `x`. -/
+private def bothP : Decl :=
+  mkProc "Both" ["a", "b"] [("x", tv "a"), ("y", tv "b")] []
+    (pre := [eqE (v "x" (tv "a")) (v "x" (tv "a"))])
 private def pairP : Decl :=
   mkProc "pair" ["a", "b"] [("x", tv "a"), ("y", tv "b")] [("r", tv "a")]
     (post := [eqE (v "r" (tv "a")) (v "x" (tv "a"))])
@@ -519,6 +527,101 @@ procedure Caller ()
   (rTyArgsProg rP (some [.forAll [] .int, .forAll [] (.ftvar "$__ty3")]))).allExprs
   LExpr.fullyAnnotated
 
+-- A stored type that is an instance of the type the argument gives is accepted: the argument
+-- `s : Sequence $__ty0` gives `a = Sequence $__ty0`, and the stored `a = Sequence int` binds
+-- `$__ty0` to `int`. The temporary for the argument has the type `Sequence int`.
+/--
+info: program Core;
+
+procedure Take<a> (x : a)
+spec {
+  requires [Take_requires_0]: x == x;
+  } {
+  
+};
+procedure Caller ()
+{
+  var s : (Sequence $__ty0);
+  var tmp_arg_0 : Sequence int := s;
+  assert [callElimAssert_Take_requires_0_1]: tmp_arg_0 == tmp_arg_0;
+};
+-/
+#guard_msgs in
+#eval IO.println (toString (callElim (genArgProg takeP "Take" (some [.forAll [] (seqTy .int)]))))
+
+-- A generated variable that two arguments share is bound once for the whole call: the stored
+-- `a = int, b = bool` cannot both instantiate `$__ty0`, so it is an error.
+/--
+info: Call elimination requires every call to be well-formed: the call to Both stores b = bool,
+but its arguments give b = int
+-/
+#guard_msgs in
+#eval match run (genPairArgProg bothP "Both"
+    (some [.forAll [] .int, .forAll [] .bool])) callElim' with
+  | .ok _ => IO.println "ok"
+  | .error e => IO.println e.message
+
+-- The stored `a = int, b = int` instantiate `$__ty0` consistently, so the call is accepted.
+/--
+info: program Core;
+
+procedure Both<a, b> (x : a, y : b)
+spec {
+  requires [Both_requires_0]: x == x;
+  } {
+  
+};
+procedure Caller ()
+{
+  var s : $__ty0;
+  var tmp_arg_0 : int := s;
+  var tmp_arg_1 : int := s;
+  assert [callElimAssert_Both_requires_0_2]: tmp_arg_0 == tmp_arg_0;
+};
+-/
+#guard_msgs in
+#eval match run (genPairArgProg bothP "Both"
+    (some [.forAll [] .int, .forAll [] .int])) callElim' with
+  | .ok (_, p) => IO.println (toString p)
+  | .error e => IO.println e.message
+
+-- The stored `b = $__ty0` mentions a generated variable, so it is dropped: `a` is `int`, and
+-- `b` gets an opaque type as on a call without that entry.
+/--
+info: program Core;
+
+type $__cety_0;
+procedure Both<a, b> (x : a, y : b)
+spec {
+  requires [Both_requires_0]: x == x;
+  } {
+  
+};
+procedure Caller ()
+{
+  var s : $__ty0;
+  var tmp_arg_1 : int := s;
+  var tmp_arg_2 : $__cety_0 := s;
+  assert [callElimAssert_Both_requires_0_3]: tmp_arg_1 == tmp_arg_1;
+};
+-/
+#guard_msgs in
+#eval match run (genPairArgProg bothP "Both"
+    (some [.forAll [] .int, .forAll [] (.ftvar "$__ty0")])) callElim' with
+  | .ok (_, p) => IO.println (toString p)
+  | .error e => IO.println e.message
+
+-- A stored type that is not an instance of the type the argument gives is an error, even though
+-- that type contains a generated variable: `a` is stored as `bool`, but `s` is a `Sequence`.
+/--
+info: Call elimination requires every call to be well-formed: the call to Take stores a = bool,
+but its arguments give a = (Sequence _)
+-/
+#guard_msgs in
+#eval match run (genArgProg takeP "Take" (some [.forAll [] .bool])) callElim' with
+  | .ok _ => IO.println "ok"
+  | .error e => IO.println e.message
+
 -- Stored type arguments that are not one entry per type parameter are ignored, and the call's
 -- arguments determine the types as for a program that was not type-checked.
 /--
@@ -542,6 +645,94 @@ procedure Caller ()
 #guard_msgs in
 #eval IO.println (toString (callElim (rTyArgsProg rP (some [.forAll [] .bool]))))
 #guard (callElim (rTyArgsProg rP (some [.forAll [] .bool]))).allExprs LExpr.fullyAnnotated
+
+-- A stored type that disagrees with the type the call's argument gives is an error: `a` is
+-- stored as `bool`, but the argument `7` is an `int`.
+/--
+info: Call elimination requires every call to be well-formed: the call to r stores a = bool,
+but its arguments give a = int
+-/
+#guard_msgs in
+#eval match run (rTyArgsProg rP (some [.forAll [] .bool, .forAll [] .int])) callElim' with
+  | .ok _ => IO.println "no error"
+  | .error e => IO.println e.message
+
+-- The disagreement is also found through an output argument: `a` is stored as `int`, the first
+-- argument's type is unknown, and the output variable `bb` is a `bool`.
+/--
+info: Call elimination requires every call to be well-formed: the call to idp stores a = int,
+but its arguments give a = bool
+-/
+#guard_msgs in
+#eval match run { decls := [idpP, caller [] [] [declNondet "bb" .bool,
+      .cmd (.call "idp" (some [.forAll [] .int]) [.inArg unknownArg, .outArg "bb"] .empty)]] }
+    callElim' with
+  | .ok _ => IO.println "no error"
+  | .error e => IO.println e.message
+
+-- A stored `$__callty` variable is not dropped, and no argument type is an instance of it:
+-- `a` is stored as `$__callty0`, but the argument `7` is an `int`. The message writes the
+-- generated variable as `_`.
+/--
+info: Call elimination requires every call to be well-formed: the call to r stores a = _,
+but its arguments give a = int
+-/
+#guard_msgs in
+#eval match run (rTyArgsProg rP (some [.forAll [] (.ftvar "$__callty0"), .forAll [] .int]))
+    callElim' with
+  | .ok _ => IO.println "no error"
+  | .error e => IO.println e.message
+
+-- An argument type with a `$__callty` variable is matched like one with a `$__ty` variable:
+-- the stored `Sequence int` is an instance of the argument type `Sequence $__callty0`.
+/--
+info: program Core;
+
+procedure Take<a> (x : a)
+spec {
+  requires [Take_requires_0]: x == x;
+  } {
+  
+};
+procedure Caller ()
+{
+  var s : (Sequence $__callty0);
+  var tmp_arg_0 : Sequence int := s;
+  assert [callElimAssert_Take_requires_0_1]: tmp_arg_0 == tmp_arg_0;
+};
+-/
+#guard_msgs in
+#eval match run { decls := [takeP, caller [] [] [declNondet "s" (seqTy (tv "$__callty0")),
+      .cmd (.call "Take" (some [.forAll [] (seqTy .int)])
+        [.inArg (v "s" (seqTy (tv "$__callty0")))] .empty)]] } callElim' with
+  | .ok (_, p) => IO.println (toString p)
+  | .error e => IO.println e.message
+
+-- A stored type that is not an instance of the argument type `Sequence $__callty0` is an error;
+-- the message writes the variable as `_`.
+/--
+info: Call elimination requires every call to be well-formed: the call to Take stores a = bool,
+but its arguments give a = (Sequence _)
+-/
+#guard_msgs in
+#eval match run { decls := [takeP, caller [] [] [declNondet "s" (seqTy (tv "$__callty0")),
+      .cmd (.call "Take" (some [.forAll [] .bool])
+        [.inArg (v "s" (seqTy (tv "$__callty0")))] .empty)]] } callElim' with
+  | .ok _ => IO.println "no error"
+  | .error e => IO.println e.message
+
+-- The disagreement is also found through an in-out argument: `a` is stored as `bool`, but the
+-- in-out variables `i` and `j` are `int`.
+/--
+info: Call elimination requires every call to be well-formed: the call to swap stores a = bool,
+but its arguments give a = int
+-/
+#guard_msgs in
+#eval match run { decls := [swapP, caller [] [] [declNondet "i" .int, declNondet "j" .int,
+      .cmd (.call "swap" (some [.forAll [] .bool]) [.inoutArg "i", .inoutArg "j"] .empty)]] }
+    callElim' with
+  | .ok _ => IO.println "no error"
+  | .error e => IO.println e.message
 
 -- Stored type arguments with more entries than type parameters are ignored likewise.
 /--
@@ -615,6 +806,33 @@ procedure Caller ()
 #guard_msgs in
 #eval IO.println (toString (callElim (conflictProg idpP)))
 #guard (callElim (conflictProg idpP)).allExprs LExpr.fullyAnnotated
+
+-- Two arguments that force different types on `a` (`7` is an `int`, `bb` is a `bool`) make the
+-- matching fail, so the stored `a = int` is used unchecked.
+/--
+info: program Core;
+
+procedure idp<a> (x : a, out r : a)
+spec {
+  ensures [idp_ensures_0]: r == x;
+  } {
+  
+};
+procedure Caller ()
+{
+  var bb : bool;
+  var tmp_arg_0 : int := 7;
+  var tmp_bb_1 : int := bb;
+  havoc bb;
+  assume [callElimAssume_idp_ensures_0_2]: bb == tmp_arg_0;
+};
+-/
+#guard_msgs in
+#eval match run { decls := [idpP, caller [] [] [declNondet "bb" .bool,
+      .cmd (.call "idp" (some [.forAll [] .int]) [.inArg int7, .outArg "bb"] .empty)]] }
+    callElim' with
+  | .ok (_, p) => IO.println (toString p)
+  | .error e => IO.println e.message
 
 end CallInstanceTests
 

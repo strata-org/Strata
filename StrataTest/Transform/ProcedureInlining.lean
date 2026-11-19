@@ -26,7 +26,7 @@ open Core.Transform
 open ProcedureInlining
 open Strata
 open Std
-open Core.CallFixtures (runInlineCall)
+open Core.CallFixtures (runInlineCall tryInlineCall)
 
 /-! ## Procedure Inlining Examples -/
 
@@ -844,6 +844,17 @@ procedure Caller ()
 #guard_msgs in
 #eval IO.println (toString (runInlineCall (rTyArgsProg rP (some [.forAll [] .bool]))))
 #guard (runInlineCall (rTyArgsProg rP (some [.forAll [] .bool]))).allExprs LExpr.fullyAnnotated
+
+-- A stored type that disagrees with the type the call's argument gives is an error: `a` is
+-- stored as `bool`, but the argument `7` is an `int`.
+/--
+info: Procedure inlining requires every call to be well-formed: the call to r stores a = bool,
+but its arguments give a = int
+-/
+#guard_msgs in
+#eval match tryInlineCall (rTyArgsProg rP (some [.forAll [] .bool, .forAll [] .int])) with
+  | .ok _ => IO.println "no error"
+  | .error e => IO.println e.message
 
 -- Stored type arguments with more entries than type parameters are ignored likewise.
 /--

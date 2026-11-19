@@ -61,7 +61,8 @@ def callElimCall (taken : Std.HashSet String) (vt : TypeSpec.TypeScopes) (procNa
     throw (wellFormedCallsBreach "Call elimination" md msg)
 
   -- Instantiates the callee's contract at this call's type instance.
-  let tySubst ← callTypeSubst callElimTyPrefix taken vt proc callArgs tyArgs
+  let tySubst ←
+    callTypeSubstOrBreach "Call elimination" md callElimTyPrefix taken vt proc callArgs tyArgs
   let instantiatedTy (ty : Lambda.LMonoTy) : Lambda.LMonoTy := Lambda.LMonoTy.subst tySubst ty
   let instantiatedExpr (e : Expression.Expr) : Expression.Expr :=
     Lambda.LExpr.applyTypeSubst e tySubst

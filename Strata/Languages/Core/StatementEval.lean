@@ -131,16 +131,18 @@ private def getExprType (e : Expression.Expr) : Option Lambda.LMonoTy :=
   | .bvar _ _ => none
 
 /-- The instance of `proc` at a call that stores `tyArgs`: the type arguments
-    `Procedure.callTypeArgs?` gives; an unbound `i`-th type parameter is
-    `callTyVarPrefix ++ toString i`, and so is every parameter when the matching fails. -/
+    `Procedure.callTypeArgs` gives; an unbound `i`-th type parameter is
+    `callTyVarPrefix ++ toString i`, and so is every parameter when the matching fails.
+    An error means the stored `tyArgs` disagree with the argument types. -/
 private def computeTypeSubst (proc : Procedure) (args : List Expression.Expr)
     (lhs : List Expression.Ident) (tyArgs : Option (List Expression.Ty)) (E : Env) :
-    Lambda.Subst :=
+    Except String Lambda.Subst :=
   let lhs_tys := lhs.map fun l => (E.exprEnv.state.findD l (none, .fvar evalLoc l none)).fst
   -- TODO: prove that the transformations preserve typing; then this branch is provably
   -- unreachable on pipeline input.
-  [Lambda.SubstOne.completeParams proc.header.typeArgs Lambda.callTyVarPrefix
-    ((proc.callTypeArgs? tyArgs (args.map getExprType) lhs_tys).getD Strata.Util.HMap.empty)]
+  (proc.callTypeArgs tyArgs (args.map getExprType) lhs_tys).map fun S? =>
+    [Lambda.SubstOne.completeParams proc.header.typeArgs Lambda.callTyVarPrefix
+      (S?.getD Strata.Util.HMap.empty)]
 
 /--
 Evaluate a procedure call by inlining its contract.
@@ -152,59 +154,63 @@ present.
 def Command.inlineCallContract (E : Env)
     (lhs : List Expression.Ident) (pname : String) (tyArgs : Option (List Expression.Ty))
     (args : List Expression.Expr) (md : Imperative.MetaData Expression) : Command × Env :=
+  let callArgs := args.map .inArg ++ lhs.map .outArg
   match Program.Procedure.find? E.program pname with
-  | some proc =>
-    let tySubst := computeTypeSubst proc args lhs tyArgs E
-
-    -- positional: formal_arg_subst zips header.inputs.keys with args
-    let formal_arg_subst := mkFormalArgSubst proc args E
-    -- positional: return_lhs_subst zips header.outputs.keys with lhs
-    let (return_lhs_subst, lhs_post_subst, E) := mkReturnSubst proc lhs E
-
-    -- Apply type substitution to preconditions to instantiate type variables.
-    let preconditions_typed := proc.spec.preconditions.map
-        (fun (l, c) => (l, { c with expr := c.expr.applyTypeSubst tySubst }))
-    -- Generate precondition proof obligations.
-    let preconditions := callConditions proc .Requires preconditions_typed formal_arg_subst
-    let preconditions := preconditions.map
-        (fun (l, e) => (l, Imperative.Check.mk (E.exprEval e.expr) e.attr e.md))
-    let deferred_pre := ProofObligations.createAssertions E.pathConditions.consume preconditions
-    let E := { E with deferred := E.deferred ++ deferred_pre }
-
-    -- Apply type substitution to postconditions to instantiate type variables.
-    let postconditions_typed := proc.spec.postconditions.map
-        (fun (l, c) => (l, { c with expr := c.expr.applyTypeSubst tySubst }))
-    -- For inout parameters (in both inputs and outputs), the output mapping
-    -- to a fresh post-call variable is the correct one; remove the duplicate
-    -- input mapping so there is no ambiguity.
-    let outputNames := proc.header.outputs.keys
-    let formal_arg_subst_filtered := formal_arg_subst.filter fun ((id, _), _) =>
-      !outputNames.contains id
-    -- `old p`, for an in-out parameter `p`, is `p`'s argument value at the call.
-    let inoutNames := proc.header.getInoutParams.keys
-    let old_arg_subst := formal_arg_subst.filterMap fun ((id, ty), v) =>
-      if inoutNames.contains id then some ((CoreIdent.mkOld id.name, ty), v) else none
-    let postcond_subst := return_lhs_subst ++ formal_arg_subst_filtered ++ old_arg_subst
-    let postconditions := callConditions proc .Ensures postconditions_typed postcond_subst
-
-    -- Add postconditions to path conditions.
-    let postconditions := (postconditions.keys.zip (Procedure.Spec.getCheckExprs postconditions)).map
-      fun (label, e) => Imperative.PathConditionEntry.assumption label e
-    let E := { E with pathConditions := (E.pathConditions.addInNewest postconditions)}
-
-    -- Update environment with post-call state.
-    let post_vars_mdata := lhs_post_subst.map
-        (fun ((old, _), new) => Imperative.MetaDataElem.mk (.var old) (.expr new))
-    let md' := md ++ post_vars_mdata.toArray
-    let callArgs := args.map .inArg ++ lhs.map .outArg
-    let c' := CmdExt.call pname tyArgs callArgs md'
-    let E := E.addToContext lhs_post_subst
-    (c', E)
-  | _ =>
-    let callArgs := args.map .inArg ++ lhs.map .outArg
+  | none =>
     let c' := CmdExt.call pname tyArgs callArgs md
     let E := { E with error := some (.Misc f!"Procedure {pname} not found!") }
     (c', E)
+  | some proc =>
+    match computeTypeSubst proc args lhs tyArgs E with
+    | .error msg =>
+      (CmdExt.call pname tyArgs callArgs md,
+       CmdEval.updateError E (.Misc (illFormedCallText msg)))
+    | .ok tySubst =>
+
+      -- positional: formal_arg_subst zips header.inputs.keys with args
+      let formal_arg_subst := mkFormalArgSubst proc args E
+      -- positional: return_lhs_subst zips header.outputs.keys with lhs
+      let (return_lhs_subst, lhs_post_subst, E) := mkReturnSubst proc lhs E
+
+      -- Apply type substitution to preconditions to instantiate type variables.
+      let preconditions_typed := proc.spec.preconditions.map
+          (fun (l, c) => (l, { c with expr := c.expr.applyTypeSubst tySubst }))
+      -- Generate precondition proof obligations.
+      let preconditions := callConditions proc .Requires preconditions_typed formal_arg_subst
+      let preconditions := preconditions.map
+          (fun (l, e) => (l, Imperative.Check.mk (E.exprEval e.expr) e.attr e.md))
+      let deferred_pre := ProofObligations.createAssertions E.pathConditions.consume preconditions
+      let E := { E with deferred := E.deferred ++ deferred_pre }
+
+      -- Apply type substitution to postconditions to instantiate type variables.
+      let postconditions_typed := proc.spec.postconditions.map
+          (fun (l, c) => (l, { c with expr := c.expr.applyTypeSubst tySubst }))
+      -- For inout parameters (in both inputs and outputs), the output mapping
+      -- to a fresh post-call variable is the correct one; remove the duplicate
+      -- input mapping so there is no ambiguity.
+      let outputNames := proc.header.outputs.keys
+      let formal_arg_subst_filtered := formal_arg_subst.filter fun ((id, _), _) =>
+        !outputNames.contains id
+      -- `old p`, for an in-out parameter `p`, is `p`'s argument value at the call.
+      let inoutNames := proc.header.getInoutParams.keys
+      let old_arg_subst := formal_arg_subst.filterMap fun ((id, ty), v) =>
+        if inoutNames.contains id then some ((CoreIdent.mkOld id.name, ty), v) else none
+      let postcond_subst := return_lhs_subst ++ formal_arg_subst_filtered ++ old_arg_subst
+      let postconditions := callConditions proc .Ensures postconditions_typed postcond_subst
+
+      -- Add postconditions to path conditions.
+      let postconditions :=
+        (postconditions.keys.zip (Procedure.Spec.getCheckExprs postconditions)).map
+        fun (label, e) => Imperative.PathConditionEntry.assumption label e
+      let E := { E with pathConditions := (E.pathConditions.addInNewest postconditions)}
+
+      -- Update environment with post-call state.
+      let post_vars_mdata := lhs_post_subst.map
+          (fun ((old, _), new) => Imperative.MetaDataElem.mk (.var old) (.expr new))
+      let md' := md ++ post_vars_mdata.toArray
+      let c' := CmdExt.call pname tyArgs callArgs md'
+      let E := E.addToContext lhs_post_subst
+      (c', E)
 
 def Command.eval (E : Env) (c : Command) : Command × Env :=
   match c with
