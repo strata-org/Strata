@@ -49,10 +49,8 @@ The chain assembled here, in detail:
   `resolve` (`resolve_getVars_mem_knownVars`, `getVars_unresolved` from
   `Lambda.LExpr.Proofs`). The output side is freshness-free: the generated binder
   is closed away by `varCloseT`, so every surviving output fvar is a known var of
-  the input context. An input-side `WellScoped`-from-`resolve` route is NOT
-  available — it would require the generated binder to be fresh in the body,
-  which does not follow from `typeBoundVar`'s specification. Instantiated at
-  `P := CoreIdent.isOldIdent` at the precondition call sites.
+  the input context. Instantiated at `P := CoreIdent.isOldIdent` at the
+  precondition call sites.
 
 * `env_no_pred_preserved_by_resolve` — TRANSPORT STEP. `resolve` never adds a new
   known var to its output context (`resolve_knownVars_subset`), so the abstract

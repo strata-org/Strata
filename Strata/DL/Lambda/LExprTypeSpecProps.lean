@@ -1485,7 +1485,7 @@ omit [ToString T.IDMeta] [Std.ToFormat (LFunc T)] in
 private theorem typeBoundVar_xty_genName
     (C : LContext T) (Env : TEnv T.IDMeta) (bty : Option LMonoTy)
     (xv : T.Identifier) (xty : LMonoTy) (Env1 : TEnv T.IDMeta)
-    (h : typeBoundVar C Env bty = .ok (xv, xty, Env1))
+    {avoid : List T.Identifier} (h : typeBoundVar C Env bty avoid = .ok (xv, xty, Env1))
     (h_aw : TContext.AliasesWF Env.context) :
     ∀ v ∈ LMonoTy.freeVars xty, ∃ k : Nat, v = TState.tyPrefix ++ toString k := by
   intro v hv
@@ -1518,7 +1518,7 @@ omit [ToString T.IDMeta] [Std.ToFormat (LFunc T)] in
 private theorem typeBoundVar_varsAvoid {ps : List TyIdentifier}
     (C : LContext T) (Env : TEnv T.IDMeta) (bty : Option LMonoTy)
     (xv : T.Identifier) (xty : LMonoTy) (Env1 : TEnv T.IDMeta)
-    (h : typeBoundVar C Env bty = .ok (xv, xty, Env1))
+    {avoid : List T.Identifier} (h : typeBoundVar C Env bty avoid = .ok (xv, xty, Env1))
     (h_aw : TContext.AliasesWF Env.context) (hgen : NoGenName ps)
     (hE : TEnv.VarsAvoid Env ps) :
     TEnv.VarsAvoid Env1 ps ∧ ∀ v ∈ LMonoTy.freeVars xty, v ∉ ps := by
@@ -2592,7 +2592,7 @@ private theorem resolveAux_context_types_ne_equiv (C : LContext T) :
     (fun E n E' hgen => hOfEq E E' (TEnv.genTyVar_context E n E' hgen))
     (fun _ E _ _ => hOfEq E _ rfl)
     (fun _ E _ _ _ _ => hOfEq E _ rfl)
-    (fun E bty xv xty E1 E2 hboundOk h12 hne =>
+    (fun E bty _ xv xty E1 E2 hboundOk h12 hne =>
       ⟨TEnv.eraseFromContext_types_ne_nil E2 xv
           (h12 (typeBoundVar_context_types_ne_nil C E bty xv xty E1 hboundOk)).1,
         eraseFromContext_typeBoundVar_equiv C E bty xv xty E1 hboundOk E2
@@ -3297,7 +3297,7 @@ theorem resolveAux_tailClear (C : LContext T) :
     (fun E n E' hgen hS => by rw [TEnv.genTyVar_subst E n E' hgen]; exact hS)
     (fun _ _ _ hu => Constraints.unify_tailClear hu)
     (fun _ _ _ n _ hu hS => (Constraints.unify_tailClear hu hS).remove n)
-    (fun E bty xv xty E1 _ hboundOk h12 hS =>
+    (fun E bty _ xv xty E1 _ hboundOk h12 hS =>
       h12 ((typeBoundVar_subst_knownInstance C E bty xv xty E1 hboundOk).1 ▸ hS))
 
 end LExpr

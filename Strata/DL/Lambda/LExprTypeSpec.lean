@@ -1188,6 +1188,8 @@ section Proofs
 attribute [local simp] Pure.pure Except.pure
 variable {T : LExprParams} [ToString T.IDMeta] [DecidableEq T.IDMeta] [Hashable T.IDMeta]
   [Std.ToFormat T.IDMeta] [HasGen T.IDMeta] [Std.ToFormat (LFunc T)] [Std.ToFormat T.Metadata]
+-- The names a bound variable's generator must avoid (the free variables of the binder's body).
+variable {avoid : List T.Identifier}
 
 /-! ### Generator-freshness preservation -/
 
@@ -1743,10 +1745,10 @@ omit [ToString T.IDMeta] [Std.ToFormat (LFunc T)] [Std.ToFormat T.Metadata] in
 theorem typeBoundVar_xv_fresh_in_context
     (C : LContext T) (Env : TEnv T.IDMeta) (bty : Option LMonoTy)
     (xv : T.Identifier) (xty : LMonoTy) (Env1 : TEnv T.IDMeta)
-    (h : typeBoundVar C Env bty = .ok (xv, xty, Env1)) :
+    (h : typeBoundVar C Env bty avoid = .ok (xv, xty, Env1)) :
     ∀ m, m ∈ Env.context.types → HMap.find? m xv = none := by
   simp only [typeBoundVar, Bind.bind, Except.bind] at h
-  cases h_lift : liftGenEnv HasGen.genVar Env with
+  cases h_lift : liftGenEnv (HasGen.genVar avoid) Env with
   | error _ => rw [h_lift] at h; simp at h
   | ok res_lift =>
     obtain ⟨xv_raw, Env_g⟩ := res_lift
@@ -1772,6 +1774,38 @@ theorem typeBoundVar_xv_fresh_in_context
         obtain ⟨h_xv, _, _⟩ := h; subst h_xv
         exact not_mem_knownVars_find_none Env.context xv_raw h_fresh
 
+omit [ToString T.IDMeta] [Std.ToFormat (LFunc T)] [Std.ToFormat T.Metadata] in
+/-- The variable `xv` produced by `typeBoundVar` is not in `avoid`. With the free
+    variables of a binder's body (and triggers) as `avoid`, opening the body with
+    `xv` captures none of them. -/
+theorem typeBoundVar_xv_not_mem_avoid
+    (C : LContext T) (Env : TEnv T.IDMeta) (bty : Option LMonoTy)
+    (xv : T.Identifier) (xty : LMonoTy) (Env1 : TEnv T.IDMeta)
+    (h : typeBoundVar C Env bty avoid = .ok (xv, xty, Env1)) :
+    xv ∉ avoid := by
+  simp only [typeBoundVar, Bind.bind, Except.bind] at h
+  cases h_lift : liftGenEnv (HasGen.genVar avoid) Env with
+  | error _ => rw [h_lift] at h; simp at h
+  | ok res_lift =>
+    obtain ⟨xv_raw, Env_g⟩ := res_lift
+    rw [h_lift] at h; simp only at h
+    have h_avoid := liftGenEnv_genVar_avoid Env xv_raw Env_g h_lift
+    cases bty with
+    | some bty_val =>
+      simp only at h
+      cases h_ic : LMonoTy.instantiateWithCheck bty_val C Env_g with
+      | error _ => rw [h_ic] at h; simp at h
+      | ok res_ic =>
+        rw [h_ic] at h; simp only [pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at h
+        obtain ⟨h_xv, _, _⟩ := h; subst h_xv; exact h_avoid
+    | none =>
+      simp only at h
+      cases h_tg : TEnv.genTyVar Env_g with
+      | error _ => rw [h_tg] at h; simp at h
+      | ok res_tg =>
+        rw [h_tg] at h; simp only [pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at h
+        obtain ⟨h_xv, _, _⟩ := h; subst h_xv; exact h_avoid
+
 /-! ## 3. `typeBoundVar_adds_to_context` -/
 
 omit [ToString T.IDMeta] [Std.ToFormat (LFunc T)] [Std.ToFormat T.Metadata] in
@@ -1779,11 +1813,11 @@ omit [ToString T.IDMeta] [Std.ToFormat (LFunc T)] [Std.ToFormat T.Metadata] in
     with the monomorphic scheme `∀[]. xty`. -/
 theorem typeBoundVar_adds_to_context (C : LContext T) (Env : TEnv T.IDMeta)
     (bty : Option LMonoTy) (xv : T.Identifier) (xty : LMonoTy) (Env' : TEnv T.IDMeta)
-    (h : typeBoundVar C Env bty = .ok (xv, xty, Env')) :
+    (h : typeBoundVar C Env bty avoid = .ok (xv, xty, Env')) :
     Env'.context.types.find? xv = some (.forAll [] xty) := by
   have h_fresh := typeBoundVar_xv_fresh_in_context C Env bty xv xty Env' h
   simp only [typeBoundVar, Bind.bind, Except.bind] at h
-  cases h_lift : liftGenEnv HasGen.genVar Env with
+  cases h_lift : liftGenEnv (HasGen.genVar avoid) Env with
   | error _ => rw [h_lift] at h; simp at h
   | ok res_lift =>
     obtain ⟨xv_raw, Env_g⟩ := res_lift
@@ -1829,12 +1863,12 @@ omit [ToString T.IDMeta] [Std.ToFormat (LFunc T)] [Std.ToFormat T.Metadata] in
 /-- `typeBoundVar` preserves existing context lookups for variables different from the fresh one. -/
 theorem typeBoundVar_preserves_find (C : LContext T) (Env : TEnv T.IDMeta)
     (bty : Option LMonoTy) (xv : T.Identifier) (xty : LMonoTy) (Env' : TEnv T.IDMeta)
-    (h : typeBoundVar C Env bty = .ok (xv, xty, Env'))
+    (h : typeBoundVar C Env bty avoid = .ok (xv, xty, Env'))
     (y : T.Identifier) (yty : LTy) (h_ne : y ≠ xv)
     (h_ctx : Env.context.types.find? y = some yty) :
     Env'.context.types.find? y = some yty := by
   simp only [typeBoundVar, Bind.bind, Except.bind] at h
-  cases h_lift : liftGenEnv HasGen.genVar Env with
+  cases h_lift : liftGenEnv (HasGen.genVar avoid) Env with
   | error _ => rw [h_lift] at h; simp at h
   | ok res_lift =>
     obtain ⟨xv_raw, Env_g⟩ := res_lift
@@ -1884,10 +1918,10 @@ omit [ToString T.IDMeta] [Std.ToFormat (LFunc T)] [Std.ToFormat T.Metadata] in
 theorem typeBoundVar_context_types_ne_nil
     (C : LContext T) (Env : TEnv T.IDMeta) (bty : Option LMonoTy)
     (xv : T.Identifier) (xty : LMonoTy) (Env1 : TEnv T.IDMeta)
-    (h : typeBoundVar C Env bty = .ok (xv, xty, Env1)) :
+    (h : typeBoundVar C Env bty avoid = .ok (xv, xty, Env1)) :
     Env1.context.types ≠ [] := by
   simp only [typeBoundVar, Bind.bind, Except.bind] at h
-  cases h_lift : liftGenEnv HasGen.genVar Env with
+  cases h_lift : liftGenEnv (HasGen.genVar avoid) Env with
   | error _ => rw [h_lift] at h; simp at h
   | ok res_lift =>
     obtain ⟨xv_raw, Env_g⟩ := res_lift
@@ -1922,10 +1956,10 @@ omit [ToString T.IDMeta] [Std.ToFormat (LFunc T)] [Std.ToFormat T.Metadata] in
 theorem typeBoundVar_aliases_eq
     (C : LContext T) (Env : TEnv T.IDMeta) (bty : Option LMonoTy)
     (xv : T.Identifier) (xty : LMonoTy) (Env' : TEnv T.IDMeta)
-    (h : typeBoundVar C Env bty = .ok (xv, xty, Env')) :
+    (h : typeBoundVar C Env bty avoid = .ok (xv, xty, Env')) :
     Env'.context.aliases = Env.context.aliases := by
   simp only [typeBoundVar, Bind.bind, Except.bind] at h
-  cases h_lift : liftGenEnv HasGen.genVar Env with
+  cases h_lift : liftGenEnv (HasGen.genVar avoid) Env with
   | error _ => rw [h_lift] at h; simp at h
   | ok res_lift =>
     obtain ⟨xv_raw, Env_g⟩ := res_lift
@@ -1962,30 +1996,30 @@ theorem typeBoundVar_aliases_eq
 /-! ## Auxiliary: `liftGenEnv` / `genTyVar` preservation helpers -/
 
 omit [ToString T.IDMeta] [Std.ToFormat T.IDMeta] [Std.ToFormat (LFunc T)] [Std.ToFormat T.Metadata] in
-/-- `liftGenEnv HasGen.genVar` preserves the substitution. -/
+/-- `liftGenEnv (HasGen.genVar avoid)` preserves the substitution. -/
 theorem liftGenEnv_subst
     (Env : TEnv T.IDMeta) (xv : Identifier T.IDMeta) (Env' : TEnv T.IDMeta)
-    (h : liftGenEnv HasGen.genVar Env = .ok (xv, Env')) :
+    (h : liftGenEnv (HasGen.genVar avoid) Env = .ok (xv, Env')) :
     Env'.stateSubstInfo = Env.stateSubstInfo := by
   simp only [liftGenEnv] at h
-  generalize h_gen : HasGen.genVar Env.genEnv = res at h
+  generalize h_gen : HasGen.genVar avoid Env.genEnv = res at h
   match res with
   | .error _ => simp at h
   | .ok (xi, Eg) => simp only [Except.ok.injEq, Prod.mk.injEq] at h; obtain ⟨_, h2⟩ := h; rw [← h2]
 
 omit [ToString T.IDMeta] [Std.ToFormat T.IDMeta] [Std.ToFormat (LFunc T)] [Std.ToFormat T.Metadata] in
-/-- `liftGenEnv HasGen.genVar` never decreases the type-variable counter. -/
+/-- `liftGenEnv (HasGen.genVar avoid)` never decreases the type-variable counter. -/
 theorem liftGenEnv_tyGen_mono
     (Env : TEnv T.IDMeta) (xv : Identifier T.IDMeta) (Env' : TEnv T.IDMeta)
-    (h : liftGenEnv HasGen.genVar Env = .ok (xv, Env')) :
+    (h : liftGenEnv (HasGen.genVar avoid) Env = .ok (xv, Env')) :
     Env'.genEnv.genState.tyGen ≥ Env.genEnv.genState.tyGen := by
   simp only [liftGenEnv] at h
-  generalize h_gen : HasGen.genVar Env.genEnv = res at h
+  generalize h_gen : HasGen.genVar avoid Env.genEnv = res at h
   match res with
   | .error _ => simp at h
   | .ok (xi, Eg) =>
     simp only [Except.ok.injEq, Prod.mk.injEq] at h; obtain ⟨_, h2⟩ := h; rw [← h2]
-    exact HasGen.genVar_tyGen_mono Env.genEnv xi Eg h_gen
+    exact HasGen.genVar_tyGen_mono avoid Env.genEnv xi Eg h_gen
 
 /-! ## `knownTypeVars_addInNewestContext_cases`
 
@@ -2016,13 +2050,13 @@ omit [ToString T.IDMeta] [Std.ToFormat (LFunc T)] [Std.ToFormat T.Metadata] in
 theorem typeBoundVar_preserves_boundVarsNodup
     (C : LContext T) (Env : TEnv T.IDMeta) (bty : Option LMonoTy)
     (xv : T.Identifier) (xty : LMonoTy) (Env' : TEnv T.IDMeta)
-    (h : typeBoundVar C Env bty = .ok (xv, xty, Env'))
+    (h : typeBoundVar C Env bty avoid = .ok (xv, xty, Env'))
     (h_bvnd : ∀ y ty, Env.context.types.find? y = some ty →
       (LTy.boundVars ty).Nodup) :
     ∀ y ty, Env'.context.types.find? y = some ty →
       (LTy.boundVars ty).Nodup := by
   simp only [typeBoundVar, Bind.bind, Except.bind] at h
-  cases h_lift : liftGenEnv HasGen.genVar Env with
+  cases h_lift : liftGenEnv (HasGen.genVar avoid) Env with
   | error _ => rw [h_lift] at h; simp at h
   | ok res_lift =>
     obtain ⟨xv_raw, Env_g⟩ := res_lift
@@ -2090,7 +2124,7 @@ omit [ToString T.IDMeta] [Std.ToFormat (LFunc T)] [Std.ToFormat T.Metadata] in
 theorem typeBoundVar_subst_knownInstance
     (C : LContext T) (Env : TEnv T.IDMeta) (bty : Option LMonoTy)
     (xv : T.Identifier) (xty : LMonoTy) (Env' : TEnv T.IDMeta)
-    (h : typeBoundVar C Env bty = .ok (xv, xty, Env')) :
+    (h : typeBoundVar C Env bty avoid = .ok (xv, xty, Env')) :
     Env'.stateSubstInfo = Env.stateSubstInfo ∧
     LMonoTy.knownInstance xty C.knownTypes = true := by
   simp only [typeBoundVar, Bind.bind, Except.bind] at h
@@ -2126,7 +2160,7 @@ omit [ToString T.IDMeta] [Std.ToFormat (LFunc T)] [Std.ToFormat T.Metadata] in
 theorem typeBoundVar_preserves_invariant
     (C : LContext T) (Env : TEnv T.IDMeta) (bty : Option LMonoTy)
     (xv : T.Identifier) (xty : LMonoTy) (Env' : TEnv T.IDMeta)
-    (h : typeBoundVar C Env bty = .ok (xv, xty, Env'))
+    (h : typeBoundVar C Env bty avoid = .ok (xv, xty, Env'))
     (h_fresh : SubstFreshForGen Env.stateSubstInfo Env.genEnv.genState)
     (h_ctx : ContextFreshForGen Env.context Env.genEnv.genState)
     (h_aw : TContext.AliasesWF Env.context)
@@ -2135,7 +2169,7 @@ theorem typeBoundVar_preserves_invariant
         ∀ n, n ≥ Env.genEnv.genState.tyGen → v ≠ TState.tyPrefix ++ toString n) :
     TypeBoundVarInvariant Env' := by
   simp only [typeBoundVar, Bind.bind, Except.bind] at h
-  cases h_lift : liftGenEnv HasGen.genVar Env with
+  cases h_lift : liftGenEnv (HasGen.genVar avoid) Env with
   | error _ => rw [h_lift] at h; simp at h
   | ok res_lift =>
     obtain ⟨xv_raw, Env_g⟩ := res_lift
@@ -2253,7 +2287,7 @@ omit [ToString T.IDMeta] [Std.ToFormat (LFunc T)] [Std.ToFormat T.Metadata] in
 theorem TEnvWF.of_typeBoundVar
     (C : LContext T) (Env : TEnv T.IDMeta) (bty : Option LMonoTy)
     (xv : T.Identifier) (xty : LMonoTy) (Env' : TEnv T.IDMeta)
-    (h : typeBoundVar C Env bty = .ok (xv, xty, Env'))
+    (h : typeBoundVar C Env bty avoid = .ok (xv, xty, Env'))
     (h_envwf : TEnvWF Env) : TEnvWF Env' :=
   let h_inv := typeBoundVar_preserves_invariant C Env bty xv xty Env' h
     h_envwf.substFreshForGen h_envwf.ctxFreshForGen h_envwf.aliasesWF h_envwf.boundVarsFresh
@@ -2818,12 +2852,12 @@ omit [ToString T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
 private theorem polyKeysFresh_typeBoundVar
     (S : Subst) (C : LContext T) (Env : TEnv T.IDMeta) (bty : Option LMonoTy)
     (xv : T.Identifier) (xty : LMonoTy) (Env1 : TEnv T.IDMeta)
-    (h_tbv : typeBoundVar C Env bty = .ok (xv, xty, Env1))
+    (h_tbv : typeBoundVar C Env bty avoid = .ok (xv, xty, Env1))
     (h_poly : Subst.polyKeysFresh (T := T) S Env.context) :
     Subst.polyKeysFresh (T := T) S Env1.context := by
   intro a ha x ty hf hbv
   simp only [typeBoundVar, Bind.bind, Except.bind] at h_tbv
-  cases h_lift : liftGenEnv HasGen.genVar Env with
+  cases h_lift : liftGenEnv (HasGen.genVar avoid) Env with
   | error _ => rw [h_lift] at h_tbv; simp at h_tbv
   | ok res_lift =>
     obtain ⟨xv_raw, Env_g⟩ := res_lift
@@ -3264,7 +3298,7 @@ omit [ToString T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
 private theorem typeBoundVar_AnnotCompat [Std.ToFormat T.Metadata]
     (C : LContext T) (Env : TEnv T.IDMeta) (bty_val : LMonoTy)
     (xv : T.Identifier) (xty : LMonoTy) (Env' : TEnv T.IDMeta)
-    (h : typeBoundVar C Env (some bty_val) = .ok (xv, xty, Env')) :
+    (h : typeBoundVar C Env (some bty_val) avoid = .ok (xv, xty, Env')) :
     AnnotCompat Env.context.aliases bty_val xty := by
   simp only [typeBoundVar, Bind.bind, Except.bind] at h
   elim_err h
@@ -3286,7 +3320,7 @@ private theorem typeBoundVar_sourceTyWF
     (C : LContext T) (Env : TEnv T.IDMeta) (bty_val : LMonoTy)
     (xv : T.Identifier) (xty : LMonoTy) (Env' : TEnv T.IDMeta)
     (haWF : TContext.AliasesWF Env.context)
-    (h : typeBoundVar C Env (some bty_val) = .ok (xv, xty, Env')) :
+    (h : typeBoundVar C Env (some bty_val) avoid = .ok (xv, xty, Env')) :
     ValidWrittenTy C Env.context.aliases bty_val := by
   simp only [typeBoundVar, Bind.bind, Except.bind] at h
   elim_err h
@@ -3454,10 +3488,10 @@ omit [ToString T.IDMeta] [Std.ToFormat (LFunc T)] [Std.ToFormat T.Metadata] in
 private theorem typeBoundVar_absorbs
     (C : LContext T) (Env : TEnv T.IDMeta) (bty : Option LMonoTy)
     (xv : T.Identifier) (xty : LMonoTy) (Env' : TEnv T.IDMeta)
-    (h : typeBoundVar C Env bty = .ok (xv, xty, Env')) :
+    (h : typeBoundVar C Env bty avoid = .ok (xv, xty, Env')) :
     Subst.absorbs Env'.stateSubstInfo.subst Env.stateSubstInfo.subst := by
   simp only [typeBoundVar, Bind.bind, Except.bind] at h
-  cases h_lift : liftGenEnv HasGen.genVar Env with
+  cases h_lift : liftGenEnv (HasGen.genVar avoid) Env with
   | error _ => rw [h_lift] at h; simp at h
   | ok res_lift =>
     obtain ⟨xv_raw, Env_g⟩ := res_lift
@@ -3527,10 +3561,10 @@ omit [ToString T.IDMeta] [Std.ToFormat (LFunc T)] [Std.ToFormat T.Metadata] in
 private theorem typeBoundVar_tyGen_mono
     (C : LContext T) (Env : TEnv T.IDMeta) (bty : Option LMonoTy)
     (xv : T.Identifier) (xty : LMonoTy) (Env' : TEnv T.IDMeta)
-    (h : typeBoundVar C Env bty = .ok (xv, xty, Env')) :
+    (h : typeBoundVar C Env bty avoid = .ok (xv, xty, Env')) :
     Env'.genEnv.genState.tyGen ≥ Env.genEnv.genState.tyGen := by
   simp only [typeBoundVar, Bind.bind, Except.bind] at h
-  cases h_lift : liftGenEnv HasGen.genVar Env with
+  cases h_lift : liftGenEnv (HasGen.genVar avoid) Env with
   | error _ => rw [h_lift] at h; simp at h
   | ok res_lift =>
     obtain ⟨xv_raw, Env_g⟩ := res_lift
@@ -3596,10 +3630,10 @@ omit [ToString T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
 private theorem typeBoundVar_types_addInNewest
     (C : LContext T) (Env : TEnv T.IDMeta) (bty : Option LMonoTy)
     (xv : T.Identifier) (xty : LMonoTy) (Env' : TEnv T.IDMeta)
-    (h : typeBoundVar C Env bty = .ok (xv, xty, Env')) :
+    (h : typeBoundVar C Env bty avoid = .ok (xv, xty, Env')) :
     Env'.context.types = Env.context.types.addInNewest (HMap.single xv (.forAll [] xty)) := by
   simp only [typeBoundVar, Bind.bind, Except.bind] at h
-  cases h_lift : liftGenEnv HasGen.genVar Env with
+  cases h_lift : liftGenEnv (HasGen.genVar avoid) Env with
   | error _ => rw [h_lift] at h; simp at h
   | ok res_lift =>
     obtain ⟨xv_raw, Env_g⟩ := res_lift
@@ -3646,7 +3680,7 @@ omit [ToString T.IDMeta] [Std.ToFormat (LFunc T)] [Std.ToFormat T.Metadata] in
 private theorem eraseFromContext_typeBoundVar_equiv
     (C : LContext T) (Env : TEnv T.IDMeta) (bty : Option LMonoTy)
     (xv : T.Identifier) (xty : LMonoTy) (Env1 : TEnv T.IDMeta)
-    (h_tbv : typeBoundVar C Env bty = .ok (xv, xty, Env1))
+    (h_tbv : typeBoundVar C Env bty avoid = .ok (xv, xty, Env1))
     (Env2 : TEnv T.IDMeta) (h_body : Env2.context.Equiv Env1.context)
     (h_ne : Env.context.types ≠ []) :
     (Env2.eraseFromContext xv).context.Equiv Env.context := by
@@ -3677,12 +3711,12 @@ omit [ToString T.IDMeta] [Std.ToFormat (LFunc T)] [Std.ToFormat T.Metadata] in
 private theorem typeBoundVar_xty_freeVars_fresh
     (C : LContext T) (Env : TEnv T.IDMeta) (bty : Option LMonoTy)
     (xv : T.Identifier) (xty : LMonoTy) (Env1 : TEnv T.IDMeta)
-    (h : typeBoundVar C Env bty = .ok (xv, xty, Env1)) :
+    (h : typeBoundVar C Env bty avoid = .ok (xv, xty, Env1)) :
     ∀ v, v ∈ LMonoTy.freeVars xty →
       ∀ k, k ≥ Env1.genEnv.genState.tyGen → v ≠ TState.tyPrefix ++ toString k := by
   intro v hv k hk
   simp only [typeBoundVar, Bind.bind, Except.bind] at h
-  cases h_lift : liftGenEnv HasGen.genVar Env with
+  cases h_lift : liftGenEnv (HasGen.genVar avoid) Env with
   | error _ => rw [h_lift] at h; simp at h
   | ok res_lift =>
     obtain ⟨xv_raw, Env_g⟩ := res_lift
@@ -4197,9 +4231,9 @@ theorem resolveAux_preserves (C : LContext T)
       Constraints.unify cs E.stateSubstInfo = .ok S →
       R E (E.updateSubst
         { S with subst := HMaps.remove S.subst n, isWF := hWF }))
-    (hbound : ∀ (E : TEnv T.IDMeta) (bty : Option LMonoTy) (xv : T.Identifier)
-      (xty : LMonoTy) (E1 E2 : TEnv T.IDMeta),
-      typeBoundVar C E bty = .ok (xv, xty, E1) → R E1 E2 →
+    (hbound : ∀ (E : TEnv T.IDMeta) (bty : Option LMonoTy) (avoid : List T.Identifier)
+      (xv : T.Identifier) (xty : LMonoTy) (E1 E2 : TEnv T.IDMeta),
+      typeBoundVar C E bty avoid = .ok (xv, xty, E1) → R E1 E2 →
       R E (E2.eraseFromContext xv)) :
     ∀ (e : LExpr T.mono) (Env Env' : TEnv T.IDMeta) (et : LExprT T.mono),
       resolveAux C Env e = .ok (et, Env') → R Env Env' := by
@@ -4296,7 +4330,7 @@ theorem resolveAux_preserves (C : LContext T)
     obtain ⟨etBody, Env2⟩ := r2
     simp only [Except.ok.injEq, Prod.mk.injEq] at h
     obtain ⟨rfl, rfl⟩ := h
-    exact hbound Env bty xv xty Env1 Env2 hboundOk
+    exact hbound Env bty _ xv xty Env1 Env2 hboundOk
       (ih xv xty Env1 Env2 etBody hbody)
   | case8 Env m qk name bty triggers body ihBody ihTriggers =>
     intro Env' et h
@@ -4310,7 +4344,7 @@ theorem resolveAux_preserves (C : LContext T)
     elim_err h with S hunifyOk
     simp only [Except.ok.injEq, Prod.mk.injEq] at h
     obtain ⟨rfl, rfl⟩ := h
-    exact hbound Env bty xv xty Env1 (Env3.updateSubst S) hboundOk
+    exact hbound Env bty _ xv xty Env1 (Env3.updateSubst S) hboundOk
       (htrans _ _ _ (ihBody xv xty Env1 Env2 etBody hbody)
         (htrans _ _ _ (ihTriggers xv xty Env2 Env3 etTriggers htriggers)
           (hunifyM _ Env3 S hunifyOk)))
@@ -4417,7 +4451,7 @@ theorem resolveAux_ind
       (xv : T.Identifier) (xty : LMonoTy) (Env1 : TEnv T.IDMeta)
       (et_body : LExprT T.mono) (Env2 : TEnv T.IDMeta),
       resolveAux C Env (.abs m name bty body) = .ok (et, Env') →
-      typeBoundVar C Env bty = .ok (xv, xty, Env1) →
+      typeBoundVar C Env bty (body.freeVars.map (·.1)) = .ok (xv, xty, Env1) →
       resolveAux C Env1 (LExpr.varOpen 0 (xv, some xty) body) = .ok (et_body, Env2) →
       et = .abs ⟨m, LMonoTy.subst Env2.stateSubstInfo.subst
         (.tcons "arrow" [xty, (LExpr.varCloseT 0 xv et_body).toLMonoTy])⟩
@@ -4435,7 +4469,7 @@ theorem resolveAux_ind
       (et_tr : LExprT T.mono) (Env3 : TEnv T.IDMeta)
       (substInfo : SubstInfo),
       resolveAux C Env (.quant m qk name bty triggers body) = .ok (et, Env') →
-      typeBoundVar C Env bty = .ok (xv, xty, Env1) →
+      typeBoundVar C Env bty ((triggers.freeVars ++ body.freeVars).map (·.1)) = .ok (xv, xty, Env1) →
       resolveAux C Env1 (LExpr.varOpen 0 (xv, some xty) body) = .ok (et_body, Env2) →
       resolveAux C Env2 (LExpr.varOpen 0 (xv, some xty) triggers) = .ok (et_tr, Env3) →
       Constraints.unify [(et_body.toLMonoTy, LMonoTy.bool)] Env3.stateSubstInfo = .ok substInfo →
@@ -5537,7 +5571,7 @@ omit [ToString T.IDMeta] [Std.ToFormat (LFunc T)] [Std.ToFormat T.Metadata] in
 private theorem typeBoundVar_knownVars_mono
     (C : LContext T) (Env : TEnv T.IDMeta) (bty : Option LMonoTy)
     (xv : T.Identifier) (xty : LMonoTy) (Env' : TEnv T.IDMeta)
-    (h : typeBoundVar C Env bty = .ok (xv, xty, Env'))
+    (h : typeBoundVar C Env bty avoid = .ok (xv, xty, Env'))
     (v : T.Identifier) (hv : v ∈ TContext.knownVars Env.context) :
     v ∈ TContext.knownVars Env'.context := by
   simp only [TContext.knownVars] at hv ⊢
@@ -5554,7 +5588,7 @@ omit [ToString T.IDMeta] [Std.ToFormat (LFunc T)] [Std.ToFormat T.Metadata] in
 private theorem typeBoundVar_xv_in_knownVars
     (C : LContext T) (Env : TEnv T.IDMeta) (bty : Option LMonoTy)
     (xv : T.Identifier) (xty : LMonoTy) (Env' : TEnv T.IDMeta)
-    (h : typeBoundVar C Env bty = .ok (xv, xty, Env')) :
+    (h : typeBoundVar C Env bty avoid = .ok (xv, xty, Env')) :
     xv ∈ TContext.knownVars Env'.context :=
   HMaps.find?_mem_keys Env'.context.types
     (typeBoundVar_adds_to_context C Env bty xv xty Env' h)
@@ -5566,7 +5600,7 @@ private theorem WellScoped_varOpen_typeBoundVar
     (C : LContext T) (Env : TEnv T.IDMeta) (bty : Option LMonoTy)
     (xv : T.Identifier) (xty : LMonoTy) (Env1 : TEnv T.IDMeta)
     (body : LExpr T.mono)
-    (h_tbv : typeBoundVar C Env bty = .ok (xv, xty, Env1))
+    (h_tbv : typeBoundVar C Env bty avoid = .ok (xv, xty, Env1))
     (h_ws_body : WellScoped body Env.context) :
     WellScoped (LExpr.varOpen 0 (xv, some xty) body) Env1.context :=
   WellScoped_varOpen body Env.context Env1.context xv xty h_ws_body
@@ -5692,7 +5726,7 @@ private theorem typeBoundVar_binderFits_subst {C : LContext T}
     {xty : LMonoTy} {Env1 : TEnv T.IDMeta}
     {S : Subst} {o' d : Option LMonoTy} (dty : LMonoTy)
     (h_aw : TContext.AliasesWF Env.context)
-    (h_tbv : typeBoundVar C Env bty = .ok (xv, xty, Env1))
+    (h_tbv : typeBoundVar C Env bty avoid = .ok (xv, xty, Env1))
     (hbind : BinderFits C Env.context.aliases S bty o' d) (hd : d = some dty)
     (hS : LMonoTy.subst S dty = LMonoTy.subst S xty) :
     (o' = none ∨ ∃ t, o' = some t ∧
