@@ -302,6 +302,104 @@ Result: ✅ pass
 #guard_msgs in
 #eval Core.verify generatedPairClashPgm (options := .quiet)
 
+/-! A lemma and a check inserted in a procedure body can also want the same
+name: the lemma for the body of `assert_a` and the check before `assert [a_body]`
+both yield `assert_a_body_calls_Int.SafeDiv_0`. The lemmas are named first, so
+the inserted check takes a suffix, whichever declaration comes first. -/
+
+def lemmaCheckClashPgm :=
+#strata
+program Core;
+
+function assert_a(x : int) : int
+  requires x != 0;
+{ int.safeDiv(10, x) }
+procedure P(y : int) {
+  assert [a_body]: int.safeDiv(10, y) == 2;
+};
+
+#end
+
+/--
+info:
+Obligation: assert_a_body_calls_Int.SafeDiv_0
+Property: division by zero check
+Result: ✅ pass
+
+Obligation: assert_a_body_calls_Int.SafeDiv_0_1
+Property: division by zero check
+Result: ❌ fail
+
+Obligation: a_body
+Property: assert
+Result: ❌ fail
+-/
+#guard_msgs in
+#eval Core.verify lemmaCheckClashPgm (options := .quiet)
+
+def checkLemmaClashPgm :=
+#strata
+program Core;
+
+procedure P(y : int) {
+  assert [a_body]: int.safeDiv(10, y) == 2;
+};
+function assert_a(x : int) : int
+  requires x != 0;
+{ int.safeDiv(10, x) }
+
+#end
+
+/--
+info:
+Obligation: assert_a_body_calls_Int.SafeDiv_0_1
+Property: division by zero check
+Result: ❌ fail
+
+Obligation: a_body
+Property: assert
+Result: ❌ fail
+
+Obligation: assert_a_body_calls_Int.SafeDiv_0
+Property: division by zero check
+Result: ✅ pass
+-/
+#guard_msgs in
+#eval Core.verify checkLemmaClashPgm (options := .quiet)
+
+/-! An inserted check avoids the labels of the program: the check before
+`assert [a]` would be `assert_a_calls_Int.SafeDiv_0`, the label of the next
+assertion. -/
+
+def checkLabelClashPgm :=
+#strata
+program Core;
+
+procedure P(y : int) {
+  assert [a]: int.safeDiv(10, y) == 2;
+  assert [assert_a_calls_Int.SafeDiv_0]: y == y;
+};
+
+#end
+
+/--
+info:
+Obligation: assert_a_calls_Int.SafeDiv_0_1
+Property: division by zero check
+Result: ❌ fail
+
+Obligation: a
+Property: assert
+Result: ❌ fail
+
+Obligation: assert_a_calls_Int.SafeDiv_0
+Property: assert
+Result: ✅ pass
+-/
+#guard_msgs in
+#eval Core.verify checkLabelClashPgm (options := .quiet)
+
+
 /-! A contract's well-formedness lemma reads each precondition in the entry state:
 there an in-out parameter stands for its `old` value, so `g_nonzero` guards the
 division by `old g` in the postcondition. The postcondition itself fails, since

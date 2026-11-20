@@ -267,6 +267,7 @@ namespace Calls
 variable {P : PureExpr} [HasBoolOps P] [HasFvar P] [HasFvars P]
     [DecidableEq P.Expr] [DecidableEq P.Ident] [InterpLang P] [HasOldIdent P]
     {Hdr : Type} [DecidableEq Hdr] [Inhabited Hdr] [ProcedureHeader P Hdr]
+    [ProcedureTypeInstantiation P Hdr]
     {m : Type → Type} [Monad m] [InterpEffects P m] [MonadExcept StopReason m]
 
 omit [HasBoolOps P] [HasFvar P] [HasFvars P] [DecidableEq P.Expr] [DecidableEq P.Ident]

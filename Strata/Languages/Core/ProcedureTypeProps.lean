@@ -248,7 +248,7 @@ private theorem renameReservedTypeArgs_paramKeys (avoid : Unit → List String)
     ⟨heq, -⟩ | heq
   · rw [heq]
   · rw [heq]
-    simp only [Procedure.renameTypeArgs, ListMap.keys_map_values]
+    simp only [Procedure.renameTypeArgs, Procedure.mapTys, ListMap.keys_map_values]
 
 /-- No parameter of a procedure that passes the checker proper (`typeCheckCore`) is named
     `old x`. -/

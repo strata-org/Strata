@@ -290,6 +290,88 @@ info: ok: ((λ ((%0 : (arrow bool $__ty4)) ((fn : (arrow bool bool)) (#true : bo
                              esM[(fn #3)]
          return (format $ ans.fst.toLMonoTy)
 
+/-! ### Opening a binder never captures a free variable of its body
+
+Each body mentions a free variable named `$__var0`, the first name the
+generator would pick for the bound variable. -/
+
+/-- The syntax tree `λ x. x == $__var0`. -/
+private def bodyMentionsGenName : LExpr TestParams.mono :=
+  .abs () "x" none (.eq () (.bvar () 0) (.fvar () ⟨"$__var0", ()⟩ none))
+
+-- With `$__var0` unbound, the program is ill-scoped and must be rejected: the
+-- generator skips `$__var0`, so the body's `$__var0` is not mistaken for the
+-- bound variable.
+/-- info: error: Cannot find this fvar in the context! $__var0 -/
+#guard_msgs in
+#eval do let ans ← LExpr.resolve (T:=TestParams) LContext.default TEnv.default bodyMentionsGenName
+         return (LExprT.format $ ans.fst)
+
+-- With `$__var0 : int` in the context, the program is well-scoped: the bound
+-- variable gets a different name and `$__var0` stays free in the result.
+/-- info: ok: ((λ ((%0 : int) == ($__var0 : int)) : bool)) : (arrow int bool)) -/
+#guard_msgs in
+#eval do let ans ← LExpr.resolve (T:=TestParams) LContext.default
+                     (TEnv.default.updateContext { types := Strata.Util.HMaps.ofScopes [[("$__var0", t[int])]] })
+                     bodyMentionsGenName
+         return (LExprT.format $ ans.fst)
+
+-- The same holds for a quantifier body.
+/-- info: ok: (∀(int) ((%0 : int) == ($__var0 : int)) : bool)) -/
+#guard_msgs in
+#eval do let ans ← LExpr.resolve (T:=TestParams) LContext.default
+                     (TEnv.default.updateContext { types := Strata.Util.HMaps.ofScopes [[("$__var0", t[int])]] })
+                     (.quant () .all "x" none (LExpr.noTrigger ())
+                       (.eq () (.bvar () 0) (.fvar () ⟨"$__var0", ()⟩ none)))
+         return (LExprT.format $ ans.fst)
+
+-- Nested binders: when the inner binder is opened, the outer one is already a
+-- generated free variable of the inner body, so the inner binder avoids both it
+-- and `$__var0`. The term is `λ x. λ y. (x == $__var0) == (y == $__var0)`.
+/-- info: ok: ((λ ((λ (((%1 : int) == ($__var0 : int)) : bool) == ((%0 : int) == ($__var0 : int)) : bool)) : bool)) : (arrow int bool))) : (arrow int (arrow int bool))) -/
+#guard_msgs in
+#eval do let ans ← LExpr.resolve (T:=TestParams) LContext.default
+                     (TEnv.default.updateContext { types := Strata.Util.HMaps.ofScopes [[("$__var0", t[int])]] })
+                     (.abs () "x" (some mty[int]) (.abs () "y" (some mty[int])
+                       (.eq () (.eq () (.bvar () 1) (.fvar () ⟨"$__var0", ()⟩ none))
+                               (.eq () (.bvar () 0) (.fvar () ⟨"$__var0", ()⟩ none)))))
+         return (LExprT.format $ ans.fst)
+
+-- And for a quantifier where only the trigger mentions `$__var0`: the
+-- resolved trigger still refers to the free variable.
+/-- info: ok: [$__var0] -/
+#guard_msgs in
+#eval do let ans ← LExpr.resolve (T:=TestParams) LContext.default
+                     (TEnv.default.updateContext { types := Strata.Util.HMaps.ofScopes [[("$__var0", t[int])]] })
+                     (.quant () .all "x" (some mty[int]) (.fvar () ⟨"$__var0", ()⟩ none)
+                       (.eq () (.bvar () 0) (.bvar () 0)))
+         return (format $ ans.fst.unresolved.freeVars.map (fun (x : TestParams.Identifier × Option LMonoTy) => x.1.name))
+
+/-- `n` nested quantifiers `∀ x : int. … ∀ x : int. x == x`. -/
+private def nestedQuants : Nat → LExpr TestParams.mono
+  | 0 => .eq () (.bvar () 0) (.bvar () 0)
+  | n + 1 => .quant () .all "x" (some mty[int]) (LExpr.noTrigger ()) (nestedQuants n)
+
+/-- The resolved form of `nestedQuants n`: `n` quantifiers over `int` around a
+    Boolean `%0 == %0`. -/
+private def isResolvedNestedQuants : Nat → LExprT TestParams.mono → Bool
+  | 0, .eq m (.bvar _ 0) (.bvar _ 0) => m.type == mty[bool]
+  | n + 1, .quant _ .all _ (some ty) _ body => ty == mty[int] && isResolvedNestedQuants n body
+  | _, _ => false
+
+-- Each binder computes its body's free variables, so type checking costs
+-- O(depth × size) in the nesting depth. Two hundred nested quantifiers must
+-- still type check to the expected term well within a generous bound (10 s), so
+-- a regression past that cost shows up here.
+/-- info: ok within bound -/
+#guard_msgs in
+#eval show IO Unit from do
+  let t0 ← IO.monoMsNow
+  let r := LExpr.resolve (T:=TestParams) LContext.default TEnv.default (nestedQuants 200)
+  let ok : Bool := match r with | .ok (et, _) => isResolvedNestedQuants 200 et | .error _ => false
+  let t1 ← IO.monoMsNow
+  IO.println (if ok && t1 - t0 < 10000 then "ok within bound" else s!"failed or slow: {t1 - t0} ms")
+
 end Tests
 
 ---------------------------------------------------------------------

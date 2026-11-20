@@ -679,7 +679,8 @@ def obligationOf (item : WorkItem) : Imperative.ProofObligation Expression :=
     `removeDatatypes`, the solver is sent only the datatypes the query
     mentions and their field types. -/
 def Session.prove {τ σ : Type} (s : Session τ σ) (factory : @Lambda.Factory CoreLParams)
-    (item : WorkItem) (satCheck validCheck removeDatatypes : Bool) :
+    (item : WorkItem) (satCheck validCheck removeDatatypes : Bool)
+    (leanExport : Option LeanExport.ExportConfig) :
     IO ((Except VCError VCOutcome × LExprModel) × Session τ σ) := do
   -- Append the runs of facts this session has not walked yet. `appendEntry` takes
   -- one entry at a time, so nothing is compared: a session knows what it holds
@@ -780,6 +781,16 @@ def Session.prove {τ σ : Type} (s : Session τ σ) (factory : @Lambda.Factory 
       let sat ← if satCheck then ask g else pure (Decision.unknown, "")
       let valid ← if validCheck then ask ng else pure (Decision.unknown, "")
       pure (sat, valid)
+    -- The Lean export states this goal's own query, the one the per-obligation path sends. The
+    -- solver may hold more: axioms this goal's pruning drops, definitions of earlier goals.
+    -- A cover asks whether its condition is reachable, which a validity proof does not show.
+    -- The functions are those of the factory, which has the built-in ones beside the
+    -- program's: on the walk a variable named like a built-in function is refused as well.
+    if let some config := leanExport then
+      if validCheck && item.goal.property != .cover then
+        config.exportCheck (·.find? fun name => decide (name ∈ factory))
+          (.ofSessionDecision valid.1) ctx r.assumptions r.goal r.varDefs r.varDecls
+          item.goal.label
     -- A check the solver ran out of time on is reported as the per-obligation path reports it.
     -- The counterexample is read against `ctx`, the one place that knows every datatype
     -- constructor the goal reaches, so a constructor in it comes back as one.
@@ -1020,7 +1031,7 @@ private partial def workLoop {τ σ : Type} (shared : Std.Mutex Schedule) (l : L
         s.encodingFailure.set none
         try
           let ((o, model), s') ← s.prove factory item satCheck validCheck
-            options.removeIrrelevantDatatypes
+            options.removeIrrelevantDatatypes options.leanExport
           -- Whether a `sat` reports as unknown depends on what this goal's
           -- pruning drops, as on the per-obligation path, even when lazy
           -- pruning left those axioms in the solver.

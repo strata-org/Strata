@@ -86,6 +86,9 @@ inductive StopReason where
   /-- A callee whose body ended by exiting through a label that no block of the body
       matches; a call returns only when the callee body ends normally. -/
   | programCallBodyExited (procName : String)
+  /-- A call whose type arguments do not instantiate the callee
+      (`ProcedureTypeInstantiation.instantiate` gives no procedure). -/
+  | programCallTypeArgsMismatch (procName : String)
   -- unsupported construct
   /-- A nondeterministic `set x := *` whose type source is unavailable: the
       language's `InterpLang.typeOf` returned no type for `x`'s current value. -/
@@ -129,6 +132,8 @@ def StopReason.describe : StopReason → String
       s!"callee {procName} output undefined on return"
   | .programCallBodyExited procName =>
       s!"callee {procName} body exited through an unmatched label"
+  | .programCallTypeArgsMismatch procName =>
+      s!"callee {procName} is not instantiated by the call's type arguments"
   | .unsupportedNondetSet =>
     "set-nondet: the type of the assigned variable's current value is unknown"
   | .unsupportedCalleeNotFound procName => s!"callee {procName} not found"

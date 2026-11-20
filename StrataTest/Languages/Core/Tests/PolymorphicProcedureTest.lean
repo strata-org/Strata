@@ -100,14 +100,14 @@ VCs:
 Label: assert_0
 Property: assert
 Assumptions:
-callElimAssume_MkCons_ensures_0_2: List..isCons(r@3)
+$__callElimAssume_MkCons_ensures_0_2: List..isCons(r@3)
 Obligation:
 List..isCons(r@3)
 
 Label: Test_ensures_0
 Property: assert
 Assumptions:
-callElimAssume_MkCons_ensures_0_2: List..isCons(r@3)
+$__callElimAssume_MkCons_ensures_0_2: List..isCons(r@3)
 Obligation:
 true
 

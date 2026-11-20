@@ -27,7 +27,10 @@ completeness of `Constraints.unify`. Key theorems: `Constraints.unify_sound`,
 (`LMonoTy.matchSubst`) is sound: `LMonoTy.matchSubst_sound`. Unifying a ground instance with
 its pattern succeeds and maps the pattern to the instance
 (`Constraints_unify_ground_instance_complete`), and substitutions that agree on a type's
-variables agree on it (`LMonoTy.subst_congr_vars`).
+variables agree on it (`LMonoTy.subst_congr_vars`). Substituting `ty` for the one variable of
+`Subst.singleton tv ty` gives `ty` (`LMonoTy.subst_singleton_self`), and a substitution taking
+each variable it binds to itself is the identity (`LMonoTy.subst_of_find?_self`,
+`LMonoTy.subst_ofScopes_self`).
 
 Also: unification preserves any substitution property that each variable binding preserves
 (`Constraint.unify_preserves`), and the ambient renaming of generated type variables keeps a
@@ -202,6 +205,47 @@ theorem LMonoTy.subst_no_relevant_keys (S : Subst) (mty : LMonoTy)
       List.map_congr_left (fun a ha => ih a ha (fun x hx =>
         h x (by simp only [LMonoTy.freeVars]; exact LMonoTys.freeVars_mem_subset ha hx)))
     rw [h_map, List.map_id]
+
+/-- A substitution that takes every type variable it binds to itself leaves every type
+    unchanged. -/
+theorem LMonoTy.subst_of_find?_self (S : Subst) (mty : LMonoTy)
+    (h : ∀ x v, HMaps.find? S x = some v → v = .ftvar x) : LMonoTy.subst S mty = mty := by
+  induction mty with
+  | ftvar x =>
+    rw [LMonoTy.subst_unfold]
+    cases hx : HMaps.find? S x with
+    | none => simp only [hx]
+    | some v => simp only [hx]; exact h x v hx
+  | bitvec n => rw [LMonoTy.subst_bitvec]
+  | tcons name args ih =>
+    rw [LMonoTy.subst_tcons, LMonoTys.subst_eq_map]
+    congr 1
+    exact (List.map_congr_left (fun a ha => ih a ha)).trans (List.map_id' args)
+
+/-- Substituting each type variable of `as` by itself leaves every type unchanged. -/
+theorem LMonoTy.subst_ofScopes_self (as : List TyIdentifier) (mty : LMonoTy) :
+    LMonoTy.subst (HMaps.ofScopes [as.zip (as.map .ftvar)]) mty = mty := by
+  have hpairs : ∀ p ∈ as.zip (as.map LMonoTy.ftvar), p.2 = .ftvar p.1 := by
+    intro p hp
+    induction as with
+    | nil => simp at hp
+    | cons a as ih =>
+      simp only [List.map_cons, List.zip_cons_cons, List.mem_cons] at hp
+      rcases hp with rfl | hp
+      · rfl
+      · exact ih hp
+  refine LMonoTy.subst_of_find?_self _ mty fun x v hv => ?_
+  simp only [HMaps.ofScopes, List.map, HMaps.find?, HMap.find?_ofList_findSome?] at hv
+  split at hv
+  · simp at hv
+  · rename_i w hw
+    cases hv
+    obtain ⟨p, hp, hpw⟩ := List.exists_of_findSome?_eq_some hw
+    split at hpw
+    · rename_i hpx
+      cases hpw
+      rw [hpairs p (List.mem_reverse.1 hp), eq_of_beq hpx]
+    · cases hpw
 
 /-- Two `Subst` that agree on `find?` at every key produce the same substitution
     result. Since `subst` reads `S` only through `find?`, find?-equivalent
@@ -1661,6 +1705,11 @@ theorem LMonoTy.matchSubst_sound {pat ty : LMonoTy} {S : Subst}
 theorem LMonoTy.subst_ftvar_of_some {S : Subst} {x : TyIdentifier} {v : LMonoTy}
     (h : HMaps.find? S x = some v) : LMonoTy.subst S (.ftvar x) = v := by
   rw [LMonoTy.subst_unfold]; simp only [h]
+
+/-- The substitution of `ty` for the one type variable `tv` takes `tv` to `ty`. -/
+@[simp] theorem LMonoTy.subst_singleton_self (tv : TyIdentifier) (ty : LMonoTy) :
+    LMonoTy.subst (Subst.singleton tv ty) (.ftvar tv) = ty :=
+  LMonoTy.subst_ftvar_of_some (Subst.find?_singleton_self tv ty)
 
 /-- Substituting an unbound type variable leaves it alone. -/
 theorem LMonoTy.subst_ftvar_of_none {S : Subst} {x : TyIdentifier}

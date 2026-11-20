@@ -5,6 +5,7 @@
 -/
 module
 
+public import Strata.Languages.Core.AbstractionMarkers
 public import Strata.Languages.Core.Interpreter
 public import Strata.Languages.Core.Procedure
 public import Strata.Languages.Core.ProgramFact
@@ -207,13 +208,14 @@ def pcRefutes (pc : List Expression.Expr) (c : Expression.Expr) : Bool :=
 def pcExprs (pc : List (String × Expression.Expr)) : List Expression.Expr := pc.map (·.2)
 
 /-- Add `c` to the path condition under `label`, the `assume`'s label, which the obligations
-    keep. Literal `true`, and `c` already present under the same label, are not added (both up
-    to source locations); `c` present under another label is added again under this one. A
-    contradicting condition (literal `false`, or the negation of one already assumed) does not
-    end the path: later checks are still recorded, under a path condition that implies `false`
-    (an assert holds, a cover fails). -/
+    keep. Literal `true` under a label that is not an abstraction marker
+    (`Core.isAbstractionMarker`), and `c` already present under the same label, are not added
+    (both up to source locations); `c` present under another label is added again under this
+    one. A contradicting condition (literal `false`, or the negation of one already assumed)
+    does not end the path: later checks are still recorded, under a path condition that implies
+    `false` (an assert holds, a cover fails). -/
 def assumeCond (label : String) (c : Expression.Expr) : ForkM Unit := fun _ st =>
-  if LExpr.isTrue _ c ||
+  if (LExpr.isTrue _ c && !isAbstractionMarker label) ||
       st.pc.any (fun (l, d) => l == label && d.beqIgnoringMetadata c) then [(.ok (), st)]
   else [(.ok (), { st with pc := (label, c) :: st.pc })]
 

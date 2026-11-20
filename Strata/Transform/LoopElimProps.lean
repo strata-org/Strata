@@ -12,6 +12,7 @@ public import Strata.Transform.CoreTransformProps
 import Strata.Languages.Core.ExpressionsProps
 import all Strata.Languages.Core.Factory
 import all Strata.Transform.LoopElim
+import all Strata.Languages.Core.AbstractionMarkers
 import all Strata.Transform.CoreTransform
 import all Strata.DL.Imperative.Cmd
 import all Strata.DL.Imperative.Stmt
@@ -374,27 +375,31 @@ theorem defined_of_mem_carriedVars {D df : P.Ident → Bool} {body : List (Stmt 
 
 mutual
 /-- The output of a def-use well-formed statement is def-use well formed, provided negation
-    reads no new variable and refers to no new undeclared operator. -/
+    reads no new variable and refers to no new undeclared operator, and the `true` literal of
+    the encoding's marker of a nondeterministic guard reads no variable and refers to no
+    operator. -/
 theorem StmtRel.defUseWellFormed {s s' : Stmt P (CmdExt P)} (h : StmtRel s s')
     {D df : P.Ident → Bool}
     (hnotFv : ∀ g : P.Expr, ∀ x ∈ HasFvars.getFvars (HasBoolOps.not g), x ∈ HasFvars.getFvars g)
     (hnotOps : ∀ g : P.Expr, ∀ o ∈ HasOps.getOps (HasBoolOps.not g),
       o ∈ HasOps.getOps g ∨ df o = true)
+    (httFv : HasFvars.getFvars (HasBool.tt (P := P)) = [])
+    (httOps : HasOps.getOps (HasBool.tt (P := P)) = [])
     (hdu : Stmt.defUseWellFormed D df s = true) : Stmt.defUseWellFormed D df s' = true := by
   match h with
   | .cmd _ | .exit _ _ | .typeDecl _ _ => exact hdu
   | .block hb =>
     simp only [Stmt.defUseWellFormed] at hdu ⊢
-    exact hb.defUseWellFormed hnotFv hnotOps hdu
+    exact hb.defUseWellFormed hnotFv hnotOps httFv httOps hdu
   | .ite ht he =>
     simp only [Stmt.defUseWellFormed, Bool.and_eq_true] at hdu ⊢
-    exact ⟨⟨hdu.1.1, ht.defUseWellFormed hnotFv hnotOps hdu.1.2⟩,
-      he.defUseWellFormed hnotFv hnotOps hdu.2⟩
+    exact ⟨⟨hdu.1.1, ht.defUseWellFormed hnotFv hnotOps httFv httOps hdu.1.2⟩,
+      he.defUseWellFormed hnotFv hnotOps httFv httOps hdu.2⟩
   | @StmtRel.loop _ _ _ _ g body body' md n hb _ =>
     simp only [Stmt.defUseWellFormed, Bool.and_eq_true, Option.map_none, Option.getD_none,
       List.all_nil, List.flatMap_nil, and_true] at hdu
     obtain ⟨⟨hg, hgo⟩, hbody⟩ := hdu
-    have hbody' := hb.defUseWellFormed hnotFv hnotOps hbody
+    have hbody' := hb.defUseWellFormed hnotFv hnotOps httFv httOps hbody
     have hM := havocs_defUseWellFormed (df := df) (Block.carriedVars body) md
       fun _ hx => defined_of_mem_carriedVars hbody hx
     cases g with
@@ -415,15 +420,22 @@ theorem StmtRel.defUseWellFormed {s s' : Stmt P (CmdExt P)} (h : StmtRel s s')
     | nondet =>
       simp [Stmt.loopPassive, LoopElim.havocBlock, LoopElim.enterAssume, LoopElim.exitAssume,
         Stmt.defUseWellFormed, Block.defUseWellFormed, hM, hbody', ExprOrNondet.getVars,
-        Stmt.definedVars, ExprOrNondet.getOps]
+        Stmt.definedVars, ExprOrNondet.getOps, HasPassiveCmds.assume, HasVarsImp.readVars,
+        CmdExt.readVars, Cmd.getVars, HasOpsImp.getOps, CmdExt.getOps, Cmd.getOps, httFv, httOps,
+        HasVarsImp.modifiedVars, CmdExt.modifiedVars, Cmd.modifiedVars, HasVarsImp.definedVars,
+        CmdExt.definedVars, Cmd.definedVars]
 
 /-- The output of a def-use well-formed list is def-use well formed, provided negation reads no
-    new variable and refers to no new undeclared operator. -/
+    new variable and refers to no new undeclared operator, and the `true` literal of the
+    encoding's marker of a nondeterministic guard reads no variable and refers to no
+    operator. -/
 theorem BlockRel.defUseWellFormed {ss ss' : List (Stmt P (CmdExt P))} (h : BlockRel ss ss')
     {D df : P.Ident → Bool}
     (hnotFv : ∀ g : P.Expr, ∀ x ∈ HasFvars.getFvars (HasBoolOps.not g), x ∈ HasFvars.getFvars g)
     (hnotOps : ∀ g : P.Expr, ∀ o ∈ HasOps.getOps (HasBoolOps.not g),
       o ∈ HasOps.getOps g ∨ df o = true)
+    (httFv : HasFvars.getFvars (HasBool.tt (P := P)) = [])
+    (httOps : HasOps.getOps (HasBool.tt (P := P)) = [])
     (hdu : Block.defUseWellFormed D df ss = true) : Block.defUseWellFormed D df ss' = true := by
   match h with
   | .nil => exact hdu
@@ -434,7 +446,8 @@ theorem BlockRel.defUseWellFormed {ss ss' : List (Stmt P (CmdExt P))} (h : Block
       funext n
       simp [hs.mem_definedVars true n]
     rw [hD]
-    exact ⟨hs.defUseWellFormed hnotFv hnotOps hdu.1, hr.defUseWellFormed hnotFv hnotOps hdu.2⟩
+    exact ⟨hs.defUseWellFormed hnotFv hnotOps httFv httOps hdu.1,
+      hr.defUseWellFormed hnotFv hnotOps httFv httOps hdu.2⟩
 end
 
 end DefUse
@@ -455,20 +468,23 @@ private theorem havocs_fvarTypesWellAnnotated (Γ : VarTyping P) (M : List P.Ide
 
 mutual
 /-- The output of a statement has its free-variable annotations checked wherever the statement
-    does, provided negation adds no annotated occurrence. -/
+    does, provided negation adds no annotated occurrence and the `true` literal of the
+    encoding's marker of a nondeterministic guard has no annotated occurrence. -/
 theorem StmtRel.fvarTypesWellAnnotated {s s' : Stmt P (CmdExt P)} (h : StmtRel s s')
     (hnotTy : ∀ g : P.Expr, ∀ p ∈ HasFvars.getTypedFvars (HasBoolOps.not g),
       p ∈ HasFvars.getTypedFvars g)
+    (httTy : HasFvars.getTypedFvars (HasBool.tt (P := P)) = [])
     {Γ : VarTyping P} (hw : Stmt.fvarTypesWellAnnotated Γ s) :
     Stmt.fvarTypesWellAnnotated Γ s' := by
   match h with
   | .cmd _ | .exit _ _ | .typeDecl _ _ => exact hw
-  | .block hb => exact hb.fvarTypesWellAnnotated hnotTy hw
+  | .block hb => exact hb.fvarTypesWellAnnotated hnotTy httTy hw
   | .ite ht he =>
-    exact ⟨hw.1, ht.fvarTypesWellAnnotated hnotTy hw.2.1, he.fvarTypesWellAnnotated hnotTy hw.2.2⟩
+    exact ⟨hw.1, ht.fvarTypesWellAnnotated hnotTy httTy hw.2.1,
+      he.fvarTypesWellAnnotated hnotTy httTy hw.2.2⟩
   | @StmtRel.loop _ _ _ _ g body body' md n hb _ =>
     obtain ⟨hg, -, -, hbody⟩ := hw
-    have hbody' := hb.fvarTypesWellAnnotated hnotTy hbody
+    have hbody' := hb.fvarTypesWellAnnotated hnotTy httTy hbody
     have hnil : ∀ Γ : VarTyping P, Γ.extend [] = Γ := fun _ => rfl
     have hM := havocs_fvarTypesWellAnnotated Γ (Block.carriedVars body) md
     cases g with
@@ -487,25 +503,32 @@ theorem StmtRel.fvarTypesWellAnnotated {s s' : Stmt P (CmdExt P)} (h : StmtRel s
           CmdExt.typedReadVars, Cmd.getTypedVars] at hx
         exact hg x ty (by simpa [ExprOrNondet.getTypedVars] using hnotTy g _ hx)
     | nondet =>
-      refine ⟨hg, ⟨⟨hM, ?_⟩, ?_⟩, trivial⟩
+      have htt : ∀ l x ty, (x, ty) ∈ HasTypedVarsImp.typedReadVars (P := P)
+          (HasPassiveCmds.assume (CmdT := CmdExt P) l HasBool.tt md) → False := by
+        simp [HasPassiveCmds.assume, HasTypedVarsImp.typedReadVars, CmdExt.typedReadVars,
+          Cmd.getTypedVars, httTy]
+      refine ⟨hg, ⟨⟨hM, ⟨fun x ty hx => (htt _ x ty hx).elim, ?_⟩⟩, ?_⟩, trivial⟩
       · simpa [hnil, Stmt.typedDefinedVars, LoopElim.havocBlock,
-          LoopElim.enterAssume] using hbody'
+          HasPassiveCmds.assume, HasTypedVarsImp.typedDefinedVars, CmdExt.typedDefinedVars,
+          Cmd.typedDefinedVars] using hbody'
       · simp only [Stmt.typedDefinedVars, hnil]
-        exact ⟨hM, trivial⟩
+        exact ⟨hM, fun x ty hx => (htt _ x ty hx).elim, trivial⟩
 
 /-- The output of a list has its free-variable annotations checked wherever the list does,
-    provided negation adds no annotated occurrence. -/
+    provided negation adds no annotated occurrence and the `true` literal of the encoding's
+    marker of a nondeterministic guard has no annotated occurrence. -/
 theorem BlockRel.fvarTypesWellAnnotated {ss ss' : List (Stmt P (CmdExt P))} (h : BlockRel ss ss')
     (hnotTy : ∀ g : P.Expr, ∀ p ∈ HasFvars.getTypedFvars (HasBoolOps.not g),
       p ∈ HasFvars.getTypedFvars g)
+    (httTy : HasFvars.getTypedFvars (HasBool.tt (P := P)) = [])
     {Γ : VarTyping P} (hw : Block.fvarTypesWellAnnotated Γ ss) :
     Block.fvarTypesWellAnnotated Γ ss' := by
   match h with
   | .nil => exact hw
   | .cons hs hr =>
-    refine ⟨hs.fvarTypesWellAnnotated hnotTy hw.1, ?_⟩
+    refine ⟨hs.fvarTypesWellAnnotated hnotTy httTy hw.1, ?_⟩
     rw [hs.typedDefinedVars]
-    exact hr.fvarTypesWellAnnotated hnotTy hw.2
+    exact hr.fvarTypesWellAnnotated hnotTy httTy hw.2
 end
 
 /-! ## Partial elimination
@@ -1078,7 +1101,7 @@ theorem blockInitEnvWF_of_blockRel {params : InitEnvWFParams} {L : List String}
     (Core.not_getOps g o ho).imp_right fun h => by
       subst h
       exact hwf.factoryDeclared _ boolNot_isNameInFactory
-  have hdu' := hrel.defUseWellFormed Core.not_getFvars hnotOps hwf.defUseOk
+  have hdu' := hrel.defUseWellFormed Core.not_getFvars hnotOps rfl rfl hwf.defUseOk
   exact { hwf with
     readWritesDefined := fun _ hn hnd =>
       Imperative.Block.defined_of_mem_touchedVars (fun _ _ h => h) hdu' hn hnd
@@ -1091,7 +1114,7 @@ theorem blockInitEnvWF_of_blockRel {params : InitEnvWFParams} {L : List String}
     initTypesInhabited := fun ty hty => hwf.initTypesInhabited ty (hrel.initTypes ty hty)
     fvarTypesOk := by
       obtain ⟨Γ, hσ, hw⟩ := hwf.fvarTypesOk
-      exact ⟨Γ, hσ, hrel.fvarTypesWellAnnotated Core.not_getTypedFvars hw⟩
+      exact ⟨Γ, hσ, hrel.fvarTypesWellAnnotated Core.not_getTypedFvars rfl hw⟩
     measuresTyped := fun m hm => hwf.measuresTyped m (hrel.measures ▸ hm) }
 
 end -- public section

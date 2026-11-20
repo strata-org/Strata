@@ -40,6 +40,7 @@ variable {P : PureExpr} {l : Type} [BEq l]
 variable [HasBoolOps P] [HasFvar P] [HasFvars P]
     [DecidableEq P.Expr] [DecidableEq P.Ident] [InterpLang P] [CallLangWF P] [HasOldIdent P]
 variable {Hdr : Type} [DecidableEq Hdr] [Inhabited Hdr] [ProcedureHeader P Hdr]
+  [ProcedureTypeInstantiation P Hdr]
 variable {m : Type → Type} [Monad m] [LawfulMonad m] [InterpEffects P m]
     [MonadExcept StopReason m]
 

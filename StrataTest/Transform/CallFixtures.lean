@@ -102,6 +102,19 @@ def qTyArgsProg (q : Decl) (tyArgs : Option (List LTy)) : Program :=
 def rTyArgsProg (r : Decl) (tyArgs : Option (List LTy)) : Program :=
   { decls := [r, caller [] [] [.cmd (.call "r" tyArgs [.inArg int7] .empty)]] }
 
+/-- `callee<a>(x : a)` called with the stored type arguments `tyArgs`. The argument `s` has the
+    type `Sequence $__ty0`, with `$__ty0` a generated type variable. -/
+def genArgProg (callee : Decl) (name : String) (tyArgs : Option (List LTy)) : Program :=
+  { decls := [callee, caller [] [] [declNondet "s" (seqTy (tv "$__ty0")),
+    .cmd (.call name tyArgs [.inArg (v "s" (seqTy (tv "$__ty0")))] .empty)]] }
+
+/-- `callee<a, b>(x : a, y : b)` called with the stored type arguments `tyArgs`. Both arguments
+    have the type `$__ty0`, a generated type variable, so the call gives `a` and `b` one type. -/
+def genPairArgProg (callee : Decl) (name : String) (tyArgs : Option (List LTy)) : Program :=
+  { decls := [callee, caller [] [] [declNondet "s" (tv "$__ty0"),
+    .cmd (.call name tyArgs [.inArg (v "s" (tv "$__ty0")), .inArg (v "s" (tv "$__ty0"))]
+      .empty)]] }
+
 /-- `r<a, b>(x : a)` called with an argument of unknown type. -/
 def unknownProg (r : Decl) : Program :=
   { decls := [r, caller [] [] [callS "r" [.inArg unknownArg]]] }
@@ -110,14 +123,20 @@ def unknownProg (r : Decl) : Program :=
 def conflictProg (idp : Decl) : Program := { decls := [idp,
   caller [] [] [declNondet "bb" .bool, callS "idp" [.inArg int7, .outArg "bb"]]] }
 
-/-- `p` with every call inlined. The type names the inlining generates avoid the
-    names already in `p`. -/
-def runInlineCall (p : Program) : Program :=
+/-- `p` with every call inlined, or the error that inlining raises. The type names the inlining
+    generates avoid the names already in `p`. -/
+def tryInlineCall (p : Program) : Except Strata.Message Program :=
   let taken := p.typeNamesWithPrefix ProcedureInlining.inlineTyPrefix
   match (declareGeneratedTypes ProcedureInlining.inlineTyPrefix taken
       (runProgramTyped (targetProcList := .none) (inlineCallCmd taken) p) .emp) with
-  | ⟨.ok (_, res), _⟩ => res
-  | ⟨.error e, _⟩ => panic! (toString e) -- nopanic:ok
+  | ⟨.ok (_, res), _⟩ => .ok res
+  | ⟨.error e, _⟩ => .error e
+
+/-- `p` with every call inlined. -/
+def runInlineCall (p : Program) : Program :=
+  match tryInlineCall p with
+  | .ok res => res
+  | .error e => panic! (toString e) -- nopanic:ok
 
 /-- `forall x : ty, y : ty :: x == y`: true exactly when `ty` has one value. -/
 def singletonAll (ty : LMonoTy) : Expression.Expr :=

@@ -234,7 +234,8 @@ def inlineCallCmd (taken : Std.HashSet String)
 
         -- Instantiate the callee at this call's type instance. Keep only the
         -- signature (inputs/outputs), not a full `Procedure.Header`.
-        let tySubst ← callTypeSubst inlineTyPrefix taken vt proc callArgs tyArgs
+        let tySubst ←
+          callTypeSubstOrBreach "Procedure inlining" md inlineTyPrefix taken vt proc callArgs tyArgs
         let inputs : @Lambda.LMonoTySignature Unit :=
           proc.header.inputs.map (fun (id, ty) => (id, Lambda.LMonoTy.subst tySubst ty))
         let outputs : @Lambda.LMonoTySignature Unit :=

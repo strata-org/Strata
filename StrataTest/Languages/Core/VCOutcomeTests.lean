@@ -281,7 +281,7 @@ private def validityAfterValidation (phases : List AbstractedPhase)
 /-- Obligation with call-elimination labels in path conditions. -/
 private def callElimObligation : Imperative.ProofObligation Core.Expression :=
   { label := "test_callElim", property := .assert,
-    assumptions := [[.assumption "callElimAssume_post" (.true testLoc)]],
+    assumptions := [[.assumption "$__callElimAssume_post" (.true testLoc)]],
     obligation := .true testLoc, metadata := {} }
 
 /-- Obligation with no abstraction labels — models are sound. -/

@@ -111,7 +111,7 @@ private def procAt (t : String) : Procedure :=
     output types, the annotations of both conditions and the declared type of
     the structured body's variable. -/
 example : (procAt "$__ty0").renameTypeArgs ren0 = procAt "a" := by
-  simp [Procedure.renameTypeArgs, procAt, xAt, ren0, renameTyArgList,
+  simp [Procedure.renameTypeArgs, Procedure.mapTys, procAt, xAt, ren0, renameTyArgList,
     mapExprTys, mapStmtsTys_cons, mapStmtsTys_nil, mapStmtTys_cmd, mapCmdTys, mapCmdWith,
     mapLTyTys, ExprOrNondet.map, LExpr.replaceUserProvidedType, subst_ren0]
 

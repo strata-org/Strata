@@ -6,6 +6,7 @@
 module
 
 public import Strata.Init
+public import Strata.DL.SMT.Lean.ExportConfig
 
 public section
 namespace Core
@@ -196,6 +197,10 @@ def MergeMode.ofString? (s : String) : Option MergeMode :=
     When adding or removing fields, keep `verifyOptionsFlags` and
     `parseVerifyOptions` in StrataMain.lean in sync. -/
 structure VerifyOptions where
+  /-- Optional Lean export: each validity check in its scope, by default the checks the solver
+      leaves undecided, is also written as a Lean theorem file. Frontends inherit this
+      setting. The command line sets it with `--lean-directory`. -/
+  leanExport : Option LeanExport.ExportConfig := none
   -- Pipeline stopping points
   /-- How much diagnostic output to emit. -/
   verbose : VerboseMode
@@ -358,6 +363,11 @@ instance : Inhabited VerifyOptions where
     when `symExec` is `none` (a pipeline can name the symbolic execution phase without
     `--vcgen symexec`). -/
 def VerifyOptions.symExecMode (o : VerifyOptions) : MergeMode := o.symExec.getD .default
+
+/-- Whether the default discharge function sends a check to the incremental backend (a live
+    solver session) and not to the batch backend (one SMT-LIB file per check). -/
+def VerifyOptions.usesIncrementalBackend (o : VerifyOptions) : Bool :=
+  o.incremental && !o.alwaysGenerateSMT
 
 def VerifyOptions.quiet : VerifyOptions :=
   { VerifyOptions.default with verbose := .quiet }

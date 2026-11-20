@@ -13,6 +13,7 @@ import Strata.DL.Imperative.Logic.TraceRelationsProps
 import Strata.DL.Imperative.StmtSemanticsProps
 import Strata.DL.Imperative.StoreRelationsProps
 import all Strata.Transform.InsertLoopInvariantAsserts
+import all Strata.Languages.Core.AbstractionMarkers
 import all Strata.DL.Imperative.Cmd
 
 /-! # Inserting loop invariant checks over-approximates (big-step)

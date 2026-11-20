@@ -12,6 +12,7 @@ public import Strata.Languages.Core.Logic.TraceInterpUsingDenote
 public import Strata.Languages.Core.Logic.ContractToHoareTripleProps
 public import Strata.Languages.Core.Logic.InterpreterHoareRelation
 public import Strata.Languages.Core.ProgramProps
+public import Strata.Languages.Core.ProcedureProps
 public import Strata.Languages.Core.InstWellFormedSemanticsEval
 public import Strata.Languages.Core.IntEvalProps
 public import Strata.DL.Imperative.CFGSemanticsProps
@@ -42,6 +43,7 @@ about these fixtures belong in the library's `*Props` files.
 * Store and contract facts: `Pinned`, `intOf`, the condition `ge0`, its value (`ge0_eval`) and
   the contract facts it gives (`nonneg_of_pre`, `post_ge0`), the postcondition `eqInt` and its
   contract fact `post_eqInt`, and the loop measure `intMeasure` read off an integer variable.
+* Single-assignment bodies: `setBlockWF` gives the gate of a body `x := e`.
 * Empty bodies: `blockWF_nil`, `run_procBlock_nil` and `reachable_nil` run an empty body, and
   `oldInoutAsPredicate_of_no_inout`, `preAsPredicate_of_no_pre` discharge the parts of a
   contract precondition a procedure has no clause for.
@@ -132,7 +134,7 @@ theorem bodyTerminates_of_progresses {p : Core.Program} {n : String}
     of procedure `n` with `Core.runLits`, deciding each premise of
     `Procedure.contractTriple_of_meetsContractOnLits` by `native_decide`. -/
 macro "contract_by_run " p:term:max n:term:max : term =>
-  `(Core.Logic.Hoare.Procedure.contractTriple_of_meetsContractOnLits $p
+  `(Core.Logic.Hoare.Procedure.contractTriple_of_meetsContractOnLits (hmono := by native_decide) $p
       Strata.HoareUtils.testParams $n (Strata.HoareUtils.procOf $p $n)
       (Strata.HoareUtils.bodyOf $p $n) Strata.HoareUtils.fuel
       (by native_decide) (by native_decide) (by native_decide)
@@ -296,6 +298,46 @@ theorem preAsPredicate_of_no_pre (factory : Lambda.Factory Core.CoreLParams)
     (h : proc.spec.preconditions.toList = []) :
     Core.Logic.Hoare.Procedure.preAsPredicate factory proc ρ := by
   intro label check hmem; rw [h] at hmem; simp at hmem
+
+/-! ## Single-assignment bodies -/
+
+/-- The gate of `x := e` wrapped as a procedure body holds at an entry over `Core.Factory` with a
+    well-formed store that binds `x` and the variables `e` reads, under a typing of the store that
+    `e`'s annotations agree with. -/
+theorem setBlockWF (x : Core.Expression.Ident) (e : Core.Expression.Expr)
+    (md : MetaData Core.Expression) (ρ : Env Core.Expression)
+    (hf : ρ.factory.factory = Core.Factory) (hsv : WellFormedStore ρ.store ρ.factory)
+    (hreads : ∀ n ∈ HasVarsImp.readVars (P := Core.Expression)
+        (CmdExt.cmd (Cmd.set x (.det e) md)), (ρ.store n).isSome = true)
+    (hres : (ρ.store x).isSome = true)
+    (hty : ∃ Γ, StoreHasTyping ρ.factory ρ.store Γ ∧
+      Γ.annotates (HasTypedVarsImp.typedReadVars (P := Core.Expression)
+        (CmdExt.cmd (Cmd.set x (.det e) md)))) :
+    Core.Logic.BlockInitEnvWF testParams
+      [Stmt.block "" [Stmt.cmd (CmdExt.cmd (Cmd.set x (.det e) md))] #[]] ρ := by
+  refine Core.Logic.BlockInitEnvWF.of_defUseOk (Core.coreFactory_WellFormedSemanticEval _ hf)
+    hsv (fun n hn => ?_) (fun n hn => ?_) (fun n _ p hp => ?_)
+    (fun _ _ p hp => by simp [testParams] at hp) ?_ (fun _ _ => rfl)
+    (by
+      simp [Block.InitTypesInhabited, Block.initTypes, Stmt.initTypes,
+        HasInitTypesImp.initTypes, CmdExt.initTypes, Cmd.initTypes])
+    (by obtain ⟨Γ, hσ, ha⟩ := hty; exact ⟨Γ, hσ, ⟨ha, trivial⟩, trivial⟩)
+    (by simp [Block.measures, Stmt.measures])
+  · simp [Block.definedVars, Stmt.definedVars, HasVarsImp.definedVars, CmdExt.definedVars,
+      Cmd.definedVars] at hn
+  · simp [Block.definedVars, Stmt.definedVars, HasVarsImp.definedVars, CmdExt.definedVars,
+      Cmd.definedVars] at hn
+  · simp [testParams] at hp
+  · simp only [Block.defUseWellFormed, Stmt.defUseWellFormed, HasVarsImp.definedVars,
+      CmdExt.definedVars, Cmd.definedVars, List.all_nil, Bool.and_true, testParams,
+      Bool.and_eq_true, List.all_eq_true]
+    refine ⟨⟨?_, ?_⟩, ?_⟩
+    · intro n hn; exact hreads n hn
+    · intro n hn
+      simp only [HasVarsImp.modifiedVars, CmdExt.modifiedVars, Cmd.modifiedVars,
+        List.mem_singleton] at hn
+      subst hn; exact hres
+    · intro n _; trivial
 
 /-! ## Tactics -/
 

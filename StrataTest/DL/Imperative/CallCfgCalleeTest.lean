@@ -134,7 +134,8 @@ private theorem callCmd_sem (fac : Expression.Factory) :
   have h := EvalCmdExtE.call_sem (n := "callee") (tyArgs := none) (callArgs := [.outArg xId])
     (md := .empty)
     (π := calleeEnv) (fac := fac) (σ := (σ0 fac)) (σAO := (frame fac))
-    (by simp [calleeEnv])
+    (by simp [Calls.typeInstantiatedCallee, calleeEnv, ProcedureTypeInstantiation.instantiate,
+      Procedure.instantiateTypes, callee])
     ⟨[], [(ffV fac)], .eval_none,
       .read_some (by simp [σ0, bind]) (HasBool.boolIsVal fac).2 .read_none,
       ⟨emptyStore, (frame fac), .init_none, .init_some (initState_bind rfl) .init_none, rfl⟩⟩

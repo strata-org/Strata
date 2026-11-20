@@ -89,19 +89,19 @@ theorem overapproximatesTraces_of_blockRel (params : InitEnvWFParams) (L : List 
     by_cases htr : trace = []
     · subst htr
       exact ⟨_, [], .refl _, [], [], rfl, .inl ⟨rfl, rfl⟩, .nil⟩
-    obtain ⟨evs', hb, habs⟩ := reach_sim hvar hWB hF hrel hdu hT (star_breach h' htr)
+    obtain ⟨evs', hb, habs⟩ := reach_sim hvar hWB hF.val.eval_tt hF hrel hdu hT (star_breach h' htr)
     obtain ⟨cfg', hc⟩ := breach_star hWB hb
     exact ⟨cfg', evs', star_core π hc, evs', [], by simp, habs, .nil⟩
   · have h' := star_evalE h hnc
     have hE := starE_preserves_factory h'
-    obtain ⟨evs', hb, habs⟩ := run_sim hvar hWB hF hrel hdu hT (star_brun.1 h')
+    obtain ⟨evs', hb, habs⟩ := run_sim hvar hWB hF.val.eval_tt hF hrel hdu hT (star_brun.1 h')
     obtain ⟨σ', F'⟩ := ρ'
     simp only at hE
     subst hE
     exact ⟨_, evs', star_core π (brun_star hWB hb), rfl, habs⟩
   · have h' := star_evalE h hnc
     have hE := starE_preserves_factory h'
-    obtain ⟨evs', hb, habs⟩ := run_sim hvar hWB hF hrel hdu hT (star_brun.2 h')
+    obtain ⟨evs', hb, habs⟩ := run_sim hvar hWB hF.val.eval_tt hF hrel hdu hT (star_brun.2 h')
     obtain ⟨σ', F'⟩ := ρ'
     simp only at hE
     subst hE
@@ -162,7 +162,7 @@ theorem overapproximatesTraces_whenLoopExitsLocal_of_blockRel (params : InitEnvW
       Trace.ImpliesReachability (DenoteBasedInterp F) trace evs' := by
     intro trace o hb
     obtain ⟨evs', hb', habs, hv⟩ :=
-      run_sim_valid (allowed := (· = F₀)) htr hvar hWB rfl hrel hloc hdu hT hb
+      run_sim_valid (allowed := (· = F₀)) htr hvar hWB hF.val.eval_tt rfl hrel hloc hdu hT hb
     exact ⟨evs', hb', Trace.mayDropEvents_insertsTrueAssumes_mono (fun _ h => h ▸ hF) habs,
       hv, fun ⟨w, hw⟩ => ⟨w, Trace.mayDropEvents_insertsTrueAssumes_assumptionsHold htr habs hw⟩⟩
   refine ⟨h0.1, fun ρ' trace h => ?_, fun l ρ' trace h => ?_, h0.2.2.2⟩

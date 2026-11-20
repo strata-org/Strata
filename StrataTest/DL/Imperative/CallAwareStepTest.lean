@@ -81,7 +81,8 @@ private theorem callCmd_sem (fac : Expression.Factory)
     .structured (ρ' := ⟨emptyStore, fac⟩) (body_run fac)
   have h := EvalCmdExtE.call_sem (n := "callee") (tyArgs := none) (callArgs := []) (md := .empty)
     (π := calleeEnv) (fac := fac) (σ := σ) (σ' := σ) (σAO := emptyStore)
-    (by simp [calleeEnv])
+    (by simp [Calls.typeInstantiatedCallee, calleeEnv, ProcedureTypeInstantiation.instantiate,
+      Procedure.instantiateTypes, callee])
     ⟨[], [], .eval_none, .read_none, ⟨emptyStore, emptyStore, .init_none, .init_none, rfl⟩⟩
     hbody ⟨(by simp [Imperative.CallArg.getLhs]), [], .read_none, .update_none, .nil⟩
   simpa [Calls.defaultAssertEvents, Calls.checksAtCall, MetaData.setCallSiteFileRange_empty,
@@ -99,7 +100,8 @@ private theorem callCmd_semCore
     CoreBodyExecE.structured (ρ' := ⟨emptyStore, fac⟩) (body_run fac)
   have h := EvalCommandE.call_sem (n := "callee") (tyArgs := none) (callArgs := []) (md := .empty)
     (π := calleeEnv) (fac := fac) (σ := σ) (σ' := σ) (σAO := emptyStore)
-    (by simp [calleeEnv])
+    (by simp [Calls.typeInstantiatedCallee, calleeEnv, ProcedureTypeInstantiation.instantiate,
+      Procedure.instantiateTypes, callee])
     ⟨[], [], .eval_none, .read_none, ⟨emptyStore, emptyStore, .init_none, .init_none, rfl⟩⟩
     hbody ⟨(by simp [Imperative.CallArg.getLhs]), [], .read_none, .update_none, .nil⟩
   simpa [Core.defaultAssertEvents, Calls.defaultAssertEvents, Calls.checksAtCall,

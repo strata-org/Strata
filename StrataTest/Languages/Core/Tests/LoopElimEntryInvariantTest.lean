@@ -50,7 +50,7 @@ Label: insertLoopInvAssert_arbitrary_iter_maintain_invariant_loop_0_0
 Property: assert
 Assumptions:
 <dead_branch: false>: false
-insertLoopInvAssume_entry_invariant_loop_0_0: false
+$__insertLoopInvAssume_entry_invariant_loop_0_0: false
 Obligation:
 true
 

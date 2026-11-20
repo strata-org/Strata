@@ -115,7 +115,7 @@ abbrev CoreBodyRel :=
   fun fac σ c σ' emitted =>
     ∃ nm tyArgs p callArgs md σAO σ_final bodyEvents,
       c = CmdExt.call nm tyArgs callArgs md
-      ∧ π nm = some p
+      ∧ Calls.typeInstantiatedCallee π nm tyArgs = some p
       ∧ CallEntry fac σ p callArgs σAO
       ∧ B p.body ⟨σAO, fac⟩ σ_final bodyEvents
       ∧ CallExit fac σ p callArgs σ_final σ'

@@ -25,7 +25,8 @@ the conditions of the events of a run, a reach or a failure read only identifier
 (`brun_fv`, `breach_fv`, `fails_fv`). A run keeps the variables defined
 at its start defined (`brun_dom`), defines only those and the list's (`brun_sub`), changes no
 variable it does not modify (`brun_frame`), none it neither modifies nor defines
-(`brun_frame_modifiedOrDefined`), leaves unbound what it does not define (`brun_undef`), keeps
+(`brun_frame_modifiedOrDefined`, `brunS_frame_modifiedOrDefined`), leaves unbound what it does
+not define (`brun_undef`, `brunS_undef`), keeps
 the store value-valued, its values typed in agreement with the start (`brun_typed`,
 `brunS_typed`, `TypeAgree`), leaving a scope keeps it value-valued (`WellFormedStore.proj`), and a
 statement ending normally defines exactly its start's variables and its top-level definitions
@@ -657,6 +658,29 @@ theorem brun_frame_modifiedOrDefined {ss : PStmts P} {σ : SemanticStore P}
   cases hσ : σ z with
   | none => exact brun_undef h z hz.2 hσ
   | some _ => rw [brun_frame h z (by simp [hσ]) hz.1, hσ]
+
+/-- A statement run leaves unbound every unbound variable the statement does not define. -/
+theorem brunS_undef {s : PStmt P} {σ : SemanticStore P} {evs : List (Event P)}
+    {o : Outcome P} (h : BRunS F s σ evs o) :
+    ∀ z, z ∉ Stmt.definedVars s false → σ z = none → o.store z = none := by
+  intro z hz h0
+  cases ho : o.store z with
+  | none => rfl
+  | some _ =>
+    rcases (brunS_runStore h).sub z (by simp [ho]) with h1 | h1
+    · simp [h0] at h1
+    · exact absurd (Stmt.definedVars_true_subset_false (fun _ _ h => h) h1) hz
+
+/-- A statement run changes only the variables the statement modifies or defines, at any
+    depth. -/
+theorem brunS_frame_modifiedOrDefined {s : PStmt P} {σ : SemanticStore P}
+    {evs : List (Event P)} {o : Outcome P} (h : BRunS F s σ evs o) :
+    ∀ z, z ∉ Stmt.modifiedOrDefinedVars s false → o.store z = σ z := by
+  intro z hz
+  simp only [Stmt.modifiedOrDefinedVars, List.mem_append, not_or] at hz
+  cases hσ : σ z with
+  | none => exact brunS_undef h z hz.2 hσ
+  | some _ => rw [(brunS_runStore h).frame z (by simp [hσ]) hz.1, hσ]
 
 /-- A statement ending normally defines exactly the variables of its start and those it defines
     at top level. -/

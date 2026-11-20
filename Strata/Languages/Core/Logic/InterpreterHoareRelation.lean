@@ -159,22 +159,23 @@ private theorem Procedure.contractPost_of_ensuresHoldOnLits {fuel : Nat} {bs : L
   | some bs => Procedure.ensuresHoldOnLits fuel (keepUndeclared bss bs) proc
   | none => false
 
-/-- **A contract proved by running the body.**  A procedure of `p` over `Core.Factory` whose
-    straight-line body runs over literals to a state where its postconditions evaluate to `true`
-    (`meetsContractOnLits`) meets its contract. -/
+/-- **A contract proved by running the body.** A procedure of `p` without type parameters, over
+    `Core.Factory`, whose straight-line body runs over literals to a state where its postconditions
+    evaluate to `true` (`meetsContractOnLits`) meets its contract. -/
 theorem Procedure.contractTriple_of_meetsContractOnLits (p : Program) (params : InitEnvWFParams)
     (procName : String) (proc : Procedure) (bss : Statements) (fuel : Nat)
     (hproc : p.findProcByString? procName = some proc)
     (hbody : proc.body = .structured bss)
     (hchecksTyped : Procedure.contractChecksTyped proc)
     (hfac : p.factoryBeforeProcedure procName = Core.Factory)
-    (hchk : Procedure.meetsContractOnLits fuel proc bss = Bool.true) :
+    (hchk : Procedure.meetsContractOnLits fuel proc bss = Bool.true)
+    (hmono : proc.header.typeArgs = [] := by first | rfl | decide) :
     Procedure.contractTriple p params procName := by
   unfold Procedure.meetsContractOnLits at hchk
   split at hchk
   · rename_i bs hrun
     refine Procedure.contractTriple_of_core p params procName proc bss hproc hbody
-      hchecksTyped ?_
+      hchecksTyped (hmono := hmono) ?_
     rw [hfac]
     exact consequence p.findProcByString? params
       (block p.findProcByString? params
