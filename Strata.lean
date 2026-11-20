@@ -122,6 +122,7 @@ import Strata.Languages.Core.Logic.InterpreterHoareRelation
 
 /- Strata Languages — additional -/
 import Strata.Languages.Cortex
+import Strata.Languages.Cortex.InterpreterSound
 import Strata.Languages.Core.EntryPoint
 import Strata.Languages.Core.IncrementalSolve
 import Strata.Languages.Core.IncrementalSolveCorrect

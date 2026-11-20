@@ -198,12 +198,23 @@ variable [HasBool P] [DecidableEq P.Expr] [InterpLang P] [HasFvar P]
   (rAssumeEvents fac havocked.get post).forM (InterpEffects.emit (P := P))
   pure havocked.get
 
+/-- What an extension command's run gives the stepper: the store it ends in, or a call of
+    `procName`, from the environment `env` it reached, with the call's arguments, metadata and the
+    instantiation `inst` of its callee, which the stepper runs as it runs a call. -/
+inductive ExtStep (P : PureExpr) [InterpLang P] (CmdT : Type) (Hdr : Type) [DecidableEq Hdr]
+    [Inhabited Hdr] where
+  /-- The command ends in the store `store`. -/
+  | done (store : IStore P)
+  /-- The command resolves to a call from the environment `env`. -/
+  | call (env : IEnv P) (procName : String) (args : List (CallArg P)) (md : MetaData P)
+      (inst : Procedure P CmdT Hdr → Option (Procedure P CmdT Hdr))
+
 inductive CmdView (P : PureExpr) [InterpLang P] (CmdT : Type) (Hdr : Type) [DecidableEq Hdr]
     [Inhabited Hdr] (m : Type → Type) where
   | base (c : Cmd P)
   | call (procName : String) (args : List (CallArg P)) (md : MetaData P)
       (inst : Procedure P CmdT Hdr → Option (Procedure P CmdT Hdr))
-  | ext (run : Nat → IEnv P → m (IConfig P CmdT))
+  | ext (run : Nat → IEnv P → m (ExtStep P CmdT Hdr))
 
 @[expose] def CmdExt.view {m : Type → Type} :
     CmdExt P → CmdView P (CmdExt P) Hdr m
@@ -212,24 +223,93 @@ inductive CmdView (P : PureExpr) [InterpLang P] (CmdT : Type) (Hdr : Type) [Deci
     .call procName args md fun p => ProcedureTypeInstantiation.instantiate p (tyArgs.getD [])
 
 omit [ProcedureTypeInstantiation P Hdr] in
-/-- The call-aware command stepper over any command type `CmdT`, generic over the effect monad
-    `m`, with `view` telling it what each command is.  `depth` is the remaining call-depth
-    budget: how many more calls may nest inside this one.  `around c` wraps the step of each
-    command `c` of a callee body; whoever steps a command itself wraps it.  Base commands go through
-    `stepBaseCmdStore` (presented as `.terminal`).  An extension command runs and becomes the
-    configuration it gives.  A call at fuel `fuel' + 1` stops with
-    `callDepthExceeded` at budget `0`; at budget `depth' + 1` it instantiates the callee with the
-    call's `inst` (`programCallTypeArgsMismatch` if `inst` gives none; for `CmdExt.view` this is the
-    instantiation at the call's type arguments, as in `Calls.typeInstantiatedCallee`), evaluates
-    its arguments, builds the callee frame, emits the non-free preconditions with their site
-    metadata (`checksAtCall md`), runs the callee body (`runCallee`) at the caller's factory with
-    this stepper baked at budget `depth'` and fuel `fuel'`, emits the non-free postconditions at the
-    callee's final store, checks that each output has the type of the value its target held
-    (`writeBackTyped`; `illTypedValue` otherwise), and writes the outputs back.  A call whose
-    callee runs as its contract in mode `mode` (`CallMode.runsContract`) follows
+/-- The call protocol of a call of `procName` to `p` from `env` in mode `mode`, once its fuel and
+    call-depth budget are spent: evaluate the input arguments at fuel `fuel`, read the `out`
+    arguments, build the callee frame (`callEntryStore`), emit the non-free preconditions with the
+    call's site metadata (`checksAtCall md`), run the body (`runCallee`) over `step` at driver fuel
+    `fuel'`, emit the non-free postconditions at the callee's final store, check that each output
+    has the type of the value its target held (`writeBackTyped`), and write the outputs back.  A
+    callee that `mode` runs as its contract (`CallMode.runsContract`) follows
     `EvalCmdExtE.call_abstract_sem` instead of running a body: `runAbstractCallee` havocs the
     output formals of the entry frame and emits every postcondition as an assumption at the
     post-havoc frame. -/
+@[expose] def callBody {m : Type → Type} [Monad m] [InterpEffects P m] [MonadExcept StopReason m]
+    {CmdT : Type} [CmdDefs P CmdT] (mode : CallMode) (step : StepCmdM P CmdT m) (fuel fuel' : Nat)
+    (p : Procedure P CmdT Hdr) (env : IEnv P) (procName : String) (args : List (CallArg P))
+    (md : MetaData P) : m (IConfig P CmdT) := do
+  let inArgs := getInputExprs args
+  let outArgs := CallArg.getOutArgs args
+  let lhs := CallArg.getLhs args
+  let inputNames := ProcedureHeader.inputParams (P := P) p.header
+  let outOnlyNames := outputOnlyParams (P := P) p.header
+  let outputNames := ProcedureHeader.outputParams (P := P) p.header
+  let some inputVals := evalBoundedList fuel env.factory env.store.get inArgs
+    | throw .expressionDidNotEvaluate
+  if inputVals.length ≠ inputNames.length then
+    throw (.programCallInputArityMismatch procName)
+  let some outOnlyVals := readVarList env.store.get outArgs
+    | throw (.programCallLhsUndefined procName)
+  if outOnlyVals.length ≠ outOnlyNames.length then
+    throw (.programCallOutputArityMismatch procName)
+  let entryStore := callEntryStore p inputVals outOnlyVals
+  (rDefaultAssertEvents env.factory entryStore
+      (checksAtCall md p.spec.preconditions)).forM (InterpEffects.emit (P := P))
+  let finalStore ← if mode.runsContract p.body then
+      runAbstractCallee fuel' env.factory outputNames p.spec.postconditions entryStore
+    else do
+      let finalStore ← runCallee step procName p.body env.factory fuel' entryStore
+      (rDefaultAssertEvents env.factory finalStore p.spec.postconditions).forM
+        (InterpEffects.emit (P := P))
+      pure finalStore
+  let some modvals := readVarList finalStore outputNames
+    | throw (.programCallOutputUndefinedOnReturn procName)
+  if lhs.length ≠ outputNames.length then
+    throw (.programCallOutputArityMismatch procName)
+  let some oldVals := readVarList env.store.get lhs
+    | throw (.programCallLhsUndefined procName)
+  if !writeBackTyped (InterpLang.ops (P := P)) env.factory oldVals modvals then
+    throw .illTypedValue
+  let store' := env.store.bindPositional lhs modvals
+  return .terminal { env with store := store' }
+
+omit [ProcedureTypeInstantiation P Hdr] in
+/-- The call dispatch of `stepCmdWith`, shared by a call and by an extension command that resolves
+    to one: stop at fuel `0` (`replayFuelExhausted`) or call-depth budget `0` (`callDepthExceeded`),
+    look the callee up in `π` and instantiate it with `inst`, and run `callBody` in mode `mode`
+    over the stepper `step` at the decremented budget and fuel. `step` takes a proof that the fuel
+    decreased, so that `stepCmdWith` can pass itself. -/
+@[expose] def dispatchCall {m : Type → Type} [Monad m] [InterpEffects P m]
+    [MonadExcept StopReason m] {CmdT : Type} [CmdDefs P CmdT]
+    (π : String → Option (Procedure P CmdT Hdr)) (mode : CallMode) (fuel depth : Nat)
+    (step : (d k : Nat) → k < fuel → StepCmdM P CmdT m) (env : IEnv P) (procName : String)
+    (args : List (CallArg P)) (md : MetaData P)
+    (inst : Procedure P CmdT Hdr → Option (Procedure P CmdT Hdr)) : m (IConfig P CmdT) :=
+  match fuel, step with
+  | 0, _ => throw .replayFuelExhausted
+  | fuel' + 1, step =>
+    match depth with
+    | 0 => throw .callDepthExceeded
+    | depth' + 1 =>
+    match π procName with
+    | none => throw (.unsupportedCalleeNotFound procName)
+    | some p₀ =>
+    match inst p₀ with
+    | none => throw (.programCallTypeArgsMismatch procName)
+    | some p =>
+      callBody mode (step depth' fuel' (Nat.lt_succ_self _)) (fuel' + 1) fuel' p env procName args
+        md
+
+omit [ProcedureTypeInstantiation P Hdr] in
+/-- The call-aware command stepper over any command type `CmdT`, generic over the effect monad
+    `m`, with `view` telling it what each command is.  `depth` is the remaining call-depth
+    budget: how many more calls may nest inside this one.  `around c` wraps the step of each
+    command `c` of a callee body; whoever steps a command itself wraps it.  A base command goes
+    through `stepBaseCmdStore` (presented as `.terminal`).  A call, and an extension command
+    that resolves to a call from the environment it reached, go through `dispatchCall`, which
+    runs the call protocol `callBody` in mode `mode` with this stepper baked at the decremented
+    budget and fuel; for `CmdExt.view` the callee is instantiated at the call's type arguments, as
+    in `Calls.typeInstantiatedCallee`.  An extension command that ends in a store becomes
+    `.terminal` at that store. -/
 def stepCmdWith {m : Type → Type} [Monad m] [InterpEffects P m] [MonadExcept StopReason m]
     {CmdT : Type} [CmdDefs P CmdT] (view : CmdT → CmdView P CmdT Hdr m)
     (around : CmdT → m (IConfig P CmdT) → m (IConfig P CmdT))
@@ -240,56 +320,16 @@ def stepCmdWith {m : Type → Type} [Monad m] [InterpEffects P m] [MonadExcept S
     let store ← stepBaseCmdStore fuel env.factory env.store base
     return .terminal { env with store }
   | .call procName args md inst =>
-    match fuel with
-    | 0 => throw .replayFuelExhausted
-    | fuel' + 1 =>
-      match depth with
-      | 0 => throw .callDepthExceeded
-      | depth' + 1 =>
-      match π procName with
-      | none => throw (.unsupportedCalleeNotFound procName)
-      | some p₀ =>
-      match inst p₀ with
-      | none => throw (.programCallTypeArgsMismatch procName)
-      | some p =>
-        do
-          let inArgs := getInputExprs args
-          let outArgs := CallArg.getOutArgs args
-          let lhs := CallArg.getLhs args
-          let inputNames := ProcedureHeader.inputParams (P := P) p.header
-          let outOnlyNames := outputOnlyParams (P := P) p.header
-          let outputNames := ProcedureHeader.outputParams (P := P) p.header
-          let some inputVals := evalBoundedList (fuel' + 1) env.factory env.store.get inArgs
-            | throw .expressionDidNotEvaluate
-          if inputVals.length ≠ inputNames.length then
-            throw (.programCallInputArityMismatch procName)
-          let some outOnlyVals := readVarList env.store.get outArgs
-            | throw (.programCallLhsUndefined procName)
-          if outOnlyVals.length ≠ outOnlyNames.length then
-            throw (.programCallOutputArityMismatch procName)
-          let entryStore := callEntryStore p inputVals outOnlyVals
-          (rDefaultAssertEvents env.factory entryStore
-              (checksAtCall md p.spec.preconditions)).forM (InterpEffects.emit (P := P))
-          let finalStore ← if mode.runsContract p.body then
-              runAbstractCallee fuel' env.factory outputNames p.spec.postconditions entryStore
-            else do
-              let finalStore ← runCallee
-                (fun _ e c => around c (stepCmdWith view around π mode depth' fuel' e c)) procName p.body
-                env.factory fuel' entryStore
-              (rDefaultAssertEvents env.factory finalStore p.spec.postconditions).forM
-                (InterpEffects.emit (P := P))
-              pure finalStore
-          let some modvals := readVarList finalStore outputNames
-            | throw (.programCallOutputUndefinedOnReturn procName)
-          if lhs.length ≠ outputNames.length then
-            throw (.programCallOutputArityMismatch procName)
-          let some oldVals := readVarList env.store.get lhs
-            | throw (.programCallLhsUndefined procName)
-          if !writeBackTyped (InterpLang.ops (P := P)) env.factory oldVals modvals then
-            throw .illTypedValue
-          let store' := env.store.bindPositional lhs modvals
-          return .terminal { env with store := store' }
-  | .ext run => run fuel env
+    dispatchCall π mode fuel depth
+      (fun d k _ _ e c => around c (stepCmdWith view around π mode d k e c)) env procName args md
+      inst
+  | .ext run => do
+    match ← run fuel env with
+    | .done store => return .terminal { env with store }
+    | .call env' procName args md inst =>
+      dispatchCall π mode fuel depth
+        (fun d k _ _ e c => around c (stepCmdWith view around π mode d k e c)) env' procName args
+        md inst
 termination_by fuel
 decreasing_by all_goals omega
 

@@ -194,8 +194,7 @@ where
   | .virtualCall .. => .ext fun _ _ => throwThe StopReason (.notLowered "virtualCall")
   | .throw _ _ => .ext fun _ _ => throwThe StopReason .exceptionsUnsupported
   | c => .ext fun fuel env => do
-    let σ ← extCmd fuel env.factory env.store c
-    pure (.terminal { env with store := σ })
+    pure (.done (← extCmd fuel env.factory env.store c))
 
 @[expose] def stubBody (tyProg prog : UnorderedProgram) (p : Procedure) : Except String Body := do
   let declared := ((tyProg.findProcedure? p.name).map (·.outputs)).getD p.outputs
@@ -335,6 +334,17 @@ def isEntry (p : Procedure) : Bool :=
   | some { value := .switch true, .. } => true
   | _ => false
 
+/-- The CFG an entry procedure runs: when `globalInit` is nonempty, the body's CFG with a fresh
+entry block in front, which runs the `globalInit` commands and then jumps to the body's entry;
+otherwise the body's CFG unchanged. -/
+@[expose] def entryCfg (prog : UnorderedProgram) (body : Body) :
+    Imperative.DetCFG Core.Expression IRCmd :=
+  if prog.globalInit.isEmpty then body.cfg else
+    let entry := freshLabel "$globalsEntry" (body.cfg.blocks.map (·.1))
+    let initBlock : Cortex.LBlock :=
+      { cmds := prog.globalInit.map .cmd, transfer := .goto body.cfg.entry }
+    { entry := entry, blocks := (entry, initBlock) :: body.cfg.blocks }
+
 /-- Start `p` as the program's entry: its frame has no caller to take the globals from, so
 the globals are defined by running `globalInit` first, in a block in front of the body. -/
 def startProc (prog : UnorderedProgram) (f : LFactory) (fuel : Nat) (p : Procedure) : HostM Config := do
@@ -343,12 +353,8 @@ def startProc (prog : UnorderedProgram) (f : LFactory) (fuel : Nat) (p : Procedu
   | some body =>
     let outs ← (p.outputs.map Prod.snd).mapM (chooseTyped f Store.empty)
     let σ₀ := Store.empty.bindPositional (p.outputs.map Prod.fst) outs
-    let entry := freshLabel "$globalsEntry" (body.cfg.blocks.map (·.1))
-    let initBlock : Cortex.LBlock := { cmds := prog.globalInit.map .cmd, transfer := .goto body.cfg.entry }
-    let body := if prog.globalInit.isEmpty then body else
-      { body with cfg := { entry := entry, blocks := (entry, initBlock) :: body.cfg.blocks } }
-    runCFG (stepper prog).toStore fuel
-      (.atBlock body.cfg body.cfg.entry { store := σ₀, factory := f })
+    let g := entryCfg prog body
+    runCFG (stepper prog).toStore fuel (.atBlock g g.entry { store := σ₀, factory := f })
 
 def lower (prog : UnorderedProgram) : Except String UnorderedProgram := do
   let typed ← match ← runPasses (sharedPasses true ++ interpreterPasses) (.unordered prog) with

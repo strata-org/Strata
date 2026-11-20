@@ -224,3 +224,35 @@ info: 'Core.core_runCoreInterp_complete_eval_of_programInFragment' depends on ax
 -/
 #guard_msgs (whitespace := lax) in
 #print axioms Core.core_runCoreInterp_complete_eval_of_programInFragment
+
+/--
+info: 'Cortex.Interp.runCFG_sound' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs (whitespace := lax) in
+#print axioms Cortex.Interp.runCFG_sound
+
+/--
+info: 'Cortex.Interp.startProc_sound' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs (whitespace := lax) in
+#print axioms Cortex.Interp.startProc_sound
+
+/--
+info: 'Cortex.Interp.runPrepared_sound' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs (whitespace := lax) in
+#print axioms Cortex.Interp.runPrepared_sound
+
+/--
+info: 'Imperative.Calls.stepCmdWith_runInterp_sound' depends on axioms: [propext,
+  Classical.choice, Quot.sound]
+-/
+#guard_msgs (whitespace := lax) in
+#print axioms Imperative.Calls.stepCmdWith_runInterp_sound
+
+/--
+info: 'Imperative.Calls.runInterpCFG_sound_of_arm' depends on axioms: [propext,
+  Classical.choice, Quot.sound]
+-/
+#guard_msgs (whitespace := lax) in
+#print axioms Imperative.Calls.runInterpCFG_sound_of_arm

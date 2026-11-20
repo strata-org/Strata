@@ -64,7 +64,7 @@ omit [DecidableEq P.Ident] [HasOldIdent P] [HasBool P] [DecidableEq P.Expr] [Has
     [ProcedureHeader P Hdr] in
 /-- A `CmdExt` command is never an extension command: its view is a base command or a call. -/
 theorem CmdExt.view_ne_ext {m : Type → Type} (c : CmdExt P)
-    (run : Nat → IEnv P → m (IConfig P (CmdExt P))) :
+    (run : Nat → IEnv P → m (ExtStep P (CmdExt P) Hdr)) :
     CmdExt.view (Hdr := Hdr) (m := m) c ≠ CmdView.ext run := by
   cases c <;> simp [CmdExt.view]
 
@@ -217,7 +217,7 @@ variable {P : PureExpr} [DecidableEq P.Ident] [HasOldIdent P] {Hdr : Type} [Deci
 /-- If the reference relation `InitCallFrame` builds the callee frame `σAO` from the input and
     output-only values, then `σAO` is `callEntryStore` of them, and the input and output-only
     formals are as many as their values. -/
-theorem callEntryStore_of_initCallFrame (p : Procedure P (CmdExt P) Hdr)
+theorem callEntryStore_of_initCallFrame {C : Type} (p : Procedure P C Hdr)
     (inputVals outOnlyVals : List P.Val) (σAO : SemanticStore P)
     (h : InitCallFrame p inputVals outOnlyVals σAO) :
     (ProcedureHeader.inputParams (P := P) p.header).length = inputVals.length
@@ -334,7 +334,7 @@ variable {P : PureExpr} [DecidableEq P.Ident] [HasOldIdent P] {Hdr : Type} [Deci
 /-- When the input and output-only formals are pairwise distinct and as many as their values, the
     engine's callee frame `callEntryStore` is a frame the reference relation `InitCallFrame`
     builds. -/
-theorem initCallFrame_callEntryStore (p : Procedure P (CmdExt P) Hdr)
+theorem initCallFrame_callEntryStore {C : Type} (p : Procedure P C Hdr)
     (inputVals outOnlyVals : List P.Val)
     (hin : (ProcedureHeader.inputParams (P := P) p.header).length = inputVals.length)
     (hout : (outputOnlyParams (P := P) p.header).length = outOnlyVals.length)
@@ -374,7 +374,7 @@ variable {P : PureExpr} [HasBoolOps P] [DecidableEq P.Ident] {Hdr : Type} [Decid
     [Inhabited Hdr] [ProcedureHeader P Hdr]
 
 /-- A positional bind of values keeps a store value-only (every entry a value of the factory). -/
-private theorem wellFormedStore_bindPositional {f : P.Factory} :
+theorem wellFormedStore_bindPositional {f : P.Factory} :
     ∀ (σ : SemanticStore P) (names : List P.Ident) (vals : List P.Val),
       WellFormedStore σ f → (∀ v ∈ vals, HasVal.value f v) →
       WellFormedStore (bindPositional σ names vals) f := fun σ ns vs => by
@@ -427,7 +427,7 @@ variable {P : PureExpr} [HasBoolOps P] [DecidableEq P.Ident] [HasOldIdent P] {Hd
 
 /-- The callee frame `callEntryStore` built from values is value-only (every entry a value of the
     factory). -/
-theorem wellFormedStore_callEntryStore {f : P.Factory} (p : Procedure P (CmdExt P) Hdr)
+theorem wellFormedStore_callEntryStore {f : P.Factory} {C : Type} (p : Procedure P C Hdr)
     (inputVals outOnlyVals : List P.Val)
     (hin : ∀ v ∈ inputVals, HasVal.value f v)
     (hout : ∀ v ∈ outOnlyVals, HasVal.value f v) :
@@ -504,7 +504,7 @@ variable {P : PureExpr} [HasBoolOps P] [DecidableEq P.Ident] [HasOldIdent P] {Hd
 
 /-- The callee frame `callEntryStore` is typed (every entry is a value of some type) when its
     input and output-only values are. -/
-theorem storeTyped_callEntryStore {f : P.Factory} (p : Procedure P (CmdExt P) Hdr)
+theorem storeTyped_callEntryStore {f : P.Factory} {C : Type} (p : Procedure P C Hdr)
     (inputVals outOnlyVals : List P.Val)
     (hin : ∀ v ∈ inputVals, ∃ ty, HasVal.valueOfTy f v ty)
     (hout : ∀ v ∈ outOnlyVals, ∃ ty, HasVal.valueOfTy f v ty) :
@@ -621,7 +621,7 @@ theorem absStore_withOldSnapshotsV {F : P.Factory} (s : List P.Ident) (σ : RSto
 /-- The callee frame built from runtime values that denote the input and output-only values
     stands for the frame built from those values, and denotes. -/
 theorem callEntryStore_abs {Hdr : Type} [DecidableEq Hdr] [Inhabited Hdr] [ProcedureHeader P Hdr]
-    {F : P.Factory} (p : Procedure P (CmdExt P) Hdr)
+    {F : P.Factory} {C : Type} (p : Procedure P C Hdr)
     {rs ros : List P.Expr} {vs vos : List P.Val} (h1 : List.Rel₂ (InterpLang.Denotes F) rs vs)
     (h2 : List.Rel₂ (InterpLang.Denotes F) ros vos) :
     InterpLang.absStore F (callEntryStore p rs ros) = callEntryStore p vs vos ∧

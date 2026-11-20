@@ -6,6 +6,7 @@
 module
 
 public import Strata.DL.Imperative.InterpreterCallInterrupt
+public import Strata.DL.Imperative.InterpreterViewSound
 public import Strata.DL.Imperative.InterpreterSoundGeneric
 public import Strata.DL.Imperative.InterpreterSound
 public import Strata.DL.Imperative.StmtSemanticsProps
@@ -43,14 +44,16 @@ evaluator facts the CFG run needs at the caller's factory come from `FactoryWF`.
 run of an opaque callee (`runAbstractCallee`) is sound against the `HavocVars` and
 `assumeEvents` premises of `EvalCmdExtE.call_abstract_sem` (`runAbstractCallee_sound`).
 
+The success-path lemmas are instances, at `CmdExt.sem`, of the soundness of the call-aware
+stepper over any command type (`InterpreterViewSound.lean`), which also holds `CallLangWF`,
+`StrictActual`, `TypedActual` and `CallEnvOk`.
+
 Key definitions:
-* `CallLangWF P`: the expression-language facts the proofs use;
 * `ProcsOk π` (every procedure is well-formed) and `CfgInv π` (the configuration invariant):
   the side conditions of the soundness theorems;
 * `EvalCommandET`: the reference call-aware command relation restricted to steps that keep a
   typed store typed;
-* `CallEnvOk`: the store invariant of a call-aware run (well-formed and typed store), and
-  `CFGCfgInv`: the invariant of a CFG callee run;
+* `CFGCfgInv`: the invariant of a CFG callee run;
 * `InterruptedSound`: a certificate for the events of a run that may stop inside a call;
 * `TargetNotInProcs π target`: the target assertion occurs in no procedure of `π`;
 * `ReplaySound`, `ReplaySoundFeasible`: the replay-soundness statements.
@@ -88,42 +91,6 @@ public section
 
 namespace Calls
 
-/-- The expression-language facts call-aware replay soundness uses (the soundness of the bounded
-    evaluator at the run's factory, `BoundedEvalSoundAt`, is an explicit hypothesis of each theorem
-    instead: Core's holds only at factories whose evaluators meet `Core.EvalFactoryWF`, so it
-    cannot be a field of an instance).
-    * the engine's executable value check implies `HasVal.value`;
-    * every factory's evaluator is value-well-formed (`WellFormedSemanticEvalVal`);
-    * an expression that is a bare free variable `x` has no free variable but `x`;
-    * `x` is a free variable of `mkFvar x`;
-    * the engine's executable type checks are sound against `HasVal.valueOfTy`
-      (`ops_typed`, the content of `InterpLangTyped`);
-    * `closedTyped` is a syntactic class of closed actuals whose bounded value is a
-      typed value (`closedTyped_sound`).  The reference call rule binds input formals
-      to argument values without a type premise, so the typed-store invariant the
-      typed `set` rules need is kept across a call only for arguments that are bare
-      variables (whose values come from a typed store) or `closedTyped`. -/
-class CallLangWF (P : PureExpr) [HasBool P] [HasFvar P] [HasFvars P] [InterpLang P] where
-  isValue_sound : ∀ (f : P.Factory) (r : P.Expr) (v : P.Val),
-    (InterpLang.ops (P := P)).isValue (InterpLang.rfactory f) r = true →
-      InterpLang.Denotes f r v → HasVal.value f v
-  evalVal : ∀ f : P.Factory, WellFormedSemanticEvalVal (P := P) f
-  getFvars_of_getFvar : ∀ (e : P.Expr) (x : P.Ident), HasFvar.getFvar (P := P) e = some x →
-    ∀ y ∈ HasFvars.getFvars (P := P) e, y = x
-  mem_getFvars_mkFvar : ∀ x : P.Ident, x ∈ HasFvars.getFvars (P := P) (HasFvar.mkFvar (P := P) x)
-  lawfulHasVal : LawfulHasVal P
-  ops_typed : (InterpLang.ops (P := P)).TypedSound InterpLang.rfactory InterpLang.denote
-  closedTyped : P.Expr → Bool
-  closedTyped_sound : ∀ (n : Nat) (f : P.Factory) (σ : RStore P) (e r : P.Expr),
-    closedTyped e = true → InterpLang.boundedEval (P := P) n (InterpLang.rfactory f) σ e = some r →
-    ∃ v ty, InterpLang.Denotes f r v ∧ HasVal.valueOfTy f v ty
-
-instance (priority := low) {P : PureExpr} [HasBool P] [HasFvar P] [HasFvars P] [InterpLang P]
-    [CallLangWF P] : InterpLangTyped P := ⟨CallLangWF.ops_typed⟩
-
-instance (priority := low) {P : PureExpr} [HasBool P] [HasFvar P] [HasFvars P] [InterpLang P]
-    [CallLangWF P] : LawfulHasVal P := CallLangWF.lawfulHasVal
-
 variable {P : PureExpr} [HasBoolOps P] [HasFvar P] [HasFvars P]
   [DecidableEq P.Expr] [DecidableEq P.Ident] [InterpLang P] [CallLangWF P]
   [HasOldIdent P]
@@ -153,193 +120,6 @@ variable {P : PureExpr} [HasBoolOps P] [HasFvar P] [HasFvars P]
       StepStmtExtStarE π (cex.cfg.abs F) (revs.map (REvent.abs F)) final ∧
       (∃ ev ∈ revs, assertFailureHalt target fuel ev = true) ∧
       PathFeasible fuel revs
-
-/-- Every free variable of every expression in `es` is bound in `σ`.  This is what
-    `EvalExpressions` demands of each expression it evaluates and what
-    `evalBoundedList` does not check. -/
-@[expose] def ExprsDefined (σ : SemanticStore P) (es : List P.Expr) : Prop :=
-  ∀ e ∈ es, SemanticStore.varsDefined (· ∈ HasFvars.getFvars e) σ
-
-/-! ## The strictness check on input actuals, and `EvalExpressions` from it
-
-`StrictActual` (a bare variable, or a closed expression) makes a successful bounded evaluation of
-the actuals an `EvalExpressions` derivation, definedness included. -/
-
-/-- The per-actual syntactic check: a bare free variable, or a closed expression.
-    Anything else is rejected, because `P.eval` is not strict in general
-    (`(fun _ => 3) x` evaluates with `x` unbound), so a successful evaluation would not
-    witness `EvalExpressions`' definedness premise. -/
-@[expose] def StrictActual (e : P.Expr) : Bool :=
-  (HasFvar.getFvar (P := P) e).isSome ||
-    (HasFvars.getFvars (P := P) e).isEmpty
-
-/-- The per-actual typing check: a bare free variable, or an actual of the language's
-    `CallLangWF.closedTyped` class.  Either way its value is typed when the caller's
-    store is. -/
-@[expose] def TypedActual (e : P.Expr) : Bool :=
-  (HasFvar.getFvar (P := P) e).isSome || CallLangWF.closedTyped (P := P) e
-
-omit [DecidableEq P.Expr] [DecidableEq P.Ident] [HasOldIdent P] in
-/-- A strict actual that evaluates has all its free variables bound. -/
-private theorem exprDefined_of_strict {f : P.Factory} {σ : SemanticStore P}
-    (hvar : WellFormedSemanticEvalVar (P := P) f)
-    (hwfs : WellFormedStore σ f) {e : P.Expr} {v : P.Val}
-    (hs : StrictActual e = true) (he : P.eval f σ e = some v) :
-    SemanticStore.varsDefined (· ∈ HasFvars.getFvars (P := P) e) σ := by
-  simp only [StrictActual, Bool.or_eq_true, List.isEmpty_iff] at hs
-  grind [SemanticStore.varsDefined, WellFormedSemanticEvalVar, CallLangWF, Option.isSome_iff_exists]
-
-omit [DecidableEq P.Expr] [DecidableEq P.Ident] [HasOldIdent P] in
-/-- `evalBoundedList` realizes `EvalExpressions` on actuals that pass the syntactic strictness
-    check. -/
-private theorem evalExpressions_of_evalBoundedList_strict
-    (n : Nat) (f : P.Factory) (hEval : BoundedEvalSoundAt P f) (σ : RStore P)
-    (hd : RStore.Denoting f σ)
-    (hvar : WellFormedSemanticEvalVar (P := P) f)
-    (hwfs : WellFormedStore (InterpLang.absStore f σ) f) :
-    ∀ (es rs : List P.Expr), (∀ e ∈ es, StrictActual e = true) →
-      evalBoundedList n (InterpLang.rfactory f) σ es = some rs →
-      ∃ vs, List.Rel₂ (InterpLang.Denotes f) rs vs ∧
-        EvalExpressions f (InterpLang.absStore f σ) es vs := fun es => by
-  induction es with
-  | nil =>
-    rintro _ _ ⟨⟩
-    exact ⟨[], .nil, .eval_none⟩
-  | cons e es ih =>
-    intro rs hs h
-    simp only [evalBoundedList] at h
-    split at h
-    · obtain ⟨rs', h', rfl⟩ := Option.map_eq_some_iff.1 h
-      obtain ⟨v, hv, hdv⟩ := hEval.atAbs hd ‹_›
-      obtain ⟨vs, hrel, hE⟩ := ih rs' (fun e he => hs e (.tail _ he)) h'
-      exact ⟨v :: vs, .cons hdv hrel,
-        .eval_some (exprDefined_of_strict hvar hwfs (hs e (.head _)) hv) hv hE⟩
-    · cases h
-
-/-! ## Definedness of the write-back targets
-
-A successful `.call` step binds every `getLhs args` target in the caller store, as `UpdateStates`
-requires. -/
-
-omit [HasBoolOps P] [HasFvars P] [DecidableEq P.Expr] [DecidableEq P.Ident]
-    [CallLangWF P] [HasOldIdent P] in
-omit [InterpLang P] in
-/-- Each `inoutArg` of a call occurs among its input expressions as a variable reference. -/
-private theorem mem_getInputExprs_of_mem_getInoutArgs :
-    ∀ (args : List (CallArg P)) (y : P.Ident),
-      y ∈ CallArg.getInoutArgs args →
-      (HasFvar.mkFvar y : P.Expr) ∈ getInputExprs args := by
-  simp only [CallArg.getInoutArgs, List.mem_filterMap, getInputExprs, forall_exists_index,
-    and_imp]
-  grind
-
-omit [HasBoolOps P] [HasFvar P] [HasFvars P] [DecidableEq P.Expr] [DecidableEq P.Ident]
-    [CallLangWF P] [HasOldIdent P] in
-omit [InterpLang P] in
-/-- `getLhs` is exactly the `inoutArg` names together with the `outArg` names. -/
-private theorem mem_getLhs :
-    ∀ (args : List (CallArg P)) (y : P.Ident),
-      y ∈ CallArg.getLhs args →
-      y ∈ CallArg.getInoutArgs args ∨ y ∈ CallArg.getOutArgs args := by
-  simp only [CallArg.getLhs, List.mem_filterMap, CallArg.getInoutArgs, CallArg.getOutArgs,
-    forall_exists_index, and_imp]
-  grind
-
-omit [DecidableEq P.Expr] [DecidableEq P.Ident] [HasOldIdent P] in
-/-- The write-back targets of a call whose inputs evaluate and whose `out` actuals read are
-    bound. -/
-private theorem getLhs_defined {f : P.Factory} {σ : SemanticStore P}
-    (args : List (CallArg P)) {inputVals outOnlyVals : List P.Val}
-    (hin : EvalExpressions f σ (getInputExprs args) inputVals)
-    (hout : readVarList σ (CallArg.getOutArgs args) = some outOnlyVals) :
-    SemanticStore.varsDefined (· ∈ CallArg.getLhs args) σ := fun y hy =>
-  (mem_getLhs _ _ hy).elim
-    (fun hio => evalExpressions_defined hin _ (mem_getInputExprs_of_mem_getInoutArgs _ _ hio) y
-      (CallLangWF.mem_getFvars_mkFvar y))
-    (readVarList_defined σ _ _ hout y)
-
-/-! ## Store typing across a call
-
-The callee frame is typed when the input actuals are `TypedActual` and the caller's store is typed;
-the caller's store stays typed across the write-back when the callee's final store is. -/
-
-omit [DecidableEq P.Expr] [DecidableEq P.Ident] [HasOldIdent P] in
-/-- A `TypedActual` evaluated in a typed, value-only store yields a typed value. -/
-private theorem typed_of_typedActual
-    {n : Nat} {f : P.Factory} (hEval : BoundedEvalSoundAt P f) {σ : RStore P}
-    (hd : RStore.Denoting f σ)
-    (hvar : WellFormedSemanticEvalVar (P := P) f)
-    (hwfs : WellFormedStore (InterpLang.absStore f σ) f)
-    (hty : StoreTyped f (InterpLang.absStore f σ)) {e r : P.Expr}
-    (ht : TypedActual e = true)
-    (he : InterpLang.boundedEval (P := P) n (InterpLang.rfactory f) σ e = some r) :
-    ∃ v ty, InterpLang.Denotes f r v ∧ HasVal.valueOfTy f v ty := by
-  rcases Bool.or_eq_true _ _ ▸ ht with hx | hc
-  · obtain ⟨x, hx⟩ := Option.isSome_iff_exists.1 hx
-    obtain ⟨v, hv, hdv⟩ := hEval.atAbs hd he
-    obtain ⟨ty, hty⟩ := hty x v ((hvar e x _ hwfs hx).symm.trans hv)
-    exact ⟨v, ty, hdv, hty⟩
-  · exact CallLangWF.closedTyped_sound n f σ e r hc he
-
-omit [DecidableEq P.Expr] [DecidableEq P.Ident] [HasOldIdent P] in
-/-- `evalBoundedList` of `TypedActual`s in a typed, value-only store yields typed values. -/
-private theorem typed_of_evalBoundedList
-    (n : Nat) (f : P.Factory) (hEval : BoundedEvalSoundAt P f) (σ : RStore P)
-    (hd : RStore.Denoting f σ)
-    (hvar : WellFormedSemanticEvalVar (P := P) f)
-    (hwfs : WellFormedStore (InterpLang.absStore f σ) f)
-    (hty : StoreTyped f (InterpLang.absStore f σ)) :
-    ∀ (es rs : List P.Expr), (∀ e ∈ es, TypedActual e = true) →
-      evalBoundedList n (InterpLang.rfactory f) σ es = some rs →
-      ∃ vs, List.Rel₂ (InterpLang.Denotes f) rs vs ∧ ∀ v ∈ vs, ∃ ty, HasVal.valueOfTy f v ty :=
-  fun es => by
-  induction es with
-  | nil =>
-    rintro _ _ ⟨⟩
-    exact ⟨[], .nil, nofun⟩
-  | cons e es ih =>
-    intro rs hs h
-    simp only [evalBoundedList] at h
-    split at h
-    · obtain ⟨rs', h', rfl⟩ := Option.map_eq_some_iff.1 h
-      obtain ⟨v, ty, hdv, hty⟩ :=
-        typed_of_typedActual hEval hd hvar hwfs hty (hs e (.head _)) ‹_›
-      obtain ⟨vs, hrel, hvs⟩ := ih rs' (fun e he => hs e (.tail _ he)) h'
-      refine ⟨v :: vs, .cons hdv hrel, ?_⟩
-      simp only [List.mem_cons, forall_eq_or_imp]
-      exact ⟨⟨ty, hty⟩, hvs⟩
-    · cases h
-
-/-! ## The call helpers over runtime stores, through the semantic image -/
-
-omit [DecidableEq P.Expr] [DecidableEq P.Ident] [HasOldIdent P] in
-/-- On a denoting runtime store with a typed image, a passed typed write-back check
-    (`writeBackTyped`) of denoting values against the values the targets hold gives each
-    written-back value the type of its target's value in the image (the typed write-back
-    premise of `CallExit`). -/
-private theorem storedTy_of_writeBackTyped {F : P.Factory} {σ : RStore P}
-    (hd : RStore.Denoting F σ) (hty : StoreTyped F (InterpLang.absStore F σ)) :
-    ∀ (xs : List P.Ident) (olds ws : List P.Expr) (vs : List P.Val),
-      readVarList σ xs = some olds → xs.length = vs.length →
-      List.Rel₂ (InterpLang.Denotes F) ws vs →
-      writeBackTyped InterpLang.ops (InterpLang.rfactory F) olds ws = true →
-      List.Rel₂ (HasVal.valueOfStoredTy (P := P) F (InterpLang.absStore F σ)) xs vs
-  | [], _, _, [], _, _, _, _ => .nil
-  | x :: xs, olds, _, _, hr, hl, .cons hw hrel, hwb => by
-    simp only [readVarList] at hr
-    split at hr
-    · rename_i old hold
-      obtain ⟨olds', hr', rfl⟩ := Option.map_eq_some_iff.1 hr
-      simp only [writeBackTyped, List.zip_cons_cons, List.all_cons, Bool.and_eq_true] at hwb
-      obtain ⟨⟨hv, hs⟩, hwb⟩ := hwb
-      obtain ⟨vo, hdo⟩ := hd x old hold
-      have habs : InterpLang.absStore F σ x = some vo := by
-        simpa [InterpLang.absStore, hold, InterpLang.Denotes] using hdo
-      obtain ⟨v', hv', hst⟩ := CallLangWF.ops_typed.storedTy hty habs hdo hv hs
-      cases Option.some.inj (hv'.symm.trans hw)
-      exact .cons hst (storedTy_of_writeBackTyped hd hty xs olds' _ _ hr'
-        (Nat.succ.inj hl) hrel hwb)
-    · cases hr
 
 /-! ## The flat side conditions: per command, per procedure, per program
 
@@ -403,11 +183,6 @@ configuration invariant `CfgInv` the `.call` step obligation runs under. -/
     : EvalCmdParamE P (CmdExt P) (Event P) :=
   fun f σ c σ' evs => EvalCmdExtE π f σ c σ' evs ∧ (StoreTyped f σ → StoreTyped f σ')
 
-/-- The store invariant a call-aware run carries, at a fixed factory: a well-formed (value-only)
-    store and a typed store. -/
-@[expose] def CallEnvOk (fac : P.Factory) (σ : SemanticStore P) : Prop :=
-  WellFormedStore σ fac ∧ StoreTyped fac σ
-
 omit [DecidableEq P.Expr] [CallLangWF P] [InterpLang P] in
 /-- A run of the typed-step relation is a run of `EvalCmdExtE`. -/
 private theorem stepStarET_toE (π : String → Option (Procedure P (CmdExt P) Hdr))
@@ -427,20 +202,25 @@ omit [DecidableEq P.Expr] [CallLangWF P] [InterpLang P] in
     `init`: a call's write-back (`CallExit`) updates already defined slots only. -/
 theorem evalCmdExtE_cmdDefsSound (π : String → Option (Procedure P (CmdExt P) Hdr)) :
     CmdDefsSound (EvalCmdExtE π) := by
-  rintro _ _ _ _ _ (h | ⟨_, _, _, _, ⟨_, _, _, hup, -⟩⟩ | ⟨_, _, _, _, ⟨_, _, _, hup, -⟩⟩) x hx
-  · exact evalCmdE_cmdDefsSound _ _ _ _ _ h x hx
-  all_goals exact .inl (UpdateStatesDefMonotone' (vs := [x])
-    (fun _ hv => List.mem_singleton.1 hv ▸ hx) hup
-    x (List.mem_singleton_self x))
+  intro _ _ _ _ _ h x hx
+  cases h with
+  | cmd_sem h => exact evalCmdE_cmdDefsSound _ _ _ _ _ h x hx
+  | call_sem _ _ _ _ hexit =>
+    obtain ⟨_, _, _, hup, -⟩ := hexit
+    exact .inl (UpdateStatesDefMonotone' (vs := [x]) (fun _ hv => List.mem_singleton.1 hv ▸ hx)
+      hup x (List.mem_singleton_self x))
+  | call_abstract_sem _ _ _ _ hexit =>
+    obtain ⟨_, _, _, hup, -⟩ := hexit
+    exact .inl (UpdateStatesDefMonotone' (vs := [x]) (fun _ hv => List.mem_singleton.1 hv ▸ hx)
+      hup x (List.mem_singleton_self x))
 
-omit [DecidableEq P.Expr] [CallLangWF P] [InterpLang P] in
-/-- A typed call-aware command evaluation (`EvalCommandET`) defines only the binder of an
-    `init`. -/
-private theorem evalCommandET_cmdDefsSound (π : String → Option (Procedure P (CmdExt P) Hdr)) :
-    CmdDefsSound (EvalCommandET π) := fun _ _ _ _ _ h =>
-  evalCmdExtE_cmdDefsSound π _ _ _ _ _ h.1
+/-! ## The `CmdExt` instance of the generic soundness chain
 
-/-! ## `CfgInv` is preserved along the reference relation -/
+`CmdCallOk`, `ProcOk`, `CfgInv`, `CFGCfgInv` and `EvalCommandET` are the generic `CmdOk`,
+`ProcOkV`, `CfgInvV`, `CFGCfgInvV` and `EvalCommandVT` (`InterpreterViewSound.lean`) at
+`CmdExt.sem` (`cmdCallOk_eq`, `procOk_iff`, `cfgInv_eq`, `cfgCfgInv_eq`, `evalCommandVT_of_ET`,
+`evalCommandET_of_VT`), and `CmdExt.view` agrees with `CmdExt.sem` (`cmdExt_viewSound`). The
+soundness lemmas of this section are instances of the generic ones. -/
 
 omit [DecidableEq P.Expr] in
 /-- A reference command step leaves a value-only store (a call's write-back writes exactly
@@ -452,35 +232,6 @@ private theorem evalCommandE_wellFormedStore
     WellFormedStore σ' fac := by
   cases h <;> grind [CallExit, wellFormedStore_updateStates, readValues_values,
       evalCmdE_storeWellDefined (P := P), CallLangWF.evalVal]
-
-omit [DecidableEq P.Expr] in
-/-- `CfgInv` transports along one reference step. -/
-private theorem cfgInv_stepE
-    (π : String → Option (Procedure P (CmdExt P) Hdr))
-    {c c' : Config P (CmdExt P)} {evs : Trace P}
-    (h : StepStmtE P (EvalCommandET π) c evs c')
-    (hinv : CfgInv π c) : CfgInv π c' :=
-  let ⟨hstore, hall, htyped⟩ := hinv
-  have hE := stepET_toE π h
-  ⟨Config.storeWellDefined_stepE_of (evalCommandE_wellFormedStore π) hE hstore,
-    stepStmtE_preserves_allCmds _ hE hall,
-    Config.storeTyped_stepE (·.2) h htyped⟩
-
-omit [DecidableEq P.Expr] in
-/-- `CfgInv` transports along a whole reference run. -/
-private theorem cfgInv_stepStarE
-    (π : String → Option (Procedure P (CmdExt P) Hdr))
-    {c c' : Config P (CmdExt P)} {evs : Trace P}
-    (h : StepStmtStarE P (EvalCommandET π) c evs c')
-    (hinv : CfgInv π c) : CfgInv π c' := by induction h <;> grind [cfgInv_stepE]
-
-omit [DecidableEq P.Expr] [CallLangWF P] [InterpLang P] in
-/-- A reference run leaves the factory alone. -/
-private theorem stepStarE_factory
-    (π : String → Option (Procedure P (CmdExt P) Hdr))
-    {c c' : Config P (CmdExt P)} {evs : Trace P}
-    (h : StepStmtStarE P (EvalCmdExtE π) c evs c') :
-    c'.getEnv.factory = c.getEnv.factory := (starE_preserves_factory h).symm
 
 /-! ## The CFG body invariant
 
@@ -503,6 +254,61 @@ well-formed, typed store (`CallEnvOk`) and the well-formed call sites of its blo
     CallEnvOk fac ρ.store ∧ resOk π cs ∧ g.allCmds (CmdCallOk π) ∧ ρ.factory = fac
   | .terminal ρ => CallEnvOk fac ρ.store ∧ ρ.factory = fac
 
+omit [DecidableEq P.Expr] [HasOldIdent P] [ProcedureHeader P Hdr] in
+/-- `CmdCallOk` is `CmdOk` at `CmdExt.sem`. -/
+theorem cmdCallOk_eq (π : String → Option (Procedure P (CmdExt P) Hdr)) :
+    CmdCallOk π = CmdOk (Calls.CmdExt.sem (Hdr := Hdr)) := by
+  funext c
+  cases c <;> rfl
+
+omit [DecidableEq P.Expr] [HasOldIdent P] [ProcedureHeader P Hdr] in
+/-- `CfgInv` is `CfgInvV` at `CmdExt.sem`. -/
+theorem cfgInv_eq (π : String → Option (Procedure P (CmdExt P) Hdr)) :
+    CfgInv π = CfgInvV (Calls.CmdExt.sem (Hdr := Hdr)) := by
+  funext c
+  simp only [CfgInv, CfgInvV, cmdCallOk_eq]
+
+omit [DecidableEq P.Expr] [HasOldIdent P] [ProcedureHeader P Hdr] in
+/-- `CFGCfgInv` is `CFGCfgInvV` at `CmdExt.sem`. -/
+theorem cfgCfgInv_eq {l : Type} [BEq l] (π : String → Option (Procedure P (CmdExt P) Hdr))
+    (fac : P.Factory) :
+    CFGCfgInv (l := l) π fac = CFGCfgInvV (Calls.CmdExt.sem (Hdr := Hdr)) fac := by
+  funext c
+  cases c <;> simp only [CFGCfgInv, CFGCfgInvV, resOk, cmdCallOk_eq]
+
+omit [DecidableEq P.Expr] [HasOldIdent P] in
+/-- `ProcOk` is `ProcOkV` at `CmdExt.sem`. -/
+theorem procOk_iff (π : String → Option (Procedure P (CmdExt P) Hdr))
+    (p : Procedure P (CmdExt P) Hdr) : ProcOk π p ↔ ProcOkV (Calls.CmdExt.sem (Hdr := Hdr)) p := by
+  simp only [ProcOk, ProcOkV, cmdCallOk_eq]
+
+omit [DecidableEq P.Expr] [HasOldIdent P] in
+/-- `ProcsOk` gives `ProcsOkV` at `CmdExt.sem`: a procedure a `CmdExt` call can run is its
+    callee instantiated at its type arguments, and no `CmdExt` command is an extension command. -/
+theorem procsOkV_of_procsOk (π : String → Option (Procedure P (CmdExt P) Hdr)) (h : ProcsOk π) :
+    ProcsOkV (Calls.CmdExt.sem (Hdr := Hdr)) π := by
+  rintro p ⟨n, p₀, inst, hπ, hinst, ⟨c, args, md, hk⟩ | ⟨_, _, _, _, _, _, _, hx⟩⟩
+  · obtain ⟨tyArgs, -, hcallee⟩ := Calls.CmdExt.sem_kind_call_callee hk hπ hinst
+    exact (procOk_iff π p).1 (h n tyArgs p hcallee)
+  · exact hx.elim
+
+omit [DecidableEq P.Expr] in
+/-- A step of `EvalCommandET` is a step of `EvalCommandVT` at `CmdExt.sem`. -/
+theorem evalCommandVT_of_ET {π : String → Option (Procedure P (CmdExt P) Hdr)} {f : P.Factory}
+    {σ σ' : SemanticStore P} {c : CmdExt P} {evs : Trace P}
+    (h : EvalCommandET π f σ c σ' evs) :
+    EvalCommandVT (Calls.CmdExt.sem (Hdr := Hdr)) π f σ c σ' evs :=
+  ⟨h.1, evalCommandE_wellFormedStore π h.1, h.2,
+    evalCmdExtE_cmdDefsSound π _ _ _ _ _ h.1⟩
+
+omit [DecidableEq P.Expr] [InterpLang P] [CallLangWF P] in
+/-- A step of `EvalCommandVT` at `CmdExt.sem` is a step of `EvalCommandET`. -/
+theorem evalCommandET_of_VT {π : String → Option (Procedure P (CmdExt P) Hdr)} {f : P.Factory}
+    {σ σ' : SemanticStore P} {c : CmdExt P} {evs : Trace P}
+    (h : EvalCommandVT (Calls.CmdExt.sem (Hdr := Hdr)) π f σ c σ' evs) :
+    EvalCommandET π f σ c σ' evs :=
+  ⟨h.1, h.2.2.1⟩
+
 omit [DecidableEq P.Expr] in
 /-- The CFG invariant `CFGCfgInv` (well-formed, typed running store; well-formed call sites in
     every block command and every residual command) is preserved by one event-trace CFG
@@ -514,61 +320,35 @@ theorem cfgCfgInv_stepE {l : Type} [BEq l]
     {a : CFGConfig l (CmdExt P) P} {emitted : Trace P} {b : CFGConfig l (CmdExt P) P}
     (h : StepCFGE P (EvalCommandET π) a emitted b)
     (hinv : CFGCfgInv π fac a) : CFGCfgInv π fac b := by
-  cases h <;>
-    grind [CFGCfgInv, CallEnvOk, CFG.allCmds, resOk, EvalCommandET, evalCommandE_wellFormedStore]
+  rw [cfgCfgInv_eq] at hinv ⊢
+  exact cfgCfgInvV_stepE _ π fac (StepCFGE.imp (fun _ _ _ _ _ => evalCommandVT_of_ET) h) hinv
 
-omit [DecidableEq P.Expr] in
-/-- The CFG invariant `CFGCfgInv` (well-formed, typed running store; well-formed call sites in
-    every block command and every residual command) is preserved along an event-trace CFG
-    reference run whose commands follow `EvalCommandET π`, the call-aware reference command
-    relation restricted to steps that keep a typed store typed. -/
-private theorem cfgCfgInv_starE {l : Type} [BEq l]
-    (π : String → Option (Procedure P (CmdExt P) Hdr))
-    (fac : P.Factory)
-    {a : CFGConfig l (CmdExt P) P} {emitted : Trace P} {b : CFGConfig l (CmdExt P) P}
-    (h : StepCFGStarE P (EvalCommandET π) a emitted b)
-    (hinv : CFGCfgInv π fac a) : CFGCfgInv π fac b := by
-  induction h <;> grind [cfgCfgInv_stepE]
-
-omit [HasFvar P] [HasFvars P] [DecidableEq P.Expr] [DecidableEq P.Ident]
-    [CallLangWF P] [HasOldIdent P] [ProcedureHeader P Hdr] [ProcedureTypeInstantiation P Hdr] in
-omit [InterpLang P] in
-/-- `CallEnvOk` (well-formed store, typed store) is preserved by projecting a store onto a
-    parent store (`projectStore`), as at a block exit. -/
-theorem callEnvOk_projectStore (fac : P.Factory) (σp σ : SemanticStore P)
-    (h : CallEnvOk (P := P) fac σ) : CallEnvOk (P := P) fac (projectStore σp σ) := by
-  obtain ⟨hwf, hty⟩ := h
-  exact ⟨fun x v => by grind [projectStore, hwf x v], hty.projectStore⟩
-
-/-! ## The call-aware per-step obligation
-
-`StepInterpSoundGeneric` for the call-aware stepper, from its `.cmd` arm (`callStepSound_of_arm`).
-The arm is a hypothesis indexed by `kf : Nat → Nat`, so it applies both to the fuel-baked
-callee-body stepper and to the top-level engine. -/
+/-! ## The call-aware per-step obligation -/
 
 section CallArm
 
 variable {m : Type → Type} [Monad m] [LawfulMonad m] [InterpEffects P m]
   [MonadExcept StopReason m]
 
-omit [DecidableEq P.Expr] [HasOldIdent P] [ProcedureHeader P Hdr]
-  [ProcedureTypeInstantiation P Hdr] in
+omit [LawfulMonad m] in
+omit [DecidableEq P.Expr] [HasOldIdent P] [ProcedureHeader P Hdr] in
 /-- `CfgInv` projects into the inner configuration of a `.seq`. -/
 private theorem cfgInv_seq (π : String → Option (Procedure P (CmdExt P) Hdr))
     (inner : Config P (CmdExt P)) (ss : List (Stmt P (CmdExt P)))
-    (h : CfgInv π (.seq inner ss)) : CfgInv π inner :=
-  let ⟨hstore, hall, htyped⟩ := h
-  ⟨hstore, hall.1, htyped⟩
+    (h : CfgInv π (.seq inner ss)) : CfgInv π inner := by
+  rw [cfgInv_eq] at h ⊢
+  exact cfgInvV_seq _ inner ss h
 
-omit [DecidableEq P.Expr] [HasOldIdent P] [ProcedureHeader P Hdr]
-  [ProcedureTypeInstantiation P Hdr] in
+omit [LawfulMonad m] in
+omit [DecidableEq P.Expr] [HasOldIdent P] [ProcedureHeader P Hdr] in
 /-- `CfgInv` projects into the inner configuration of a `.block`. -/
 private theorem cfgInv_block (π : String → Option (Procedure P (CmdExt P) Hdr))
     (l : Option String) (σ : SemanticStore P) (inner : Config P (CmdExt P))
-    (h : CfgInv π (.block l σ inner)) : CfgInv π inner :=
-  let ⟨hstore, hall, htyped⟩ := h
-  ⟨hstore.2, hall, htyped.2⟩
+    (h : CfgInv π (.block l σ inner)) : CfgInv π inner := by
+  rw [cfgInv_eq] at h ⊢
+  exact cfgInvV_block _ l σ inner h
 
+omit [LawfulMonad m] in
 omit [DecidableEq P.Expr] in
 /-- A `.call` whose marshalling succeeded, from a configuration with a well-formed factory
     (`FactoryWF`) satisfying `CfgInv π`, satisfies `CallEntry`, and its entry frame is a
@@ -592,55 +372,56 @@ private theorem callEntry_ok (π : String → Option (Procedure P (CmdExt P) Hdr
     CallEnvOk F (callEntryStore p vi vo) ∧ RStore.Denoting F (callEntryStore p i o) ∧
     InterpLang.absStore F (callEntryStore p i o) = callEntryStore p vi vo := by
   obtain ⟨hstore, hall, htyped⟩ := hinv
-  obtain ⟨hnd, -⟩ := hprocs n _ p hπ
-  simp only [Config.allCmds, Stmt.allCmds, CmdCallOk, Bool.and_eq_true, List.all_eq_true] at hall
-  rw [hrf] at hi
-  have hvar := hfac.2.1
-  obtain ⟨vi, hreli, hE⟩ :=
-    evalExpressions_of_evalBoundedList_strict _ _ hEval _ hden hvar hstore _ _ hall.1.1 hi
-  obtain ⟨vi', hreli', htyi⟩ :=
-    typed_of_evalBoundedList _ _ hEval _ hden hvar hstore htyped _ _ hall.1.2 hi
-  obtain rfl :=
-    List.Rel₂.unique (fun _ _ _ h1 h2 => Option.some.inj (h1.symm.trans h2)) hreli' hreli
-  obtain ⟨vo, hrelo, hro⟩ := readVarList_absStore_of_denoting hden _ _ ho
-  obtain ⟨habs, hd⟩ := callEntryStore_abs p hreli hrelo
-  refine ⟨vi', vo, hreli, hrelo, ⟨vi', vo, hE, readValues_of_readVarList _ _ hstore _ _ hro,
-      initCallFrame_callEntryStore p vi' vo (by grind [List.Rel₂.length_eq])
-        (by grind [List.Rel₂.length_eq]) hnd⟩,
-    ⟨wellFormedStore_callEntryStore p vi' vo
-      (evalExpressions_values (CallLangWF.evalVal _) hstore hE)
-      (values_of_readVarList hstore _ _ hro),
-    storeTyped_callEntryStore p vi' vo htyi (typed_of_readVarList htyped _ _ hro)⟩, hd, habs⟩
+  have hargs : ArgsOk args = true := by
+    simpa [Config.allCmds, Stmt.allCmds, CmdCallOk, ArgsOk] using hall
+  exact callEntry_okV hEval hfac hden hrf ⟨hstore, htyped⟩ hargs (hprocs n _ p hπ).1 hi hil ho hol
 
 omit [LawfulMonad m] in
-/-- **Per-step soundness of the call-aware engine at call-depth budget `d` and stepper fuel
-    `kf fuel`.** Assume every successful command step `stepCmd π .contract d (kf fuel)` from a
-    configuration with a well-formed factory (`FactoryWF`) satisfying the invariant `CfgInv π` (the
-    replay invariant on the stores and the call sites) is one reference step over `EvalCommandET π`
-    recording exactly its events. Then every successful `stepInterp` step over
-    `stepCmd π .contract d (kf fuel)` from a non-terminal, non-exiting such configuration is one
-    reference
-    `StepStmtE` step over `EvalCommandET π` that records exactly the step's events and reaches a
-    configuration satisfying `CfgInv π` (`StepInterpSoundGeneric`). It assumes
-    that the Boolean literals denote the Boolean values (`InterpLangBool`). -/
-private theorem callStepSound_of_arm [InterpLangBool P] (obs : InterpObs P m)
-    (π : String → Option (Procedure P (CmdExt P) Hdr))
-    (d : Nat) (kf : Nat → Nat)
-    (harm : ∀ (F : P.Factory) (fuel : Nat) (cmd : CmdExt P) (env : IEnv P)
-        (cfg' : IConfig P (CmdExt P)) (cfgr : obs.Cfg) (st st' : obs.St),
-        obs.run (stepCmd π .contract d (kf fuel) env cmd) cfgr st = (.ok cfg', st') →
-        FactoryWF (P := P) F → BoundedEvalSoundAt P F → RStore.Denoting F env.store.get →
+omit [HasOldIdent P] [ProcedureHeader P Hdr] in
+/-- `CmdExt.view` agrees with `CmdExt.sem`; it has no extension command. -/
+theorem cmdExt_viewSound (obs : InterpObs P m) :
+    ViewSound obs (CmdExt.view (Hdr := Hdr) (m := m)) (Calls.CmdExt.sem (Hdr := Hdr)) where
+  base c b h := by
+    cases c <;> simp only [CmdExt.view, CmdView.base.injEq, reduceCtorEq] at h
+    subst h
+    exact ⟨rfl, rfl⟩
+  call c n args md inst h := by
+    cases c <;> simp only [CmdExt.view, CmdView.call.injEq, reduceCtorEq] at h
+    obtain ⟨rfl, rfl, rfl, rfl⟩ := h
+    rfl
+  ext_kind c run h := absurd h (CmdExt.view_ne_ext c run)
+  ext _ _ c run _ _ _ _ _ h := absurd h (CmdExt.view_ne_ext c run)
+
+omit [LawfulMonad m] in
+/-- A `CmdExt` command arm in the form of this file is `ArmSound` at `CmdExt.sem`. -/
+private theorem armSound_of_cmdExt {obs : InterpObs P m} {step : StepCmdM P (CmdExt P) m}
+    {π : String → Option (Procedure P (CmdExt P) Hdr)} {F : P.Factory}
+    (IH : ∀ (fuel : Nat) (cmd : CmdExt P) (env : IEnv P) (cfg' : IConfig P (CmdExt P))
+        (cfgr : obs.Cfg) (st st' : obs.St),
+        obs.run (step fuel env cmd) cfgr st = (.ok cfg', st') →
+        FactoryWF (P := P) F → RStore.Denoting F env.store.get →
         env.factory = InterpLang.rfactory F → CfgInv π (.stmt (.cmd cmd) (env.abs F)) →
         ∃ revs : List (IEvent P), StepStmtE P (EvalCommandET π)
           (.stmt (.cmd cmd) (env.abs F)) (revs.map (REvent.abs F)) (cfg'.abs F)
           ∧ obs.trace st' = revs.reverse ++ obs.trace st ∧ cfg'.Denoting F) :
-    StepInterpSoundGeneric obs (fun fuel e c => stepCmd π .contract d (kf fuel) e c)
-      (EvalCommandET π) (CfgInv π) :=
-  stepInterpSoundGeneric_of_arms obs _ _ _ (cfgInv_seq π) (cfgInv_block π)
-    (fun F fuel cmd env cfg' cfgr st st' h hf hE ⟨hd, hrf⟩ hi =>
-      let ⟨revs, hs, ht, hd'⟩ := harm F fuel cmd env cfg' cfgr st st' h hf hE hd hrf hi
-      ⟨⟨revs, hs, ht⟩, hd'⟩)
-    (fun _ _ _ => cfgInv_stepE π) (evalCommandET_cmdDefsSound π)
+    ArmSound obs step (Calls.CmdExt.sem (Hdr := Hdr)) π F := by
+  intro fuel cmd env cfg' cfgr st st' h hf hd hr hi
+  rw [← cfgInv_eq] at hi
+  obtain ⟨revs, hs, ht, hd'⟩ := IH fuel cmd env cfg' cfgr st st' h hf hd hr hi
+  exact ⟨revs, StepStmtE.imp (fun _ _ _ _ _ => evalCommandVT_of_ET) hs, ht, hd'⟩
+
+omit [LawfulMonad m] in
+omit [CallLangWF P] in
+/-- `StepInterpSoundGeneric` over `EvalCommandVT` at `CmdExt.sem` gives it over
+    `EvalCommandET`. -/
+private theorem stepInterpSound_toET {obs : InterpObs P m} {step : StepCmdM P (CmdExt P) m}
+    {π : String → Option (Procedure P (CmdExt P) Hdr)} {Inv : Config P (CmdExt P) → Prop}
+    (h : StepInterpSoundGeneric obs step (EvalCommandVT (Calls.CmdExt.sem (Hdr := Hdr)) π) Inv) :
+    StepInterpSoundGeneric obs step (EvalCommandET π) Inv :=
+  fun F fuel cfg cfg' cfgr st st' hr ht he hf hE hd hi htr =>
+    let ⟨⟨revs, hs, htr'⟩, hd', hi', htr''⟩ :=
+      h F fuel cfg cfg' cfgr st st' hr ht he hf hE hd hi htr
+    ⟨⟨revs, StepStmtE.imp (fun _ _ _ _ _ => evalCommandET_of_VT) hs, htr'⟩, hd', hi', htr''⟩
 
 omit [LawfulMonad m] in
 /-- **Per-step soundness of the call-aware engine at one factory.** As `callStepSound_of_arm`, for
@@ -659,43 +440,10 @@ private theorem callStepSound_at [InterpLangBool P] (obs : InterpObs P m)
           (.stmt (.cmd cmd) (env.abs F₀)) (revs.map (REvent.abs F₀)) (cfg'.abs F₀)
           ∧ obs.trace st' = revs.reverse ++ obs.trace st ∧ cfg'.Denoting F₀) :
     StepInterpSoundGeneric obs (fun fuel e c => stepCmd π .contract d (kf fuel) e c)
-      (EvalCommandET π) (fun c => CfgInv π c ∧ c.getEnv.factory = F₀) :=
-  stepInterpSoundGeneric_of_arms obs _ _ _ (fun _ _ h => ⟨cfgInv_seq π _ _ h.1, h.2⟩)
-    (fun _ _ _ h => ⟨cfgInv_block π _ _ _ h.1, h.2⟩)
-    (fun _ fuel cmd env cfg' cfgr st st' h hf _ ⟨hd, hrf⟩ ⟨hi, hF⟩ => by
-      subst hF
-      obtain ⟨revs, hs, ht, hd'⟩ := harm fuel cmd env cfg' cfgr st st' h hf hd hrf hi
-      exact ⟨⟨revs, hs, ht⟩, hd'⟩)
-    (fun _ _ _ hs hi => ⟨cfgInv_stepE π hs hi.1,
-      (stepE_preserves_factory (stepET_toE π hs)).symm.trans hi.2⟩)
-    (evalCommandET_cmdDefsSound π)
-
-omit [LawfulMonad m] in
-/-- A successful step `stepCmd π .contract d k` of a base command from a configuration with a
-    well-formed factory (`FactoryWF`) satisfying the invariant `CfgInv π` (the replay invariant on
-    the stores and the call sites) is one reference `StepStmtE` step over `EvalCommandET π`
-    recording exactly the step's events. -/
-private theorem call_cmd_arm_base (obs : InterpObs P m)
-    (π : String → Option (Procedure P (CmdExt P) Hdr))
-    (hEval : BoundedEvalSoundAt P F)
-    (k d : Nat) (base : Cmd P) (env : IEnv P) (cfg' : IConfig P (CmdExt P))
-    (cfgr : obs.Cfg) (st st' : obs.St)
-    (hrun : obs.run (stepCmd π .contract d k env (.cmd base)) cfgr st = (.ok cfg', st'))
-    (hfac : FactoryWF (P := P) F) (hden : RStore.Denoting F env.store.get)
-    (hrf : env.factory = InterpLang.rfactory F)
-    (hinv : CfgInv π (.stmt (.cmd (CmdExt.cmd base)) (env.abs F))) :
-    ∃ revs : List (IEvent P), StepStmtE P (EvalCommandET π)
-          (.stmt (.cmd (CmdExt.cmd base)) (env.abs F)) (revs.map (REvent.abs F)) (cfg'.abs F)
-          ∧ obs.trace st' = revs.reverse ++ obs.trace st ∧ cfg'.Denoting F := by
-  simp only [stepCmd_cmd, InterpObs.run_bind, InterpObs.run_pure] at hrun
-  split at hrun <;> simp only [Prod.mk.injEq, Except.ok.injEq, reduceCtorEq, false_and] at hrun
-  obtain ⟨rfl, rfl⟩ := hrun
-  rename_i hb
-  rw [hrf] at hb
-  obtain ⟨-, -, htyped⟩ := hinv
-  obtain ⟨revs, hstep, hd', htr⟩ :=
-    obs_stepBaseCmdStore_sound obs _ _ hEval _ _ _ _ _ _ hfac.2.1 hden htyped hb
-  exact ⟨revs, .step_cmd ⟨.cmd_sem hstep, evalCmdE_storeTyped hstep⟩, htr, hd', hrf⟩
+      (EvalCommandET π) (fun c => CfgInv π c ∧ c.getEnv.factory = F₀) := by
+  rw [cfgInv_eq]
+  exact stepInterpSound_toET
+    (stepSoundV_at obs (Calls.CmdExt.sem (Hdr := Hdr)) π _ (armSound_of_cmdExt harm))
 
 omit [LawfulMonad m] in
 /-- Assume every procedure of `π` is well-formed (`ProcsOk π`), and every successful command step
@@ -734,14 +482,12 @@ private theorem callee_run_ok [InterpLangBool P] (obs : InterpObs P m)
       ∃ revs : List (IEvent P), StepStmtStarE P (EvalCmdExtE π)
         (.stmt (.block "" ss #[]) (E.abs F)) (revs.map (REvent.abs F)) (fc.abs F) ∧
           obs.trace st' = revs.reverse ++ obs.trace st := by
-  obtain ⟨revs, R, hdf, -, htr⟩ := runInterp_sound_tracked obs _ _ _
-    (callStepSound_at obs π d (fun _ => k) IH) F k _ fc cfgr st st' h hfE hEval ⟨hdE, hrE⟩
-    ⟨hI, rfl⟩ trivial
-  obtain ⟨⟨σ', f⟩, rfl⟩ := (obs_runInterp_ok_final obs _ _ _ _ _ _ _ h).resolve_right
-    fun ⟨_, _, hfc⟩ => absurd (hfc ▸ R) (exitsCoveredByBlocks_noEscapeE _ (.block "" ss #[])
-      ((exitsCoveredByBlocks_weaken [] [""] nofun).2 ss ((hprocs n _ p hπ).2.1 ss _ hb).1) _ _ _)
-  obtain rfl : f = E.factory := hdf.2.trans hrE.symm
-  exact ⟨_, rfl, hdf, cfgInv_stepStarE π R hI, revs, stepStarET_toE π R, htr⟩
+  rw [cfgInv_eq] at hI ⊢
+  obtain ⟨σ', h1, h2, h3, revs, R, htr⟩ :=
+    callee_run_okV obs (Calls.CmdExt.sem (Hdr := Hdr)) π hEval _ (k := k)
+    (armSound_of_cmdExt IH) ((procOk_iff π p).1 (hprocs n tyArgs p hπ)) hb hI hfE hdE hrE h
+  exact ⟨σ', h1, h2, h3, revs, ReflTransTrace.imp (fun _ _ _ hs =>
+    StepStmtE.imp (fun _ _ _ _ _ hv => hv.1) hs) R, htr⟩
 
 omit [LawfulMonad m] in
 /-- A successful step `stepCmd π .contract d k` of a command with well-formed call sites
@@ -771,19 +517,10 @@ private theorem store_sound_of_arm (obs : InterpObs P m)
         (InterpLang.absStore F σ'.get) (revs.map (REvent.abs F)) ∧
       CallEnvOk F (InterpLang.absStore F σ'.get) ∧ RStore.Denoting F σ'.get
       ∧ obs.trace st' = revs.reverse ++ obs.trace st := by
-  rw [obs.run_bind] at h
-  split at h <;>
-    simp only [obs.run_pure, Prod.mk.injEq, Except.ok.injEq, reduceCtorEq, false_and] at h
-  obtain ⟨rfl, rfl⟩ := h
-  rename_i c s hrun
-  obtain ⟨revs, hs, ht, hdc⟩ := IH 0 cmd ⟨σ, InterpLang.rfactory F⟩ c cfgr st s hrun hfac hd rfl
-    ⟨henv.1, by simp [Config.allCmds, Stmt.allCmds, hok], henv.2⟩
-  obtain ⟨ρ', hρ'⟩ := hs.cmd_terminal
-  obtain ⟨e, rfl, -⟩ := (IConfig.abs_eq_terminal _ _ _).1 hρ'
-  simp only [IConfig.abs, IEnv.abs] at hs
-  cases hs
-  rename_i hev
-  exact ⟨revs, hev, ⟨evalCommandE_wellFormedStore π hev.1 henv.1, hev.2 henv.2⟩, hdc.1, ht⟩
+  obtain ⟨revs, hev, henv', hd', ht⟩ := store_sound_of_armV obs (Calls.CmdExt.sem (Hdr := Hdr)) π
+    (fun _ e c => stepCmd π .contract d k e c) (k := k) (armSound_of_cmdExt IH) hfac
+    (by rw [← cmdCallOk_eq]; exact hok) hd henv h
+  exact ⟨revs, evalCommandET_of_VT hev, henv', hd', ht⟩
 
 omit [LawfulMonad m] in
 /-- The command obligation of the CFG soundness theorems (`stepInterpCFG_soundE`,
@@ -817,6 +554,7 @@ private theorem cfgCmd_sound_of_arm (obs : InterpObs P m)
     (store_sound_of_arm obs π IH hfac (hr _ (.head _)) hdρ he (hrf ▸ hc)).imp
       fun _ ⟨hev, _, hd', ht⟩ => ⟨ht, hev, hd'⟩
 
+
 omit [LawfulMonad m] in
 /-- A successful `runInterpCFG` run over the store-stepper of `stepCmd π .contract d` at fuel `k`,
     from a configuration that denotes at a well-formed factory `F` and whose image satisfies the CFG
@@ -841,10 +579,13 @@ private theorem cfg_run_sound [InterpLangBool P] (obs : InterpObs P m)
       = (.ok c', st')) :
     ∃ revs : List (IEvent P), obs.trace st' = revs.reverse ++ obs.trace st
       ∧ StepCFGStarE P (EvalCommandET π) (c.abs F) (revs.map (REvent.abs F)) (c'.abs F)
-      ∧ c'.Denoting F :=
-  runInterpCFG_soundE obs (EvalCommandET π) _ (CFGCfgInv π F) F
-    (cfgCmd_sound_of_arm obs π IH hfac) (fun _ _ _ => cfgCfgInv_stepE π F) hEval _ _ _ _ _ _ hd
-    hinv h
+      ∧ c'.Denoting F := by
+  rw [cfgCfgInv_eq] at hinv
+  obtain ⟨revs, ht, R, hd'⟩ :=
+    cfg_run_soundV obs (Calls.CmdExt.sem (Hdr := Hdr)) π hEval
+      (fun _ e c => stepCmd π .contract d k e c) (armSound_of_cmdExt IH) hfac hd hinv h
+  exact ⟨revs, ht, ReflTransTrace.imp (fun _ _ _ hs =>
+    StepCFGE.imp (fun _ _ _ _ _ => evalCommandET_of_VT) hs) R, hd'⟩
 
 omit [LawfulMonad m] in
 /-- Assume every procedure of `π` is well-formed (`ProcsOk π`), and every successful command
@@ -881,249 +622,10 @@ private theorem runCallee_ok [InterpLangBool P] (obs : InterpObs P m)
         (InterpLang.absStore F σf) (revs.map (REvent.abs F)) ∧
       CallEnvOk F (InterpLang.absStore F σf) ∧ RStore.Denoting F σf
       ∧ obs.trace st' = revs.reverse ++ obs.trace st := by
-  obtain ⟨-, hS, hC⟩ := hprocs n _ p hπ
-  have hE : IEnv.abs F (⟨.ofStore σ, InterpLang.rfactory F⟩ : IEnv P) =
-      ⟨InterpLang.absStore F σ, F⟩ := by simp [IEnv.abs]
-  revert h
-  cases hb : p.body with
-  | structured ss =>
-    intro h
-    simp only [runCallee, obs.run_bind] at h
-    split at h
-    · rename_i fc s hrun
-      obtain ⟨σ', rfl, hdf, ⟨hwf, -, hty⟩, revs, R, htr⟩ :=
-        callee_run_ok obs π hprocs hEval (E := ⟨.ofStore σ, InterpLang.rfactory F⟩) IH hπ hb
-        (hE ▸ ⟨henv.1, by simpa [Config.allCmds, Stmt.allCmds] using (hS ss _ hb).2, henv.2⟩)
-        hfac (by simpa using hd) rfl hrun
-      simp only [obs.run_pure, Prod.mk.injEq, Except.ok.injEq] at h
-      obtain ⟨rfl, rfl⟩ := h
-      exact ⟨revs, .structured (hE ▸ R), ⟨hwf, hty⟩, hdf.1, htr⟩
-    · simp at h
-  | cfg g =>
-    intro h
-    simp only [runCallee, obs.run_bind] at h
-    split at h
-    · rename_i fc s hrun
-      have hA : ICFGConfig.abs F (.atBlock g g.entry ⟨.ofStore σ, InterpLang.rfactory F⟩ :
-          ICFGConfig _ (CmdExt P) P) = .atBlock g g.entry ⟨InterpLang.absStore F σ, F⟩ := by
-        simp [ICFGConfig.abs, IEnv.abs]
-      have hInv : CFGCfgInv π F
-          (ICFGConfig.abs F (.atBlock g g.entry ⟨.ofStore σ, InterpLang.rfactory F⟩)) :=
-        hA ▸ ⟨henv, hC g _ hb, rfl⟩
-      obtain ⟨revs, htr, R, hdf⟩ := cfg_run_sound obs π hEval IH hfac
-        ⟨by simpa [ICFGConfig.env] using hd, rfl⟩ hInv hrun
-      have hfin := cfgCfgInv_starE π F R hInv
-      rw [hA] at R
-      split at h
-      · simp only [obs.run_pure, Prod.mk.injEq, Except.ok.injEq] at h
-        obtain ⟨rfl, rfl⟩ := h
-        rename_i ρEnd
-        refine ⟨revs, ?_, ?_, hdf.1.project _, htr⟩
-        · rw [InterpLang.absStore_project _ hd]
-          exact .cfg (R.imp fun _ _ _ => .imp fun _ _ _ _ _ => And.left)
-        · rw [InterpLang.absStore_project _ hd]
-          exact callEnvOk_projectStore _ _ _ hfin.1
-      · simp [obs.run_throw] at h
-    · simp at h
-  | abstract => intro h; simp [runCallee, obs.run_throw] at h
-
-omit [LawfulMonad m] [HasOldIdent P] in
-/-- A successful `havocVarList` run over the names `xs`, at a well-formed factory (`FactoryWF`),
-    from a store that denotes a well-formed, typed store (`CallEnvOk`), is a reference
-    `HavocVars` of `xs` between the stores' images, records no event, and ends in a store that
-    again denotes a well-formed, typed store. -/
-private theorem havocVarList_sound (obs : InterpObs P m) (hEval : BoundedEvalSoundAt P F)
-    (hfac : FactoryWF (P := P) F) (fuel : Nat) :
-    ∀ (xs : List P.Ident) (st st' : IStore P) (cfgr : obs.Cfg) (s s' : obs.St),
-      obs.run (havocVarList fuel (InterpLang.rfactory F) xs st) cfgr s = (.ok st', s') →
-      RStore.Denoting F st.get → CallEnvOk F (InterpLang.absStore F st.get) →
-      HavocVars F (InterpLang.absStore F st.get) xs (InterpLang.absStore F st'.get) ∧
-        RStore.Denoting F st'.get ∧ CallEnvOk F (InterpLang.absStore F st'.get) ∧
-        obs.trace s' = obs.trace s
-  | [], _, _, _, _, _, h, hd, henv => by
-    simp only [havocVarList, InterpObs.run_pure, Prod.mk.injEq, Except.ok.injEq] at h
-    obtain ⟨rfl, rfl⟩ := h
-    exact ⟨.update_none, hd, henv, rfl⟩
-  | x :: xs, st, st', cfgr, s, s', h, hd, henv => by
-    simp only [havocVarList, InterpObs.run_bind] at h
-    split at h
-    · rename_i st1 s1 h1
-      obtain ⟨revs, hstep, hd1, t1⟩ :=
-        obs_stepBaseCmdStore_sound obs _ _ hEval _ _ _ _ _ _ hfac.2.1 hd henv.2 h1
-      have henv1 : CallEnvOk F (InterpLang.absStore F st1.get) :=
-        ⟨evalCmdE_storeWellDefined (CallLangWF.evalVal _) hstep henv.1,
-          evalCmdE_storeTyped hstep henv.2⟩
-      obtain ⟨H, hd', henv', t⟩ := havocVarList_sound obs hEval hfac fuel xs st1 st' cfgr s1 s'
-        h hd1 henv1
-      generalize hR : revs.map (REvent.abs F) = R at hstep
-      cases hstep with
-      | eval_set_nondet hupd hty _ =>
-        refine ⟨.update_some hupd hty H, hd', henv', ?_⟩
-        rw [t, t1, List.map_eq_nil_iff.1 hR]
-        rfl
-    · simp at h
-
-omit [LawfulMonad m] [HasOldIdent P] in
-/-- A successful contract run of an opaque callee (`runAbstractCallee`) over the output formals
-    `xs`, at a well-formed factory (`FactoryWF`), from an entry frame that denotes a well-formed,
-    typed store (`CallEnvOk`), havocs `xs` in the reference sense (`HavocVars`), records exactly
-    the assumption events of `post` at the returned frame, and returns a store that denotes a
-    well-formed, typed store. -/
-private theorem runAbstractCallee_sound (obs : InterpObs P m) (hEval : BoundedEvalSoundAt P F)
-    (hfac : FactoryWF (P := P) F) {fuel : Nat} {xs : List P.Ident}
-    {post : ListMap String (Check P)} {σ σf : RStore P} {cfgr : obs.Cfg} {st st' : obs.St}
-    (hd : RStore.Denoting F σ) (henv : CallEnvOk F (InterpLang.absStore F σ))
-    (h : obs.run (runAbstractCallee fuel (InterpLang.rfactory F) xs post σ) cfgr st =
-      (.ok σf, st')) :
-    HavocVars F (InterpLang.absStore F σ) xs (InterpLang.absStore F σf) ∧
-      RStore.Denoting F σf ∧ CallEnvOk F (InterpLang.absStore F σf) ∧
-      obs.trace st' = (rAssumeEvents (InterpLang.rfactory F) σf post).reverse ++ obs.trace st := by
-  simp only [runAbstractCallee, obs.run_bind] at h
-  split at h
-  · rename_i σO s1 h1
-    split at h
-    · rename_i s2 h2
-      simp only [obs.run_pure, Prod.mk.injEq, Except.ok.injEq] at h
-      obtain ⟨rfl, rfl⟩ := h
-      obtain ⟨H, hd', henv', t⟩ := havocVarList_sound obs hEval hfac _ _ _ _ _ _ _ h1
-        (by simpa using hd) (by simpa using henv)
-      simp only [IStore.get_ofStore] at H
-      exact ⟨H, hd', henv', by rw [obs_forM_emit obs _ _ _ _ _ h2, t]⟩
-    · simp at h
-  · simp at h
-
-omit [LawfulMonad m] [DecidableEq P.Expr] in
-/-- The write-back of a successful `.call` step from a configuration with a denoting store
-    satisfying `CfgInv π`. Assume the callee part of the step ended in a store `σE` that denotes
-    a well-formed, typed store, in which the output formals read `w`; the write-back targets are
-    bound and read `olds`; the engine's typed write-back check passed; and every reference exit
-    from `σE` completes a reference evaluation of the call emitting the images of `mevs`. Then
-    the step to the written-back configuration is one reference `StepStmtE` step over
-    `EvalCommandET π` emitting the images of `mevs`, and that configuration denotes. -/
-private theorem call_writeBack_sound (π : String → Option (Procedure P (CmdExt P) Hdr))
-    {n : String} {tyArgs : Option (List P.Ty)} {args : List (CallArg P)} {md : MetaData P}
-    {env : IEnv P}
-    {p : Procedure P (CmdExt P) Hdr} {σE : RStore P} {w olds : List P.Expr}
-    {mevs : List (IEvent P)} (hden : RStore.Denoting F env.store.get)
-    (hrf : env.factory = InterpLang.rfactory F)
-    (hinv : CfgInv π (.stmt (.cmd (CmdExt.call n tyArgs args md)) (env.abs F)))
-    (hdef : SemanticStore.varsDefined (· ∈ CallArg.getLhs args)
-      (InterpLang.absStore F env.store.get))
-    (hlen : (CallArg.getLhs args).length = (ProcedureHeader.outputParams (P := P) p.header).length)
-    (holds : readVarList env.store.get (CallArg.getLhs args) = some olds)
-    (hwb : writeBackTyped (InterpLang.ops (P := P)) (InterpLang.rfactory F) olds w = true)
-    (hwf : WellFormedStore (InterpLang.absStore F σE) F)
-    (hty : StoreTyped F (InterpLang.absStore F σE)) (hdf : RStore.Denoting F σE)
-    (hw : readVarList σE (ProcedureHeader.outputParams (P := P) p.header) = some w)
-    (hmid : ∀ σ', CallExit F (InterpLang.absStore F env.store.get) p args
-        (InterpLang.absStore F σE) σ' →
-      EvalCmdExtE π F (InterpLang.absStore F env.store.get) (.call n tyArgs args md) σ'
-        (mevs.map (REvent.abs F))) :
-    StepStmtE P (EvalCommandET π) (.stmt (.cmd (CmdExt.call n tyArgs args md)) (env.abs F))
-        (mevs.map (REvent.abs F))
-        ((IConfig.terminal { env with store := env.store.bindPositional (CallArg.getLhs args) w } :
-          IConfig P (CmdExt P)).abs F) ∧
-      (IConfig.terminal { env with store := env.store.bindPositional (CallArg.getLhs args) w } :
-          IConfig P (CmdExt P)).Denoting F := by
-  obtain ⟨vw, hrelw, hrw⟩ := readVarList_absStore_of_denoting hdf _ _ hw
-  have M := readValues_of_readVarList _ _ hwf _ _ hrw
-  have hlw : (CallArg.getLhs args).length = vw.length := hlen.trans (ReadValuesLength M)
-  have hlhs : (CallArg.getLhs args).Nodup := by
-    have hall := hinv.2.1
-    simp only [Config.allCmds, Stmt.allCmds, CmdCallOk, Bool.and_eq_true, decide_eq_true_eq]
-      at hall
-    exact hall.2
-  have hwt := storedTy_of_writeBackTyped hden hinv.2.2 _ _ _ _ holds hlw hrelw hwb
-  have habsW := absStore_bindPositional env.store.get (CallArg.getLhs args) hrelw
-  simp only [IConfig.abs, IEnv.abs, IConfig.Denoting, IStore.get_bindPositional, habsW]
-  exact ⟨.step_cmd ⟨hmid _ ⟨hlhs, vw, M, updateStates_bindPositional _ _ _ hlw hdef, hwt⟩,
-      (storeTyped_bindPositional _ _ _ · (typed_of_readVarList hty _ _ hrw))⟩,
-    denoting_bindPositional _ hden hrelw, hrf⟩
-
-omit [LawfulMonad m] in
-/-- Assume every procedure of `π` is well-formed (`ProcsOk π`), and every successful command step
-    `stepCmd π .contract d' k'` from a configuration with a well-formed factory (`FactoryWF`)
-    satisfying the invariant `CfgInv π` (the replay invariant on the stores and the call sites) is
-    one reference
-    `StepStmtE` step over `EvalCommandET π` recording exactly its events. Then so is a successful
-    step `stepCmd π .contract (d' + 1) (k' + 1)` of a `.call` from such a configuration; its callee
-    body runs at call-depth budget `d'` and stepper fuel `k'`. It assumes
-    that the Boolean literals denote the Boolean values (`InterpLangBool`). -/
-private theorem call_cmd_arm_call [InterpLangBool P] (obs : InterpObs P m)
-    (π : String → Option (Procedure P (CmdExt P) Hdr))
-    (hprocs : ProcsOk π)
-    (hEval : BoundedEvalSoundAt P F)
-    (k' d' : Nat)
-    (IH : ∀ (_fuel : Nat) (cmd : CmdExt P) (env : IEnv P) (cfg' : IConfig P (CmdExt P))
-        (cfgr : obs.Cfg) (st st' : obs.St),
-        obs.run (stepCmd π .contract d' k' env cmd) cfgr st = (.ok cfg', st') →
-        FactoryWF (P := P) F → RStore.Denoting F env.store.get →
-        env.factory = InterpLang.rfactory F → CfgInv π (.stmt (.cmd cmd) (env.abs F)) →
-        ∃ revs : List (IEvent P), StepStmtE P (EvalCommandET π)
-          (.stmt (.cmd cmd) (env.abs F)) (revs.map (REvent.abs F)) (cfg'.abs F)
-          ∧ obs.trace st' = revs.reverse ++ obs.trace st ∧ cfg'.Denoting F)
-    (n : String) (tyArgs : Option (List P.Ty)) (args : List (CallArg P)) (md : MetaData P)
-    (env : IEnv P) (cfg' : IConfig P (CmdExt P))
-    (cfgr : obs.Cfg) (st st' : obs.St)
-    (hrun : obs.run (stepCmd π .contract (d' + 1) (k' + 1) env (.call n tyArgs args md)) cfgr st =
-      (.ok cfg', st'))
-    (hfac : FactoryWF (P := P) F) (hden : RStore.Denoting F env.store.get)
-    (hrf : env.factory = InterpLang.rfactory F)
-    (hinv : CfgInv π (.stmt (.cmd (CmdExt.call n tyArgs args md)) (env.abs F))) :
-    ∃ revs : List (IEvent P), StepStmtE P (EvalCommandET π)
-          (.stmt (.cmd (CmdExt.call n tyArgs args md)) (env.abs F)) (revs.map (REvent.abs F))
-          (cfg'.abs F)
-          ∧ obs.trace st' = revs.reverse ++ obs.trace st ∧ cfg'.Denoting F := by
-  rw [stepCmd, stepCmdWith] at hrun
-  simp only [CmdExt.view, ne_eq, List.forM_eq_forM, ite_not] at hrun
-  repeat' (first
-    | split at hrun
-    | simp only [InterpObs.run_bind,
-        InterpObs.run_pure, InterpObs.run_throw, Prod.mk.injEq, Except.ok.injEq, reduceCtorEq,
-        false_and] at hrun)
-  all_goals obtain ⟨rfl, rfl⟩ := hrun
-  · rename_i _ p hinst _ i hi hil _ o ho hol hab hlen _ olds holds _ _ _ hpre _ σf _ hbody _ w hw
-      hwb
-    have hπ : typeInstantiatedCallee π n tyArgs = some p := by
-      simp only [typeInstantiatedCallee, ‹π n = some _›, Option.bind_some, hinst]
-    rw [hrf] at hbody hpre hwb
-    obtain ⟨vi, vo, hreli, hrelo, hE, hen, hdEntry, habsEntry⟩ :=
-      callEntry_ok π hprocs hEval hfac hden hrf hinv hπ hi (· hil) ho (· hol)
-    obtain ⟨_, _, hargs, hread, hinit⟩ := hE
-    obtain ⟨vo', -, hro⟩ := readVarList_absStore_of_denoting hden _ _ ho
-    obtain ⟨H, hdf, ⟨hwf, hty⟩, t⟩ :=
-      runAbstractCallee_sound obs hEval hfac hdEntry (habsEntry ▸ hen) hbody
-    rw [habsEntry] at H
-    obtain ⟨S, hD⟩ := call_writeBack_sound π hden hrf hinv (getLhs_defined args hargs hro) hlen
-      holds (by simpa using hwb) hwf hty hdf hw
-      (mevs := rDefaultAssertEvents (InterpLang.rfactory F) (callEntryStore p i o)
-        (checksAtCall md p.spec.preconditions) ++
-        rAssumeEvents (InterpLang.rfactory F) σf p.spec.postconditions) fun _ hx => by
-      simp only [List.map_append, rDefaultAssertEvents_abs, rAssumeEvents_abs, habsEntry]
-      exact .call_abstract_sem hπ (by simpa using hab) ⟨_, _, hargs, hread, hinit⟩
-        H hx
-    exact ⟨_, S, by simp [t, obs_forM_emit obs _ _ _ _ _ hpre], hD⟩
-  · rename_i _ p hinst _ i hi hil _ o ho hol hab hlen _ olds holds _ _ _ hpre _ σf _ hbody _ _ _
-      hpost _ w hw hwb
-    have hπ : typeInstantiatedCallee π n tyArgs = some p := by
-      simp only [typeInstantiatedCallee, ‹π n = some _›, Option.bind_some, hinst]
-    rw [hrf] at hbody hpre hpost hwb
-    obtain ⟨vi, vo, hreli, hrelo, hE, hen, hdEntry, habsEntry⟩ :=
-      callEntry_ok π hprocs hEval hfac hden hrf hinv hπ hi (· hil) ho (· hol)
-    obtain ⟨_, _, hargs, hread, hinit⟩ := hE
-    obtain ⟨vo', -, hro⟩ := readVarList_absStore_of_denoting hden _ _ ho
-    obtain ⟨bevs, B, ⟨hwf, hty⟩, hdf, t⟩ :=
-      runCallee_ok obs π hprocs hEval IH hπ hfac hdEntry (habsEntry ▸ hen) hbody
-    rw [habsEntry] at B
-    obtain ⟨S, hD⟩ := call_writeBack_sound π hden hrf hinv (getLhs_defined args hargs hro) hlen
-      holds (by simpa using hwb) hwf hty hdf hw
-      (mevs := rDefaultAssertEvents (InterpLang.rfactory F) (callEntryStore p i o)
-        (checksAtCall md p.spec.preconditions) ++ bevs ++
-        rDefaultAssertEvents (InterpLang.rfactory F) σf p.spec.postconditions) fun _ hx => by
-      simp only [List.map_append, rDefaultAssertEvents_abs, habsEntry]
-      exact .call_sem hπ (by simpa using hab) ⟨_, _, hargs, hread, hinit⟩ B hx
-    exact ⟨_, S, by simp [obs_forM_emit obs _ _ _ _ _ hpost, t, obs_forM_emit obs _ _ _ _ _ hpre],
-      hD⟩
+  obtain ⟨revs, B, henv', hd', ht⟩ := runCallee_okV obs (Calls.CmdExt.sem (Hdr := Hdr)) π hEval
+    (fun _ e c => stepCmd π .contract d k e c) (armSound_of_cmdExt IH)
+    ((procOk_iff π p).1 (hprocs n tyArgs p hπ)) hfac hd henv h
+  exact ⟨revs, B, henv', hd', ht⟩
 
 omit [LawfulMonad m] in
 /-- At every stepper fuel `k` and call-depth budget `d`, if every procedure of `π` is well-formed
@@ -1146,12 +648,14 @@ theorem call_cmd_arm [InterpLangBool P] (obs : InterpObs P m)
         env.factory = InterpLang.rfactory F → CfgInv π (.stmt (.cmd cmd) (env.abs F)) →
       ∃ revs : List (IEvent P), StepStmtE P (EvalCommandET π)
           (.stmt (.cmd cmd) (env.abs F)) (revs.map (REvent.abs F)) (cfg'.abs F)
-          ∧ obs.trace st' = revs.reverse ++ obs.trace st ∧ cfg'.Denoting F := fun
-  | k, d, .cmd _ => call_cmd_arm_base obs π hEval k d _
-  | 0, _, .call .. => by unfold stepCmd stepCmdWith; simp [CmdExt.view]
-  | _ + 1, 0, .call .. => by unfold stepCmd stepCmdWith; simp [CmdExt.view]
-  | k + 1, d + 1, .call .. =>
-    call_cmd_arm_call obs π hprocs hEval k d (fun _ => call_cmd_arm obs π hprocs hEval k d) _ _ _ _
+          ∧ obs.trace st' = revs.reverse ++ obs.trace st ∧ cfg'.Denoting F :=
+  fun k d cmd env cfg' cfgr st st' h hf hd hr hi => by
+    rw [cfgInv_eq] at hi
+    obtain ⟨revs, hs, ht, hd'⟩ := stepCmdWith_arm obs (cmdExt_viewSound obs)
+      (fun _ _ _ _ _ _ h => h) π .contract (procsOkV_of_procsOk π hprocs) (modeOk_contract _ π)
+      hEval k d 0 cmd env cfg' cfgr st
+      st' h hf hd hr hi
+    exact ⟨revs, StepStmtE.imp (fun _ _ _ _ _ => evalCommandET_of_VT) hs, ht, hd'⟩
 
 omit [LawfulMonad m] in
 /-- **Per-step soundness of the call-aware engine.** If every procedure of `π` is well-formed
@@ -1166,9 +670,10 @@ omit [LawfulMonad m] in
 theorem callStepInterpSound [InterpLangBool P] (obs : InterpObs P m)
     (π : String → Option (Procedure P (CmdExt P) Hdr))
     (hprocs : ProcsOk π) (d : Nat) :
-    StepInterpSoundGeneric obs (stepCmd π .contract d) (EvalCommandET π) (CfgInv π) :=
-  callStepSound_of_arm obs π d id fun F k _ _ _ _ _ _ h hf hE =>
-    call_cmd_arm obs π hprocs hE (F := F) k d _ _ _ _ _ _ h hf
+    StepInterpSoundGeneric obs (stepCmd π .contract d) (EvalCommandET π) (CfgInv π) := by
+  rw [cfgInv_eq]
+  exact stepInterpSound_toET (stepCmdWith_stepSound obs (cmdExt_viewSound obs)
+    (fun _ _ _ _ _ _ h => h) π .contract (procsOkV_of_procsOk π hprocs) (modeOk_contract _ π) d)
 
 omit [LawfulMonad m] in
 /-- **Whole-run soundness, monad-generically.**  If every procedure of `π` is well-formed
@@ -1183,6 +688,7 @@ theorem call_runInterp_sound [InterpLangBool P] (obs : InterpObs P m)
   fun _ _ _ _ _ _ _ _ hD hrun hf hE hi =>
     (runInterp_sound_generic obs _ _ _ (callStepInterpSound obs π hprocs d) _ _ _ _ _ _ _
       _ hD hrun hf hE hi).imp fun _ => .imp fun _ => .imp fun _ => .imp_left (stepStarET_toE π)
+
 
 omit [LawfulMonad m] in
 /-- A successful run of `stepCmd π` whose result is projected to its store, on a command
@@ -1206,6 +712,7 @@ theorem cfg_stepCmd_store_sound [InterpLangBool P] (obs : InterpObs P m)
       CallEnvOk F (InterpLang.absStore F σ'.get) ∧ RStore.Denoting F σ'.get
       ∧ obs.trace st' = revs.reverse ++ obs.trace st :=
   store_sound_of_arm obs π (fun _ => call_cmd_arm obs π hprocs hEval fuel d) hfac hok hd henv h
+
 
 end CallArm
 
@@ -2180,7 +1687,7 @@ private theorem call_cmd_errArm [InterpLangBool P] (obs : InterpObs P m)
     cases c
     · exact obs_stepCmd_base_err (F := F) obs π hemitStep hchooseErr h
     · rw [stepCmd, stepCmdWith] at h
-      simp only [CmdExt.view, obs.run_throw, Prod.mk.injEq] at h
+      simp only [CmdExt.view, dispatchCall, obs.run_throw, Prod.mk.injEq] at h
       exact ⟨[], .clean (.refl _), by rw [← h.2]; rfl⟩
   | succ k ih =>
   intro d c env cfgr st st' r h hf hd hrf hi
@@ -2188,13 +1695,13 @@ private theorem call_cmd_errArm [InterpLangBool P] (obs : InterpObs P m)
   · exact obs_stepCmd_base_err (F := F) obs π hemitStep hchooseErr h
   cases d
   · rw [stepCmd, stepCmdWith] at h
-    simp only [CmdExt.view, obs.run_throw, Prod.mk.injEq] at h
+    simp only [CmdExt.view, dispatchCall, obs.run_throw, Prod.mk.injEq] at h
     exact ⟨[], .clean (.refl _), by rw [← h.2]; rfl⟩
   rename_i n tyArgs args md d
   have ih := ih d
   have A := fun k => call_cmd_arm obs π hprocs hEval (F := F) k d
   rw [stepCmd, stepCmdWith] at h
-  simp only [CmdExt.view] at h
+  simp only [CmdExt.view, dispatchCall, callBody] at h
   repeat' first
     | rw [obs_run_throw_bind] at h
     | split at h
@@ -2437,7 +1944,7 @@ private theorem evalCommandE_avoid
     (hq : cmdAvoidsTarget target c = true) :
     ∀ e ∈ evs, targetReachedE target e = false := by
   revert hq
-  refine EvalCmdExtE.rec
+  refine EvalCmdViewE.rec
     (motive_1 := fun b _ _ l _ =>
       (∀ ss opq, b = .structured ss opq → Block.allCmds (cmdAvoidsTarget target) ss) →
       (∀ g opq, b = .cfg g opq → g.allCmds (cmdAvoidsTarget target)) →
@@ -2452,10 +1959,16 @@ private theorem evalCommandE_avoid
       c.allCmds (cmdAvoidsTarget target) → l.all (!targetReachedE target ·) ∧
         c'.allCmds (cmdAvoidsTarget target))
     ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_
-    ?_ ?_ ?_ ?_ ?_ h <;>
+    ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ h <;> intros <;>
+  (try (obtain ⟨_, rfl, _⟩ :=
+            CmdExt.sem_kind_call_callee (π := π)
+              ‹(Calls.CmdExt.sem (Hdr := Hdr)).kind _ = .call _ _ _ _› ‹π _ = some _› ‹_ = some _›))
+    <;>
+  (try (obtain rfl :=
+            Calls.CmdExt.sem_kind_base ‹(Calls.CmdExt.sem (Hdr := Hdr)).kind _ = .base _›)) <;>
   grind [Config.allCmds, Stmt.allCmds, evalCmdE_avoid, defaultAssertEvents_avoid,
-    assumeEvents_avoid, stepStmtE_preserves_allCmds, TargetNotInProcs, CFGConfig.allCmds,
-    CFG.allCmds]
+    assumeEvents_avoid, Calls.CmdExt.sem_kind_ne_ext,
+    stepStmtE_preserves_allCmds, TargetNotInProcs, CFGConfig.allCmds, CFG.allCmds]
 
 omit [CallLangWF P] [InterpLang P] in
 /-- Under `TargetNotInProcs`, a reference run from a target-avoiding configuration emits no
