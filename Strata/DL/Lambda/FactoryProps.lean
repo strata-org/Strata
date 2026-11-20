@@ -204,6 +204,19 @@ theorem LExpr.applyTypeSubst_fvar_none {T : LExprParams} (S : Subst) (m : T.Meta
   rw [LExpr.applyTypeSubst_eq_replaceUserProvidedType]
   simp only [LExpr.replaceUserProvidedType, Option.map_none]
 
+/-- Applying an absorbing substitution after an absorbed one is the same as applying the
+    absorbing one alone. -/
+theorem LExpr.applyTypeSubst_absorbs {T : LExprParams} (S Sin : Subst)
+    (h : Subst.absorbs S Sin) (e : LExpr T.mono) :
+    LExpr.applyTypeSubst (LExpr.applyTypeSubst e Sin) S = LExpr.applyTypeSubst e S := by
+  rw [LExpr.applyTypeSubst_eq_replaceUserProvidedType,
+    LExpr.applyTypeSubst_eq_replaceUserProvidedType,
+    LExpr.applyTypeSubst_eq_replaceUserProvidedType]
+  have hcomp : (LMonoTy.subst S ∘ LMonoTy.subst Sin) = LMonoTy.subst S :=
+    funext (fun t => LMonoTy.subst_absorbs S Sin t h)
+  induction e <;>
+    simp_all [LExpr.replaceUserProvidedType, Option.map_map]
+
 /-- When `opTypeSubst` succeeds, `computeTypeSubst` agrees with it. -/
 theorem LFunc.computeTypeSubst_of_opTypeSubst {T : LExprParams}
     {fn : LFunc T} {callee : LExpr T.mono} {args : List (LExpr T.mono)} {s : Subst}

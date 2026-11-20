@@ -7,6 +7,7 @@ module
 
 public import Strata.DL.Lambda.LExprTypeEnv
 public import Strata.DL.Lambda.LExprAliasFree
+public import Strata.DL.Lambda.FactoryWF
 import all Strata.DL.Lambda.LExprAliasFree
 import all Strata.DL.Lambda.LExprTypeEnv
 import all Strata.DL.Lambda.LTy
@@ -53,6 +54,18 @@ theorem TContext.resolveScheme_forAll {IDMeta : Type} [DecidableEq IDMeta]
     (vs : List TyIdentifier) (mty : LMonoTy) :
     Γ.resolveScheme (.forAll vs mty) = .forAll vs (Γ.resolveTy mty) := by
   simp only [TContext.resolveScheme, mapLTyTys]
+
+/-- A scheme whose resolution has no bound type variables has none itself, and its resolved body
+    is the resolution of its body. -/
+theorem TContext.resolveScheme_eq_forAll_nil {IDMeta : Type} [DecidableEq IDMeta]
+    [Hashable IDMeta] [ToFormat IDMeta] {Γ : TContext IDMeta} {xty : LTy}
+    {a : LMonoTy} (ha : Γ.resolveScheme xty = .forAll [] a) :
+    ∃ a0, xty = .forAll [] a0 ∧ a = Γ.resolveTy a0 := by
+  cases xty with
+  | forAll vs a0 =>
+    rw [TContext.resolveScheme_forAll, LTy.forAll.injEq] at ha
+    rw [ha.1]
+    exact ⟨a0, rfl, ha.2.symm⟩
 
 /-- Resolving `mty` in the fresh environment built from `Γ` succeeds with
     `Γ.resolveTy mty` and leaves that environment unchanged. -/
@@ -861,6 +874,23 @@ theorem foldl_addFactoryFunction_inv {T : LExprParams} {α : Type}
     rw [List.foldl_cons, hfs, hfs']
     exact ⟨fs', rfl⟩
 
+/-- Declaring a sequence of functions puts the newly registered ones after the existing
+    functions. -/
+theorem foldl_addFactoryFunction_toList {T : LExprParams} {α : Type}
+    (C : LContext T) (l : List α) (gf : α → LFunc T) :
+    ∃ fs, (l.foldl (fun C a => C.addFactoryFunction (gf a)) C).functions.toArray.toList =
+      C.functions.toArray.toList ++ fs := by
+  induction l generalizing C with
+  | nil => exact ⟨[], (List.append_nil _).symm⟩
+  | cons a rest ih =>
+    obtain ⟨fs, hfs⟩ := ih (C.addFactoryFunction (gf a))
+    rw [List.foldl_cons, hfs]
+    unfold LContext.addFactoryFunction
+    split
+    · exact ⟨fs, rfl⟩
+    · refine ⟨gf a :: fs, ?_⟩
+      simp only [Factory.push, Array.toList_push, List.append_assoc, List.singleton_append]
+
 /-- A function of `C.addFactoryFunction fn` is `fn` or a function of `C`. -/
 theorem mem_addFactoryFunction {T : LExprParams} (C : LContext T)
     (fn lf : LFunc T)
@@ -872,6 +902,13 @@ theorem mem_addFactoryFunction {T : LExprParams} (C : LContext T)
   · simp only [Factory.push] at hlf
     rw [Array.mem_push] at hlf
     exact hlf
+
+/-- Adding a function with a well-formed signature preserves `FactorySigWF`. -/
+theorem factorySigWF_addFactoryFunction {T : LExprParams} (C : LContext T)
+    (fn : LFunc T) (hC : FactorySigWF C.functions) (hfn : LFuncSigWF fn) :
+    FactorySigWF (C.addFactoryFunction fn).functions :=
+  ⟨fun lf hlf => (mem_addFactoryFunction C fn lf hlf).elim (hC.lfuncs_wf lf)
+    fun h => h ▸ hfn⟩
 
 /-- Registering a type leaves other unregistered names unregistered. -/
 theorem knownTypes_addKnownTypeWithError_notContains_of_ne {T : LExprParams}
@@ -1041,10 +1078,10 @@ private theorem eq_of_forall₂_knownInstances (ks : KnownTypes)
     rw [hhd ha, ih hknown]
 
 mutual
-/-- Extending the aliases with fresh ones whose names are unregistered does not
-    change a resolution that is a registered instance: if `mty` resolves to a
-    registered instance under the smaller aliases, it resolves to the same type
-    under the larger ones. -/
+/-- Extending the aliases with fresh ones does not change a resolution that is a
+    registered instance, when no fresh alias `mty` names is registered: if `mty`
+    resolves to a registered instance under the smaller aliases, it resolves to the
+    same type under the larger ones. -/
 theorem LMonoTy.resolveAliases_eq_of_FreshExtension {IDMeta : Type}
     [DecidableEq IDMeta] [Hashable IDMeta] [ToFormat IDMeta]
     (ks : KnownTypes) (mty : LMonoTy)
@@ -1052,7 +1089,7 @@ theorem LMonoTy.resolveAliases_eq_of_FreshExtension {IDMeta : Type}
     (hext :
       TypeAlias.FreshExtension EnvSub.context.aliases EnvSup.context.aliases)
     (hfresh : ∀ al ∈ EnvSup.context.aliases, al ∉ EnvSub.context.aliases →
-        KnownTypes.containsName ks al.name = false)
+        al.name ∈ getTypeRefs mty → KnownTypes.containsName ks al.name = false)
     (hsub : LMonoTy.resolveAliases mty EnvSub = .ok (mtySub, EnvSub'))
     (hsup : LMonoTy.resolveAliases mty EnvSup = .ok (mtySup, EnvSup'))
     (hknown : LMonoTy.knownInstance mtySub ks = true) :
@@ -1083,8 +1120,14 @@ theorem LMonoTy.resolveAliases_eq_of_FreshExtension {IDMeta : Type}
     rw [hEnvSupMid] at hargsSup hsup
     rw [← hsub.1] at hknown ⊢
     rw [← hsup.1]
+    have hfreshArgs : ∀ al ∈ EnvSup.context.aliases, al ∉ EnvSub.context.aliases →
+        al.name ∈ args.flatMap getTypeRefs → KnownTypes.containsName ks al.name = false :=
+      fun al hal hnot hn => by
+        refine hfresh al hal hnot ?_
+        rw [getTypeRefs]
+        exact List.mem_cons_of_mem _ hn
     have hrel := LMonoTys.resolveAliases_forall₂_of_FreshExtension ks args
-      EnvSub EnvSup EnvSub EnvSup argsSub argsSup hext hfresh hargsSub hargsSup
+      EnvSub EnvSup EnvSub EnvSup argsSub argsSup hext hfreshArgs hargsSub hargsSup
     have hlen : argsSub.length = argsSup.length := List.Rel₂.length_eq hrel
     rcases hfindSub : EnvSub.context.aliases.find?
         (fun a => a.name == name && a.typeArgs.length == argsSub.length) with
@@ -1110,7 +1153,10 @@ theorem LMonoTy.resolveAliases_eq_of_FreshExtension {IDMeta : Type}
           intro hmem
           rw [List.find?_eq_none] at hfindSub
           exact absurd (List.find?_some hfindSup) (hfindSub al hmem)
-        have hnoName := hfresh al halMem halNotMem
+        have hmemRefs : al.name ∈ getTypeRefs (.tcons name args) := by
+          rw [getTypeRefs, hpred.1]
+          exact List.mem_cons_self
+        have hnoName := hfresh al halMem halNotMem hmemRefs
         have hName := containsName_of_contains ks
           { name := name, metadata := argsSup.length } hcontains
         rw [hpred.1] at hnoName
@@ -1131,8 +1177,8 @@ theorem LMonoTy.resolveAliases_eq_of_FreshExtension {IDMeta : Type}
       exact openVars_eq_of_forall₂ ks al.typeArgs argsSub argsSup hrel al.type
         hknown
 
-/-- Under a fresh extension with unregistered names, list resolution agrees on
-    entries that are registered instances. -/
+/-- Under a fresh extension in which no new alias named in the types is a registered
+    type, list resolution agrees on entries that are registered instances. -/
 private theorem LMonoTys.resolveAliases_forall₂_of_FreshExtension
     {IDMeta : Type} [DecidableEq IDMeta] [Hashable IDMeta] [ToFormat IDMeta]
     (ks : KnownTypes) (mtys : LMonoTys)
@@ -1140,7 +1186,7 @@ private theorem LMonoTys.resolveAliases_forall₂_of_FreshExtension
     (hext :
       TypeAlias.FreshExtension EnvSub.context.aliases EnvSup.context.aliases)
     (hfresh : ∀ al ∈ EnvSup.context.aliases, al ∉ EnvSub.context.aliases →
-        KnownTypes.containsName ks al.name = false)
+        al.name ∈ mtys.flatMap getTypeRefs → KnownTypes.containsName ks al.name = false)
     (hsub : LMonoTys.resolveAliases mtys EnvSub = .ok (mtysSub, EnvSub'))
     (hsup : LMonoTys.resolveAliases mtys EnvSup = .ok (mtysSup, EnvSup')) :
     List.Rel₂ (fun a b => LMonoTy.knownInstance a ks = true → b = a)
@@ -1175,15 +1221,25 @@ private theorem LMonoTys.resolveAliases_forall₂_of_FreshExtension
     rw [← hsub.1, ← hsup.1]
     refine List.Rel₂.cons ?_ ?_
     · intro hk
+      have hfreshHd : ∀ al ∈ EnvSup.context.aliases, al ∉ EnvSub.context.aliases →
+          al.name ∈ getTypeRefs mty → KnownTypes.containsName ks al.name = false :=
+        fun al hal hnot hn => hfresh al hal hnot
+          (List.mem_flatMap_of_mem List.mem_cons_self hn)
       exact LMonoTy.resolveAliases_eq_of_FreshExtension ks mty EnvSub EnvSup
-        EnvSub EnvSup mtySub mtySup hext hfresh hhdSub hhdSup hk
-    · exact LMonoTys.resolveAliases_forall₂_of_FreshExtension ks mrest EnvSub
-        EnvSup EnvSubTl EnvSupTl mrestSub mrestSup hext hfresh htlSub htlSup
+        EnvSub EnvSup mtySub mtySup hext hfreshHd hhdSub hhdSup hk
+    · have hfreshTl : ∀ al ∈ EnvSup.context.aliases, al ∉ EnvSub.context.aliases →
+          al.name ∈ mrest.flatMap getTypeRefs → KnownTypes.containsName ks al.name = false := by
+        intro al hal hnot hn
+        refine hfresh al hal hnot ?_
+        rw [List.flatMap_cons]
+        exact List.mem_append_right _ hn
+      exact LMonoTys.resolveAliases_forall₂_of_FreshExtension ks mrest EnvSub
+        EnvSup EnvSubTl EnvSupTl mrestSub mrestSup hext hfreshTl htlSub htlSup
 end
 
-/-- Extending the aliases with fresh ones whose names are unregistered does not
-    change the resolution of a list of types that resolves to registered
-    instances under the smaller aliases. -/
+/-- Extending the aliases with fresh ones does not change the resolution of a list of
+    types that resolves to registered instances under the smaller aliases, when no
+    fresh alias the types name is registered. -/
 theorem LMonoTys.resolveAliases_eq_of_FreshExtension {IDMeta : Type}
     [DecidableEq IDMeta] [Hashable IDMeta] [ToFormat IDMeta]
     (ks : KnownTypes) (mtys : LMonoTys)
@@ -1191,7 +1247,7 @@ theorem LMonoTys.resolveAliases_eq_of_FreshExtension {IDMeta : Type}
     (hext :
       TypeAlias.FreshExtension EnvSub.context.aliases EnvSup.context.aliases)
     (hfresh : ∀ al ∈ EnvSup.context.aliases, al ∉ EnvSub.context.aliases →
-        KnownTypes.containsName ks al.name = false)
+        al.name ∈ mtys.flatMap getTypeRefs → KnownTypes.containsName ks al.name = false)
     (hsub : LMonoTys.resolveAliases mtys EnvSub = .ok (mtysSub, EnvSub'))
     (hsup : LMonoTys.resolveAliases mtys EnvSup = .ok (mtysSup, EnvSup'))
     (hknown : ∀ mty ∈ mtysSub, LMonoTy.knownInstance mty ks = true) :
@@ -1202,10 +1258,10 @@ theorem LMonoTys.resolveAliases_eq_of_FreshExtension {IDMeta : Type}
     (LMonoTys.knownInstances_of_forall hknown)
 
 /-- Let the smaller aliases be well formed, `S` rename type variables to type
-    variables, and the larger aliases extend the smaller ones with fresh aliases
-    whose names are unregistered. If the renamed types resolve under the smaller
-    aliases to registered instances, then the original types resolve under the
-    smaller aliases to their resolution under the larger ones. -/
+    variables, and the larger aliases extend the smaller ones with fresh aliases, in which
+    no new alias named in the types is a registered type. If the renamed types resolve
+    under the smaller aliases to registered instances, then the original types resolve
+    under the smaller aliases to their resolution under the larger ones. -/
 theorem LMonoTys.resolveAliases_eq_of_FreshExtension_subst {T : LExprParams}
     [DecidableEq T.IDMeta] [Hashable T.IDMeta] [ToFormat T.IDMeta]
     (C : LContext T) (S : Subst) (mtys : LMonoTys)
@@ -1216,6 +1272,7 @@ theorem LMonoTys.resolveAliases_eq_of_FreshExtension_subst {T : LExprParams}
     (hext :
       TypeAlias.FreshExtension EnvSub.context.aliases EnvSup.context.aliases)
     (hfresh : ∀ al ∈ EnvSup.context.aliases, al ∉ EnvSub.context.aliases →
+        al.name ∈ mtys.flatMap getTypeRefs →
         KnownTypes.containsName C.knownTypes al.name = false)
     (hsubS : LMonoTys.resolveAliases (mtys.map (LMonoTy.subst S)) EnvSub
                = .ok (mtysSubS, EnvSub'))
@@ -1281,7 +1338,8 @@ theorem LMonoTys.resolveAliases_append_inv {IDMeta : Type}
   exact h.1.symm
 
 /-- Signature instantiation renames type variables and resolves aliases to
-    registered instances. -/
+    registered instances. Instantiating the type parameters themselves in the same environment
+    yields their images under the renaming. -/
 theorem LMonoTySignature.instantiate_resolveAliases_subst {T : LExprParams}
     [DecidableEq T.IDMeta] [Hashable T.IDMeta] [ToFormat T.IDMeta]
     (C : LContext T) (Env EnvR : TEnv T.IDMeta) (tyArgs : List TyIdentifier)
@@ -1292,13 +1350,15 @@ theorem LMonoTySignature.instantiate_resolveAliases_subst {T : LExprParams}
       EnvI.context = Env.context ∧
       LMonoTys.resolveAliases (sig.values.map (LMonoTy.subst S)) EnvI
         = .ok (sig'.values, EnvR) ∧
-      ∀ mty ∈ sig'.values, isInstanceOfKnownType mty C = true := by
+      (∀ mty ∈ sig'.values, isInstanceOfKnownType mty C = true) ∧
+      LMonoTys.instantiateEnv tyArgs (tyArgs.map LMonoTy.ftvar) Env
+        = .ok (tyArgs.map (fun a => LMonoTy.subst S (.ftvar a)), EnvI) := by
   obtain ⟨mtysI, EnvI, hI, hres, hknown⟩ :=
     LMonoTySignature.instantiate_resolveAliases C Env EnvR tyArgs sig sig' h
-  obtain ⟨S, hSftvar, hmtysI, hctxI⟩ :=
+  obtain ⟨S, hSftvar, hmtysI, hctxI, hself⟩ :=
     LMonoTys.instantiateEnv_subst tyArgs sig.values Env mtysI EnvI hI
   rw [hmtysI] at hres
-  exact ⟨S, EnvI, hSftvar, hctxI, hres, hknown⟩
+  exact ⟨S, EnvI, hSftvar, hctxI, hres, hknown, hself⟩
 
 /-- A successful identifier lookup instantiates its scheme and applies the new
     substitution. -/
@@ -1470,6 +1530,35 @@ private theorem aliasFrees_of_knownInstances (known : KnownTypes)
     exact ⟨aliasFree_of_knownInstance known aliases hfresh m hm,
       aliasFrees_of_knownInstances known aliases hfresh rest hkn⟩
 end
+
+/-- `restrictTo g m` sends a free type variable of `m` to `g` of it. -/
+theorem restrictTo_ftvar (g : TyIdentifier → LMonoTy) (m : LMonoTy) (v : TyIdentifier)
+    (hv : v ∈ LMonoTy.freeVars m) : LMonoTy.subst [restrictTo g m] (.ftvar v) = g v := by
+  apply LMonoTy.subst_ftvar_of_some
+  rw [Strata.Util.HMaps.find?_single_scope]
+  exact LExpr.find?_buildSubstFromFunction _ _ v hv
+
+/-- `restrictTo g m` fixes every type variable that is not free in `m`. -/
+theorem restrictTo_ftvar_of_not_mem (g : TyIdentifier → LMonoTy) (m : LMonoTy) (v : TyIdentifier)
+    (hv : v ∉ LMonoTy.freeVars m) : LMonoTy.subst [restrictTo g m] (.ftvar v) = .ftvar v := by
+  apply LMonoTy.subst_ftvar_of_none
+  rw [Strata.Util.HMaps.find?_single_scope]
+  exact LExpr.find?_buildSubstFromFunction_of_not_mem _ _ v hv
+
+/-- `restrictTo g t` and `restrictTo g' t` act alike on `t` when `g` and `g'` agree on its free
+    variables. -/
+theorem subst_restrictTo_congr (g g' : TyIdentifier → LMonoTy) (t : LMonoTy)
+    (h : ∀ v ∈ LMonoTy.freeVars t, g v = g' v) :
+    LMonoTy.subst [restrictTo g t] t = LMonoTy.subst [restrictTo g' t] t := by
+  have hpoint : ∀ v ∈ LMonoTy.freeVars t,
+      LMonoTy.subst [restrictTo g t] (.ftvar v) =
+        LMonoTy.subst [] (LMonoTy.subst [restrictTo g' t] (.ftvar v)) := by
+    intro v hv
+    rw [restrictTo_ftvar g t v hv, restrictTo_ftvar g' t v hv, LMonoTy.subst_nil]
+    exact h v hv
+  have hagree := (LMonoTy.subst_subst_of_pointwise [restrictTo g' t] [] [restrictTo g t] t
+    (fun v hv => (hpoint v hv).symm)).symm
+  rw [hagree, LMonoTy.subst_nil]
 
 end -- public section
 

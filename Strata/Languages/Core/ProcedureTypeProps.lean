@@ -15,8 +15,11 @@ import all Strata.Languages.Core.ProcedureType
 import Strata.Languages.Core.IdentifiersProps
 import Strata.Util.Tactics
 public import Strata.Languages.Core.StatementType
+import all Strata.Languages.Core.StatementType
 import all Strata.Languages.Core.TypeSkolem
 import Strata.Languages.Core.Typing.Props.TypeSkolemProps
+public import Strata.Languages.Core.ProcedureProps
+import all Strata.Languages.Core.ProcedureProps
 import all Strata.Languages.Core.Procedure
 
 /-! # Well-formedness established by the CFG type checker
@@ -33,6 +36,10 @@ The scoping conjuncts are stated over the same graph analyses the guards compute
 holds whatever those analyses return. That they agree with path-based dominance,
 cycles and reachability is not proved here (see the
 `Strata.DL.Imperative.CFGDominators` module header).
+
+`CFG.typeCheck_cmdsRel`: the CFG that `CFG.typeCheck` returns has the input's blocks in order,
+and each of its commands is a checked input command with a type substitution applied, so it
+keeps any property such commands keep.
 
 `Procedure.typeCheck_ioNotOld`: no parameter of a procedure that passes `Procedure.typeCheck`
 is named `old x` (the proposition of `WF.WFProcedureProp.ioNotOld`);
@@ -263,6 +270,13 @@ theorem typeCheckCore_ioNotOld
   elim_err h with _ hold
   exact checkParamNames_ioNotOld hold
 
+/-- A procedure that passes the checker proper (`typeCheckCore`) has no parameter named
+    `old g` for an in-out parameter `g`. -/
+theorem typeCheckCore_oldNamesFresh
+    (h : typeCheckCore scope progSigs C Env p proc md tyNames = .ok r) :
+    proc.header.oldNamesFresh :=
+  fun g _ hmem => typeCheckCore_ioNotOld h _ hmem g.name rfl
+
 /-- A procedure `typeCheckIn` accepts passes the checker proper (`typeCheckCore`) after its
     reserved type parameters are renamed, with rigid constants avoiding the type names the
     procedure mentions. -/
@@ -342,6 +356,259 @@ theorem typeCheck_establishes_wfcfg
     checkTargetLabels_sound ht,
     checkBlockInitsNodup_sound hbn, checkDomScoped_sound hds,
     checkInitsIncomparable_sound hic, checkNoLoopInits_sound hnl⟩
+
+/-! ### Loops of the CFG checker -/
+
+/-- One step of a successful `for` loop over a nonempty list: the body succeeds on the head, and
+    either stops there or the loop over the tail succeeds from the new state. -/
+private theorem forIn_cons_ok_inv {α σ ε} {a : α} {as : List α} {init res : σ}
+    {f : α → σ → Except ε (ForInStep σ)}
+    (h : forIn (a :: as) init f = .ok res) :
+    ∃ r, f a init = .ok r ∧
+      ((∃ b, r = .done b ∧ res = b) ∨ (∃ b, r = .yield b ∧ forIn as b f = .ok res)) := by
+  rw [List.forIn_cons, Except.bind_is_ok] at h
+  obtain ⟨r, hr, h⟩ := h
+  refine ⟨r, hr, ?_⟩
+  cases r with
+  | done b => exact Or.inl ⟨b, rfl, (Except.ok.inj h).symm⟩
+  | yield b => exact Or.inr ⟨b, rfl, h⟩
+
+/-- A loop over labeled items whose body only inserts an entry under the current item's label
+    leaves the entry of any label outside the list unchanged. -/
+private theorem forIn_insert_other {β γ σ ε}
+    (f : String × β → Std.HashMap String γ × σ → Except ε (ForInStep (Std.HashMap String γ × σ)))
+    (hf : ∀ x s r, f x s = .ok r → ∃ g s', r = .yield (s.1.insert x.1 g, s')) :
+    ∀ (xs : List (String × β)) (init res : Std.HashMap String γ × σ) (k : String),
+      k ∉ xs.map Prod.fst → forIn xs init f = .ok res → res.1[k]? = init.1[k]? := by
+  intro xs
+  induction xs with
+  | nil =>
+    intro init res k _ h
+    rw [List.forIn_nil] at h
+    cases h
+    rfl
+  | cons a as ih =>
+    intro init res k hk h
+    obtain ⟨r, hr, hcase⟩ := forIn_cons_ok_inv h
+    obtain ⟨g, s', rfl⟩ := hf a init r hr
+    rcases hcase with ⟨b, hb, -⟩ | ⟨b, hb, hrest⟩
+    · cases hb
+    · cases hb
+      have hka : k ∉ as.map Prod.fst := fun hm => hk (List.mem_cons_of_mem _ hm)
+      have hne : (a.1 == k) = false := by
+        rw [beq_eq_false_iff_ne]
+        intro heq
+        exact hk (heq ▸ List.mem_cons_self)
+      rw [ih _ res k hka hrest, Std.HashMap.getElem?_insert, hne]
+      rfl
+
+/-- A successful loop over items with distinct labels, whose body inserts under each item's label
+    an entry related by `R` to the item, ends with every item's label mapped to such an entry. -/
+private theorem forIn_insert_spec {β γ σ ε} (R : β → γ → Prop)
+    (f : String × β → Std.HashMap String γ × σ → Except ε (ForInStep (Std.HashMap String γ × σ)))
+    (hf : ∀ x s r, f x s = .ok r → ∃ g s', r = .yield (s.1.insert x.1 g, s') ∧ R x.2 g) :
+    ∀ (xs : List (String × β)) (init res : Std.HashMap String γ × σ),
+      (xs.map Prod.fst).Nodup → forIn xs init f = .ok res →
+      ∀ x ∈ xs, ∃ g, res.1[x.1]? = some g ∧ R x.2 g := by
+  have hf' : ∀ x s r, f x s = .ok r → ∃ g s', r = .yield (s.1.insert x.1 g, s') := by
+    intro x s r h
+    obtain ⟨g, s', hr, -⟩ := hf x s r h
+    exact ⟨g, s', hr⟩
+  intro xs
+  induction xs with
+  | nil => intro _ _ _ _ x hx; cases hx
+  | cons a as ih =>
+    intro init res hnd h x hx
+    obtain ⟨r, hr, hcase⟩ := forIn_cons_ok_inv h
+    obtain ⟨g, s', rfl, hR⟩ := hf a init r hr
+    rcases hcase with ⟨b, hb, -⟩ | ⟨b, hb, hrest⟩
+    · cases hb
+    · cases hb
+      rw [List.map_cons, List.nodup_cons] at hnd
+      rcases List.mem_cons.mp hx with rfl | hx'
+      · refine ⟨g, ?_, hR⟩
+        rw [forIn_insert_other f hf' as _ res x.1 hnd.1 hrest, Std.HashMap.getElem?_insert_self]
+      · exact ih _ res hnd.2 hrest x hx'
+
+/-- Inserting the images of a list's entries leaves a key that no entry has unchanged. -/
+private theorem foldl_insert_get_other {γ} (F : String → γ → γ) (k : String) :
+    ∀ (L : List (String × γ)) (init : Std.HashMap String γ), k ∉ L.map Prod.fst →
+      (L.foldl (fun (acc : Std.HashMap String γ) p => acc.insert p.1 (F p.1 p.2)) init)[k]?
+        = init[k]? := by
+  intro L
+  induction L with
+  | nil => intro init _; rfl
+  | cons a as ih =>
+    intro init hk
+    have hne : (a.1 == k) = false := by
+      rw [beq_eq_false_iff_ne]
+      intro heq
+      exact hk (heq ▸ List.mem_cons_self)
+    rw [List.foldl_cons, ih _ (fun hm => hk (List.mem_cons_of_mem _ hm)),
+      Std.HashMap.getElem?_insert, hne]
+    rfl
+
+/-- Inserting the images of the entries of a list with distinct keys maps each key to the image
+    of its entry. -/
+private theorem foldl_insert_get_mem {γ} (F : String → γ → γ) (k : String) (v : γ) :
+    ∀ (L : List (String × γ)) (init : Std.HashMap String γ),
+      L.Pairwise (fun a b => (a.1 == b.1) = false) → (k, v) ∈ L →
+      (L.foldl (fun (acc : Std.HashMap String γ) p => acc.insert p.1 (F p.1 p.2)) init)[k]?
+        = some (F k v) := by
+  intro L
+  induction L with
+  | nil => intro _ _ hm; cases hm
+  | cons a as ih =>
+    intro init hpw hm
+    rw [List.pairwise_cons] at hpw
+    rw [List.foldl_cons]
+    rcases List.mem_cons.mp hm with rfl | hm'
+    · have hk : k ∉ as.map Prod.fst := by
+        intro hmem
+        obtain ⟨b, hb, hbk⟩ := List.mem_map.mp hmem
+        have hfalse := hpw.1 b hb
+        rw [hbk, beq_self_eq_true] at hfalse
+        exact Bool.noConfusion hfalse
+      rw [foldl_insert_get_other F k as _ hk, Std.HashMap.getElem?_insert_self]
+    · exact ih _ hpw.2 hm'
+
+/-- Rebuilding a map by inserting the image of each entry maps every key to the image of its
+    entry. -/
+private theorem fold_insert_get {γ} (m : Std.HashMap String γ) (F : String → γ → γ) (k : String)
+    (v : γ) (h : m[k]? = some v) :
+    (m.fold (fun (acc : Std.HashMap String γ) l b => acc.insert l (F l b)) ∅)[k]?
+      = some (F k v) := by
+  rw [Std.HashMap.fold_eq_foldl_toList]
+  exact foldl_insert_get_mem F k v m.toList ∅ m.distinct_keys_toList
+    (Std.HashMap.mem_toList_iff_getElem?_eq_some.mpr h)
+
+/-- Looking up every item's label in a map that holds, under each label, an entry related by `R`
+    to the item yields a list pointwise related to the items, with the same labels. -/
+private theorem filterMap_get_rel₂ {β γ} (m : Std.HashMap String γ) (R : β → γ → Prop) :
+    ∀ xs : List (String × β), (∀ x ∈ xs, ∃ g, m[x.1]? = some g ∧ R x.2 g) →
+      List.Rel₂ (fun x y => x.1 = y.1 ∧ R x.2 y.2) xs
+        (xs.filterMap fun x => Option.map (fun b => (x.1, b)) (m.get? x.1)) := by
+  intro xs
+  induction xs with
+  | nil => intro _; exact List.Rel₂.nil
+  | cons a as ih =>
+    intro h
+    obtain ⟨g, hg, hR⟩ := h a List.mem_cons_self
+    rw [List.filterMap_cons]
+    simp only [Std.HashMap.get?_eq_getElem?, hg, Option.map_some]
+    exact List.Rel₂.cons ⟨rfl, hR⟩ (ih fun x hx => h x (List.mem_cons_of_mem _ hx))
+
+/-- A successful loop whose body checks one command and prepends the result to the second
+    component of the state ends with that component extended by results related by `Q` to the
+    commands, in reverse order. -/
+private theorem forIn_cmds_spec {σ ε} (Q : Command → Command → Prop)
+    (f : Command → σ × List Command → Except ε (ForInStep (σ × List Command)))
+    (hf : ∀ x s r, f x s = .ok r → ∃ y s', r = .yield (s', y :: s.2) ∧ Q x y) :
+    ∀ (xs : List Command) (init res : σ × List Command), forIn xs init f = .ok res →
+      ∃ ys, res.2 = ys.reverse ++ init.2 ∧ List.Rel₂ Q xs ys := by
+  intro xs
+  induction xs with
+  | nil =>
+    intro init res h
+    rw [List.forIn_nil] at h
+    cases h
+    exact ⟨[], rfl, List.Rel₂.nil⟩
+  | cons a as ih =>
+    intro init res h
+    obtain ⟨r, hr, hcase⟩ := forIn_cons_ok_inv h
+    obtain ⟨y, s', rfl, hQ⟩ := hf a init r hr
+    rcases hcase with ⟨b, hb, -⟩ | ⟨b, hb, hrest⟩
+    · cases hb
+    · cases hb
+      obtain ⟨ys, hys, hrel⟩ := ih _ res hrest
+      refine ⟨y :: ys, ?_, List.Rel₂.cons hQ hrel⟩
+      rw [hys, List.reverse_cons, List.append_assoc]
+      rfl
+
+/-- The command loop of the CFG checker: each result it collects is the command checker's result
+    on the command at the same position, so it is related to that command by any `Q` that holds
+    between a command and its checked form. -/
+private theorem forIn_typeCheckCmd_spec {C : Core.Expression.TyContext} {P : Program}
+    (Q : Command → Command → Prop)
+    (hQ : ∀ E E' x y, Statement.typeCheckCmd C E P x = .ok (y, E') → Q x y) :
+    ∀ (xs : List Command) (init res : Lambda.TEnv Unit × List Command),
+      forIn xs init (fun cmd (s : Lambda.TEnv Unit × List Command) => do
+          let r ← Statement.typeCheckCmd C s.fst P cmd
+          pure (ForInStep.yield (r.snd, r.fst :: s.snd))) = .ok res →
+      ∃ ys, res.2 = ys.reverse ++ init.2 ∧ List.Rel₂ Q xs ys := by
+  refine forIn_cmds_spec Q _ ?_
+  intro c st r h
+  rw [Except.bind_is_ok] at h
+  obtain ⟨⟨y, E'⟩, hy, h⟩ := h
+  simp only [pure, Except.pure, Except.ok.injEq] at h
+  subst h
+  exact ⟨y, E', rfl, hQ _ _ _ _ hy⟩
+
+/-- The CFG returned by a successful `CFG.typeCheck` run has the input's blocks, with the same
+    labels in the same order, and each of its commands is related by `Q` to the input command at
+    the same position, for any `Q` that holds between a command and the command checker's result
+    on it and survives applying a type substitution to that result. -/
+theorem typeCheck_cmdsRel {C : Core.Expression.TyContext} {Env : Core.Expression.TyEnv}
+    {P : Program} {proc : Procedure} {cfg : DetCFG} {sourceLoc : Strata.FileRange}
+    {res : DetCFG × Core.Expression.TyEnv} (Q : Command → Command → Prop)
+    (hQ : ∀ E E' x y, Statement.typeCheckCmd C E P x = .ok (y, E') → Q x y)
+    (hsubst : ∀ x y S, Q x y → Q x (Statement.Command.subst S y))
+    (hrun : CFG.typeCheck C Env P proc cfg sourceLoc = .ok res) :
+    DetCFG.CmdsRel Q cfg res.1 := by
+  unfold CFG.typeCheck at hrun
+  obtain ⟨hu, hrun⟩ := Except.seq_guard_ok_iff.mp hrun
+  have huniq : (cfg.blocks.map Prod.fst).Nodup := checkUniqueLabels_sound hu
+  iterate 8 (obtain ⟨-, hrun⟩ := Except.seq_guard_ok_iff.mp hrun)
+  rw [Except.bind_is_ok] at hrun
+  obtain ⟨r1, -, hrun⟩ := hrun
+  obtain ⟨-, hrun⟩ := Except.seq_guard_ok_iff.mp hrun
+  dsimp only at hrun
+  rw [Except.bind_is_ok] at hrun
+  obtain ⟨r2, -, hrun⟩ := hrun
+  rw [Except.bind_is_ok] at hrun
+  obtain ⟨r3, -, hrun⟩ := hrun
+  rw [Except.bind_is_ok] at hrun
+  obtain ⟨r4, hloop, hrun⟩ := hrun
+  simp only [pure, Except.pure, Except.ok.injEq] at hrun
+  subst hrun
+  have hsubstRel : ∀ (S : Lambda.Subst) {xs ys : List Command}, List.Rel₂ Q xs ys →
+      List.Rel₂ Q xs (ys.map (Statement.Command.subst S)) :=
+    fun S => List.Rel₂.map_right _ (fun x y hxy => hsubst x y S hxy)
+  have hmain := forIn_insert_spec (fun (blk g : Imperative.DetBlock String Command Expression) =>
+      List.Rel₂ Q blk.cmds g.cmds) _ ?hbody cfg.blocks _ r4 huniq hloop
+  case hbody =>
+    intro x s r h
+    rw [Except.bind_is_ok] at h
+    obtain ⟨s1, hinner, h⟩ := h
+    obtain ⟨ys, hys, hrel⟩ := forIn_typeCheckCmd_spec Q hQ x.2.cmds _ s1 hinner
+    rw [List.append_nil] at hys
+    have hrev : s1.2.reverse = ys := by rw [hys, List.reverse_reverse]
+    simp only [bind, Except.bind, pure, Except.pure] at h
+    split at h
+    · split at h
+      · contradiction
+      · split at h
+        · contradiction
+        · split at h
+          · cases h
+            exact ⟨_, _, rfl, hrev ▸ hrel⟩
+          · cases h
+            exact ⟨_, _, rfl, hrev ▸ hsubstRel _ hrel⟩
+    · split at h
+      · cases h
+        exact ⟨_, _, rfl, hrev ▸ hrel⟩
+      · cases h
+        exact ⟨_, _, rfl, hrev ▸ hsubstRel _ hrel⟩
+  refine filterMap_get_rel₂ _ (fun (blk g : Imperative.DetBlock String Command Expression) =>
+      List.Rel₂ Q blk.cmds g.cmds) cfg.blocks ?_
+  intro x hx
+  obtain ⟨g0, hg0, hrel0⟩ := hmain x hx
+  refine ⟨_, fold_insert_get _ _ x.1 g0 hg0, ?_⟩
+  cases hr : (Imperative.CFG.reachableLabels cfg).contains x.fst
+  · simp only [Bool.false_eq_true, ↓reduceIte]
+    exact hrel0
+  · simp only [↓reduceIte]
+    exact hsubstRel _ hrel0
 
 end CFG
 end Core

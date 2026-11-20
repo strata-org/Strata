@@ -363,7 +363,6 @@ def resolveWithType (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv
 
 /-! ## Annotation maps and sweeps -/
 
-
 /-- Skolemize the annotations of `e`, leaving each operator annotation unchanged unless the
     operator is `selfName`. -/
 def skolemizeBody (selfName : Option String) (σ : RigidNames)

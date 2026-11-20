@@ -116,6 +116,10 @@ variable {T : LExprParams} [DecidableEq T.IDMeta] [Hashable T.IDMeta]
 theorem TContext.FindEq.find? {Γ Γ' : TContext T.IDMeta} (h : TContext.FindEq Γ Γ')
     (k : Identifier T.IDMeta) : Γ.types.find? k = Γ'.types.find? k := h.1 k
 
+/-- `FindEq` contexts have the same aliases. -/
+theorem TContext.FindEq.aliases {Γ Γ' : TContext T.IDMeta} (h : TContext.FindEq Γ Γ') :
+    Γ.aliases = Γ'.aliases := h.2
+
 /-- `FindEq` is reflexive. -/
 @[refl] theorem TContext.FindEq.refl (Γ : TContext T.IDMeta) : Γ.FindEq Γ :=
   ⟨fun _ => rfl, rfl⟩
@@ -135,6 +139,14 @@ theorem pushEmptyContext_context_FindEq (Env : TEnv T.IDMeta) :
   refine ⟨fun k => ?_, rfl⟩
   show ((Env.context.types).push .empty).find? k = (Env.context.types).find? k
   simp only [Strata.Util.HMaps.push, Strata.Util.HMaps.find?, Strata.Util.HMap.find?_empty]
+
+/-- Replacing an empty scope stack by a single empty scope keeps every lookup and the
+    aliases. -/
+theorem TContext.FindEq.single_empty_of_nil {Γ : TContext T.IDMeta} (h : Γ.types = []) :
+    TContext.FindEq { Γ with types := [HMap.empty] } Γ := by
+  refine ⟨fun k => ?_, rfl⟩
+  rw [h]
+  simp only [HMaps.find?, HMap.find?_empty]
 
 /-- `HasType` does not read the context's `idents` field. -/
 theorem HasType_idents_irrel (C : LContext T) (j : Identifiers T.IDMeta)
@@ -2312,6 +2324,16 @@ theorem TContext.dealias_find? [DecidableEq T.IDMeta] [Hashable T.IDMeta]
     Γ.dealias.types.find? x = (Γ.types.find? x).map Γ.resolveScheme := by
   simp only [TContext.dealias, TContext.resolveTypes, Strata.Util.HMaps.find?_mapValues]
 
+/-- A lookup in `Γ.dealias` under `S` finds the substituted alias resolution of what `Γ` finds. -/
+theorem TContext.subst_dealias_find? {IDMeta : Type} [DecidableEq IDMeta] [Hashable IDMeta]
+    [Std.ToFormat IDMeta] (Γ : TContext IDMeta) (S : Subst) (x : Identifier IDMeta) :
+    (TContext.subst Γ.dealias S).types.find? x
+      = (Γ.types.find? x).map (fun t => LTy.subst S (Γ.resolveScheme t)) := by
+  simp only [TContext.subst, TContext.types.subst]
+  rw [Strata.Util.HMaps.find?_mapValues,
+    TContext.dealias_find? (T := { Metadata := Unit, IDMeta := IDMeta }), Option.map_map]
+  rfl
+
 /-- `dealias` keeps contexts lookup-equal. -/
 theorem TContext.FindEq.dealias [DecidableEq T.IDMeta] [Hashable T.IDMeta]
     {Γ Γ' : TContext T.IDMeta} (h : Γ.FindEq Γ') : TContext.FindEq Γ.dealias Γ'.dealias := by
@@ -2383,8 +2405,9 @@ theorem TContext.resolveTy_eq_of_FreshExtension [DecidableEq T.IDMeta] [Hashable
     Γ'.resolveTy mty = Γ.resolveTy mty :=
   LMonoTy.resolveAliases_eq_of_FreshExtension ks mty
     { genEnv := { context := Γ, genState := TState.init } }
-    { genEnv := { context := Γ', genState := TState.init } } _ _ _ _ hext hfresh
-    (TContext.resolveTy_resolveAliases Γ mty) (TContext.resolveTy_resolveAliases Γ' mty) hk
+    { genEnv := { context := Γ', genState := TState.init } } _ _ _ _ hext
+    (fun al hal hnot _ => hfresh al hal hnot) (TContext.resolveTy_resolveAliases Γ mty)
+    (TContext.resolveTy_resolveAliases Γ' mty) hk
 
 /-- Freshly extending the aliases of a type scope by unregistered names, keeping its types, keeps
     the lookups of the alias-resolved scope when every stored type resolves to a registered
@@ -2680,6 +2703,45 @@ theorem resolve_context_types_ne
     exact hnonempty hisEmpty
 
 omit [ToString T.IDMeta] [Std.ToFormat (LFunc T)] [Std.ToFormat T.Metadata] in
+/-- When `resolve` starts from an empty type-scope stack, the resulting type-scope stack is
+    equivalent to a single empty scope, and the aliases are unchanged. -/
+theorem resolve_context_of_empty
+    (e : LExpr T.mono) (e_typed : LExprT T.mono) (C : LContext T)
+    (Env Env' : TEnv T.IDMeta)
+    (h : e.resolve C Env = .ok ⟨e_typed, Env'⟩) (hnil : Env.context.types = []) :
+    HMaps.Equiv Env'.context.types [HMap.empty] ∧
+      Env'.context.aliases = Env.context.aliases := by
+  have hEmpty : Env.context.types.isEmpty = true := by rw [hnil]; rfl
+  unfold LExpr.resolve at h
+  simp only [Bind.bind, Except.bind] at h
+  simp only [hEmpty, ite_true] at h
+  elim_err h
+  rename_i result hAux
+  obtain ⟨et, EnvR⟩ := result
+  simp only [Except.ok.injEq, Prod.mk.injEq] at h
+  obtain ⟨rfl, rfl⟩ := h
+  have hne_ctx :
+      (Env.updateContext { Env.context with types := [HMap.empty] }).context.types ≠ [] := by
+    simp [TEnv.updateContext, TEnv.context]
+  exact resolveAux_context_equiv C e
+    (Env.updateContext { Env.context with types := [HMap.empty] }) EnvR et hAux hne_ctx
+
+omit [ToString T.IDMeta] [Std.ToFormat (LFunc T)] [Std.ToFormat T.Metadata] in
+/-- When `resolve` starts from a nonempty type-scope stack, the resulting context is
+    equivalent to the starting one. -/
+theorem resolve_context_equiv_of_ne
+    (e : LExpr T.mono) (e_typed : LExprT T.mono) (C : LContext T)
+    (Env Env' : TEnv T.IDMeta)
+    (h : e.resolve C Env = .ok ⟨e_typed, Env'⟩) (hne : Env.context.types ≠ []) :
+    Env'.context.Equiv Env.context := by
+  have hEmpty : Env.context.types.isEmpty = false :=
+    Bool.eq_false_iff.mpr fun hE => hne (HMaps.isEmpty_iff_eq_nil.mp hE)
+  obtain ⟨Env0, et, hAux, -, -, -, -, h_Env0⟩ := resolve_resolveAux_init e e_typed C Env Env' h
+  simp only [hEmpty, Bool.false_eq_true, ite_false] at h_Env0
+  rw [h_Env0] at hAux
+  exact resolveAux_context_equiv C e Env Env' et hAux hne
+
+omit [ToString T.IDMeta] [Std.ToFormat (LFunc T)] [Std.ToFormat T.Metadata] in
 /-- `resolve` preserves the alias list and, up to `Equiv`, every scope below the newest. -/
 theorem resolve_context_pop_equiv
     (e : LExpr T.mono) (e_typed : LExprT T.mono) (C : LContext T)
@@ -2689,34 +2751,15 @@ theorem resolve_context_pop_equiv
       Env'.context.aliases = Env.context.aliases := by
   cases hEmpty : Env.context.types.isEmpty with
   | true =>
-    unfold LExpr.resolve at h
-    simp only [Bind.bind, Except.bind] at h
-    simp only [hEmpty, ite_true] at h
-    elim_err h
-    rename_i result hAux
-    obtain ⟨et, EnvR⟩ := result
-    simp only [Except.ok.injEq, Prod.mk.injEq] at h
-    obtain ⟨rfl, rfl⟩ := h
-    have hne_ctx :
-        (Env.updateContext { Env.context with types := [HMap.empty] }).context.types ≠ [] := by
-      simp [TEnv.updateContext, TEnv.context]
-    have hctx := resolveAux_context_equiv C e
-      (Env.updateContext { Env.context with types := [HMap.empty] }) EnvR et hAux
-      hne_ctx
     have hTypesNil : Env.context.types = [] := HMaps.isEmpty_iff_eq_nil.mp hEmpty
-    constructor
-    · have hpop := hctx.1.pop
-      show HMaps.Equiv EnvR.context.types.pop Env.context.types.pop
-      rw [hTypesNil]
-      simpa [TEnv.updateContext, TEnv.context, HMaps.pop] using hpop
-    · simpa [TEnv.updateContext, TEnv.context] using hctx.2
+    have hctx := resolve_context_of_empty e e_typed C Env Env' h hTypesNil
+    refine ⟨?_, hctx.2⟩
+    rw [hTypesNil]
+    simpa only [HMaps.pop] using hctx.1.pop
   | false =>
     have hne : Env.context.types ≠ [] :=
       fun h => Bool.eq_false_iff.mp hEmpty (HMaps.isEmpty_iff_eq_nil.mpr h)
-    obtain ⟨Env0, et, hAux, -, -, -, -, h_Env0⟩ := resolve_resolveAux_init e e_typed C Env Env' h
-    simp only [hEmpty, Bool.false_eq_true, ite_false] at h_Env0
-    rw [h_Env0] at hAux
-    have hctx := resolveAux_context_equiv C e Env Env' et hAux hne
+    have hctx := resolve_context_equiv_of_ne e e_typed C Env Env' h hne
     exact ⟨hctx.1.pop, hctx.2⟩
 
 /-! ### Shapes of resolved atomic nodes and resolver invariants -/
@@ -2814,50 +2857,26 @@ theorem resolve_pushSubstScope_context_FindEq
       simpa only [checkContextTypesClosed, TEnv.popSubstScope_context_eq] using
         checkContextTypesClosed_of_ctx_eq h_closed h_ctx'
   · have h_nil : Env.context.types = [] := Classical.not_not.mp h_ne
-    unfold LExpr.resolve at h_res
-    simp only [Bind.bind, Except.bind] at h_res
-    have h_empty : Env.pushEmptySubstScope.context.types.isEmpty = true := by
+    have h_nil_push : Env.pushEmptySubstScope.context.types = [] := by
       rw [TEnv.pushEmptySubstScope_context_eq, h_nil]
+    have h_emp := resolve_context_of_empty e e_typed { C with idents := i }
+      Env.pushEmptySubstScope Env' h_res h_nil_push
+    let Env_upd := Env.updateContext { Env.context with types := [HMap.empty] }
+    have h_ctx_upd : Env'.context.Equiv Env_upd.context := by
+      refine ⟨h_emp.1, ?_⟩
+      rw [h_emp.2, TEnv.pushEmptySubstScope_context_eq]
       rfl
-    simp only [h_empty, ite_true] at h_res
-    elim_err h_res
-    rename_i w h_aux
-    obtain ⟨et, Env_r⟩ := w
-    simp only [Except.ok.injEq, Prod.mk.injEq] at h_res
-    obtain ⟨h_typed, h_env'⟩ := h_res
-    subst h_env'
-    let Env_upd :=
-      Env.pushEmptySubstScope.updateContext
-        { Env.pushEmptySubstScope.context with types := [HMap.empty] }
-    have h_upd_ctx_eq : Env_upd.context =
-        { types := [HMap.empty], aliases := Env.context.aliases } := by
-      simp [Env_upd, TEnv.updateContext, TEnv.context, TEnv.pushEmptySubstScope]
-    have h_aux' :
-        resolveAux { C with idents := i } Env_upd e = .ok (et, Env_r) := by
-      simp only [Env_upd, TEnv.updateContext] at h_aux ⊢
-      exact h_aux
-    have h_upd_ne : Env_upd.context.types ≠ [] := by
-      simp [Env_upd, TEnv.updateContext, TEnv.context]
-    have h_ctx_upd : Env_r.context.Equiv Env_upd.context :=
-      resolveAux_context_equiv { C with idents := i } e Env_upd Env_r et h_aux' h_upd_ne
-    have h_base : Env_upd.context.FindEq Env.context := by
-      rw [h_upd_ctx_eq]
-      refine ⟨?_, rfl⟩
-      intro k
-      rw [h_nil]
-      simp [HMaps.find?, HMap.find?_empty]
-    have h_find : Env_r.context.FindEq Env.context :=
-      h_ctx_upd.toFindEq.trans h_base
+    have h_base : Env_upd.context.FindEq Env.context :=
+      TContext.FindEq.single_empty_of_nil h_nil
     have h_check_upd : checkContextTypesClosed (T := T) Env_upd := by
-      simp only [checkContextTypesClosed, h_upd_ctx_eq, List.all_cons, List.all_nil,
-        Bool.and_true, HMap.all, HMap.empty, ← Std.HashMap.all_toList,
-        Std.HashMap.toList_emptyWithCapacity]
-    have h_check_r : checkContextTypesClosed (T := T) Env_r :=
-      checkContextTypesClosed_of_ctx_eq h_check_upd h_ctx_upd
+      simp only [checkContextTypesClosed, Env_upd, TEnv.updateContext, TEnv.context,
+        List.all_cons, List.all_nil, Bool.and_true, HMap.all, HMap.empty,
+        ← Std.HashMap.all_toList, Std.HashMap.toList_emptyWithCapacity]
     constructor
-    · simpa only [TEnv.popSubstScope_context_eq] using h_find
+    · simpa only [TEnv.popSubstScope_context_eq] using h_ctx_upd.toFindEq.trans h_base
     · intro _
-      simpa only [checkContextTypesClosed, TEnv.popSubstScope_context_eq] using h_check_r
+      simpa only [checkContextTypesClosed, TEnv.popSubstScope_context_eq] using
+        checkContextTypesClosed_of_ctx_eq h_check_upd h_ctx_upd
 
 end Proofs
 
@@ -3511,6 +3530,37 @@ theorem resolve_absorbs [DecidableEq T.IDMeta] [Hashable T.IDMeta] [HasGen T.IDM
   rwa [h_subst] at h_absorbs
 
 end
+
+
+namespace LExpr
+
+/-- The written binder annotation of a typed abstraction or quantifier is a valid source type,
+    and a typed equality has a typed left side. -/
+theorem HasType.annot_valid_eq_left {T : LExprParams} [DecidableEq T.IDMeta] [Hashable T.IDMeta]
+    {C : LContext T} {Γ : TContext T.IDMeta} {q : LExpr T.mono} {ty : LTy}
+    (h : HasType C Γ q ty) :
+    (∀ m name ann e, q = .abs m name (some ann) e →
+      ∃ r, SourceTyWF C TyVarAdmissibility.all Γ.aliases ann r) ∧
+    (∀ m k name ann tr e, q = .quant m k name (some ann) tr e →
+      ∃ r, SourceTyWF C TyVarAdmissibility.all Γ.aliases ann r) ∧
+    (∀ m e1 e2, q = .eq m e1 e2 → ∃ ty1, HasType C Γ e1 ty1) := by
+  induction h with
+  | tabs _ _ _ _ _ _ _ _ _ _ _ _ _ hvalid _ =>
+    refine ⟨fun _ _ ann _ hq => ?_, fun _ _ _ _ _ _ hq => ?_, fun _ _ _ hq => ?_⟩ <;> cases hq
+    exact hvalid ann rfl
+  | tquant _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hvalid _ _ =>
+    refine ⟨fun _ _ _ _ hq => ?_, fun _ _ _ ann _ _ hq => ?_, fun _ _ _ hq => ?_⟩ <;> cases hq
+    exact hvalid ann rfl
+  | teq _ _ _ _ _ h1 _ _ _ =>
+    refine ⟨fun _ _ _ _ hq => ?_, fun _ _ _ _ _ _ hq => ?_, fun _ _ _ hq => ?_⟩ <;> cases hq
+    exact ⟨_, h1⟩
+  | tinst _ _ _ _ _ _ _ _ ih => exact ih
+  | tgen _ _ _ _ _ _ ih => exact ih
+  | talias _ _ _ _ _ _ ih => exact ih
+  | _ =>
+    refine ⟨fun _ _ _ _ hq => ?_, fun _ _ _ _ _ _ hq => ?_, fun _ _ _ hq => ?_⟩ <;> cases hq
+
+end LExpr
 
 end -- public section
 

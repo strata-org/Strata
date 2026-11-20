@@ -307,8 +307,16 @@ import Strata.Languages.Core.Typing.Props.FactoryRegistrationProps
 import Strata.Languages.Core.Typing.Props.FunctionTypeProps
 import Strata.Languages.Core.Typing.Props.NamesWFProps
 import Strata.Languages.Core.Typing.Props.ProcSigAgreementProps
+import Strata.Languages.Core.Typing.Props.ProcedureTypeProps
+import Strata.Languages.Core.Typing.Props.ProgramTypeProps
+import Strata.Languages.Core.Typing.Props.SkolemScopeProps
+import Strata.Languages.Core.Typing.Props.SkolemizerProps
+import Strata.Languages.Core.Typing.Props.SourceExprResolveProps
+import Strata.Languages.Core.Typing.Props.StatementTypeProps
 import Strata.Languages.Core.Typing.Props.TypeSkolemProps
 import Strata.Languages.Core.Typing.Props.TypingSpecProps
+import Strata.Languages.Core.Typing.Props.WrittenTyVarScopeProps
+import Strata.Languages.Core.Typing.Soundness
 import Strata.Util.Random
 
 import Strata.Examples.Embedded

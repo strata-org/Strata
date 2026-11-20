@@ -10,8 +10,9 @@ import Strata.Util.Tactics
 import Strata.Util.ExceptProps
 import all Strata.Languages.Core.RecFuncBlockType
 
-/-! Inversion of the recursive function block checker into its per-member signature and body
-checks: `RecFuncBlock.typeCheckIn_decompose`. -/
+/-! # Inversion of the recursive function block checker
+`RecFuncBlock.typeCheckIn_decompose` splits a successful block check into its per-member
+signature and body checks. -/
 
 public section
 

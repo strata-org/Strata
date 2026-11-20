@@ -9,6 +9,9 @@ public import Strata.Languages.Core.Procedure
 public import Strata.DL.Imperative.StmtCFGCallSemantics
 import all Strata.Languages.Core.Procedure
 import all Strata.Languages.Core.StatementSemanticsProps
+import Strata.Languages.Core.StatementProps
+import Strata.DL.Lambda.LTyUnifyProps
+import Strata.Util.ListUtilsProps
 import Strata.Util.OrderedSetProps
 import Strata.Languages.Core.StatementProps
 import Strata.DL.Lambda.LExprWFProps
@@ -25,6 +28,8 @@ Key results:
   `Calls.inoutParams` / `Calls.outputOnlyParams`.
 - `Procedure.renameTypeArgs_names` — renaming type parameters keeps a
   procedure's name and parameter names.
+- `DetCFG.CmdsRel.flatMap_eq` — control-flow graphs whose commands correspond one to one agree
+  on every per-command list, such as the variables the commands modify or define.
 - `Procedure.oldAliases_mem` — every alias `(old x, x)` has `x` among the parameters.
 - `Procedure.instantiateTypes_of_typeArgs_nil` — a monomorphic procedure's only instance is
   itself, at `[]`, and `Procedure.instantiateTypes_of_typeArgs_singleton` (with
@@ -42,6 +47,8 @@ Key results:
 public section
 
 namespace Core
+
+open Lambda
 
 /-- The keys of Core's inout formals are the generic `Calls.inoutParams`. -/
 theorem Procedure.Header.keys_getInoutParams (h : Procedure.Header) :
@@ -102,6 +109,68 @@ theorem Procedure.mapExprs_id (p : Procedure) : Procedure.mapExprs id p = p := b
 @[simp] theorem Procedure.calledProcedureNames_eq_body (p : Procedure) :
     Procedure.calledProcedureNames p = Procedure.Body.calledProcedureNames p.body := by
   rw [Procedure.calledProcedureNames]
+
+/-! ### Control-flow graphs with corresponding commands -/
+
+/-- `c'` has the blocks of `c` with the same labels in the same order, and each command of `c'`
+    is related by `R` to the command of `c` at the same position. -/
+def DetCFG.CmdsRel (R : Command → Command → Prop) (c c' : DetCFG) : Prop :=
+  List.Rel₂ (fun lb lb' => lb.1 = lb'.1 ∧ List.Rel₂ R lb.2.cmds lb'.2.cmds) c.blocks c'.blocks
+
+/-- Mapping the commands and branch guards of a control-flow graph relates each command to its
+    image. -/
+theorem DetCFG.cmdsRel_mapCmdsGuards (c : DetCFG) (fc : Command → Command)
+    (fe : Expression.Expr → Expression.Expr) :
+    DetCFG.CmdsRel (fun x y => y = fc x) c (DetCFG.mapCmdsGuards c fc fe) := by
+  unfold DetCFG.CmdsRel DetCFG.mapCmdsGuards
+  refine List.Rel₂.map_right _ ?_ (List.Rel₂.refl (R := Eq) (fun _ => rfl) c.blocks)
+  intro lb lb' heq
+  subst heq
+  exact ⟨rfl, List.Rel₂.map_right (R := Eq) (S := fun x y => y = fc x) fc
+    (fun _ _ hab => congrArg fc hab.symm) (List.Rel₂.refl (R := Eq) (fun _ => rfl) _)⟩
+
+/-- Mapping functions that fix every command and every guard over a control-flow graph changes
+    nothing. -/
+theorem DetCFG.mapCmdsGuards_id {fc : Command → Command}
+    {fe : Expression.Expr → Expression.Expr} (hfc : ∀ c, fc c = c) (hfe : ∀ e, fe e = e)
+    (c : DetCFG) : DetCFG.mapCmdsGuards c fc fe = c := by
+  obtain ⟨entry, blocks⟩ := c
+  simp only [DetCFG.mapCmdsGuards]
+  congr 1
+  refine List.map_id'' (fun x => ?_) blocks
+  obtain ⟨l, ⟨cmds, tr⟩⟩ := x
+  have hcmds : cmds.map fc = cmds := List.map_id'' hfc cmds
+  cases tr <;> simp only [hcmds, hfe]
+
+/-- A command relation that implies another lifts to control-flow graphs. -/
+theorem DetCFG.CmdsRel.imp {R S : Command → Command → Prop} (hRS : ∀ x y, R x y → S x y)
+    {c c' : DetCFG} (h : DetCFG.CmdsRel R c c') : DetCFG.CmdsRel S c c' :=
+  List.Rel₂.imp (fun _ _ hlb => ⟨hlb.1, List.Rel₂.imp hRS hlb.2⟩) h
+
+/-- Command correspondences between control-flow graphs compose. -/
+theorem DetCFG.CmdsRel.comp {R S : Command → Command → Prop} {c₁ c₂ c₃ : DetCFG}
+    (h₁₂ : DetCFG.CmdsRel R c₁ c₂) (h₂₃ : DetCFG.CmdsRel S c₂ c₃) :
+    DetCFG.CmdsRel (fun x z => ∃ y, R x y ∧ S y z) c₁ c₃ :=
+  List.Rel₂.imp (fun _ _ ⟨_, ⟨hl₁, hc₁⟩, ⟨hl₂, hc₂⟩⟩ => ⟨hl₁.trans hl₂, List.Rel₂.comp hc₁ hc₂⟩)
+    (List.Rel₂.comp h₁₂ h₂₃)
+
+/-- Control-flow graphs whose commands correspond agree on a per-command list that corresponding
+    commands agree on. -/
+theorem DetCFG.CmdsRel.flatMap_eq {α : Type} {R : Command → Command → Prop} {c c' : DetCFG}
+    (f : Command → List α) (hf : ∀ x y, R x y → f y = f x) (h : DetCFG.CmdsRel R c c') :
+    c'.blocks.flatMap (fun lb => lb.2.cmds.flatMap f)
+      = c.blocks.flatMap (fun lb => lb.2.cmds.flatMap f) :=
+  (List.Rel₂.flatMap_eq (fun _ _ hlb => (List.Rel₂.flatMap_eq
+    (fun x y hxy => (hf x y hxy).symm) hlb.2)) h).symm
+
+/-- Every command of the second of two control-flow graphs with corresponding commands
+    corresponds to a command of the first. -/
+theorem DetCFG.CmdsRel.exists_of_mem {R : Command → Command → Prop} {c c' : DetCFG}
+    (h : DetCFG.CmdsRel R c c') {lb' : String × Imperative.DetBlock String Command Expression}
+    (hlb : lb' ∈ c'.blocks) {y : Command} (hy : y ∈ lb'.2.cmds) : ∃ x, R x y := by
+  obtain ⟨lb, -, -, hcmds⟩ := List.Rel₂.exists_of_mem_right h hlb
+  obtain ⟨x, -, hxy⟩ := List.Rel₂.exists_of_mem_right hcmds hy
+  exact ⟨x, hxy⟩
 
 /-- Every alias `(old x, x)` of `p` has `x` among the parameters of `p`
     (`Procedure.entryParams`). -/
@@ -262,6 +331,29 @@ theorem Procedure.forall_typeInstantiatedCallee_of_typeArgs_nil {π : String →
   obtain ⟨p₀, hp₀, hinst⟩ := Option.bind_eq_some_iff.1 hp
   obtain ⟨-, rfl⟩ := (Procedure.instantiateTypes_of_typeArgs_nil (hmono n p₀ hp₀)).1 hinst
   exact h n _ hp₀
+
+/-- Renaming no type parameter leaves a procedure unchanged. -/
+theorem Procedure.renameTypeArgs_nil (proc : Procedure) : proc.renameTypeArgs [] = proc := by
+  have hta : renameTyArgList [] proc.header.typeArgs = proc.header.typeArgs :=
+    List.map_id'' (fun a => by simp only [List.lookup_nil, Option.getD_none]) _
+  unfold Procedure.renameTypeArgs
+  rw [LMonoTy.subst_ofRenaming_nil, hta, Procedure.mapTys_id]
+
+/-- Renaming type parameters renames the type variables of a procedure's parameter types. -/
+theorem Procedure.renameTypeArgs_values (proc : Procedure) (ren : List (String × String)) :
+    (proc.renameTypeArgs ren).header.inputs.values =
+        proc.header.inputs.values.map (LMonoTy.subst (Subst.ofRenaming ren)) ∧
+      (proc.renameTypeArgs ren).header.outputs.values =
+        proc.header.outputs.values.map (LMonoTy.subst (Subst.ofRenaming ren)) := by
+  have hmap : ∀ sig : @LMonoTySignature Unit, ListMap.values
+      (sig.map fun p => (p.1, LMonoTy.subst (Subst.ofRenaming ren) p.2)) =
+      sig.values.map (LMonoTy.subst (Subst.ofRenaming ren)) := by
+    intro sig
+    induction sig with
+    | nil => rfl
+    | cons p rest ih =>
+      simp only [List.map_cons, ListMap.values, ih]
+  exact ⟨hmap _, hmap _⟩
 
 end Core
 

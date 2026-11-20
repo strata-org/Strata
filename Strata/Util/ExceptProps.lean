@@ -118,6 +118,16 @@ theorem List.forIn_yield_ok_mem {α ε} (l : List α)
         · rw [hb]
         · exact ih (fun y hy => hne y (List.mem_cons_of_mem a hy)) h x hx'
 
+/-- A `for` loop whose body yields on every element succeeds. -/
+theorem List.forIn_ok_of_yield {α ε : Type} (l : List α) (b : α → Except ε (ForInStep PUnit))
+    (h : ∀ x ∈ l, b x = .ok (ForInStep.yield PUnit.unit)) :
+    forIn l PUnit.unit (fun x _ => b x) = .ok PUnit.unit := by
+  induction l with
+  | nil => rfl
+  | cons a as ih =>
+    rw [List.forIn_cons, h a List.mem_cons_self]
+    exact ih fun x hx => h x (List.mem_cons_of_mem a hx)
+
 /-- A successful `mapM` relates each input, in order, to the output `f` returns for it. -/
 theorem mapM_except_rel₂ {α β ε : Type _} (f : α → Except ε β) :
     ∀ (as : List α) (bs : List β), as.mapM f = .ok bs →
