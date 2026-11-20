@@ -145,6 +145,7 @@ import Strata.DL.SMT.DenoteSemanticsEquiv
 import Strata.DL.SMT.DenoteTypedSMTQuery
 import Strata.DL.SMT.Lean.QueryCorrect
 import Strata.DL.SMT.SymbolProps
+import Strata.DL.SMT.VerdictReaderProps
 import Strata.DL.SMT.RegexMatchProps
 
 /- Other -/
