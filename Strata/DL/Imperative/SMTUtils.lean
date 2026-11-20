@@ -121,6 +121,64 @@ def runSolver (solver : String) (args : Array String) : IO IO.Process.Output := 
   --                         stdout: {repr output.stdout}"
   return output
 
+/-- The validity verdict after a retry: the retry's when it is `unsat`, the first otherwise. A
+    retried `sat` keeps the first `unknown` (and its candidate model), so a retry can turn an
+    `unknown` into a proof and never into a refutation. This holds for any retry of the same
+    validity query, whatever solver options the retry adds. -/
+def retryVerdict {Ident : Type} (first retried : Result Ident) : Result Ident :=
+  match retried with
+  | .unsat => .unsat
+  | _ => first
+
+/-- Whether cvc5's output for `(get-info :reason-unknown)` says `incomplete`: some line of the
+    output is exactly that response, so the same text inside a model or a message does not
+    count. -/
+def reasonUnknownIsIncomplete (stdout : String) : Bool :=
+  (stdout.splitOn "\n").any fun l => l.trimAscii.toString == "(:reason-unknown incomplete)"
+
+/-- Runs a best-effort step `act` (the retry); if it throws, `first` stands. -/
+def orFirst {α : Type} (first : α) (act : IO α) : IO α :=
+  try act catch _ => pure first
+
+/-- Runs `solver` on `text`, written to `path`, which is removed afterwards. -/
+def runSolverOnText (solver path text : String) (args : Array String) :
+    IO IO.Process.Output := do
+  IO.FS.writeFile path text
+  try
+    runSolver solver (#[path] ++ args)
+  finally
+    try IO.FS.removeFile path catch _ => pure ()
+
+/-- The query file without its satisfiability check, or `none` if the check block is not found.
+    The cut removes the lines from the last `; Satisfiability` comment line up to the one
+    `; Validity` comment line after it (both written by `writeCheckSatBlock`). The check block
+    follows every declaration, so a declaration comment that repeats a marker (a constant named
+    `Validity`) does not move the cut. The removed check is a `check-sat-assuming`, which asserts
+    nothing, so the remaining validity check asks the same question. -/
+def validityCheckOnly (text : String) : Option String :=
+  let sat := "\n; Satisfiability\n"
+  let val := "\n; Validity\n"
+  match text.splitOn sat |>.reverse with
+  | after :: rest@(_ :: _) =>
+    match after.splitOn val with
+    | [_, tail] => some (sat.intercalate rest.reverse ++ val ++ tail)
+    | _ => none
+  | _ => none
+
+/-- Whether the solver's last answer on `filename` (its validity check) was `unknown` for
+    `incomplete`: the file is rerun with `(get-info :reason-unknown)` appended.
+    Only cvc5 is asked; any other solver gives `false`. -/
+def reasonIsIncomplete (solver filename : String) (args : Array String) : IO Bool := do
+  if solver != "cvc5" then return false
+  let text ← IO.FS.readFile filename
+  -- `filename` is unique per obligation (the verifier numbers each file from an atomic
+  -- counter), so no two probes share this name.
+  -- The last check in the file is the validity check (`writeCheckSatBlock` writes the
+  -- satisfiability check first when both run), so `:reason-unknown` refers to it.
+  let out ← runSolverOnText solver (filename ++ ".reason.smt2")
+    (text ++ "\n(get-info :reason-unknown)\n") args
+  return reasonUnknownIsIncomplete out.stdout
+
 /-- Classifies a per-obligation encoding or solver failure. -/
 inductive SolverError where
   | encoding (error : Strata.SMT.StringLit.EncodingError)
@@ -453,8 +511,11 @@ and parse the output of the SMT solver.
 When two-sided checking is enabled, the generated SMT file will contain two
 `(check-sat-assuming)` commands, one for `P ∧ Q` and one for `P ∧ ¬Q`,
 and the return value includes both decisions.
+
+A validity verdict `unknown` that cvc5 gives for incompleteness is rerun once with
+`retryOnIncomplete` added, when it is not empty (see `retryVerdict`).
 -/
-def dischargeObligation {P : PureExpr} [ToFormat P.Ident] [BEq P.Ident]
+def dischargeObligationWithRetry {P : PureExpr} [ToFormat P.Ident] [BEq P.Ident]
   (encodeSMT : Strata.SMT.SolverEncodingM (List String × Strata.SMT.EncoderState))
   (typedVarToSMTFn : P.Ident → P.Ty → Except Format (String × Strata.SMT.TermType))
   (vars : List P.TypedIdent)
@@ -464,7 +525,9 @@ def dischargeObligation {P : PureExpr} [ToFormat P.Ident] [BEq P.Ident]
   (skipSolver : Bool := false)
   -- Term→SMT-LIB string cache shared across a procedure's obligations; `none` on the parallel path.
   (termCache : Option (IO.Ref (Std.HashMap Strata.SMT.Term String)) := none)
-  (pctx : Strata.Pipeline.PipelineContext) :
+  (pctx : Strata.Pipeline.PipelineContext)
+  -- Flags of a rerun after an `unknown` for incompleteness; empty for no rerun.
+  (retryOnIncomplete : Array String := #[]) :
   IO (Except SolverError (Result P.Ident × Result P.Ident × Strata.SMT.EncoderState)) := do
   -- Seed the solver's term-string cache from the shared ref (if any).
   let initState : Strata.SMT.SolverState ←
@@ -494,9 +557,48 @@ def dischargeObligation {P : PureExpr} [ToFormat P.Ident] [BEq P.Ident]
   let parsed ← pctx.withPhase "parseResult" do
     solverResult typedVarToSMTFn vars solver_output estate smtsolver
       satisfiabilityCheck validityCheck
+  -- Only an `unknown` whose `:reason-unknown` is `incomplete` is retried: a timeout or a
+  -- resource limit is not. The retry is best effort: if the probe or the retry fails (a file
+  -- cannot be read, a solver cannot be run), the first verdict stands.
+  let retry : IO (Except SolverError (Result P.Ident × Result P.Ident)) := match parsed with
+    | .ok (satR, valR@(.unknown _)) => do
+      if retryOnIncomplete.isEmpty || !validityCheck then return parsed
+      if !(← reasonIsIncomplete smtsolver filename solver_options) then return parsed
+      -- The retry asks only the validity check: its satisfiability check, if any, is dropped,
+      -- since only the validity verdict of the retry is used.
+      let text ← IO.FS.readFile filename
+      let validityOnly := if satisfiabilityCheck then validityCheckOnly text else none
+      let out2 ← pctx.withPhase "runSolverRetry" do
+        match validityOnly with
+        | some retryText =>
+          runSolverOnText smtsolver (filename ++ ".retry.smt2") retryText
+            (solver_options ++ retryOnIncomplete)
+        | none => runSolver smtsolver (#[filename] ++ solver_options ++ retryOnIncomplete)
+      let parsed2 ← solverResult typedVarToSMTFn vars out2 estate smtsolver
+        (satisfiabilityCheck && validityOnly.isNone) validityCheck
+      match parsed2 with
+      | .ok (_, val2) => return .ok (satR, retryVerdict valR val2)
+      | .error _ => return parsed
+    | _ => return parsed
+  let parsed ← orFirst parsed retry
   match parsed with
   | .error e => return .error e
   | .ok (satResult, validityResult) => return .ok (satResult, validityResult, estate)
+
+/-- `dischargeObligationWithRetry` without a retry. -/
+def dischargeObligation {P : PureExpr} [ToFormat P.Ident] [BEq P.Ident]
+  (encodeSMT : Strata.SMT.SolverEncodingM (List String × Strata.SMT.EncoderState))
+  (typedVarToSMTFn : P.Ident → P.Ty → Except Format (String × Strata.SMT.TermType))
+  (vars : List P.TypedIdent)
+  (smtsolver filename : String)
+  (solver_options : Array String) (printFilename : Bool)
+  (satisfiabilityCheck validityCheck : Bool)
+  (skipSolver : Bool := false)
+  (termCache : Option (IO.Ref (Std.HashMap Strata.SMT.Term String)) := none)
+  (pctx : Strata.Pipeline.PipelineContext) :
+  IO (Except SolverError (Result P.Ident × Result P.Ident × Strata.SMT.EncoderState)) :=
+  dischargeObligationWithRetry encodeSMT typedVarToSMTFn vars smtsolver filename solver_options
+    printFilename satisfiabilityCheck validityCheck skipSolver termCache pctx
 
 ---------------------------------------------------------------------
 end -- public section

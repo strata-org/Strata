@@ -545,10 +545,30 @@ def setSolverPrelude (solver : String) (solverOptions : Array (String × String)
 @[deprecated setSolverPrelude (since := "2026-10-27")]
 abbrev getSolverPrelude := @setSolverPrelude
 
+/-- The cvc5 flag that `cvc5FullSaturateQuant` adds to every cvc5 run, the satisfiability check
+    included (see `VerifyOptions.cvc5FullSaturateQuant`). -/
+def cvc5FullSaturateFlags (options : VerifyOptions) : Array String :=
+  if options.cvc5FullSaturateQuant then #["--full-saturate-quant"] else #[]
+
+/-- The flags added to a cvc5 query rerun after an `unknown` for incompleteness
+    (`cvc5RetryFullSaturateQuant`, with `cvc5RetryTimeout`); empty when there is no retry. Under
+    `incremental` there is none, even when `alwaysGenerateSMT` sends the queries through files,
+    so a run's verdicts do not depend on whether its SMT files are kept. The retry always has a
+    finite limit: `cvc5RetryTimeout`, else the query's own `solverTimeout`, else (when the query
+    has none) the default solver timeout, since enumerative instantiation may never stop on a
+    false goal that the first run left `unknown` quickly. -/
+def cvc5RetryFlags (options : VerifyOptions) : Array String :=
+  if options.cvc5RetryFullSaturateQuant && options.solver == "cvc5" && !options.incremental then
+    #["--full-saturate-quant"] ++
+      (if options.cvc5RetryTimeout > 0 then #[s!"--tlimit={options.cvc5RetryTimeout * 1000}"]
+       else if options.solverTimeout > 0 then #[]
+       else #[s!"--tlimit={VerifyOptions.default.solverTimeout * 1000}"])
+  else #[]
+
 def getSolverFlags (options : VerifyOptions) : Array String :=
   let produceModels :=
     match options.solver with
-    | "cvc5" => #["--produce-models"]
+    | "cvc5" => #["--produce-models"] ++ cvc5FullSaturateFlags options
     -- No need to specify -model for Z3 because we already have `get-value`
     -- in the generated SMT file.
     | _ => #[]
@@ -592,7 +612,8 @@ def incrementalLaunch (options : VerifyOptions) : IncrementalLaunch :=
   let limitMs := options.solverTimeout * 1000
   let flags := match options.solver with
     | "cvc5" =>
-      #["--quiet", "--lang", "smt", "--incremental", "--produce-models", s!"--tlimit-per={limitMs}"]
+      #["--quiet", "--lang", "smt", "--incremental", "--produce-models", s!"--tlimit-per={limitMs}"] ++
+        cvc5FullSaturateFlags options
     | "z3" => #["-in", s!"-t:{limitMs}"]
     | _ => #[]
   let timeKey : Option String := match options.solver with
@@ -650,7 +671,7 @@ def dischargeObligation
         assumptionTerms obligationTerm md satisfiabilityCheck validityCheck
         (label := label) (varDefinitions := varDefinitions) (varDeclarations := varDeclarations)
         (pctx := pctx)
-  Imperative.SMT.dischargeObligation
+  Imperative.SMT.dischargeObligationWithRetry
     (P := Core.Expression)
     encodeAct
     (typedVarToSMTFn ctx)
@@ -662,6 +683,7 @@ def dischargeObligation
     (skipSolver := options.skipSolver)
     (termCache := termCache)
     (pctx := pctx)
+    (retryOnIncomplete := cvc5RetryFlags options)
 
 /-- Discharge a proof obligation using the incremental solver backend.
     Spawns a live solver process, sends commands via stdin/stdout, and
