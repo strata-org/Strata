@@ -2402,33 +2402,39 @@ def mkDischargeFn : MkDischargeFn := fun (options : VerifyOptions) (counter : IO
 
 open CSE (isCSEGeneratedName)
 
-/--
-Invoke a backend engine and get the analysis result for a
-given proof obligation.
--/
-def getObligationResult (assumptionTerms : List Term) (obligationTerm : Term)
-    (ctx : SMT.Context)
-    (obligation : ProofObligation Expression) (p : Program)
-    (options : VerifyOptions)
-    (discharge : DischargeFn)
-    (satisfiabilityCheck validityCheck : Bool)
-    (phases : List AbstractedPhase)
-    (varDefinitions : List VarDefinition := [])
-    (varDeclarations : List VarDeclaration := [])
-    -- Labels of the axioms pruning dropped from this query.
-    (prunedAxiomLabels : List String := [])
-    (requestedVars : List Expression.TypedIdent := [])
-    : EIO Message VCResult := do
-  -- Formatting the whole program is costly on a large one, so it is done only when the debug
-  -- trace below shows it.
-  let prog : Unit → Format := fun _ => f!"\n\n[DEBUG] Evaluated program:\n{Core.formatProgram p}"
-  let ans ← IO.toEIO
-      (fun e => Message.fromFormat f!"{e}")
-      (discharge assumptionTerms obligationTerm ctx satisfiabilityCheck validityCheck
-        varDefinitions varDeclarations)
-  -- The Lean export (`ExportConfig.exportCheck`). A cover asks whether its condition is
-  -- reachable, which a validity proof does not show, and a check that the backend reports as
-  -- an encoding error has no solver query: neither is exported.
+/-- The outcome `getObligationResult` reports for the solver's two answers: each passed through
+    the phases' model validation (`adjustForPhases`), the checks not asked for masked
+    (`maskOutcome`), and pruning's effect applied (`VCOutcome.afterPruning`). The solver log
+    holds the raw answers followed by what each phase decided. -/
+def outcomeOfAnswers (satResult validityResult : SMT.Result) (phases : List AbstractedPhase)
+    (obligation : ProofObligation Expression) (satisfiabilityCheck validityCheck : Bool)
+    (pruning : IrrelevantAxiomsMode) (prunedAxiomLabels : List String) : VCOutcome :=
+  let (adjSat, satPhaseLog) := satResult.adjustForPhases phases obligation
+  let (adjVal, valPhaseLog) := validityResult.adjustForPhases phases obligation
+  let smtLog := buildSolverLog satResult validityResult
+    satisfiabilityCheck validityCheck satPhaseLog valPhaseLog
+  let rawOutcome : VCOutcome := {
+    satisfiabilityProperty := adjSat,
+    validityProperty := adjVal,
+    solverLog := #[smtLog] }
+  maskOutcome rawOutcome satisfiabilityCheck validityCheck
+    |>.afterPruning pruning prunedAxiomLabels
+
+/-- The solver's outcome with the evaluator's answers, where it has them, in place of the
+    solver's. -/
+def withEvaluator (peSat? peVal? : Option SMT.Result) (o : VCOutcome) : VCOutcome :=
+  { o with satisfiabilityProperty := peSat?.getD o.satisfiabilityProperty,
+           validityProperty := peVal?.getD o.validityProperty }
+
+/-- The Lean export of one check (`ExportConfig.exportCheck`), when `options.leanExport` is set.
+    A cover asks whether its condition is reachable, which a validity proof does not show, and a
+    check that the backend reports as an encoding error has no solver query: neither is
+    exported. -/
+def exportObligation (ans : Except Imperative.SMT.SolverError (SMT.Result × SMT.Result × EncoderState))
+    (assumptionTerms : List Term) (obligationTerm : Term) (ctx : SMT.Context)
+    (obligation : ProofObligation Expression) (p : Program) (options : VerifyOptions)
+    (validityCheck : Bool) (varDefinitions : List VarDefinition)
+    (varDeclarations : List VarDeclaration) : EIO Message Unit := do
   if let some config := options.leanExport then
     if validityCheck && obligation.property != .cover then
       -- `skipSolver` is honoured by the batch backend only (`mkDischargeFn`): the incremental
@@ -2446,55 +2452,100 @@ def getObligationResult (assumptionTerms : List Term) (obligationTerm : Term)
         IO.toEIO (fun e => Message.fromFormat f!"{e}")
           (config.exportCheck functionAmong (if asked then answer else .notAsked)
             ctx assumptionTerms obligationTerm varDefinitions varDeclarations obligation.label)
-  match ans with
-  | .error solverError =>
-    let vcError : VCError := match solverError with
-      | .encoding e => .encoding (toString e)
-      | .timeout d => .solverTimeout d
-      | .crash d   => .solverCrash d
+
+/-- The error a backend's failure is reported as. -/
+def vcErrorOf : Imperative.SMT.SolverError → VCError
+  | .encoding e => .encoding (toString e)
+  | .timeout d => .solverTimeout d
+  | .crash d   => .solverCrash d
+
+/-- The debug trace of a backend failure: always for a solver failure, in debug mode only for an
+    encoding error, with the program in debug mode. -/
+def traceSolverError
+    (ans : Except Imperative.SMT.SolverError (SMT.Result × SMT.Result × EncoderState))
+    (obligation : ProofObligation Expression) (p : Program) (options : VerifyOptions) :
+    EIO Message Unit := do
+  if let .error solverError := ans then
     let traceInQuiet := match solverError with
       | .encoding _ => false
       | _ => true
     if traceInQuiet || options.verbose >= VerboseMode.debug then
-      dbg_trace f!"\n\nObligation {obligation.label}: {vcError}\
+      -- Formatting the whole program is costly on a large one, so it is done only when the
+      -- debug trace shows it.
+      let prog : Unit → Format := fun _ => f!"\n\n[DEBUG] Evaluated program:\n{Core.formatProgram p}"
+      dbg_trace f!"\n\nObligation {obligation.label}: {vcErrorOf solverError}\
                    {if options.verbose >= VerboseMode.debug then prog () else ""}"
-    return { obligation := obligation,
-             outcome := Except.error vcError,
-             verbose := options.verbose,
-             checkLevel := options.checkLevel,
-             checkMode := options.checkMode,
-             lexprModel := [] }
+      pure ()
+
+/-- The models a result reports for the solver's two answers (`reportModels`): the one a `sat`
+    or `unknown` answer offers (`unknown (some m)` arises when the solver returns a candidate
+    model it cannot certify, e.g. cvc5 with quantified bridge axioms; phases may promote it to
+    `sat`, and the model stays available for display), restricted to the variables
+    `Core.SMT.isReportedName` names, with the requested variables each model misses. -/
+def reportedModels (ctx : SMT.Context) (satResult validityResult : SMT.Result)
+    (varDefinitions : List VarDefinition) (requestedVars : List Expression.TypedIdent) :
+    LExprModel × ModelReport :=
+  let isReported := Core.SMT.isReportedName (definedNameSet varDefinitions)
+  reportModels ctx satResult validityResult
+    ((requestedVars.map (·.1.name)).filter isReported) isReported
+
+/-- The result `getObligationResult` reports for the backend's answer `ans`: an error for a
+    failure (`vcErrorOf`), and otherwise the outcome of the two answers (`outcomeOfAnswers`) with
+    the model they offer. -/
+@[expose] def obligationResultOf
+    (ans : Except Imperative.SMT.SolverError (SMT.Result × SMT.Result × EncoderState))
+    (ctx : SMT.Context) (obligation : ProofObligation Expression)
+    (options : VerifyOptions) (satisfiabilityCheck validityCheck : Bool)
+    (phases : List AbstractedPhase) (varDefinitions : List VarDefinition)
+    (prunedAxiomLabels : List String) (requestedVars : List Expression.TypedIdent) : VCResult :=
+  match ans with
+  | .error solverError =>
+    { obligation := obligation,
+      outcome := Except.error (vcErrorOf solverError),
+      verbose := options.verbose,
+      checkLevel := options.checkLevel,
+      checkMode := options.checkMode,
+      lexprModel := [] }
   | .ok (satResult, validityResult, estate) =>
-    -- Convert unvalidated sat results to unknown when phases require validation
-    let (adjSat, satPhaseLog) := satResult.adjustForPhases phases obligation
-    let (adjVal, valPhaseLog) := validityResult.adjustForPhases phases obligation
-    -- Build solver log: raw solver results followed by phase validation logs
-    let smtLog := buildSolverLog satResult validityResult
-      satisfiabilityCheck validityCheck satPhaseLog valPhaseLog
-    let rawOutcome : VCOutcome := {
-      satisfiabilityProperty := adjSat,
-      validityProperty := adjVal,
-      solverLog := #[smtLog] }
-    let outcome := maskOutcome rawOutcome satisfiabilityCheck validityCheck
-      |>.afterPruning options.removeIrrelevantAxioms prunedAxiomLabels
-    -- Extract model from sat or unknown-with-candidate results.
-    -- unknown (some m) arises when the solver returns a candidate model it cannot
-    -- certify (e.g. cvc5 with quantified bridge axioms). Phases may promote it
-    -- to sat; we still want the model available for display.
-    -- A counterexample reports the variables `Core.SMT.isReportedName` names.
-    let isReported := Core.SMT.isReportedName (definedNameSet varDefinitions)
-    let (model, report) := reportModels ctx satResult validityResult
-      ((requestedVars.map (·.1.name)).filter isReported) isReported
-    let result := { obligation,
-                    outcome := .ok outcome,
-                    estate,
-                    verbose := options.verbose,
-                    checkLevel := options.checkLevel,
-                    checkMode := options.checkMode,
-                    lexprModel := model, modelMissing := report.missing,
-                    checkModelMissing := report.checkMissing,
-                    checkModels := (some report.checkModels.1, some report.checkModels.2) }
-    return result
+    let outcome := outcomeOfAnswers satResult validityResult phases obligation
+      satisfiabilityCheck validityCheck options.removeIrrelevantAxioms prunedAxiomLabels
+    let (model, report) := reportedModels ctx satResult validityResult varDefinitions requestedVars
+    { obligation,
+      outcome := .ok outcome,
+      estate,
+      verbose := options.verbose,
+      checkLevel := options.checkLevel,
+      checkMode := options.checkMode,
+      lexprModel := model, modelMissing := report.missing,
+      checkModelMissing := report.checkMissing,
+      checkModels := (some report.checkModels.1, some report.checkModels.2) }
+
+/--
+Invoke a backend engine and get the analysis result for a
+given proof obligation. The result depends only on the backend's answer.
+-/
+@[expose] def getObligationResult (assumptionTerms : List Term) (obligationTerm : Term)
+    (ctx : SMT.Context)
+    (obligation : ProofObligation Expression) (p : Program)
+    (options : VerifyOptions)
+    (discharge : DischargeFn)
+    (satisfiabilityCheck validityCheck : Bool)
+    (phases : List AbstractedPhase)
+    (varDefinitions : List VarDefinition := [])
+    (varDeclarations : List VarDeclaration := [])
+    -- Labels of the axioms pruning dropped from this query.
+    (prunedAxiomLabels : List String := [])
+    (requestedVars : List Expression.TypedIdent := [])
+    : EIO Message VCResult := do
+  let ans ← IO.toEIO
+      (fun e => Message.fromFormat f!"{e}")
+      (discharge assumptionTerms obligationTerm ctx satisfiabilityCheck validityCheck
+        varDefinitions varDeclarations)
+  exportObligation ans assumptionTerms obligationTerm ctx obligation p options validityCheck
+    varDefinitions varDeclarations
+  traceSolverError ans obligation p options
+  return obligationResultOf ans ctx obligation options satisfiabilityCheck validityCheck phases
+    varDefinitions prunedAxiomLabels requestedVars
 
 /-- Data needed to dispatch a single obligation to the solver. Produced by the
     sequential preprocessing phase and consumed by the (potentially parallel)
@@ -2543,11 +2594,7 @@ private def dispatchSolverJob (job : SolverJob) (p : Program)
   | .ok result =>
     let result := match result.outcome with
       | .ok solverOutcome =>
-        let satResult := job.peSatResult?.getD solverOutcome.satisfiabilityProperty
-        let valResult := job.peValResult?.getD solverOutcome.validityProperty
-        { result with outcome := .ok { solverOutcome with
-            satisfiabilityProperty := satResult,
-            validityProperty := valResult } }
+        { result with outcome := .ok (withEvaluator job.peSatResult? job.peValResult? solverOutcome) }
       | .error _ => result
     return .ok result
 
@@ -2944,11 +2991,8 @@ def dischargeObligations (E : Env) (obligations : ProofObligations Expression)
           -- Merge evaluator results with solver results
           let result := match result.outcome with
             | .ok solverOutcome =>
-              let satResult := peSatResult?.getD solverOutcome.satisfiabilityProperty
-              let valResult := peValResult?.getD solverOutcome.validityProperty
-              { result with outcome := .ok { solverOutcome with
-                  satisfiabilityProperty := satResult,
-                  validityProperty := valResult } }
+              { result with
+                outcome := .ok (withEvaluator peSatResult? peValResult? solverOutcome) }
             | .error _ => result
           pure (ObligationDisposition.resolved result, encStats, encState', snapCache', emState1)
       ).toBaseIO

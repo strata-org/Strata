@@ -511,6 +511,38 @@ def processModel {P : PureExpr} [ToFormat P.Ident]
   if model.isEmpty && !vars.isEmpty then .error f!"No model value for any of {vars.length} ids"
   else .ok model
 
+/-- The `check-sat` answer at the start of `input`: its first line, decoded
+    (`Strata.SMT.splitFirstLine`), with the text after that line, where the answer's `get-value`
+    response starts. `none` when the line is not an answer. -/
+def answerAt (input : String) : Option (Strata.SMT.Decision × String) :=
+  match Strata.SMT.splitFirstLine input.toList with
+  | (some .timeout, _) | (none, _) => none
+  | (some d, rest) => some (d, String.ofList rest)
+
+/-- The satisfiability check's answer when it is asked (`answerAt`), with the text where the
+    validity check's answer is read: after the responses that follow the satisfiability answer
+    (`Strata.SMT.dropToVerdict`). A check not asked reads nothing. -/
+def readSatAnswer (stdout : String) (satisfiabilityCheck : Bool) :
+    Option (Option (Strata.SMT.Decision × String) × String) :=
+  if satisfiabilityCheck then
+    (answerAt stdout).map fun (d, rest) =>
+      (some (d, rest), String.ofList (Strata.SMT.dropToVerdict 0 .code rest.toList))
+  else some (none, stdout)
+
+/-- The validity check's answer when it is asked: the answer at the start of `remaining`
+    (`answerAt`). A check not asked reads nothing. -/
+def readValidityAnswer (remaining : String) (validityCheck : Bool) :
+    Option (Option (Strata.SMT.Decision × String)) :=
+  if validityCheck then (answerAt remaining).map some else some none
+
+/-- A check's result from its answer and the model that follows it, if any: `sat` and
+    `unknown` carry the model, `unsat` none. -/
+def Result.ofAnswer {Ident : Type} : Strata.SMT.Decision → Option (Model Ident) → Result Ident
+  | .sat, m => .sat (m.getD [])
+  | .unknown, m => .unknown m
+  | .unsat, _ => .unsat
+  | .timeout, _ => .unknown
+
 /--
 Interprets the output of SMT solver.
 
@@ -534,35 +566,24 @@ def solverResult {P : PureExpr} [ToFormat P.Ident]
     : IO (Except SolverError (Result P.Ident × Result P.Ident)) := do
   let stdout := output.stdout
 
-  -- The next verdict comes after the whole response to the previous verdict's `get-value`.
-  let skipToNextVerdict (input : String) : String :=
-    String.ofList (Strata.SMT.dropToVerdict 0 .code input.toList)
-
-  -- Parse the model that follows a sat/unknown verdict, falling back to the
-  -- given default on any error.
-  let parseFollowingModel (rest : String) (default : Result P.Ident) :
-      IO (Result P.Ident) := do
+  -- The model in the `get-value` response that follows a `sat` or `unknown` answer, if it
+  -- parses and gives a value to some variable (`processModel`); it decorates the answer and
+  -- never changes it.
+  let modelAfter (rest : String) : IO (Option (Model P.Ident)) := do
     let rawModel ← parseModelDDM rest E.usedNames
     match processModel typedVarToSMTFn vars rawModel E with
-    | .ok model =>
-      match default with
-      | .sat _     => return .sat model
-      | .unknown _ => return .unknown (some model)
-      | other      => return other
-    | .error _ => return default
+    | .ok model => return some model
+    | .error _ => return none
 
-  let parseVerdict (input : String) : IO (Option (Result P.Ident × String)) := do
-    let (decision, restChars) := Strata.SMT.splitFirstLine input.toList
-    let rest := String.ofList restChars
-    match decision with
-    | some .sat =>
-      let r ← parseFollowingModel rest (.sat [])
-      return some (r, skipToNextVerdict rest)
-    | some .unsat => return some (.unsat, skipToNextVerdict rest)
-    | some .unknown =>
-      let r ← parseFollowingModel rest .unknown
-      return some (r, skipToNextVerdict rest)
-    | _ => return none
+  -- The result of one check: its answer (`readSatAnswer`, `readValidityAnswer`) with the model
+  -- that follows it.
+  let resultOf : Option (Strata.SMT.Decision × String) → IO (Result P.Ident)
+    | none => return .unknown
+    | some (d, rest) => do
+      let m ← match d with
+        | .sat | .unknown => modelAfter rest
+        | .unsat | .timeout => pure none
+      return Result.ofAnswer d m
 
   let mkError (output : IO.Process.Output) : SolverError :=
     let stderr := output.stderr
@@ -576,14 +597,15 @@ def solverResult {P : PureExpr} [ToFormat P.Ident]
     if isTimeoutOutput output then .timeout detail else .crash detail
 
   -- Parse results based on which checks are enabled
-  match ← (if satisfiabilityCheck then parseVerdict stdout else pure (some (.unknown, stdout))) with
-  | some (satResult, remaining) =>
-    match ← (if validityCheck then parseVerdict remaining else pure (some (.unknown, remaining))) with
-    | some (validityResult, _) => return .ok (satResult, validityResult)
-    | none =>
-      return .error (mkError output)
-  | none =>
-    return .error (mkError output)
+  match readSatAnswer stdout satisfiabilityCheck with
+  | none => return .error (mkError output)
+  | some (satAnswer, remaining) =>
+    let satResult ← resultOf satAnswer
+    match readValidityAnswer remaining validityCheck with
+    | none => return .error (mkError output)
+    | some valAnswer =>
+      let validityResult ← resultOf valAnswer
+      return .ok (satResult, validityResult)
 
 /-- Emit a block of `set-info` attributes describing the source location and
     an optional application-specific `(name, rawValue)` pair. `message.snd` is
