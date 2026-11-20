@@ -201,8 +201,8 @@ theorem headOfCons_meets_contract :
     Core.Logic.Hoare.Procedure.contractTriple listAST testParams "HeadOfCons" := by
   let command : Core.Command :=
     Imperative.CmdExt.cmd (Imperative.Cmd.set rId (.det hdE) hdMd)
-  refine Core.Logic.Hoare.Procedure.contractTriple_singleton_cmd listAST testParams
-    "HeadOfCons" (procOf listAST "HeadOfCons") (by native_decide) command ?_
+  refine Core.Logic.Hoare.Procedure.contractTriple_singleton_cmd (hmono := by native_decide)
+    listAST testParams "HeadOfCons" (procOf listAST "HeadOfCons") (by native_decide) command ?_
     (by native_decide) ?_ ?_
   · simpa [command] using hd_body_shape
   · intro ρ₀ σ' emitted hpre _hwf hstep
