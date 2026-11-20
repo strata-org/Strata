@@ -524,13 +524,23 @@ local macro "walk_on " f:ident h:ident : tactic => do
     exact WalkW.empty _ _ _
   simp only [wpStmt, Bool.not_true, Bool.false_eq_true, ↓reduceIte, pure_bind] at $h:ident))
 
+/-- Splits the walk `h` of an `init` on whether it is emitted (`wpStmt_init_run`): closes the
+    walk that is not (an empty result and an unchanged state) and unfolds the walk that is. -/
+local macro "init_on " h:ident : tactic => `(tactic| (
+  rw [wpStmt_init_run] at $h:ident
+  split at $h:ident
+  rotate_left
+  · cases $h:ident
+    exact WalkW.empty _ _ _
+  simp only [wpStmt, keepInit, Bool.not_true, Bool.false_eq_true, ↓reduceIte, pure_bind] at $h:ident))
+
 /-- The walk of an `init` has the write facts. -/
 private theorem init_w {f : Bool} {ty : P.Ty} {e : ExprOrNondet P} {md : MetaData P}
     (h : (wpStmt κ d f (.cmd (.cmd (.init x ty e md)))).run s = .ok (r, s'))
     (hD : x ∈ D) : WalkW D κ s s' r := by
   cases e
   case' det =>
-    walk_on f h
+    init_on h
     peel h ⟨⟨we, rd⟩, s1, h1⟩ ⟨n, s2, h2⟩ _
     have hm1 := wRen_w (D := D) h1
     obtain ⟨hm2, hn⟩ := wDecl_w (D := D) h2
@@ -546,7 +556,7 @@ private theorem init_w {f : Bool} {ty : P.Ty} {e : ExprOrNondet P} {md : MetaDat
       have hx' : Wr0 D s s' xd :=
         .inl (hx.widen (hm1.trans hm2).avoid (hm1.trans hm2).next hm5.next)
   case' nondet =>
-    walk_on f h
+    init_on h
     peel h ⟨n, s2, h2⟩ _ ⟨_, s4, h4, ⟨⟩⟩
     obtain ⟨hm2, hn⟩ := wDecl_w (D := D) h2
     have hm1 := WMono.refl D s

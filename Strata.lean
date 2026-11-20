@@ -128,7 +128,11 @@ import Strata.Languages.Core.ProgramFactSet
 import Strata.Languages.Core.ProgramFactSetProps
 import Strata.Languages.Core.PipelinePhaseProps
 import Strata.Languages.Core.VerifierProofs
+import Strata.Languages.Core.EvaluatorResultsProps
 import Strata.Languages.Core.CoreGenProps
+import Strata.DL.Imperative.PathConditionHoldsProps
+import Strata.DL.Lambda.LExprTypedBeta
+import Strata.Transform.BetaReduceProps
 import Strata.Languages.GOTO
 
 /- DDM -/
@@ -177,6 +181,10 @@ import Strata.Transform.LoopElimCoreCorrect
 -- Inserting loop invariant checks: its over-approximation, assertion-validity and Hoare-triple
 -- proofs.
 import Strata.Transform.InsertLoopInvariantAssertsCoreCorrect
+import Strata.Transform.CtorFold
+import Strata.Transform.DefInlineRewrite
+import Strata.Transform.WPLoop
+import Strata.Transform.WPRewriteLoop
 -- The WP and SSA phases: their properties, the failure preservation of the SSA phase, and
 -- the properties of their Core instance.
 import Strata.Transform.SSA.SSAEval
@@ -190,6 +198,7 @@ import Strata.Transform.Passive.DeclObligationsCoreCorrect
 import Strata.Transform.Passive.CoreWPSSA
 import Strata.Transform.Passive.CoreWPSSAProps
 import Strata.Transform.Passive.CoreTyped
+import Strata.Transform.Passive.WellTypedProps
 import Strata.Transform.WP.WPCoreProgram
 import Strata.Transform.WP.WPCoreProgramProps
 import Strata.Transform.WP.WPCoreCorrect
@@ -289,6 +298,7 @@ import Strata.DL.Lambda.LExprDenoteEvalProps
 import Strata.DL.Lambda.LExprEvalFully
 import Strata.DL.Lambda.LExprEvalFuelProps
 import Strata.DL.Lambda.LExprEvalAnnotateProps
+import Strata.DL.Lambda.LExprDenoteEvalSubst
 import Strata.DL.Lambda.Denote.LExprDenoteProps
 import Strata.DL.Lambda.Denote.LExprDenoteSubst
 import Strata.DL.Lambda.Denote.LExprDenoteTySubst

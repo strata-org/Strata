@@ -43,6 +43,9 @@ Key results:
 - `Fold.advance_eq_reference` — the theorem above, the composition of the
   previous two; `refFaithful_init` and `Fold.reference_refFaithful`
   establish and preserve the invariant across a run of `advance` calls.
+- `UndoFold.advance_inv` — the faithfulness of the undo fold: advancing keeps any relation
+  between entries and states that the step and the undo step keep, and leaves exactly the
+  target's entries.
 -/
 
 namespace Imperative
@@ -658,6 +661,113 @@ theorem Fold.advance_eq_reference (f : Fold E σ ω P)
   simp only [exec_get_bind]
   unfold FoldState.computeReusePlan
   exact applyReusePlan_eq_reference f hc (computeReusePlanGo_spec _ target)
+
+/-! ## Faithfulness of the undo fold -/
+
+section Undo
+
+variable (f : UndoFold σ P) (R : PathCondition P → σ → Prop)
+
+omit [DecidableEq P.Ident] [DecidableEq P.Ty] [DecidableEq P.Expr] in
+/-- Processing an entry appends it, and keeps `R` when the step does. -/
+private theorem UndoFold.push_inv (hstep : ∀ l s e, R l s → R (l ++ [e]) (f.step s e))
+    {st : UndoFoldState σ P} (h : R st.entries.toList st.current) (e : PathConditionEntry P) :
+    R (f.push st e).entries.toList (f.push st e).current ∧
+      (f.push st e).entries.toList = st.entries.toList ++ [e] := by
+  simp only [UndoFold.push, Array.toList_push, and_true]
+  exact hstep _ _ _ h
+
+omit [DecidableEq P.Ident] [DecidableEq P.Ty] [DecidableEq P.Expr] in
+/-- Undoing the newest entry drops it, and keeps `R` when the undo step does. -/
+private theorem UndoFold.pop_inv (hundo : ∀ l s e, R (l ++ [e]) s → R l (f.undo s e))
+    {st : UndoFoldState σ P} (h : R st.entries.toList st.current) :
+    R (f.pop st).entries.toList (f.pop st).current ∧
+      (f.pop st).entries.toList = st.entries.toList.dropLast := by
+  unfold UndoFold.pop
+  split
+  · exact ⟨h, by simp [Array.back?_eq_none_iff.1 ‹_›]⟩
+  · rename_i e he
+    obtain ⟨ys, hys⟩ := Array.back?_eq_some_iff.1 he
+    rw [hys, Array.toList_push] at h
+    simp only [hys, Array.pop_push, Array.toList_push, List.dropLast_concat, and_true]
+    exact hundo _ _ _ h
+
+omit [DecidableEq P.Ident] [DecidableEq P.Ty] [DecidableEq P.Expr] in
+/-- Undoing `n` entries keeps all but the newest `n`, and keeps `R` when the undo step does. -/
+private theorem UndoFold.repeat_pop_inv (hundo : ∀ l s e, R (l ++ [e]) s → R l (f.undo s e))
+    {st : UndoFoldState σ P} (h : R st.entries.toList st.current) (n : Nat) :
+    R (Nat.repeat f.pop n st).entries.toList (Nat.repeat f.pop n st).current ∧
+      (Nat.repeat f.pop n st).entries.toList =
+        st.entries.toList.take (st.entries.toList.length - n) := by
+  induction n with
+  | zero => exact ⟨h, by simp [Nat.repeat, -Array.length_toList]⟩
+  | succ n ih =>
+    obtain ⟨h1, h2⟩ := UndoFold.pop_inv f R hundo ih.1
+    refine ⟨h1, ?_⟩
+    simp only [Nat.repeat] at h2 ⊢
+    rw [h2, ih.2, List.dropLast_eq_take, List.take_take, List.length_take]
+    congr 1
+    omega
+
+omit [DecidableEq P.Ident] [DecidableEq P.Ty] [DecidableEq P.Expr] in
+/-- Processing a list of entries appends them, and keeps `R` when the step does. -/
+private theorem UndoFold.foldl_push_inv (hstep : ∀ l s e, R l s → R (l ++ [e]) (f.step s e))
+    (l : PathCondition P) :
+    ∀ {st : UndoFoldState σ P}, R st.entries.toList st.current →
+      R (l.foldl f.push st).entries.toList (l.foldl f.push st).current ∧
+        (l.foldl f.push st).entries.toList = st.entries.toList ++ l := by
+  induction l with
+  | nil => exact fun h => ⟨h, by simp⟩
+  | cons e rest ih =>
+    intro st h
+    obtain ⟨h1, h2⟩ := UndoFold.push_inv f R hstep h e
+    obtain ⟨i1, i2⟩ := ih h1
+    exact ⟨i1, by rw [List.foldl_cons, i2, h2, List.append_assoc, List.singleton_append]⟩
+
+end Undo
+
+/-- `commonPrefixLen a i l` is `i` plus a count `d` of leading entries of `l` that are those of
+    `a` from position `i` on. -/
+private theorem commonPrefixLen_spec (a : Array (PathConditionEntry P)) :
+    ∀ (l : PathCondition P) (i : Nat), i ≤ a.size → ∃ d,
+      commonPrefixLen a i l = i + d ∧ i + d ≤ a.size ∧ d ≤ l.length ∧
+        (a.toList.drop i).take d = l.take d := by
+  intro l
+  induction l with
+  | nil => exact fun i hi => ⟨0, rfl, by omega, Nat.le_refl _, by simp⟩
+  | cons e rest ih =>
+    intro i hi
+    unfold commonPrefixLen
+    split <;> (try split) <;> try exact ⟨0, rfl, hi, Nat.zero_le _, by simp⟩
+    rename_i h heq
+    obtain ⟨d, h1, h2, h3, h4⟩ := ih (i + 1) h
+    refine ⟨d + 1, by rw [h1]; omega, by omega, Nat.succ_le_succ h3, ?_⟩
+    rw [List.drop_eq_getElem_cons (by simpa using h), List.take_succ_cons, List.take_succ_cons,
+      h4, ← PathConditionEntry.fastEq_eq heq]
+    simp
+
+/-- **Faithfulness of the undo fold.** Let `R` relate entry lists to states such that the step
+    keeps `R` when an entry is appended and the undo step keeps `R` when the newest entry is
+    dropped. Advancing a state that `R` relates to its entries leaves exactly the entries
+    `target`, in a state `R` relates to them. With `R l s` saying that `s` is, up to an
+    equivalence, the state the step reaches over `l` from a fixed initial state, the state an
+    advance reaches depends on the target only, not on the earlier advances. -/
+theorem UndoFold.advance_inv (f : UndoFold σ P) (R : PathCondition P → σ → Prop)
+    (hstep : ∀ l s e, R l s → R (l ++ [e]) (f.step s e))
+    (hundo : ∀ l s e, R (l ++ [e]) s → R l (f.undo s e)) {st : UndoFoldState σ P}
+    (h : R st.entries.toList st.current) (target : PathCondition P) :
+    R (f.advance st target).entries.toList (f.advance st target).current ∧
+      (f.advance st target).entries.toList = target := by
+  obtain ⟨k, hk, hks, -, hpre⟩ := commonPrefixLen_spec st.entries target 0 (Nat.zero_le _)
+  simp only [Nat.zero_add, List.drop_zero] at hk hks hpre
+  obtain ⟨p1, p2⟩ := UndoFold.repeat_pop_inv f R hundo h (st.entries.size - k)
+  obtain ⟨f1, f2⟩ := UndoFold.foldl_push_inv f R hstep (target.drop k) p1
+  have he : ((target.drop k).foldl f.push
+      (Nat.repeat f.pop (st.entries.size - k) st)).entries.toList = target := by
+    rw [f2, p2, Array.length_toList, show st.entries.size - (st.entries.size - k) = k by omega,
+      hpre, List.take_append_drop]
+  rw [UndoFold.advance, hk]
+  exact ⟨f1, he⟩
 
 end -- public section
 

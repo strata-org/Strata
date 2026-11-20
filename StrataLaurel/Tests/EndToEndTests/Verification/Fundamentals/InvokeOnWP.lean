@@ -11,9 +11,7 @@ open Strata
 
 -- `invokeOn` under `--vcgen wp`: a procedure is not checked against its own invokeOn
 -- axiom, so `badPostcondition` stays unproved, as in the default mode (InvokeOn.lean).
--- The diagnostics are those of the default mode except for the wording of
--- `badPostcondition`'s failure: this mode reports "postcondition does not hold", the
--- default mode "postcondition could not be proved".
+-- The diagnostics are those of the default mode.
 #eval testLaurelVerification
     (options := { verifyOptions :=
       { Core.VerifyOptions.quiet with solver := "z3", vcgen := .wp } }) <|

@@ -169,7 +169,7 @@ function f (s : string) : int;
 procedure Test()
 {
   assume [h]: f("héllo") == 6;
-  assert [good]: f("héllo") == 6;
+  assert [good]: 6 == f("héllo");
 };
 #end
 
@@ -183,7 +183,7 @@ Property: assert
 Assumptions:
 h: f("héllo") == 6
 Obligation:
-f("héllo") == 6
+6 == f("héllo")
 
 ---
 info:

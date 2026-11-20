@@ -38,8 +38,8 @@ definitions it uses.
 - `LExpr.denoteEval_of_hasTypeA` — a well-typed expression evaluates
 - `LExpr.denoteEval_of_isValue` — a well-typed value (`isValue`) denotes one semantic
   value in every store
-- `LExpr.denoteEval_ite_iff`, `LExpr.denoteEval_app_op_bool_iff`, `LExpr.denoteEval_app2_op`
-  — conditionals and operator applications
+- `LExpr.denoteEval_ite_iff`, `LExpr.denoteEval_app_op_bool_iff`, `LExpr.denoteEval_app2_op`,
+  `LExpr.denoteEval_app2_op_int_inv` — conditionals and operator applications
 - `LExpr.denoteEval_const`, `LExpr.denoteEval_eq_true`, `LExpr.denoteEval_eq_false` —
   literals and equality
 - `LExpr.denoteEval_replaceMetadata1`, `LExpr.denoteEvalResult_replaceMetadata1`,
@@ -1677,6 +1677,24 @@ theorem LExpr.denoteEval_app2_op_int {M : ModeledFactory T} {σ : ValStore T}
         (M.model.opInterp o.name (LSort.mkArrow (c.substTyVars M.tyVarVal) [.int, .int])
           : Int → Int → SortDenote M.model.tcInterp (c.substTyVars M.tyVarVal)) a b⟩ :=
   LExpr.denoteEval_app2_op_val (a := .int) (b := .int) rfl rfl hc hx hy
+
+/-- **Inversion of a binary integer operator.**  An operator annotated `int → int → c` applied to
+    two arguments evaluates only when both arguments evaluate to integers. -/
+theorem LExpr.denoteEval_app2_op_int_inv
+    {M : ModeledFactory T} {σ : ValStore T} {m m' m'' : T.Metadata} {o : Identifier T.IDMeta}
+    {x y : LExpr T.mono} {c : LMonoTy} {v : SemValue}
+    (h : (LExpr.app m (.app m' (.op m'' o (some (LMonoTy.arrow .int (LMonoTy.arrow .int c)))) x)
+        y).denoteEval M σ = some v) :
+    ∃ a b, x.denoteEval M σ = some (SemValue.ofInt M.model.tcInterp a) ∧
+      y.denoteEval M σ = some (SemValue.ofInt M.model.tcInterp b) := by
+  obtain ⟨hd, τ, ht, -, -⟩ := LExpr.denoteEval_eq_some_iff.mp h
+  obtain ⟨ay, hf, hy⟩ := HasTypeA.app_inv ht
+  obtain ⟨ax, hop, hx⟩ := HasTypeA.app_inv hf
+  cases HasTypeA.op_inv hop
+  exact ⟨_, _, LExpr.denoteEval_eq_ofInt_iff.mpr
+      ⟨hd.mono fun z ty hz => ⟨ty, by simp [LExpr.freeVars, hz]⟩, hx, rfl⟩,
+    LExpr.denoteEval_eq_ofInt_iff.mpr
+      ⟨hd.mono fun z ty hz => ⟨ty, by simp [LExpr.freeVars, hz]⟩, hy, rfl⟩⟩
 
 /-- A well-typed value (`isValue`) at a ground type `τ` evaluates, in every store, to one
 semantic value of the model's interpretation whose sort is `τ`. -/

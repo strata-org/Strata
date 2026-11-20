@@ -26,8 +26,12 @@ phase (`WP/WPCoreProgram.lean`) and the SSA phase (`SSA/SSACoreProgram.lean`) sh
 Their composition is in `CoreWPSSA.lean`; the properties of the declaration phase are in
 `CoreProgramProps.lean`.
 
+The factory the SSA phase and the rewrite loop of `--vcgen wp` evaluate under is
+`Core.wpFactory`: `Core.Factory` extended by the caller's functions and by those of the
+program's datatypes.
+
 Key definitions: `avoidOf`, `declNames`, `declObligationsProgramWith`, `lemmaUnit`,
-`axiomScopesAgree`. -/
+`axiomScopesAgree`, `Core.programDatatypes`, `Core.wpFactory`. -/
 
 namespace Core
 namespace WP
@@ -188,4 +192,26 @@ private theorem eventsOf_scopesOf (E : List (Option Decl × String))
 end -- public section
 
 end WP
+
+public section
+
+/-- The datatype blocks a program declares, in order. -/
+@[expose] def programDatatypes (p : Program) : List (Lambda.MutualDatatype Unit) :=
+  p.decls.filterMap fun
+    | .type (.data b) _ => some b
+    | _ => none
+
+/-- **The factory of the WP pipeline's SSA phase and rewrite loop** on the program `p`:
+    `Core.Factory` extended by `moreFns`, then by the functions generated for each datatype
+    block `p` declares (its constructors, testers, destructors and eliminators), so that the
+    rewrites can fold a tester applied to a constructor.  It fails with the error of the first
+    extension that fails. -/
+@[expose] def wpFactory (moreFns : @Lambda.Factory CoreLParams) (p : Program) :
+    Except Strata.Message (@Lambda.Factory CoreLParams) := do
+  let fac ← Core.Factory.addFactory moreFns
+  (programDatatypes p).foldlM (init := fac) fun F b => do
+    F.addFactory (← Lambda.genBlockFactory (T := CoreLParams) b)
+
+end -- public section
+
 end Core

@@ -125,10 +125,11 @@ The per-obligation theorem is conditional on `RefFaithful`
     obligation's `assumptions` from scratch starting at `initial`, then
     `snapshotObligation` for the goal. -/
 def encodeObligationToSMT_reference (factory : @Lambda.Factory CoreLParams) (initial : SMTCheckpoint)
-    (ob : Imperative.ProofObligation Expression) (prunedLabels : List String) :
+    (ob : Imperative.ProofObligation Expression) (prunedLabels : List String)
+    (unreadDefs : Std.HashSet String) :
     Except Format (EncodeResult × SMTEncodeState) := do
   let st' ← Fold.reference (smtEncodingFold factory) initial ob.assumptions.reverse
-  let r ← snapshotObligation factory st' ob.obligation prunedLabels
+  let r ← snapshotObligation factory st' ob.obligation prunedLabels unreadDefs
   .ok (r, st')
 
 /-- On a state satisfying `RefFaithful` at `initial`, `encodeObligationToSMT`
@@ -136,9 +137,10 @@ def encodeObligationToSMT_reference (factory : @Lambda.Factory CoreLParams) (ini
 theorem encodeObligationToSMT_eq_reference (factory : @Lambda.Factory CoreLParams)
     {st : SMTEncodeState} {initial : SMTCheckpoint}
     (hc : st.RefFaithful (smtEncodingFold factory) initial)
-    (ob : Imperative.ProofObligation Expression) (prunedLabels : List String) :
-    encodeObligationToSMT factory st ob prunedLabels =
-      encodeObligationToSMT_reference factory initial ob prunedLabels := by
+    (ob : Imperative.ProofObligation Expression) (prunedLabels : List String)
+    (unreadDefs : Std.HashSet String) :
+    encodeObligationToSMT factory st ob prunedLabels unreadDefs =
+      encodeObligationToSMT_reference factory initial ob prunedLabels unreadDefs := by
   unfold encodeObligationToSMT encodeObligationToSMT_reference
   rw [Fold.advance_eq_reference (smtEncodingFold factory) hc]
 
@@ -155,35 +157,38 @@ threads one shared state through a list of obligations;
     goal. Takes no `SMTEncodeState`, so it cannot depend on other
     obligations. -/
 def encodeObligation_reference (factory : @Lambda.Factory CoreLParams) (ctx : SMT.Context)
-    (ob : Imperative.ProofObligation Expression) (prunedLabels : List String) :
+    (ob : Imperative.ProofObligation Expression) (prunedLabels : List String)
+    (unreadDefs : Std.HashSet String) :
     Except Format EncodeResult := do
   let st ← Fold.reference (smtEncodingFold factory) { ctx } ob.assumptions.reverse
-  snapshotObligation factory st ob.obligation prunedLabels
+  snapshotObligation factory st ob.obligation prunedLabels unreadDefs
 
-/-- Incremental run: thread one shared state through the obligation list,
+/-- Incremental run: thread one shared state through the obligation list, each
+    obligation with the labels it prunes and the definitions it leaves out,
     collecting each obligation's result. -/
 def encodeRunFrom (factory : @Lambda.Factory CoreLParams) :
-    SMTEncodeState → List (Imperative.ProofObligation Expression × List String) →
-    Except Format (List EncodeResult)
+    SMTEncodeState →
+      List (Imperative.ProofObligation Expression × List String × Std.HashSet String) →
+      Except Format (List EncodeResult)
   | _, [] => .ok []
-  | st, (ob, prunedLabels) :: rest => do
-      let (result, st') ← encodeObligationToSMT factory st ob prunedLabels
+  | st, (ob, prunedLabels, unreadDefs) :: rest => do
+      let (result, st') ← encodeObligationToSMT factory st ob prunedLabels unreadDefs
       let results ← encodeRunFrom factory st' rest
       .ok (result :: results)
 
 /-- Incremental run from the initial state built on `ctx`. -/
 def encodeRun (factory : @Lambda.Factory CoreLParams) (ctx : SMT.Context)
-    (obs : List (Imperative.ProofObligation Expression × List String)) :
+    (obs : List (Imperative.ProofObligation Expression × List String × Std.HashSet String)) :
     Except Format (List EncodeResult) :=
   encodeRunFrom factory (FoldState.init { ctx }) obs
 
 /-- Reference run: encode every obligation independently from scratch. -/
 def encodeRun_reference (factory : @Lambda.Factory CoreLParams) (ctx : SMT.Context) :
-    List (Imperative.ProofObligation Expression × List String) →
+    List (Imperative.ProofObligation Expression × List String × Std.HashSet String) →
     Except Format (List EncodeResult)
   | [] => .ok []
-  | (ob, prunedLabels) :: rest => do
-      let result ← encodeObligation_reference factory ctx ob prunedLabels
+  | (ob, prunedLabels, unreadDefs) :: rest => do
+      let result ← encodeObligation_reference factory ctx ob prunedLabels unreadDefs
       let results ← encodeRun_reference factory ctx rest
       .ok (result :: results)
 
@@ -193,15 +198,15 @@ def encodeRun_reference (factory : @Lambda.Factory CoreLParams) (ctx : SMT.Conte
 theorem encodeRunFrom_eq_reference (factory : @Lambda.Factory CoreLParams)
     (st : SMTEncodeState) (ctx : SMT.Context)
     (hc : st.RefFaithful (smtEncodingFold factory) { ctx })
-    (obs : List (Imperative.ProofObligation Expression × List String)) :
+    (obs : List (Imperative.ProofObligation Expression × List String × Std.HashSet String)) :
     encodeRunFrom factory st obs = encodeRun_reference factory ctx obs := by
   induction obs generalizing st hc with
   | nil => rfl
   | cons head rest ih =>
-    obtain ⟨ob, prunedLabels⟩ := head
+    obtain ⟨ob, prunedLabels, unreadDefs⟩ := head
     -- One incremental step equals fresh encoding of that obligation from
     -- the run's starting checkpoint `{ ctx }`.
-    have hStepEq := encodeObligationToSMT_eq_reference factory hc ob prunedLabels
+    have hStepEq := encodeObligationToSMT_eq_reference factory hc ob prunedLabels unreadDefs
     cases hRef : Fold.reference (smtEncodingFold factory) { ctx } ob.assumptions.reverse with
     | error _ =>
       simp only [encodeRunFrom, encodeRun_reference, encodeObligation_reference,
@@ -209,7 +214,7 @@ theorem encodeRunFrom_eq_reference (factory : @Lambda.Factory CoreLParams)
     | ok st' =>
       -- The `assumptions` fold succeeded; the obligation's own result is
       -- `snapshotObligation`'s outcome.
-      cases hSnap : snapshotObligation factory st' ob.obligation prunedLabels with
+      cases hSnap : snapshotObligation factory st' ob.obligation prunedLabels unreadDefs with
       | error _ =>
         simp only [encodeRunFrom, encodeRun_reference, encodeObligation_reference,
           encodeObligationToSMT_reference, hStepEq, hRef, hSnap, Bind.bind, Except.bind]
@@ -226,7 +231,7 @@ theorem encodeRunFrom_eq_reference (factory : @Lambda.Factory CoreLParams)
     independently from scratch. -/
 theorem encodeRun_eq_reference (factory : @Lambda.Factory CoreLParams)
     (ctx : SMT.Context)
-    (obs : List (Imperative.ProofObligation Expression × List String)) :
+    (obs : List (Imperative.ProofObligation Expression × List String × Std.HashSet String)) :
     encodeRun factory ctx obs = encodeRun_reference factory ctx obs :=
   encodeRunFrom_eq_reference factory (FoldState.init { ctx }) ctx
     (refFaithful_init (smtEncodingFold factory) { ctx }) obs

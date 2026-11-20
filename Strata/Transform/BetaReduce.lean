@@ -88,6 +88,12 @@ private def reduceBlock (ss : List Statement) : List Statement :=
   termination_by Imperative.Block.sizeOf ss
 end
 
+/-- **Beta reduction of a statement list**: every expression of every statement, nested ones
+    included, with its directly applied abstractions contracted, as the phase rewrites a
+    structured procedure body. -/
+def betaReduceBlock (ss : List Statement) : List Statement :=
+  reduceBlock ss
+
 /-- Beta-reduce all expressions in a deterministic basic block: its commands,
     its transfer guard and its metadata. -/
 private def reduceDetBlock (blk : Imperative.DetBlock String Command Expression) :

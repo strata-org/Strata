@@ -7,6 +7,8 @@ module
 public import Strata.Pipeline.Messages
 
 public import Strata.Languages.Core.SMTEncoder
+public import Strata.Languages.Core.DefinitionSlicing
+public import Strata.Languages.Core.EvaluatorResults
 public import Strata.Languages.Core.LeanExport
 public import Strata.DL.Lambda.RecursiveAxioms
 public import Strata.Languages.Core.PipelinePhase
@@ -15,6 +17,12 @@ public import Strata.Languages.Core.Counterexample.Model
 public import Strata.Transform.WP.WPCoreProgram
 public import Strata.Transform.SSA.SSACoreProgram
 public import Strata.Transform.DeadDefElim
+public import Strata.Transform.GuardFwd
+public import Strata.Transform.DefInline
+public import Strata.Transform.WPLoop
+public import Strata.Transform.GuardProp
+public import Strata.Transform.CtorFold
+public import Strata.Transform.WPRewriteLoop
 import Strata.Transform.UnrollBoundedQuantifiers
 import Strata.Transform.BetaReduce
 import Strata.Transform.CallElim
@@ -526,8 +534,6 @@ def typedVarToSMTFn (ctx : SMT.Context) (id : Core.Expression.Ident)
     let (ty', _) ← LMonoTy.toSMTType mty ctx
     return (id.name, ty')
 
-abbrev Result := Imperative.SMT.Result (Core.Expression.Ident)
-
 /-- The `set-option`s every solver starts from. -/
 def solverPreludeOptions (solver : String) (solverOptions : Array (String × String)) :
     Array (String × String) :=
@@ -730,17 +736,33 @@ open Strata
 
 public section
 
-def formatProofObligation (ob : Imperative.ProofObligation Expression) :
-    Std.Format :=
-  let flatEntries := ob.assumptions.flatten
+/-- The listing of an obligation: its label, its property, its definitions not named in
+    `unread` as `name := value` when `unread` is given, its assumptions and its goal. -/
+def formatProofObligationWith (unread : Option (Std.HashSet String))
+    (ob : Imperative.ProofObligation Expression) : Std.Format :=
+  let flatEntries : List (PathConditionEntry Expression) := ob.assumptions.flatten
+  let definitionLine := match unread with
+    | none => f!""
+    | some unread =>
+      let definitionFmt := flatEntries.filterMap fun (entry : PathConditionEntry Expression) =>
+        match entry with
+        | .varDecl x _ (.det e) =>
+          if unread.contains x.name then none else some f!"{x} := {Core.formatExprs [e]}"
+        | _ => none
+      if definitionFmt.isEmpty then f!""
+      else f!"\nDefinitions:\n{Std.Format.joinSep definitionFmt "\n"}"
   let assumptionFmt := flatEntries.filterMap fun
     | .assumption label expr => some f!"{label}: {Core.formatExprs [expr]}"
     | _ => none
   let assumptionLine := if assumptionFmt.isEmpty then f!""
                         else f!"\nAssumptions:\n{Std.Format.joinSep assumptionFmt "\n"}"
   f!"Label: {ob.label}\n\
-     Property: {ob.property}{assumptionLine}\n\
+     Property: {ob.property}{definitionLine}{assumptionLine}\n\
      Obligation:\n{Core.formatExprs [ob.obligation]}\n"
+
+def formatProofObligation (ob : Imperative.ProofObligation Expression) :
+    Std.Format :=
+  formatProofObligationWith none ob
 
 def formatProofObligations (obs : Array (Imperative.ProofObligation Expression)) :
     Std.Format :=
@@ -1805,77 +1827,6 @@ def checksFor (property : Imperative.PropertyType)
       if property.passWhenUnreachable then (false, true) else (true, false)
     | .bugFinding, _ => (true, false)
 
-/-- What `evaluatorResults` needs to know about a path condition, read in one pass over it. -/
-inductive PathConditionShape where
-  /-- Every entry only declares or defines a variable. Such a path condition is satisfiable: each
-      entry is sent to the solver as a `declare-fun` or a non-recursive `define-fun`, which some
-      model always satisfies.
-
-      The solver also receives axioms that are not entries of the path condition: those of the
-      built-in functions the definitions use, such as `mapConst`'s, and those attached to the
-      program's own functions (`func.axioms`, and the per-constructor axioms of recursive
-      functions). Taking the path condition to be satisfiable therefore assumes that these
-      axioms are satisfiable together. If they are not, an assertion the solver would pass
-      vacuously is reported failing; no assertion is ever reported passing because of this.
-      `Core.factoryInterp_axiomsSatisfied` proves that the axioms of the polymorphic built-ins
-      (`Core.Factory`) hold together in one model. Two steps are assumed rather than proved:
-      that the specialized copies `MonomorphizeFunctions` makes of these built-ins, whose axioms
-      are what the solver receives, inherit that model; and that the axioms of the program's own
-      functions are satisfiable.
-      The evaluator also decides before encoding, so a definition the encoder cannot encode is
-      reported as this failure rather than as an analysis error. -/
-  | onlyDefinitions
-  /-- Some assumption is literally `false`: the evaluator already knows the path is dead. -/
-  | hasFalseAssumption
-  /-- Anything else. -/
-  | other
-  deriving DecidableEq
-
-/-- The shape of `obligation`'s path condition, read in one pass over its entries. -/
-def pathConditionShape (obligation : ProofObligation Expression) : PathConditionShape :=
-  obligation.assumptions.foldl (init := .onlyDefinitions) fun shape pc =>
-    pc.foldl (init := shape) fun shape entry =>
-      match shape, entry with
-      | .hasFalseAssumption, _ => .hasFalseAssumption
-      | _, .assumption _ e => if e.isFalse then .hasFalseAssumption else .other
-      | _, .distinct .. => .other
-      | shape, .varDecl .. => shape
-
-/-- Whether the premise of `deductiveAssumingSatisfiablePaths`, that every path to an assertion
-    can be taken, lets the evaluator decide that `obligation`, whose goal is literally `false`
-    and whose path condition has shape `shape`, fails: its path condition, whatever it holds, is
-    taken to be satisfiable without asking a solver. Covers are left to the solver, so they are
-    reported as in `deductive`, and so is a path condition with a literally false assumption,
-    which the evaluator already knows is dead. -/
-def usesSatisfiablePathsPremise (obligation : ProofObligation Expression)
-    (checkMode : VerificationMode) (shape : PathConditionShape) : Bool :=
-  checkMode == .deductiveAssumingSatisfiablePaths && obligation.property.passWhenUnreachable &&
-    shape != .hasFalseAssumption
-
-/-- The results the evaluator decides without a solver, for satisfiability and validity: `some r`
-    when the obligation alone settles that check, `none` when a solver is needed. A check not
-    asked for is `unknown`. -/
-def evaluatorResults (obligation : ProofObligation Expression) (checkMode : VerificationMode)
-    (satisfiabilityCheck validityCheck : Bool) : Option SMT.Result × Option SMT.Result :=
-  -- Satisfiability is settled if the obligation is literally false (unsat).
-  let sat : Option SMT.Result :=
-    if !satisfiabilityCheck then some .unknown
-    else if obligation.obligation.isFalse then some .unsat
-    else none
-  -- Validity is settled if the obligation is literally true (valid = unsat), or literally false
-  -- with a path condition known to be satisfiable (invalid = sat): one that only declares or
-  -- defines variables, or one that `usesSatisfiablePathsPremise` takes to be satisfiable.
-  let valid : Option SMT.Result :=
-    if !validityCheck then some .unknown
-    else if obligation.obligation.isTrue then some .unsat
-    else if obligation.obligation.isFalse then
-      let shape := pathConditionShape obligation
-      if shape == .onlyDefinitions || usesSatisfiablePathsPremise obligation checkMode shape then
-        some (.sat [])
-      else none
-    else none
-  (sat, valid)
-
 /-- The axiom-relevance cache that `mode` needs for `prog`, or `none` when
     pruning is off. -/
 def axiomCacheFor (mode : IrrelevantAxiomsMode) (prog : Program) :
@@ -1964,6 +1915,33 @@ def seedsKeepLastCached (consequentFns : List String)
     acc := (← ExprFactsCache.facts e).opsLast.get.reverse.foldl List.keepLastStep acc
   return (consequentFns.reverse.foldl List.keepLastStep acc).2
 
+/-- `formatProofObligation` with the read definitions of the obligation listed after its
+    property, as `name := value`. -/
+def formatProofObligationWithReads (ob : Imperative.ProofObligation Expression) :
+    Std.Format :=
+  formatProofObligationWith (some (unreadDefinitions (readStateOf ob.assumptions.reverse) ob)) ob
+
+/-- `formatProofObligations` with each obligation's read definitions, the read states computed
+    incrementally along the obligations (`readFold`). -/
+def formatProofObligationsWithReads (obs : Array (Imperative.ProofObligation Expression)) :
+    Std.Format :=
+  let init : Imperative.PathConditions.FoldState ReadState Unit Expression := .init {}
+  let (fmts, _) := obs.foldl (init := (#[], init)) fun (fmts, st) ob =>
+    match (readFold.advance ob.assumptions.reverse).exec st with
+    | .ok st =>
+      (fmts.push (formatProofObligationWith (some (unreadDefinitions st.current ob)) ob), st)
+    | .error e => nomatch e
+  Std.Format.joinSep fmts.toList "\n"
+
+/-- `ps` without the assumptions and distinctness facts whose label is in `labels`; every
+    variable declaration and definition is kept, whatever its name. -/
+def removeLabeled (ps : PathConditions Expression) (labels : List String) :
+    PathConditions Expression :=
+  let labels : Std.HashSet String := Std.HashSet.ofList labels
+  ps.map fun pc => pc.filter fun
+    | .varDecl .. => true
+    | e => !labels.contains e.name
+
 /--
 Preprocess a proof obligation using symbolic simulation.
 Returns the symbolic results for satisfiability and validity independently
@@ -1972,7 +1950,13 @@ plus the labels of axiom assumptions found irrelevant to this obligation
 (empty when pruning is off or inapplicable). The returned obligation has the
 pruned axioms removed from its assumptions; the labels let a caller that
 needs the *original* assumptions (e.g. for cross-obligation sharing) apply
-the pruning at emission time instead.
+the pruning at emission time instead. The removal keeps every definition,
+whatever its name (`removeLabeled`).
+
+`evaluated` is the caller's `evaluatorResults` for the obligation, computed
+here when absent. The definitions named in `unread` (`unreadDefinitions`),
+which the caller leaves out of the query, are left out of the axiom-relevance
+seeds too.
 -/
 def preprocessObligation (obligation : ProofObligation Expression) (p : Program)
     (options : VerifyOptions) (satisfiabilityCheck validityCheck : Bool)
@@ -1989,9 +1973,11 @@ def preprocessObligation (obligation : ProofObligation Expression) (p : Program)
     -- be asked against the same `axiomCache` and axiom program; a fresh memo when absent.
     -- Same result.
     (relevanceMemo : Option (IO.Ref IrrelevantAxioms.RelevanceMemo) := .none)
+    (evaluated : Option (Option SMT.Result × Option SMT.Result) := .none)
+    (unread : Std.HashSet String := {})
     : EIO Message (ProofObligation Expression × Option SMT.Result × Option SMT.Result × List String) := do
-  let (peSatResult, peValResult) :=
-    evaluatorResults obligation options.checkMode satisfiabilityCheck validityCheck
+  let (peSatResult, peValResult) := evaluated.getD
+    (evaluatorResults obligation options.checkMode satisfiabilityCheck validityCheck)
   -- If evaluator resolved both, log for the assert(false) case
   if let (some _, some (.sat _)) := (peSatResult, peValResult) then
     if obligation.property == .assert then
@@ -2019,20 +2005,21 @@ def preprocessObligation (obligation : ProofObligation Expression) (p : Program)
         let relevanceMemo ← match relevanceMemo with
           | some ref => pure ref
           | none => (IO.mkRef ({} : IrrelevantAxioms.RelevanceMemo) : BaseIO _)
+        -- The definitions named in `unread` are left out of the seeds.
+        let seedAssumptions := (ProofObligation.withoutDefinitions obligation unread).assumptions
         let seeds ← match cache with
           | .directed _ =>
             (consequentFns ++ ·) <$>
-              ExprFactsCache.runIn exprCache (antecedentOpsCached obligation.assumptions axiomSet)
+              ExprFactsCache.runIn exprCache (antecedentOpsCached seedAssumptions axiomSet)
           | .callGraph .. =>
             if mode == .Precise then
               ExprFactsCache.runIn exprCache
-                (seedsKeepLastCached consequentFns obligation.assumptions axiomSet)
+                (seedsKeepLastCached consequentFns seedAssumptions axiomSet)
             else pure consequentFns
         let irrelevantAxioms ← (relevanceMemo.modifyGet fun memo =>
           IrrelevantAxioms.getIrrelevantAxiomsMemo (axiomProgram.getD p) cache seeds memo :
           BaseIO _)
-        let newAssumptions :=
-          Imperative.PathConditions.removeByNames obligation.assumptions irrelevantAxioms
+        let newAssumptions := removeLabeled obligation.assumptions irrelevantAxioms
         pure ({ obligation with assumptions := newAssumptions }, irrelevantAxioms)
   return (obligation, peSatResult, peValResult, prunedAxiomLabels)
 
@@ -2155,11 +2142,13 @@ def declObligationsPipelinePhase
       return (true, prog')
 
 /-- The phases `--vcgen wp` runs in place of `symbolicEvalPipelinePhase`: the declaration phase,
-    the WP phase, the SSA phase, then the erasure of unread definitions. -/
+    the WP phase, the SSA phase, then the loop that repeats beta reduction, guard forwarding, the
+    inlining of single-use definitions, the erasure of unread definitions, guard propagation and
+    the constructor fold until a round changes nothing (`wpRewriteLoopPipelinePhase`). -/
 def wpVCGenPhases (options : VerifyOptions := VerifyOptions.default)
     (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default) : List PipelinePhase :=
   [declObligationsPipelinePhase options moreFns, wpPipelinePhase moreFns, ssaPipelinePhase moreFns,
-    deadDefElimPipelinePhase]
+    wpRewriteLoopPipelinePhase moreFns]
 
 /-- Experimental alternative to `symbolicEvalPipelinePhase` (`--vcgen symexec`): obligations by
     symbolic execution on the monadic interpreter (`toSymExecObligationProgram`). Requires the
@@ -2235,7 +2224,9 @@ def corePipelinePhases
             else [symExecPipelinePhase options moreFns, betaReducePipelinePhase]
           else [symbolicEvalPipelinePhase options moreFns, betaReducePipelinePhase,
                 commonSubexprElimPhase]
-        -- CSE requires `noInits`, which the SSA phase does not establish.
+        -- CSE requires `noInits`, which the SSA phase does not establish. The rewrite loop
+        -- beta-reduces procedure bodies; `betaReducePipelinePhase` reduces the other
+        -- declarations (function bodies, axioms).
         | .wp => wpVCGenPhases options moreFns ++ [betaReducePipelinePhase])
 
 /-- What the back end needs of the program the pipeline hands it, as opposed to
@@ -2916,6 +2907,11 @@ def dischargeObligations (E : Env) (obligations : ProofObligations Expression)
           (SMT.setSolverPrelude options.solver options.solverOptions))
     else pure none
   let mut emState := emStateInit
+  -- What the path conditions read (`readFold`), threaded like `encState`, advanced only for
+  -- the obligations that reach the solver.
+  let mut readState : Imperative.PathConditions.FoldState ReadState Unit Expression := .init {}
+  -- The assumptions of the obligations' entries (`EvalTrail`), advanced for every obligation.
+  let mut evalTrail : EvalTrail := .init {}
   for obligation in obligations do
     -- `obligationsToVerify`: obligations not listed are skipped entirely.
     if let some labels := options.obligationsToVerify then
@@ -2926,9 +2922,24 @@ def dischargeObligations (E : Env) (obligations : ProofObligations Expression)
     -- The state encodes the *original* assumptions; `prunedAxiomLabels` applies
     -- the pruning as an emission-time label filter instead.
     let origObligation := obligation
+    let (evaluated, trail) := evaluatorResultsTrail evalTrail obligation options.checkMode
+      satisfiabilityCheck validityCheck
+    evalTrail := trail
+    -- The definitions the obligation does not read are left out of its query, and out of
+    -- its axiom-relevance seeds. Only an obligation that reaches the solver needs them.
+    let mut unread : Std.HashSet String := {}
+    if options.alwaysGenerateSMT || evaluated.1.isNone || evaluated.2.isNone then
+      match (readFold.advance obligation.assumptions.reverse).exec readState with
+      | .ok st =>
+        readState := st
+        unread := unreadDefinitions st.current obligation
+      | .error e => nomatch e
+    let unreadNow := unread
     let (obligation, peSatResult?, peValResult?, prunedAxiomLabels) ← pctx.withRepeatedPhase "evalDischarge" do
       preprocessObligation obligation p options satisfiabilityCheck validityCheck axiomCache axiomNames axiomProgram
         (exprCache := some exprCache) (relevanceMemo := some relevanceMemo)
+        (evaluated := some evaluated) (unread := unreadNow)
+    let obligation := ProofObligation.withoutDefinitions obligation unreadNow
     -- If evaluator resolved both checks, we're done, unless we always want to generate SMT queries
     if not options.alwaysGenerateSMT then
       if let (some peSat, some peVal) := (peSatResult?, peValResult?) then
@@ -2970,7 +2981,8 @@ def dischargeObligations (E : Env) (obligations : ProofObligations Expression)
       -- It advances over the obligation's history (encoding only the delta
       -- detection reports) and forks this obligation's result.
       let maybeTerms ← pctx.withRepeatedPhasePure "coreToSMT" fun _ =>
-        encodeObligationToSMTCached E.factory encState0 origObligation prunedAxiomLabels snapCache0
+        encodeObligationToSMTCached E.factory encState0 origObligation prunedAxiomLabels unreadNow
+          snapCache0
       match maybeTerms with
       | .error err =>
         let result := { obligation,
@@ -2987,6 +2999,10 @@ def dischargeObligations (E : Env) (obligations : ProofObligations Expression)
         let { assumptions := assumptionTerms, varDefs, varDecls,
               goal := obligationTerm, stats := encStats, .. } := encoded
         let ctx := encoded.declaredCtx options.removeIrrelevantDatatypes
+        -- An unread definition's variable is not declared either: no kept term mentions it.
+        let ctx := if unreadNow.isEmpty then ctx else
+          let ufs := ctx.ufs.toArray.filter fun uf => !(uf.args.isEmpty && unreadNow.contains uf.id)
+          { ctx with ufs := Strata.Util.OrderedSet.ofArray ufs }
         -- Shared managed definitions can mention variables from unrelated
         -- obligations. Follow only the definitions reachable from this
         -- obligation before deciding which user variables to request in a
@@ -3014,8 +3030,9 @@ def dischargeObligations (E : Env) (obligations : ProofObligations Expression)
               let (es, cf) ← es.syncAndEmit E.factory encState'.frames
                 encState'.current.ctx (pruned := !prunedAxiomLabels.isEmpty)
                 ctx obligationTerm obligation.metadata obligation.label
-                (managedNameSet varDefs varDecls) (definedNameSet varDefs) needSatCheck
-                needValCheck
+                (managedNameSet varDefs varDecls)
+                (unreadNow.fold (·.insert ·) (definedNameSet varDefs)) needSatCheck
+                needValCheck (sliced := unreadNow)
               pure (some es, cf)
           let discharge := mkDischarge options counter tempDir
             typedVarsInObligation obligation.metadata obligation.label (some termCache)
@@ -3096,6 +3113,14 @@ def verifySingleEnv (oblProgram : Program)
   let E ← EIO.ofExcept
     (Core.buildEnv options oblProgram factory (registerCustomFunctions := true) |>.map (·.1))
   let obligations ← EIO.ofExcept (obligationsOf oblProgram)
+  -- Symbolic evaluation lists the obligations it builds (`toCoreProofObligationProgram`); the
+  -- obligations of any other VC generator are listed here, at `debug` verbosity, with the
+  -- definitions each reads.
+  if options.verbose >= .debug &&
+      !(externalPhases ++ corePhases).any (·.name == "symbolicEval") then do
+    dbg_trace f!"{Std.Format.line}VCs:"
+    dbg_trace f!"{formatProofObligationsWithReads obligations}"
+    pure ()
   dischargeObligations E obligations options counter tempDir axiomCache axiomNames axiomProgram
     externalPhases corePhases mkDischarge pctx
 

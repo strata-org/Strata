@@ -930,8 +930,9 @@ procedure P(x : int, y : int, out r : int) {
 #guard_msgs in
 #eval SymExecTestSupport.verifyLines (parse mapJoinPgm) (symOpts .always)
 
--- The incremental back end keeps join definitions on a goal's path (`WorkItem.skippedDefs`).
-/-- info: "r_bad: ❓ unknown\nm_ok: ✅ pass" -/
+-- The incremental back end also leaves out the definitions a goal does not read
+-- (`WorkItem.unreadDefs`), so `r_bad` fails with a counterexample there too.
+/-- info: "r_bad: ❌ fail\nm_ok: ✅ pass" -/
 #guard_msgs in
 #eval SymExecTestSupport.verifyLines (parse mapJoinPgm) { symOpts .always with incremental := true }
 

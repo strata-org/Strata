@@ -298,6 +298,17 @@ def Core.passSSA (moreFns : @Lambda.Factory Core.CoreLParams := Lambda.Factory.d
     Core.PipelinePhase :=
   _root_.Core.ssaPipelinePhase moreFns
 
+/-- Rewrite the `init` right-hand sides and `assume` conditions of an obligation program under
+    the guards known at each position, and its assertions and covers exactly, a component of
+    `passWPLoop`. -/
+def Core.passGuardFwd : Core.PipelinePhase :=
+  Core.guardFwdPipelinePhase
+
+/-- Substitute each definition of an obligation program whose name occurs once into the
+    expression that reads it, a component of `passWPLoop`. -/
+def Core.passDefInline : Core.PipelinePhase :=
+  Core.defInlinePipelinePhase
+
 /-- Erase the unread `init`s of an obligation program. -/
 def Core.passDeadDefElim : Core.PipelinePhase :=
   Core.deadDefElimPipelinePhase
@@ -308,6 +319,26 @@ def Core.passSymExec (options : Core.VerifyOptions := Core.VerifyOptions.default
     (moreFns : @Lambda.Factory Core.CoreLParams := Lambda.Factory.default) :
     Core.PipelinePhase :=
   _root_.Core.symExecPipelinePhase options moreFns
+
+/-- Repeat beta reduction, guard forwarding, the inlining of single-use definitions, the erasure
+    of unread definitions, guard propagation and the constructor fold on an obligation program
+    until a round changes nothing, the phase that `--vcgen wp` runs after `passSSA`. -/
+def Core.passWPLoop (moreFns : @Lambda.Factory Core.CoreLParams := Lambda.Factory.default) :
+    Core.PipelinePhase :=
+  _root_.Core.wpRewriteLoopPipelinePhase moreFns
+
+/-- Rewrite the conditions of the assumptions, assertions and covers of an obligation program
+    under the guard facts and guard values known at each position, a component of
+    `passWPLoop`. -/
+def Core.passGuardProp : Core.PipelinePhase :=
+  Core.guardPropPipelinePhase
+
+/-- Collapse a chain of conditionals over the testers of a name an obligation program defines as
+    a constructor application, so the arms the chain does not take, and the functions only they
+    name, are gone before axiom pruning reads the obligation; a component of `passWPLoop`. -/
+def Core.passCtorFold (moreFns : @Lambda.Factory Core.CoreLParams := Lambda.Factory.default) :
+    Core.PipelinePhase :=
+  Core.ctorFoldPipelinePhase moreFns
 
 /-- Extract common subexpressions introduced by partial evaluation. -/
 def Core.passCommonSubexprElim : Core.PipelinePhase :=
@@ -337,15 +368,18 @@ def Core.passUnrollBoundedQuantifiers : Core.PipelinePhase :=
     The same phases are nameable in every mode (`options.vcgen`, `options.symExec`): the
     default order, then each phase in `others` it leaves out, each name once. Among these are
     `assertNoCFGBodies`, which `--vcgen symexec` drops, the CFG loop phases
-    (`hoistNondetChoices`, `cfgLoopElim`), which only `--vcgen symexec` runs, and the VC
-    generation phases outside the mode's order. -/
+    (`hoistNondetChoices`, `cfgLoopElim`), which only `--vcgen symexec` runs, the VC generation
+    phases outside the mode's order, and the components of `passWPLoop` other than beta reduction
+    (`passGuardFwd`, `passDefInline`, `passDeadDefElim`, `passGuardProp`, `passCtorFold`), which
+    are in no default order. -/
 def Core.nameablePhases (options : Core.VerifyOptions := Core.VerifyOptions.default) :
     List Core.PipelinePhase :=
   let defaults := Core.corePipelinePhases options
   let others := [Core.passInlineAll, Core.passUnrollBoundedQuantifiers, Core.passFunctionInlining,
       Core.passFoldAxioms, Core.passEqualitySimplification, Core.passDeclObligations options,
       _root_.Core.ProgramFact.assertPhase .noCFGBodies,
-      Core.passWP, Core.passSSA, Core.passDeadDefElim, Core.passSymbolicEval options,
+      Core.passWP, Core.passSSA, Core.passGuardFwd, Core.passDefInline, Core.passDeadDefElim,
+      Core.passWPLoop, Core.passGuardProp, Core.passCtorFold, Core.passSymbolicEval options,
       Core.passSymExec options, Core.passCommonSubexprElim,
       _root_.Core.hoistNondetChoicesPipelinePhase, Core.passCFGLoopElim]
   defaults ++ others.filter fun p => !defaults.any (·.phase.name == p.phase.name)

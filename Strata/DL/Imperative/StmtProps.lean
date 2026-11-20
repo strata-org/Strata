@@ -2797,6 +2797,18 @@ theorem Block.armsHaveChecks_append (a b : Block P (CmdExt P)) :
     Block.armsHaveChecks (a ++ b) = (Block.armsHaveChecks a && Block.armsHaveChecks b) := by
   induction a <;> simp_all [Block.armsHaveChecks, Bool.and_assoc]
 
+/-- A passive list has no block or exit labels. -/
+theorem Block.labels_of_passiveForm {ss : Block P (CmdExt P)} (h : Block.passiveForm ss = true) :
+    Block.labels ss = [] := by
+  induction ss using Block.passiveForm.induct <;>
+    simp_all [Block.passiveForm, Block.labels, Stmt.labels]
+
+/-- A list in passive form has no loop measure. -/
+theorem Block.measures_of_passiveForm {ss : Block P (CmdExt P)}
+    (h : Block.passiveForm ss = true) : Block.measures ss = [] := by
+  induction ss using Block.passiveForm.induct <;>
+    simp_all [Block.passiveForm, Block.measures, Stmt.measures]
+
 /-! ## Def-use well-formedness of passive lists in tree form -/
 
 section DefUseCmdExt

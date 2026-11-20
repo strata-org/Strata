@@ -64,13 +64,16 @@ analogous statement for the erasing walker is provably false, because a
 constant-lambda redex erases its argument's operators
 (`getOps_betaReduce_of_not_bvarUsed`; alias redexes preserve them,
 `getOps_body_subset_betaReduce` / `getOps_arg_subset_betaReduce`).
+The free variables and the operators of `betaReduceRedexes e` are among those of `e`
+(`getVars_betaReduceRedexes_subset`, `getOps_betaReduceRedexes_subset`).
 
 ### Substitution by a lookup function (`substFvarsBy`)
 `substFvars` is `substFvarsBy` at the map's lookup (`substFvars_eq_substFvarsBy`).
 `substFvarsBy` depends only on the lookup at the free variables (`substFvarsBy_congr`),
 two substitutions compose into one (`substFvarsBy_comp`), and substituting expressions
-without operators adds no operator (`getOps_substFvarsBy`). `freeVars_substFvars` says where
-each free variable of a substitution's result comes from.
+without operators adds no operator (`getOps_substFvarsBy`); in general an operator of a
+substitution is one of the expression or of a substituted expression (`getOps_substFvarsBy_mem`).
+`freeVars_substFvars` says where each free variable of a substitution's result comes from.
 
 ### Fully annotated expressions
 In a fully annotated expression every free variable and every operator carries an
@@ -1487,6 +1490,147 @@ theorem mapExprTys_op_some {T : LExprParams} (f : LMonoTy → LMonoTy) (m : T.Me
     (o : T.Identifier) (ann : LMonoTy) :
     mapExprTys f (LExpr.op m o (some ann) : LExpr T.mono) = LExpr.op m o (some (f ann)) := by
   simp only [mapExprTys, LExpr.replaceUserProvidedType, Option.map_some]
+
+namespace LExpr
+
+/-- A function `f` collecting the leaves of an expression: bound variables contribute nothing,
+    and every inner node contributes the leaves of its children, in order. -/
+private structure CollectsLeaves {T : LExprParamsT} {α : Type} (f : LExpr T → List α) : Prop where
+  bvar : ∀ m i, f (.bvar m i) = []
+  abs : ∀ m n t b, f (.abs m n t b) = f b
+  quant : ∀ m qk n t tr b, f (.quant m qk n t tr b) = f tr ++ f b
+  app : ∀ m a b, f (.app m a b) = f a ++ f b
+  ite : ∀ m c t e, f (.ite m c t e) = f c ++ f t ++ f e
+  eq : ∀ m a b, f (.eq m a b) = f a ++ f b
+  replaceMetadata1 : ∀ r e, f (LExpr.replaceMetadata1 r e) = f e
+
+/-- Lifting bound variables keeps the collected leaves. -/
+private theorem CollectsLeaves.liftBVars {T : LExprParamsT} {α : Type} {f : LExpr T → List α}
+    (hf : CollectsLeaves f) (d : Nat) : ∀ (e : LExpr T) (c : Nat), f (liftBVars d e c) = f e := by
+  intro e
+  induction e <;> intro c <;>
+    simp only [LExpr.liftBVars, hf.abs, hf.quant, hf.app, hf.ite, hf.eq, *]
+  split <;> simp only [hf.bvar]
+
+/-- Lists among `a ++ c` and `b ++ c` are, appended, among `a ++ b ++ c`. -/
+private theorem append_subset_of {α : Type} {l₁ l₂ a b c : List α} (h₁ : l₁ ⊆ a ++ c)
+    (h₂ : l₂ ⊆ b ++ c) : l₁ ++ l₂ ⊆ a ++ b ++ c :=
+  List.append_subset.2
+    ⟨h₁.trans (List.append_subset_append (List.subset_append_left _ _) (List.Subset.refl _)),
+      h₂.trans (List.append_subset_append (List.subset_append_right _ _) (List.Subset.refl _))⟩
+
+/-- Substituting `a` for a bound variable collects only leaves of the body and of `a`. -/
+private theorem CollectsLeaves.betaReduceK {T : LExprParamsT} {α : Type} {f : LExpr T → List α}
+    (hf : CollectsLeaves f) (a : LExpr T) {s : T.base.Metadata → LExpr T}
+    (hs : ∀ m, f (s m) ⊆ f a) :
+    ∀ (e : LExpr T) (k : Nat), f (betaReduceK k s e) ⊆ f e ++ f a := by
+  intro e k
+  induction e generalizing k with
+  | bvar m i =>
+    simp only [LExpr.betaReduceK]
+    split
+    · rw [hf.liftBVars]
+      exact (hs _).trans (List.subset_append_right _ _)
+    · split <;> simp [hf.bvar]
+  | const | op | fvar => exact List.subset_append_left _ _
+  | abs _ _ _ b ih =>
+    simp only [LExpr.betaReduceK, hf.abs]
+    exact ih _
+  | quant _ _ _ _ p q ihp ihq | app _ p q ihp ihq | eq _ p q ihp ihq =>
+    simp only [LExpr.betaReduceK, hf.quant, hf.app, hf.eq]
+    exact append_subset_of (ihp _) (ihq _)
+  | ite _ p q r ihp ihq ihr =>
+    simp only [LExpr.betaReduceK, hf.ite]
+    exact append_subset_of (append_subset_of (ihp k) (ihq k)) (ihr k)
+
+/-- Reduction at any fuel collects only leaves of its input. -/
+private theorem CollectsLeaves.betaReduceRedexesFuel {T : LExprParamsT} {α : Type}
+    {f : LExpr T → List α} (hf : CollectsLeaves f)
+    (merge : T.base.Metadata → T.base.Metadata → T.base.Metadata → T.base.Metadata)
+    (keep : Bool) (fuel : Nat) :
+    ∀ e : LExpr T, f (betaReduceRedexesFuel merge keep fuel e) ⊆ f e := by
+  induction fuel with
+  | zero => intro e; simp [LExpr.betaReduceRedexesFuel, LExpr.betaReduceRedexesFuel?]
+  | succ fuel ih =>
+    simp only [LExpr.betaReduceRedexesFuel] at ih
+    intro e
+    cases e with
+    | const | op | bvar | fvar => simp [LExpr.betaReduceRedexesFuel, LExpr.betaReduceRedexesFuel?]
+    | abs m n t body =>
+      simp only [LExpr.betaReduceRedexesFuel, LExpr.betaReduceRedexesFuel?]
+      have hb := ih body
+      cases hbv : betaReduceRedexesFuel? merge keep fuel body <;> simp_all [hf.abs]
+    | quant _ _ _ _ a b | eq _ a b =>
+      simp only [LExpr.betaReduceRedexesFuel, LExpr.betaReduceRedexesFuel?]
+      split
+      · exact List.Subset.refl _
+      · simp only [Option.getD_some, hf.quant, hf.eq]
+        exact List.append_subset_append (ih a) (ih b)
+    | ite m c t e =>
+      simp only [LExpr.betaReduceRedexesFuel, LExpr.betaReduceRedexesFuel?]
+      split
+      · exact List.Subset.refl _
+      · simp only [Option.getD_some, hf.ite]
+        exact List.append_subset_append (List.append_subset_append (ih c) (ih t)) (ih e)
+    | app m fn arg =>
+      simp only [LExpr.betaReduceRedexesFuel, LExpr.betaReduceRedexesFuel?]
+      split
+      · rename_i mAbs n t body hfn
+        have hfnbody : f body ⊆ f fn := by simpa only [hfn, hf.abs] using ih fn
+        split
+        · split
+          · exact List.Subset.refl _
+          · simp only [Option.getD_some, hfn, hf.app, hf.abs]
+            exact List.append_subset_append hfnbody (ih arg)
+        · simp only [Option.getD_some, hf.app]
+          exact (ih _).trans
+            ((hf.betaReduceK _ (fun _ => by simp [hf.replaceMetadata1]) body 0).trans
+              (List.append_subset_append hfnbody (ih arg)))
+      · split
+        · exact List.Subset.refl _
+        · simp only [Option.getD_some, hf.app]
+          exact List.append_subset_append (ih fn) (ih arg)
+
+/-- `getVars` collects leaves. -/
+private theorem collectsLeaves_getVars {T : LExprParamsT} :
+    CollectsLeaves (LExpr.getVars (T := T)) :=
+  ⟨fun _ _ => rfl, fun _ _ _ _ => rfl, fun _ _ _ _ _ _ => rfl, fun _ _ _ => rfl,
+    fun _ _ _ _ => rfl, fun _ _ _ => rfl, fun _ e => by cases e <;> rfl⟩
+
+/-- `getOps` collects leaves. -/
+private theorem collectsLeaves_getOps {T : LExprParamsT} : CollectsLeaves (getOps (T := T)) :=
+  ⟨fun _ _ => rfl, fun _ _ _ _ => rfl, fun _ _ _ _ _ _ => rfl, fun _ _ _ => rfl,
+    fun _ _ _ _ => rfl, fun _ _ _ => rfl, fun _ e => by cases e <;> rfl⟩
+
+/-- **Beta reduction introduces no free variable.** Every free variable of
+    `betaReduceRedexes e` is one of `e`. -/
+theorem getVars_betaReduceRedexes_subset {T : LExprParamsT} (e : LExpr T) :
+    LExpr.getVars (betaReduceRedexes e) ⊆ LExpr.getVars e :=
+  collectsLeaves_getVars.betaReduceRedexesFuel _ _ _ e
+
+/-- **Beta reduction introduces no operator.** Every operator of `betaReduceRedexes e` is one
+    of `e`. -/
+theorem getOps_betaReduceRedexes_subset {T : LExprParamsT} (e : LExpr T) :
+    getOps (betaReduceRedexes e) ⊆ getOps e :=
+  collectsLeaves_getOps.betaReduceRedexesFuel _ _ _ e
+
+/-- **Beta reduction under a metadata combinator introduces no free variable.** The metadata
+    each substituted copy carries does not affect which free variables the result has. -/
+theorem getVars_betaReduceRedexesWith_subset {T : LExprParamsT}
+    (merge : T.base.Metadata → T.base.Metadata → T.base.Metadata → T.base.Metadata)
+    (e : LExpr T) :
+    LExpr.getVars (betaReduceRedexesWith merge e) ⊆ LExpr.getVars e :=
+  collectsLeaves_getVars.betaReduceRedexesFuel _ _ _ e
+
+/-- **Beta reduction under a metadata combinator introduces no operator.** The metadata each
+    substituted copy carries does not affect which operators the result has. -/
+theorem getOps_betaReduceRedexesWith_subset {T : LExprParamsT}
+    (merge : T.base.Metadata → T.base.Metadata → T.base.Metadata → T.base.Metadata)
+    (e : LExpr T) :
+    getOps (betaReduceRedexesWith merge e) ⊆ getOps e :=
+  collectsLeaves_getOps.betaReduceRedexesFuel _ _ _ e
+
+end LExpr
 
 /-- Every user-provided annotation of `e` satisfies `p` exactly when every type
     `exprAnnotTys e` lists does: both visit the same operator, free-variable and

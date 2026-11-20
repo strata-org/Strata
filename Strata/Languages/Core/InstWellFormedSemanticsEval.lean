@@ -37,8 +37,9 @@ It also provides the factory-membership facts `coreFactory_boolNot`, `coreFactor
 `coreFactory_intSub` and `coreFactory_intMul`, sharing the generic `coreFactory_get?_of_mem`,
 and the operator expressions `coreIntLeOpExpr` / `coreIntAddOpExpr`.
 
-For operators with a concrete evaluator, `opInterp_of_concreteEval` says that every consistent
-model interprets the operator as its concrete evaluator computes, and `eval_app2_op` evaluates
+For operators with a concrete evaluator, `opInterp_of_concreteEval_subst` says that every
+consistent model interprets the operator, at any instance of its type, as its concrete evaluator
+computes (`opInterp_of_concreteEval` at the declared type), and `eval_app2_op` evaluates
 an operator applied to two values to its interpretation at them; `eval_app2_op_of_sort` says
 that any operator of type `s → s → s` applied to two values of sort `s` evaluates to one.
 -/
@@ -454,6 +455,38 @@ theorem coreFactory_WellFormedSemanticEval (f : Expression.Factory)
 
 open _root_.Lambda
 
+/-- **Interpretation of a concretely evaluated function at an instance of its type.**  If the
+    concrete evaluator of the function `name` maps the argument expressions `args`, well typed at
+    the input types of `name` instantiated by the type substitution `S`, to `res`, well typed at
+    the output type instantiated by `S`, every consistent model interprets `name` at that
+    instance and the argument denotations as the denotation of `res`. -/
+theorem opInterp_of_concreteEval_subst {factory : Lambda.Factory CoreLParams}
+    (model : Lambda.Interp factory) {name : String} {fn : Lambda.LFunc CoreLParams}
+    (hlookup : factory[name]? = some fn) (hname : fn.name.name = name)
+    {args : List Expression.Expr} {res : Expression.Expr}
+    (S : Lambda.Subst)
+    (heval : fn.concreteEval.bind (fun ce => ce coreLoc
+      (some (Lambda.LMonoTy.mkArrow' (fn.output.subst S)
+        ((fn.inputs.map Prod.snd).map (Lambda.LMonoTy.subst S)))) args) = some res)
+    (vt : Lambda.TyVarVal) (fv : Lambda.FreeVarVal CoreLParams model.tcInterp)
+    (h_args : List.Rel₂ (Lambda.LExpr.HasTypeA []) args
+      ((fn.inputs.map Prod.snd).map (Lambda.LMonoTy.subst S)))
+    (h_result : Lambda.LExpr.HasTypeA [] res (fn.output.subst S)) :
+    Lambda.LExpr.denote model.tcInterp model.opInterp fv vt .nil res _ h_result =
+      Lambda.SortDenote.applyArgs model.tcInterp
+        (model.opInterp name (Lambda.LSort.mkArrow
+          ((fn.output.subst S).substTyVars vt)
+          (((fn.inputs.map Prod.snd).map (Lambda.LMonoTy.subst S)).map
+            (Lambda.LMonoTy.substTyVars vt))))
+        (Lambda.denoteArgs model.tcInterp model.opInterp fv vt .nil args _ h_args) := by
+  obtain ⟨ceval, hce, heval⟩ := Option.bind_eq_some_iff.1 heval
+  have hget := Lambda.Factory.getElem?_some_getElem hlookup
+  have h_ic := model.interpConsistent.2 name (Lambda.Factory.getElem?_some_implies_mem hlookup)
+    ceval (by rw [hget]; exact hce)
+  rw [hget] at h_ic
+  rw [← hname]
+  exact h_ic vt fv coreLoc S args res heval h_args h_result
+
 /-- **Interpretation of a concretely evaluated function.**  If the concrete evaluator of the
     function `name` maps the well-typed argument expressions `args` to `res`, every consistent
     model interprets `name` at the argument denotations as the denotation of `res`. -/
@@ -473,17 +506,8 @@ theorem opInterp_of_concreteEval {factory : Lambda.Factory CoreLParams}
           ((fn.output.subst Lambda.Subst.empty).substTyVars vt)
           (((fn.inputs.map Prod.snd).map (Lambda.LMonoTy.subst Lambda.Subst.empty)).map
             (Lambda.LMonoTy.substTyVars vt))))
-        (Lambda.denoteArgs model.tcInterp model.opInterp fv vt .nil args _ h_args) := by
-  have hmem : name ∈ factory := Lambda.Factory.getElem?_some_implies_mem hlookup
-  have hget := Lambda.Factory.getElem?_some_getElem hlookup
-  cases hce : fn.concreteEval with
-  | none => rw [hce] at heval; cases heval
-  | some ceval =>
-    rw [hce, Option.bind_some] at heval
-    have h_ic := model.interpConsistent.2 name hmem ceval (by rw [hget]; exact hce)
-    rw [hget] at h_ic
-    rw [← hname]
-    exact h_ic vt fv coreLoc Lambda.Subst.empty args res heval h_args h_result
+        (Lambda.denoteArgs model.tcInterp model.opInterp fv vt .nil args _ h_args) :=
+  opInterp_of_concreteEval_subst model hlookup hname _ heval vt fv h_args h_result
 
 /-- **Binary operator evaluation.**  An operator annotated `a → b → c`, at ground types,
     applied to arguments with values `va` and `vb` evaluates to `w` when the model interprets
