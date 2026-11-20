@@ -124,6 +124,7 @@ import Strata.Languages.Core.EntryPoint
 import Strata.Languages.Core.IncrementalSolve
 import Strata.Languages.Core.IncrementalSolveCorrect
 import Strata.Languages.Core.DeclFormulas
+import Strata.Languages.Core.ObligationExtractionProps
 import Strata.Languages.Core.ProgramFact
 import Strata.Languages.Core.ProgramFactProps
 import Strata.Languages.Core.ProgramFactSet
@@ -132,9 +133,9 @@ import Strata.Languages.Core.PipelinePhaseProps
 import Strata.Languages.Core.VerifierProofs
 import Strata.Languages.Core.EvaluatorResultsProps
 import Strata.Languages.Core.CoreGenProps
+import Strata.Languages.Core.VerifierSlicingProofs
+import Strata.Languages.Core.WPRewritePipelineProofs
 import Strata.DL.Imperative.PathConditionHoldsProps
-import Strata.DL.Lambda.LExprTypedBeta
-import Strata.Transform.BetaReduceProps
 import Strata.Languages.GOTO
 
 /- DDM -/
@@ -183,24 +184,44 @@ import Strata.Transform.LoopElimCoreCorrect
 -- Inserting loop invariant checks: its over-approximation, assertion-validity and Hoare-triple
 -- proofs.
 import Strata.Transform.InsertLoopInvariantAssertsCoreCorrect
+-- Guard forwarding: its over-approximation proofs and their composition with the SSA phase and
+-- dead-definition elimination.
+import Strata.Transform.GuardFwdCoreCorrect
+-- Guard propagation: its over-approximation proof.
+import Strata.Transform.GuardPropCoreCorrect
+import Strata.Transform.GuardPropTyping
+-- The constructor fold: its over-approximation proof.
 import Strata.Transform.CtorFold
+import Strata.Transform.CtorFoldCoreCorrect
+import Strata.Transform.DefInlineCoreCorrect
+import Strata.Transform.NormLawTyped
 import Strata.Transform.DefInlineRewrite
+import Strata.Transform.DefInlineRewriteCorrect
 import Strata.Transform.WPLoop
 import Strata.Transform.WPRewriteLoop
+import Strata.Transform.WPLoopCorrect
+import Strata.Transform.WPRewriteLoopCorrect
 -- The WP and SSA phases: their properties, the failure preservation of the SSA phase, and
 -- the properties of their Core instance.
 import Strata.Transform.SSA.SSAEval
 import Strata.Transform.SSA.SSAOver
+import Strata.Transform.SSA.SSATyping
+import Strata.Transform.SSA.SSAUnassignedCorrect
 import Strata.Transform.WP.WPProps
 import Strata.Util.RopeProps
 import Strata.Util.LeftistHeapProps
 import Strata.Transform.Passive.CoreProgram
 import Strata.Transform.Passive.CoreProgramProps
+import Strata.Transform.Passive.WPFactoryProps
 import Strata.Transform.Passive.DeclObligationsCoreCorrect
 import Strata.Transform.Passive.CoreWPSSA
 import Strata.Transform.Passive.CoreWPSSAProps
 import Strata.Transform.Passive.CoreTyped
 import Strata.Transform.Passive.WellTypedProps
+import Strata.Transform.BetaReduceTyping
+import Strata.Transform.BetaReduceCorrect
+import Strata.Transform.GuardFwdTyping
+import Strata.Languages.Core.ObligationExtractionTyping
 import Strata.Transform.WP.WPCoreProgram
 import Strata.Transform.WP.WPCoreProgramProps
 import Strata.Transform.WP.WPCoreCorrect
@@ -297,10 +318,12 @@ import Strata.DL.Lambda.Denote.LExprDenoteConsts
 import Strata.DL.Lambda.Denote.LExprDenoteEq
 import Strata.DL.Lambda.LExprDenoteEval
 import Strata.DL.Lambda.LExprDenoteEvalProps
+import Strata.DL.Lambda.LExprDenoteBeta
 import Strata.DL.Lambda.LExprEvalFully
 import Strata.DL.Lambda.LExprEvalFuelProps
 import Strata.DL.Lambda.LExprEvalAnnotateProps
 import Strata.DL.Lambda.LExprDenoteEvalSubst
+import Strata.DL.Lambda.LExprDenoteEvalCongr
 import Strata.DL.Lambda.Denote.LExprDenoteProps
 import Strata.DL.Lambda.Denote.LExprDenoteSubst
 import Strata.DL.Lambda.Denote.LExprDenoteTySubst

@@ -6,8 +6,18 @@
 module
 
 public import Strata.Languages.Core.ObligationExtraction
+public import Strata.DL.Imperative.Logic.LangDef
+public import Strata.Transform.GuardFwdCoreCorrect
+public import Strata.Transform.DefInlineCoreCorrect
+public import Strata.Transform.BetaReduceProps
+public import Strata.Transform.Passive.CoreTyped
+public import Strata.Transform.WPLoopCorrect
 import all Strata.Languages.Core.ObligationExtraction
+import all Strata.Transform.CoreTransform
 import all Strata.DL.Imperative.EvalContext
+import Strata.DL.Lambda.LExprWFProps
+import Strata.Util.ExceptProps
+import Strata.Languages.Core.ProcedureProps
 
 /-! # Properties of proof obligation extraction
 
@@ -16,6 +26,27 @@ Key theorems: `extractFromStatements_ok` (a body in obligation form extracts),
 extraction has exactly the obligations of the plain one), `extractLinkedFromStatements_ok`,
 and `extractGoLinked_induct` with the per-statement equations `extractGoLinked_assert` …
 `extractGoLinked_unsupported`.
+
+The definitions of an extracted obligation's path condition come from the `init`s on the path to
+its `assert` or `cover`, in program order. When every statement list extraction reads is def-use
+well formed (`Block.defUseWellFormed`, the `defUseOk` field of the initial-environment gate
+`Imperative.Logic.BlockInitEnvWF`), no definition re-declares a variable and no right-hand side
+reads its own variable or a later one (`extractObligations_defsOrdered`).
+
+- `Core.ObligationExtraction.extractFromStatements_defsOrdered` — the definitions of every
+  obligation extracted from a def-use well formed statement list are declared before use and
+  have distinct variables
+- `Core.ObligationExtraction.extractObligations_defsOrdered` — the same for a program
+- `Core.ObligationExtraction.extractObligations_defsOrdered_of_gate` — the same, when every
+  statement list extraction reads has an entry environment satisfying the gate
+- `Core.ObligationExtraction.extractFromStatements_defsTyped` — the definitions of every
+  obligation extracted from a def-use well formed statement list whose annotations agree with a
+  typing and whose `init`s are typed are typed (`DefsTyped`)
+- `Core.ObligationExtraction.extractObligations_defsTyped` — the same for a program
+
+Key definitions: `Core.ObligationExtraction.definitions`, `Core.ObligationExtraction.DefsOrdered`,
+`Core.ObligationExtraction.WPPipelineEntryGates`, `Core.ObligationExtraction.typedDefinitions`,
+`Core.ObligationExtraction.DefsTyped`.
 -/
 
 public section
@@ -443,6 +474,423 @@ theorem extractObligations_of_extractLinkedObligations (p : Program)
   rw [hp]
   cases h
   rfl
+
+
+/-- The definitions of the path-condition entries `entries`, in order, each as its variable and
+    right-hand side. -/
+@[expose] def definitions (entries : List (PathConditionEntry Expression)) :
+    List (Expression.Ident × Expression.Expr) :=
+  entries.filterMap fun
+    | .varDecl x _ (.det e) => some (x, e)
+    | _ => none
+
+/-- The definitions `ds` are declared before use with distinct variables: of two definitions,
+    the earlier has another variable and does not read the later one's, and no right-hand side
+    reads its own variable. -/
+@[expose] def DefsOrdered (ds : List (Expression.Ident × Expression.Expr)) : Prop :=
+  ds.Pairwise (fun a b => a.1 ≠ b.1 ∧ ∀ ty, (b.1, ty) ∉ LExpr.freeVars a.2) ∧
+    ∀ a ∈ ds, ∀ ty, (a.1, ty) ∉ LExpr.freeVars a.2
+
+/-- The path invariant of the extraction walk: the definitions of the path condition `E` so far
+    are declared before use, and the defined-names predicate `D` holds of their variables and of
+    every name their right-hand sides read. -/
+private def PathInv (D : Expression.Ident → Bool) (E : List (PathConditionEntry Expression)) :
+    Prop :=
+  DefsOrdered (definitions E) ∧
+    ∀ a ∈ definitions E, D a.1 = true ∧ ∀ y ty, (y, ty) ∈ LExpr.freeVars a.2 → D y = true
+
+/-- The path invariant holds for a larger defined-names predicate. -/
+private theorem PathInv.mono {D D' : Expression.Ident → Bool} {E}
+    (hD : ∀ n, D n = true → D' n = true) (h : PathInv D E) : PathInv D' E :=
+  ⟨h.1, fun a ha => ⟨hD _ (h.2 a ha).1, fun y ty hy => hD _ ((h.2 a ha).2 y ty hy)⟩⟩
+
+/-- The definitions of a concatenation are those of its parts. -/
+private theorem definitions_append (a b : List (PathConditionEntry Expression)) :
+    definitions (a ++ b) = definitions a ++ definitions b :=
+  List.filterMap_append
+
+/-- Appending an entry that is not a definition keeps the path invariant. -/
+private theorem PathInv.push {D : Expression.Ident → Bool} {E} {e : PathConditionEntry Expression}
+    (he : definitions [e] = []) (h : PathInv D E) : PathInv D (E ++ [e]) := by
+  rwa [PathInv, definitions_append, he, List.append_nil]
+
+/-- Appending a definition of a name `D` does not hold of, whose right-hand side reads only names
+    `D` holds of, keeps the path invariant once `D` also holds of the new name. -/
+private theorem PathInv.push_def {D : Expression.Ident → Bool} {E} {x : Expression.Ident}
+    {ty : Expression.Ty} {e : Expression.Expr} (hx : D x = false)
+    (hr : ∀ y ty, (y, ty) ∈ LExpr.freeVars e → D y = true) (h : PathInv D E) :
+    PathInv (fun n => D n || decide (n ∈ [x])) (E ++ [.varDecl x ty (.det e)]) := by
+  obtain ⟨⟨hp, hs⟩, hd⟩ := h
+  rw [PathInv, definitions_append]
+  refine ⟨⟨List.pairwise_append.2 ⟨hp, List.pairwise_singleton _ _, fun a ha b hb => ?_⟩,
+    fun a ha ty' hm => ?_⟩, fun a ha => ?_⟩
+  · obtain rfl := List.mem_singleton.1 hb
+    exact ⟨fun h => Bool.false_ne_true (hx.symm.trans (h ▸ (hd a ha).1 :)),
+      fun ty' hm => by simp [(hd a ha).2 _ ty' hm] at hx⟩
+  · rcases List.mem_append.1 ha with ha | _ | ⟨_, ⟨⟩⟩
+    · exact hs a ha ty' hm
+    · simp [hr _ ty' hm] at hx
+  · rcases List.mem_append.1 ha with ha | _ | ⟨_, ⟨⟩⟩
+    · exact ⟨by simp [(hd a ha).1], fun y ty' hy => by simp [(hd a ha).2 y ty' hy]⟩
+    · exact ⟨by simp, fun y ty' hy => by simp [hr y ty' hy]⟩
+
+/-- The path conditions of an obligation the walk captures from the scopes `[r]`: the entries
+    of `r` oldest first. -/
+private theorem consume_single (r : PathCondition Expression) :
+    (RevPathConditions.consume (P := Expression) ⟨[r]⟩).reverse.flatten = r.reverse := by
+  simp [RevPathConditions.consume]
+
+/-- **The extraction walk keeps definitions in order.** From one scope `r` whose entries satisfy
+    the path invariant for `D`, on a def-use well formed statement list, every obligation the walk
+    adds to `acc` has its definitions declared before use, when those of `acc` have. -/
+private theorem extractGo_defsOrdered (ss : Statements) :
+    ∀ (r : PathCondition Expression) (acc obs : Array (ProofObligation Expression))
+      (D df : Expression.Ident → Bool),
+      extractGo ⟨[r]⟩ ss acc = .ok obs → Block.defUseWellFormed D df ss = true →
+      PathInv D r.reverse →
+      (∀ ob ∈ acc, DefsOrdered (definitions ob.assumptions.reverse.flatten)) →
+      ∀ ob ∈ obs, DefsOrdered (definitions ob.assumptions.reverse.flatten) := by
+  match ss with
+  | [] => exact fun _ _ _ _ _ h _ _ hacc => Except.ok.inj ((extractGo.eq_1 ..).symm.trans h) ▸ hacc
+  | s :: rest =>
+    intro r acc obs D df h hwf hinv hacc
+    obtain ⟨hs, hrest⟩ := Bool.and_eq_true_iff.1 hwf
+    have hmono : ∀ (l : List Expression.Ident) n, D n = true → (D n || decide (n ∈ l)) = true :=
+      fun _ _ h => by simp [h]
+    unfold extractGo at h
+    split at h
+    iterate 2
+      refine extractGo_defsOrdered rest r _ obs _ df h hrest (hinv.mono (hmono _)) fun ob hob => ?_
+      exact (Array.mem_push.1 hob).elim (hacc ob) (· ▸ by simpa only [consume_single] using hinv.1)
+    · refine extractGo_defsOrdered rest (_ :: r) acc obs _ df h hrest ?_ hacc
+      exact List.reverse_cons .. ▸ (hinv.push rfl).mono (hmono _)
+    · rename_i thenSs elseSs _
+      obtain ⟨thenObs, hthen, h⟩ := (Except.bind_is_ok _ _ _).1 h
+      obtain ⟨elseObs, helse, h⟩ := (Except.bind_is_ok _ _ _).1 h
+      simp only [Stmt.defUseWellFormed, Bool.and_eq_true] at hs
+      rw [extractFromStatements_eq] at hthen helse
+      refine extractGo_defsOrdered rest r _ obs _ df h hrest (hinv.mono (hmono _)) fun ob hob => ?_
+      exact (Array.mem_append.1 hob).elim (fun h => (Array.mem_append.1 h).elim (hacc ob)
+        (extractGo_defsOrdered thenSs r #[] thenObs D df hthen hs.1.2 hinv nofun ob))
+        (extractGo_defsOrdered elseSs r #[] elseObs D df helse hs.2 hinv nofun ob)
+    · rename_i name ty e _
+      refine extractGo_defsOrdered rest (_ :: r) acc obs _ df h hrest ?_ hacc
+      rw [List.reverse_cons]
+      simp only [Stmt.defUseWellFormed, HasVarsImp.readVars, CmdExt.readVars,
+        HasVarsImp.definedVars, CmdExt.definedVars, Cmd.definedVars, List.all_cons, List.all_nil,
+        Bool.and_true, Bool.and_eq_true, decide_eq_true_eq] at hs
+      obtain ⟨⟨⟨hrd, -⟩, hdx⟩, -⟩ := hs
+      rcases e with e | _
+      · refine hinv.push_def (Bool.eq_false_iff.2 hdx) fun y ty hy => List.all_eq_true.1 hrd y ?_
+        show y ∈ LExpr.LExpr.getVars e
+        exact getVars_eq_freeVars_idents e ▸ List.mem_map.2 ⟨(y, ty), hy, rfl⟩
+      · exact (hinv.push rfl).mono (hmono _)
+    · cases h
+  termination_by sizeOf ss
+
+/-- No definitions is a list of definitions declared before use. -/
+private theorem defsOrdered_nil : DefsOrdered [] := ⟨.nil, nofun⟩
+
+/-! ## Typed definitions -/
+
+/-- The definitions of the path-condition entries `entries`, in order, each as its variable,
+    declared type and right-hand side. -/
+@[expose] def typedDefinitions (entries : List (PathConditionEntry Expression)) :
+    List (Expression.Ident × Expression.Ty × Expression.Expr) :=
+  entries.filterMap fun
+    | .varDecl x ty (.det e) => some (x, ty, e)
+    | _ => none
+
+/-- **Typed definitions.**  Every right-hand side of the definitions `ds` is typed at the declared
+    type of its variable (`Core.Expression.Typed`), and every annotated occurrence, in a
+    right-hand side, of the variable of an earlier definition carries that definition's declared
+    type. -/
+@[expose] def DefsTyped (ds : List (Expression.Ident × Expression.Ty × Expression.Expr)) : Prop :=
+  (∀ d ∈ ds, Expression.Typed d.2.2 d.2.1) ∧
+    ds.Pairwise fun a b => ∀ τ, (a.1, some τ) ∈ LExpr.freeVars b.2.2 → a.2.1 = .forAll [] τ
+
+/-- The definitions of a path condition are its typed definitions without their types. -/
+theorem definitions_eq_typedDefinitions (entries : List (PathConditionEntry Expression)) :
+    definitions entries = (typedDefinitions entries).map fun d => (d.1, d.2.2) := by
+  rw [definitions, typedDefinitions, List.map_filterMap]
+  congr 1
+  funext e
+  rcases e with _ | ⟨x, ty, rhs | _⟩ | _ <;> rfl
+
+/-- The typed definitions of a concatenation are those of its parts. -/
+private theorem typedDefinitions_append (a b : List (PathConditionEntry Expression)) :
+    typedDefinitions (a ++ b) = typedDefinitions a ++ typedDefinitions b :=
+  List.filterMap_append
+
+/-- The typing invariant of the extraction walk: the definitions of the path condition `E` so far
+    are typed, and `Γ` gives each of their variables its declared type and `D` holds of it. -/
+private def TyInv (Γ : VarTyping Expression) (D : Expression.Ident → Bool)
+    (E : List (PathConditionEntry Expression)) : Prop :=
+  DefsTyped (typedDefinitions E) ∧
+    ∀ d ∈ typedDefinitions E, Γ d.1 = some d.2.1 ∧ D d.1 = true
+
+/-- The typing invariant holds for a larger defined-names predicate. -/
+private theorem TyInv.mono {Γ : VarTyping Expression} {D D' : Expression.Ident → Bool} {E}
+    (hD : ∀ n, D n = true → D' n = true) (h : TyInv Γ D E) : TyInv Γ D' E :=
+  ⟨h.1, fun d hd => ⟨(h.2 d hd).1, hD _ (h.2 d hd).2⟩⟩
+
+/-- Appending an entry that is not a definition keeps the typing invariant. -/
+private theorem TyInv.push {Γ : VarTyping Expression} {D : Expression.Ident → Bool} {E}
+    {e : PathConditionEntry Expression} (he : typedDefinitions [e] = []) (h : TyInv Γ D E) :
+    TyInv Γ D (E ++ [e]) := by
+  rwa [TyInv, typedDefinitions_append, he, List.append_nil]
+
+/-- Extending `Γ` at a name `D` does not hold of keeps `Γ`'s types of the definitions. -/
+private theorem TyInv.extend {Γ : VarTyping Expression} {D : Expression.Ident → Bool} {E}
+    {x : Expression.Ident} {ty : Expression.Ty} (hx : D x = false) (h : TyInv Γ D E) :
+    TyInv (Γ.extend [(x, ty)]) (fun n => D n || decide (n ∈ [x])) E := by
+  refine ⟨h.1, fun d hd => ⟨?_, by simp [(h.2 d hd).2]⟩⟩
+  have hne : d.1 ≠ x := fun he => by simp [he ▸ (h.2 d hd).2] at hx
+  rw [VarTyping.extend_of_not_mem (by simpa using hne)]
+  exact (h.2 d hd).1
+
+/-- Appending a definition of a name `D` does not hold of, whose right-hand side is typed at the
+    declared type and has annotations agreeing with `Γ`, keeps the typing invariant once `Γ` is
+    extended with the definition and `D` holds of its name. -/
+private theorem TyInv.push_def {Γ : VarTyping Expression} {D : Expression.Ident → Bool} {E}
+    {x : Expression.Ident} {ty : Expression.Ty} {e : Expression.Expr} (hx : D x = false)
+    (ht : Expression.Typed e ty) (hann : Γ.annotates (HasFvars.getTypedFvars e))
+    (h : TyInv Γ D E) :
+    TyInv (Γ.extend [(x, ty)]) (fun n => D n || decide (n ∈ [x]))
+      (E ++ [.varDecl x ty (.det e)]) := by
+  have hE := TyInv.extend (ty := ty) hx h
+  obtain ⟨⟨htd, hpw⟩, hΓ⟩ := h
+  rw [TyInv, typedDefinitions_append]
+  refine ⟨⟨fun d hd => ?_, List.pairwise_append.2 ⟨hpw, List.pairwise_singleton _ _,
+    fun a ha b hb τ hm => ?_⟩⟩, fun d hd => ?_⟩
+  · exact (List.mem_append.1 hd).elim (htd d) fun h => List.mem_singleton.1 h ▸ ht
+  · obtain rfl := List.mem_singleton.1 hb
+    have hΓa := hann a.1 _ (List.mem_filterMap.2 ⟨(a.1, some τ), hm, rfl⟩)
+    exact Option.some.inj ((hΓ a ha).1.symm.trans hΓa)
+  · rcases List.mem_append.1 hd with hd | _ | ⟨_, ⟨⟩⟩
+    · exact hE.2 d hd
+    · exact ⟨by simp [VarTyping.extend], by simp⟩
+
+/-- **The extraction walk keeps definitions typed.** From one scope `r` whose entries satisfy
+    the typing invariant for `Γ` and `D`, on a def-use well formed statement list whose
+    annotations agree with `Γ` and whose `init`s are typed, every obligation the walk adds to
+    `acc` has typed definitions, when those of `acc` have. -/
+private theorem extractGo_defsTyped (ss : Statements) :
+    ∀ (r : PathCondition Expression) (acc obs : Array (ProofObligation Expression))
+      (D df : Expression.Ident → Bool) (Γ : VarTyping Expression),
+      extractGo ⟨[r]⟩ ss acc = .ok obs → Block.defUseWellFormed D df ss = true →
+      Block.fvarTypesWellAnnotated Γ ss → Block.initsTyped Expression.Typed ss →
+      TyInv Γ D r.reverse →
+      (∀ ob ∈ acc, DefsTyped (typedDefinitions ob.assumptions.reverse.flatten)) →
+      ∀ ob ∈ obs, DefsTyped (typedDefinitions ob.assumptions.reverse.flatten) := by
+  match ss with
+  | [] => exact fun _ _ _ _ _ _ h _ _ _ _ hacc =>
+      Except.ok.inj ((extractGo.eq_1 ..).symm.trans h) ▸ hacc
+  | s :: rest =>
+    rintro r acc obs D df Γ h hwf ⟨hWs, hWr⟩ ⟨hTs, hTr⟩ hinv hacc
+    obtain ⟨hs, hrest⟩ := Bool.and_eq_true_iff.1 hwf
+    have hmono : ∀ (l : List Expression.Ident) n, D n = true → (D n || decide (n ∈ l)) = true :=
+      fun _ _ h => by simp [h]
+    unfold extractGo at h
+    split at h
+    iterate 2
+      refine extractGo_defsTyped rest r _ obs _ df Γ h hrest hWr hTr (hinv.mono (hmono _))
+        fun ob hob => ?_
+      exact (Array.mem_push.1 hob).elim (hacc ob) (· ▸ by simpa only [consume_single] using hinv.1)
+    · refine extractGo_defsTyped rest (_ :: r) acc obs _ df Γ h hrest hWr hTr ?_ hacc
+      exact List.reverse_cons .. ▸ (hinv.push rfl).mono (hmono _)
+    · rename_i thenSs elseSs _
+      obtain ⟨thenObs, hthen, h⟩ := (Except.bind_is_ok _ _ _).1 h
+      obtain ⟨elseObs, helse, h⟩ := (Except.bind_is_ok _ _ _).1 h
+      simp only [Stmt.defUseWellFormed, Bool.and_eq_true] at hs
+      rw [extractFromStatements_eq] at hthen helse
+      refine extractGo_defsTyped rest r _ obs _ df Γ h hrest hWr hTr (hinv.mono (hmono _))
+        fun ob hob => ?_
+      exact (Array.mem_append.1 hob).elim (fun h => (Array.mem_append.1 h).elim (hacc ob)
+        (extractGo_defsTyped thenSs r #[] thenObs D df Γ hthen hs.1.2 hWs.2.1 hTs.1 hinv nofun ob))
+        (extractGo_defsTyped elseSs r #[] elseObs D df Γ helse hs.2 hWs.2.2 hTs.2 hinv nofun ob)
+    · rename_i name ty e _
+      refine extractGo_defsTyped rest (_ :: r) acc obs _ df _ h hrest hWr hTr ?_ hacc
+      rw [List.reverse_cons]
+      simp only [Stmt.defUseWellFormed, HasVarsImp.readVars, CmdExt.readVars,
+        HasVarsImp.definedVars, CmdExt.definedVars, Cmd.definedVars, List.all_cons, List.all_nil,
+        Bool.and_true, Bool.and_eq_true, decide_eq_true_eq] at hs
+      obtain ⟨⟨⟨-, -⟩, hdx⟩, -⟩ := hs
+      rcases e with e | _
+      · exact hinv.push_def (Bool.eq_false_iff.2 hdx) hTs fun z T hz => hWs z T (by
+          simpa [HasTypedVarsImp.typedReadVars, CmdExt.typedReadVars, Cmd.getTypedVars,
+            ExprOrNondet.getTypedVars] using hz)
+      · exact (TyInv.extend (Bool.eq_false_iff.2 hdx) hinv).push rfl
+    · cases h
+  termination_by sizeOf ss
+
+/-- **Definitions extracted from a typed statement list are typed.** From global facts `g`
+    without definitions, every obligation `extractFromStatements` returns for a def-use well
+    formed statement list `ss` whose annotations agree with a typing `Γ` and whose `init`s have
+    right-hand sides typed at their declared types has typed definitions (`DefsTyped`): each
+    right-hand side is typed at its declared type, and each annotated read of the variable of an
+    earlier definition carries that definition's declared type. -/
+theorem extractFromStatements_defsTyped {g : PathCondition Expression} {ss : Statements}
+    {obs : Array (ProofObligation Expression)} {D df : Expression.Ident → Bool}
+    {Γ : VarTyping Expression}
+    (h : extractFromStatements ⟨[g]⟩ ss = .ok obs) (hg : definitions g.reverse = [])
+    (hwf : Block.defUseWellFormed D df ss = true) (hW : Block.fvarTypesWellAnnotated Γ ss)
+    (hT : Block.initsTyped Expression.Typed ss) :
+    ∀ ob ∈ obs, DefsTyped (typedDefinitions ob.assumptions.reverse.flatten) := by
+  have hg' : typedDefinitions g.reverse = [] := by simpa [definitions_eq_typedDefinitions] using hg
+  exact extractGo_defsTyped ss g #[] obs D df Γ (by simpa using h) hwf hW hT
+    ⟨⟨by simp [hg'], by simp [hg']⟩, by simp [hg']⟩ nofun
+
+/-- **Definitions extracted from a statement list are declared before use.** From global facts
+    `g` without definitions, every obligation `extractFromStatements` returns for a def-use well
+    formed statement list `ss` has the definitions of its path condition, oldest first, declared
+    before use with distinct variables. -/
+theorem extractFromStatements_defsOrdered {g : PathCondition Expression} {ss : Statements}
+    {obs : Array (ProofObligation Expression)} {D df : Expression.Ident → Bool}
+    (h : extractFromStatements ⟨[g]⟩ ss = .ok obs) (hg : definitions g.reverse = [])
+    (hwf : Block.defUseWellFormed D df ss = true) :
+    ∀ ob ∈ obs, DefsOrdered (definitions ob.assumptions.reverse.flatten) :=
+  extractGo_defsOrdered ss g #[] obs D df (by simpa using h) hwf
+    ⟨by simpa [hg] using defsOrdered_nil, by simp [hg]⟩ nofun
+
+/-- **A property of every extracted obligation.** A property `P` of obligations holds of every
+    obligation `extractObligations p` returns when it holds of every obligation
+    `extractFromStatements` returns, from global facts without definitions, for the statements of
+    a procedure of `p`, and of every obligation whose path condition is such global facts. -/
+private theorem extractObligations_inv {p : Program} {obs : ProofObligations Expression}
+    (P : ProofObligation Expression → Prop) (h : extractObligations p = .ok obs)
+    (hss : ∀ q md ss (g : PathCondition Expression) obs, Decl.proc q md ∈ p.decls →
+      procedureStatements p.funcNames q = .ok ss → definitions g.reverse = [] →
+      extractFromStatements ⟨[g]⟩ ss = .ok obs → ∀ ob ∈ obs, P ob)
+    (hg : ∀ (g : PathCondition Expression) (ob : ProofObligation Expression),
+      definitions g.reverse = [] → ob.assumptions = RevPathConditions.consume ⟨[g]⟩ → P ob) :
+    ∀ ob ∈ obs, P ob := by
+  obtain ⟨res, hres, h⟩ := (Except.bind_is_ok _ _ _).1 h
+  suffices hf : ∀ (ds : List Decl) acc, (∀ q md, Decl.proc q md ∈ ds → Decl.proc q md ∈ p.decls) →
+      definitions acc.1.reverse = [] → (∀ ob ∈ acc.2, P ob) →
+      ds.foldlM (extractDecl p.funcNames) acc = .ok res → ∀ ob ∈ res.2, P ob from
+    Except.ok.inj h ▸ hf _ _ (fun _ _ h => h) rfl (by simp) hres
+  intro ds
+  induction ds with
+  | nil => exact fun _ _ _ hacc h => Except.ok.inj h ▸ hacc
+  | cons d ds ih =>
+    rintro ⟨g, allObs⟩ hm hg0 hacc h
+    obtain ⟨acc', hd, h⟩ := (Except.bind_is_ok _ _ _).1 h
+    have hg' : definitions acc'.1.reverse = [] ∧ ∀ ob ∈ acc'.2, P ob := by
+      dsimp only [extractDecl] at hd
+      split at hd
+      iterate 2
+        exact Except.ok.inj hd ▸ ⟨by rw [List.reverse_cons, definitions_append, hg0]; rfl, hacc⟩
+      iterate 2
+        split at hd <;> cases hd
+        exact ⟨hg0, hacc⟩
+      · rename_i q md
+        obtain ⟨ss, hs, hd⟩ := (Except.bind_is_ok _ _ _).1 hd
+        obtain ⟨obs, ho, hd⟩ := (Except.bind_is_ok _ _ _).1 hd
+        refine Except.ok.inj hd ▸ ⟨hg0, fun ob hob => (Array.mem_append.1 hob).elim (hacc ob) ?_⟩
+        exact hss q md ss g obs (hm q md List.mem_cons_self) hs hg0 ho ob
+      · refine Except.ok.inj hd ▸ ⟨hg0, fun ob hob => (Array.mem_push.1 hob).elim (hacc ob) ?_⟩
+        exact (· ▸ hg g _ hg0 rfl)
+      · exact Except.ok.inj hd ▸ ⟨hg0, hacc⟩
+    exact ih acc' (fun q md h => hm q md (List.mem_cons_of_mem _ h)) hg'.1 hg'.2 h
+
+/-- **Extracted definitions are declared before use.** When the statement list extraction reads
+    from every procedure of `p` (`procedureStatements`) is def-use well formed from some
+    defined-names predicate (as the `defUseOk` field of the initial-environment gate
+    `Imperative.Logic.BlockInitEnvWF` says of an entry environment), every obligation that
+    `extractObligations p` returns has the definitions of its path condition, oldest first,
+    declared before use with distinct variables (`DefsOrdered`): no right-hand side reads its
+    own variable or the variable of a later definition. -/
+theorem extractObligations_defsOrdered {p : Program} {obs : ProofObligations Expression}
+    (h : extractObligations p = .ok obs)
+    (hwf : ∀ q md ss, Decl.proc q md ∈ p.decls → procedureStatements p.funcNames q = .ok ss →
+      ∃ D df, Block.defUseWellFormed D df ss = true) :
+    ∀ ob ∈ obs, DefsOrdered (definitions ob.assumptions.reverse.flatten) :=
+  extractObligations_inv _ h (fun q md ss _ _ hq hss hg hx =>
+    (hwf q md ss hq hss).elim fun _ ⟨_, hd⟩ => extractFromStatements_defsOrdered hx hg hd)
+    fun _ _ hg hob => by simpa only [hob, consume_single, hg] using defsOrdered_nil
+
+/-- **Extracted definitions are declared before use, from the gate.**
+    `extractObligations_defsOrdered` when the statement list extraction reads from every
+    procedure of `p` has an entry environment satisfying the initial-environment gate
+    `Imperative.Logic.BlockInitEnvWF`, whose `defUseOk` field is the def-use well-formedness it
+    needs. -/
+theorem extractObligations_defsOrdered_of_gate {p : Program} {obs : ProofObligations Expression}
+    (h : extractObligations p = .ok obs)
+    (hwf : ∀ q md ss, Decl.proc q md ∈ p.decls → procedureStatements p.funcNames q = .ok ss →
+      ∃ params ρ, Imperative.Logic.BlockInitEnvWF params ss ρ) :
+    ∀ ob ∈ obs, DefsOrdered (definitions ob.assumptions.reverse.flatten) :=
+  extractObligations_defsOrdered h fun q md ss hq hss =>
+    (hwf q md ss hq hss).elim fun _ ⟨_, hg⟩ => ⟨_, _, hg.defUseOk⟩
+
+/-- **Extracted definitions are typed.** When the statement list extraction reads from every
+    procedure of `p` (`procedureStatements`) is def-use well formed, has annotations agreeing
+    with some typing and has `init`s typed at their declared types, every obligation that
+    `extractObligations p` returns has typed definitions (`DefsTyped`). -/
+theorem extractObligations_defsTyped {p : Program} {obs : ProofObligations Expression}
+    (h : extractObligations p = .ok obs)
+    (hwf : ∀ q md ss, Decl.proc q md ∈ p.decls → procedureStatements p.funcNames q = .ok ss →
+      ∃ D df Γ, Block.defUseWellFormed D df ss = true ∧ Block.fvarTypesWellAnnotated Γ ss ∧
+        Block.initsTyped Expression.Typed ss) :
+    ∀ ob ∈ obs, DefsTyped (typedDefinitions ob.assumptions.reverse.flatten) := by
+  refine extractObligations_inv _ h (fun q md ss _ _ hq hss hg hx => ?_) fun g _ hg hob => ?_
+  · obtain ⟨_, _, _, hd, hW, hT⟩ := hwf q md ss hq hss
+    exact extractFromStatements_defsTyped hx hg hd hW hT
+  · have h0 : typedDefinitions g.reverse = [] := by simpa [definitions_eq_typedDefinitions] using hg
+    simp [hob, consume_single, h0, DefsTyped]
+
+/-- The entry gates of the WP pipeline's input `mid` for the factory of the pipeline on `mid`
+    (`wpFactory moreFns mid`), at the gate parameters `params`: every procedure of `mid` with a
+    structured body `lay` has `lay` in tree form, an assertion or a cover in every `ite` arm, each
+    of its free variables among the procedure's parameters (`Procedure.entryParams`) and their
+    aliases (`Procedure.oldAliases`) or neither assigned nor defined in `lay` (as the free
+    variables of an obligation unit, which keep their own names through the SSA phase), and an
+    entry environment `ρ₀` satisfying the initial-environment gate of `lay` related by the SSA
+    phase's entry renaming to an environment `ρ₀'` (`WP.SSAEntryRel`, for the names the SSA phase
+    avoids in `mid`). -/
+@[expose] def WPPipelineEntryGates (params : Core.Logic.InitEnvWFParams)
+    (moreFns : Lambda.Factory CoreLParams) (mid : Program) : Prop :=
+  ∀ fac, wpFactory moreFns mid = .ok fac →
+    ∀ q md lay, Decl.proc q md ∈ mid.decls → q.body = .structured lay →
+      Block.treeForm lay = true ∧ Block.armsHaveChecks lay = true ∧
+      (∀ x ∈ Block.freeVars lay, x ∈ q.entryParams ∨ x ∈ q.oldAliases.map (·.1) ∨
+        x ∉ Block.modifiedOrDefinedVars lay false) ∧
+      ∃ ρ₀ ρ₀', WP.SSAEntryRel fac
+          (Imperative.WP.IdSet.ofList
+            (WP.avoidOf [] (fac.toArray.toList.map (·.name) ++ WP.declNames mid)))
+          q.paramTys q.entryParams q.oldAliases lay ρ₀ ρ₀' ∧
+        Core.Logic.BlockInitEnvWF params lay ρ₀
+
+/-- The SSA phase keeps the datatypes a program declares, so the factory of the WP pipeline on
+    its output is the one on its input. -/
+private theorem wpFactory_ssaProgram {fac moreFns : Lambda.Factory CoreLParams}
+    {R : List Expression.Ident} {mid p₁ : Program} (h : WP.ssaProgram fac R mid = .ok p₁) :
+    wpFactory moreFns p₁ = wpFactory moreFns mid := by
+  obtain ⟨decls, hdecls, h⟩ := (Except.bind_is_ok _ _ _).1 h
+  cases h
+  suffices hd : ∀ (ds decls : List Decl), ds.mapM (fun d => match d with
+      | .proc q _ => WP.ssaProc fac (Imperative.WP.IdSet.ofList
+          (WP.avoidOf [] (R ++ WP.declNames mid))) q
+      | d => pure d) = Except.ok decls →
+      decls.filterMap (fun | .type (.data b) _ => some b | _ => none) =
+        ds.filterMap (fun | .type (.data b) _ => some b | _ => none) by
+    have hpd : programDatatypes { decls := decls } = programDatatypes mid := hd _ _ hdecls
+    simp only [wpFactory, hpd]
+  intro ds
+  induction ds with
+  | nil => exact fun _ h => Except.ok.inj h ▸ rfl
+  | cons d rest ih =>
+    intro decls h
+    rw [List.mapM_cons] at h
+    obtain ⟨d', hd', h⟩ := (Except.bind_is_ok _ _ _).1 h
+    obtain ⟨ds', hds', h⟩ := (Except.bind_is_ok _ _ _).1 h
+    cases h
+    rcases d with _ | _ | _ | _ | ⟨q, md⟩ | _
+    all_goals first | (cases hd'; simp only [List.filterMap_cons, ih _ hds']) | skip
+    simp only [WP.ssaProc, bind, Except.bind] at hd'
+    split at hd' <;> try cases hd'
+    split at hd' <;> cases hd'
+    simp [Decl.obligationProc, ih _ hds']
 
 end Core.ObligationExtraction
 
