@@ -12,6 +12,7 @@ import Strata.DL.Imperative.Logic.TraceRelationsProps
 import Strata.DL.Imperative.StmtSemanticsProps
 import Strata.Util.ListUtilsProps
 import all Strata.Transform.LoopElim
+import all Strata.Languages.Core.AbstractionMarkers
 import all Strata.DL.Imperative.Cmd
 
 /-! # Loop elimination over-approximates (big-step)
@@ -153,22 +154,27 @@ private theorem havocBlock_run (hvar : WellFormedSemanticEvalVar (P := P) F) (n 
     · rwa [hfr x hxM]
   simpa [Outcome.block, projectStore_id hdom, havocBlock, HasHavoc.havoc] using h
 
-omit [HasFvars P] [HasBoolOps P] [HasOps P] [LawfulHasVal P] in
+omit [HasFvars P] [HasOps P] [LawfulHasVal P] in
 /-- The assumption of the guard runs, from a store where the guard admits entering, emitting
     only operationally true assumptions. -/
-private theorem enter_run (hF : allowed F) (n : String) {g : ExprOrNondet P} (md : MetaData P)
+private theorem enter_run
+    (htt : ∀ σ, P.eval F σ (@HasBool.tt P HasBoolOps.toHasBool) = some (HasBool.ttVal F))
+    (hF : allowed F) (n : String) {g : ExprOrNondet P} (md : MetaData P)
     {σ : SemanticStore P} (hg : guardEnters F σ g) :
     ∃ evs, BRun F (enterAssume (C := CmdExt P) n g md) σ evs (.normal σ) ∧
       DropsInserts allowed [] evs := by
   cases g with
   | det g =>
     exact ⟨_, .cons_normal (.cmd (EvalCmdE.eval_assume)) .nil, [], .slnil, .assume hF hg .nil⟩
-  | nondet => exact ⟨[], .nil, [], .slnil, .nil⟩
+  | nondet =>
+    exact ⟨_, .cons_normal (.cmd (EvalCmdE.eval_assume)) .nil, [], .slnil, .assume hF (htt σ) .nil⟩
 
 omit [HasFvars P] [HasOps P] [LawfulHasVal P] in
 /-- The assumption of the negated guard runs, from a store where the guard admits stopping,
     emitting only operationally true assumptions. -/
-private theorem exit_run (hbool : WellFormedSemanticEvalBool (P := P) F) (hF : allowed F)
+private theorem exit_run (hbool : WellFormedSemanticEvalBool (P := P) F)
+    (htt : ∀ σ, P.eval F σ (@HasBool.tt P HasBoolOps.toHasBool) = some (HasBool.ttVal F))
+    (hF : allowed F)
     (n : String) {g : ExprOrNondet P} (md : MetaData P) {σ : SemanticStore P}
     (hg : guardExits F σ g) :
     ∃ evs, BRun F (exitAssume (C := CmdExt P) n g md) σ evs (.normal σ) ∧
@@ -177,7 +183,8 @@ private theorem exit_run (hbool : WellFormedSemanticEvalBool (P := P) F) (hF : a
   | det g =>
     exact ⟨_, .cons_normal (.cmd (EvalCmdE.eval_assume)) .nil, [], .slnil,
       .assume hF ((hbool σ g).2.1 hg) .nil⟩
-  | nondet => exact ⟨[], .nil, [], .slnil, .nil⟩
+  | nondet =>
+    exact ⟨_, .cons_normal (.cmd (EvalCmdE.eval_assume)) .nil, [], .slnil, .assume hF (htt σ) .nil⟩
 
 /-! ## Stores of the iterations
 
@@ -288,18 +295,20 @@ private def LoopReachRes (F : P.Factory) (allowed : P.Factory → Prop) (n : Str
   guardEnters F σ g ∧ ∃ evs', BReach F (thenB n g (Block.carriedVars body) body' md) σ₀ evs' ∧
     Trace.PreservesLastEvent (DropsInserts allowed) evs evs'
 
-omit [HasBoolOps P] [LawfulHasVal P] in
+omit [LawfulHasVal P] in
 /-- From the entry store `σ₀`, the start of the first branch of the encoding (the havoc block
     and the assumption of the guard) can reach the store `σ` of the start of an iteration
     entering the body, emitting only operationally true assumptions. -/
-private theorem prelude_run (hvar : WellFormedSemanticEvalVar (P := P) F) (hF : allowed F)
+private theorem prelude_run (hvar : WellFormedSemanticEvalVar (P := P) F)
+    (htt : ∀ σ, P.eval F σ (@HasBool.tt P HasBoolOps.toHasBool) = some (HasBool.ttVal F))
+    (hF : allowed F)
     (n : String) {g : ExprOrNondet P} {body : PStmts P} (md : MetaData P)
     {σ₀ σ : SemanticStore P} (hc : Compat F (Block.carriedVars body) σ₀ σ)
     (hdu : Block.defUseWellFormed (fun x => (σ₀ x).isSome) df body = true)
     (hg : guardEnters F σ g) :
     ∃ ee, BRun F ([havocBlock n (Block.carriedVars body) md] ++ enterAssume n g md) σ₀ ee
       (.normal σ) ∧ DropsInserts allowed [] ee := by
-  obtain ⟨ee, he, hae⟩ := enter_run (allowed := allowed) hF n md hg
+  obtain ⟨ee, he, hae⟩ := enter_run (allowed := allowed) htt hF n md hg
   have hh := havocBlock_run hvar n md (hc.havoc hdu).1 (hc.havoc hdu).2
   exact ⟨[] ++ ee, .cons_normal hh he, by simpa using hae⟩
 
@@ -308,7 +317,9 @@ private theorem prelude_run (hvar : WellFormedSemanticEvalVar (P := P) F) (hF : 
     replays it, and the rest of the loop from the next iteration is replayed (`LoopRunRes`),
     then the loop from `σ` is replayed. -/
 private theorem LoopRunRes.iter (hvar : WellFormedSemanticEvalVar (P := P) F)
-    (hbool : WellFormedSemanticEvalBool (P := P) F) (hF : allowed F)
+    (hbool : WellFormedSemanticEvalBool (P := P) F)
+    (htt : ∀ σ, P.eval F σ (@HasBool.tt P HasBoolOps.toHasBool) = some (HasBool.ttVal F))
+    (hF : allowed F)
     {n : String} {g : ExprOrNondet P} {body body' : PStmts P} {md : MetaData P}
     {σ₀ σ σ1 : SemanticStore P} {evs1 evs1' evs2 : List (Event P)} {o : Outcome P}
     (hg : guardEnters F σ g) (hc : Compat F (Block.carriedVars body) σ₀ σ)
@@ -320,8 +331,8 @@ private theorem LoopRunRes.iter (hvar : WellFormedSemanticEvalVar (P := P) F)
   rcases hres with ⟨rfl, rfl, hx⟩ | ⟨-, evs2', h2', habs2, hdom2⟩
   · refine .inr ⟨hg, ?_⟩
     have hc' := hc.step hdu h1
-    obtain ⟨ee, hpre, hae⟩ := prelude_run (allowed := allowed) hvar hF n md hc hdu hg
-    obtain ⟨ex, hex, hax⟩ := exit_run (allowed := allowed) hbool hF n md hx
+    obtain ⟨ee, hpre, hae⟩ := prelude_run (allowed := allowed) hvar htt hF n md hc hdu hg
+    obtain ⟨ex, hex, hax⟩ := exit_run (allowed := allowed) hbool htt hF n md hx
     have harb := BRunS.block (l := s!"{Core.loopElimBlockPrefix}arbitrary_iter_facts_{n}")
       (md := {}) (brun_append hpre h1')
     have hσ : projectStore σ₀ σ1 = projectStore σ σ1 := projectStore_congr_parent hc.dom
@@ -338,7 +349,9 @@ omit [LawfulHasVal P] in
 /-- **A breaking iteration, replayed in the encoding.**  If the loop entered from `σ₀` runs an
     iteration from `σ` (where the guard admits entering) that exits to a label other than the
     encoding's, and the body's output replays it, then the loop from `σ` is replayed. -/
-private theorem LoopRunRes.break (hvar : WellFormedSemanticEvalVar (P := P) F) (hF : allowed F)
+private theorem LoopRunRes.break (hvar : WellFormedSemanticEvalVar (P := P) F)
+    (htt : ∀ σ, P.eval F σ (@HasBool.tt P HasBoolOps.toHasBool) = some (HasBool.ttVal F))
+    (hF : allowed F)
     {n : String} {g : ExprOrNondet P} {body body' : PStmts P} {md : MetaData P}
     {σ₀ σ σ1 : SemanticStore P} {evs evs' : List (Event P)} {l : String}
     (hg : guardEnters F σ g) (hc : Compat F (Block.carriedVars body) σ₀ σ)
@@ -348,7 +361,7 @@ private theorem LoopRunRes.break (hvar : WellFormedSemanticEvalVar (P := P) F) (
     (habs : DropsInserts allowed evs evs') :
     LoopRunRes F allowed n g body body' md σ₀ σ evs (.exit l (projectStore σ σ1)) := by
   refine .inr ⟨hg, ?_⟩
-  obtain ⟨ee, hpre, hae⟩ := prelude_run (allowed := allowed) hvar hF n md hc hdu hg
+  obtain ⟨ee, hpre, hae⟩ := prelude_run (allowed := allowed) hvar htt hF n md hc hdu hg
   have harb := BRunS.block (l := s!"{Core.loopElimBlockPrefix}arbitrary_iter_facts_{n}")
     (md := {}) (brun_append hpre h1')
   have hlb : l ≠ s!"{Core.loopElimBlockPrefix}arbitrary_iter_facts_{n}" := by
@@ -391,7 +404,9 @@ omit [LawfulHasVal P] in
 /-- **A reach of a loop body, replayed in the encoding.**  If the loop entered from `σ₀`
     reaches in an iteration from `σ` (where the guard admits entering), and the body's output
     replays that reach, then the loop from `σ` is replayed. -/
-private theorem LoopReachRes.here (hvar : WellFormedSemanticEvalVar (P := P) F) (hF : allowed F)
+private theorem LoopReachRes.here (hvar : WellFormedSemanticEvalVar (P := P) F)
+    (htt : ∀ σ, P.eval F σ (@HasBool.tt P HasBoolOps.toHasBool) = some (HasBool.ttVal F))
+    (hF : allowed F)
     {n : String} {g : ExprOrNondet P} {body body' : PStmts P} {md : MetaData P}
     {σ₀ σ : SemanticStore P} {evs evs' : List (Event P)}
     (hg : guardEnters F σ g) (hc : Compat F (Block.carriedVars body) σ₀ σ)
@@ -399,7 +414,7 @@ private theorem LoopReachRes.here (hvar : WellFormedSemanticEvalVar (P := P) F) 
     (h' : BReach F body' σ evs')
     (habs : Trace.PreservesLastEvent (DropsInserts allowed) evs evs') :
     LoopReachRes F allowed n g body body' md σ₀ σ evs := by
-  obtain ⟨ee, hpre, hae⟩ := prelude_run (allowed := allowed) hvar hF n md hc hdu hg
+  obtain ⟨ee, hpre, hae⟩ := prelude_run (allowed := allowed) hvar htt hF n md hc hdu hg
   exact ⟨hg, _, .here (.block (breach_append_run hpre h')), by
     simpa using Trace.PreservesLastEvent.append_left
       Trace.mayDropEvents_insertsTrueAssumes_append hae habs (breach_ne_nil h')⟩
@@ -531,7 +546,9 @@ private def LoopRunResAt (F : P.Factory) (allowed : P.Factory → Prop) (n : Str
     the rest by the replay of the rest, an event of this iteration by replaying this iteration
     and jumping to the end of the loop. -/
 private theorem LoopRunResAt.iter (hvar : WellFormedSemanticEvalVar (P := P) F)
-    (hbool : WellFormedSemanticEvalBool (P := P) F) (hF : allowed F)
+    (hbool : WellFormedSemanticEvalBool (P := P) F)
+    (htt : ∀ σ, P.eval F σ (@HasBool.tt P HasBoolOps.toHasBool) = some (HasBool.ttVal F))
+    (hF : allowed F)
     {n : String} {g : ExprOrNondet P} {m : Option P.Expr} {inv : List (String × P.Expr)}
     {body body' : PStmts P} {md : MetaData P}
     {σ₀ σ σ1 : SemanticStore P} {evs1 evs2 : List (Event P)} {o : Outcome P}
@@ -553,8 +570,8 @@ private theorem LoopRunResAt.iter (hvar : WellFormedSemanticEvalVar (P := P) F)
     exact hx'
   · rcases List.append_eq_append_cons h with ⟨post₁, rfl, rfl⟩ | ⟨pre₂, rfl, rfl⟩
     · obtain ⟨pre', post₁', h1', hpre, hpost⟩ := hk1 pre e post₁ rfl
-      obtain ⟨ee, hpr, hae⟩ := prelude_run (allowed := allowed) hvar hF n md hc hdu hg
-      obtain ⟨ex, hex, hax⟩ := exit_run (allowed := allowed) hbool hF n md hx
+      obtain ⟨ee, hpr, hae⟩ := prelude_run (allowed := allowed) hvar htt hF n md hc hdu hg
+      obtain ⟨ex, hex, hax⟩ := exit_run (allowed := allowed) hbool htt hF n md hx
       have harb := BRunS.block (l := s!"{Core.loopElimBlockPrefix}arbitrary_iter_facts_{n}")
         (md := {}) (brun_append hpr h1')
       have hσ : projectStore σ₀ σ1 = projectStore σ σ1 := projectStore_congr_parent hc.dom
@@ -594,7 +611,9 @@ mutual
     the source's by `DropsInserts`; when no loop iteration leaves its loop by an `exit`, also
     replaying each event of the source (`ReplaysAt`). -/
 private theorem run_sim' (hvar : WellFormedSemanticEvalVar (P := P) F)
-    (hbool : WellFormedSemanticEvalBool (P := P) F) (hF : allowed F) :
+    (hbool : WellFormedSemanticEvalBool (P := P) F)
+    (htt : ∀ σ, P.eval F σ (@HasBool.tt P HasBoolOps.toHasBool) = some (HasBool.ttVal F))
+    (hF : allowed F) :
     ∀ {ss : PStmts P} {σ : SemanticStore P} {evs : List (Event P)} {o : Outcome P},
     BRun F ss σ evs o → ∀ {ss' : PStmts P}, BlockRel ss ss' →
     Block.defUseWellFormed (fun x => (σ x).isSome) df ss = true → WellFormedStore σ F →
@@ -607,9 +626,9 @@ private theorem run_sim' (hvar : WellFormedSemanticEvalVar (P := P) F)
     cases hr with
     | cons hs hr =>
       have hdu' := defUse_rest h1 hdu
-      obtain ⟨⟨e1, h1', ha1⟩, hk1⟩ := runS_sim hvar hbool hF h1 hs hdu'.1 hT
+      obtain ⟨⟨e1, h1', ha1⟩, hk1⟩ := runS_sim hvar hbool htt hF h1 hs hdu'.1 hT
       obtain ⟨⟨e2, h2', ha2⟩, hk2⟩ :=
-        run_sim' hvar hbool hF h2 hr hdu'.2 (brunS_typed h1 hT).1
+        run_sim' hvar hbool htt hF h2 hr hdu'.2 (brunS_typed h1 hT).1
       refine ⟨⟨e1 ++ e2, .cons_normal h1' h2',
           Trace.mayDropEvents_insertsTrueAssumes_append ha1 ha2⟩,
         fun hl pre e post h => ?_⟩
@@ -626,14 +645,16 @@ private theorem run_sim' (hvar : WellFormedSemanticEvalVar (P := P) F)
     cases hr with
     | cons hs hr =>
       simp only [Block.defUseWellFormed, Bool.and_eq_true] at hdu
-      obtain ⟨⟨e1, h1', ha1⟩, hk1⟩ := runS_sim hvar hbool hF h1 hs hdu.1 hT
+      obtain ⟨⟨e1, h1', ha1⟩, hk1⟩ := runS_sim hvar hbool htt hF h1 hs hdu.1 hT
       refine ⟨⟨e1, .cons_exit h1', ha1⟩, fun hl pre e post h => ?_⟩
       obtain ⟨pre', post', h1'', ha, hb⟩ := hk1 hl.1 pre e post h
       exact ⟨pre', post', .cons_exit h1'', ha, hb⟩
 
 /-- **A run of a statement, replayed by its output**, as `run_sim'`. -/
 private theorem runS_sim (hvar : WellFormedSemanticEvalVar (P := P) F)
-    (hbool : WellFormedSemanticEvalBool (P := P) F) (hF : allowed F) :
+    (hbool : WellFormedSemanticEvalBool (P := P) F)
+    (htt : ∀ σ, P.eval F σ (@HasBool.tt P HasBoolOps.toHasBool) = some (HasBool.ttVal F))
+    (hF : allowed F) :
     ∀ {s : PStmt P} {σ : SemanticStore P} {evs : List (Event P)} {o : Outcome P},
     BRunS F s σ evs o → ∀ {s' : PStmt P}, StmtRel s s' →
     Stmt.defUseWellFormed (fun x => (σ x).isSome) df s = true → WellFormedStore σ F →
@@ -649,7 +670,7 @@ private theorem runS_sim (hvar : WellFormedSemanticEvalVar (P := P) F)
     cases hr with
     | ite ht _ =>
       simp only [Stmt.defUseWellFormed, Bool.and_eq_true] at hdu
-      obtain ⟨⟨e, h', ha⟩, hk⟩ := run_sim' hvar hbool hF h ht hdu.1.2 hT
+      obtain ⟨⟨e, h', ha⟩, hk⟩ := run_sim' hvar hbool htt hF h ht hdu.1.2 hT
       refine ⟨⟨e, .ite_true hc h', ha⟩, fun hl pre e0 post hpos => ?_⟩
       obtain ⟨pre', post', h'', hpre, hpost⟩ := hk hl.1 pre e0 post hpos
       exact ⟨pre', post', .ite_true hc h'', hpre, hpost⟩
@@ -657,7 +678,7 @@ private theorem runS_sim (hvar : WellFormedSemanticEvalVar (P := P) F)
     cases hr with
     | ite _ he =>
       simp only [Stmt.defUseWellFormed, Bool.and_eq_true] at hdu
-      obtain ⟨⟨e, h', ha⟩, hk⟩ := run_sim' hvar hbool hF h he hdu.2 hT
+      obtain ⟨⟨e, h', ha⟩, hk⟩ := run_sim' hvar hbool htt hF h he hdu.2 hT
       refine ⟨⟨e, .ite_false hc h', ha⟩, fun hl pre e0 post hpos => ?_⟩
       obtain ⟨pre', post', h'', hpre, hpost⟩ := hk hl.2 pre e0 post hpos
       exact ⟨pre', post', .ite_false hc h'', hpre, hpost⟩
@@ -665,7 +686,7 @@ private theorem runS_sim (hvar : WellFormedSemanticEvalVar (P := P) F)
     cases hr with
     | ite ht _ =>
       simp only [Stmt.defUseWellFormed, Bool.and_eq_true] at hdu
-      obtain ⟨⟨e, h', ha⟩, hk⟩ := run_sim' hvar hbool hF h ht hdu.1.2 hT
+      obtain ⟨⟨e, h', ha⟩, hk⟩ := run_sim' hvar hbool htt hF h ht hdu.1.2 hT
       refine ⟨⟨e, .ite_nondet_true h', ha⟩, fun hl pre e0 post hpos => ?_⟩
       obtain ⟨pre', post', h'', hpre, hpost⟩ := hk hl.1 pre e0 post hpos
       exact ⟨pre', post', .ite_nondet_true h'', hpre, hpost⟩
@@ -673,7 +694,7 @@ private theorem runS_sim (hvar : WellFormedSemanticEvalVar (P := P) F)
     cases hr with
     | ite _ he =>
       simp only [Stmt.defUseWellFormed, Bool.and_eq_true] at hdu
-      obtain ⟨⟨e, h', ha⟩, hk⟩ := run_sim' hvar hbool hF h he hdu.2 hT
+      obtain ⟨⟨e, h', ha⟩, hk⟩ := run_sim' hvar hbool htt hF h he hdu.2 hT
       refine ⟨⟨e, .ite_nondet_false h', ha⟩, fun hl pre e0 post hpos => ?_⟩
       obtain ⟨pre', post', h'', hpre, hpost⟩ := hk hl.2 pre e0 post hpos
       exact ⟨pre', post', .ite_nondet_false h'', hpre, hpost⟩
@@ -681,7 +702,7 @@ private theorem runS_sim (hvar : WellFormedSemanticEvalVar (P := P) F)
     cases hr with
     | block hb =>
       simp only [Stmt.defUseWellFormed] at hdu
-      obtain ⟨⟨e, h', ha⟩, hk⟩ := run_sim' hvar hbool hF h hb hdu hT
+      obtain ⟨⟨e, h', ha⟩, hk⟩ := run_sim' hvar hbool htt hF h hb hdu hT
       refine ⟨⟨e, .block h', ha⟩, fun hl pre e0 post hpos => ?_⟩
       obtain ⟨pre', post', h'', hpre, hpost⟩ := hk hl pre e0 post hpos
       exact ⟨pre', post', .block h'', hpre, hpost⟩
@@ -700,28 +721,30 @@ private theorem runS_sim (hvar : WellFormedSemanticEvalVar (P := P) F)
       hr, hdu, hT => by
     obtain ⟨n, body', hb, hl, rfl⟩ := hr.loop_inv
     have hdub := defUse_loop_body hdu
-    obtain ⟨⟨_, h1', ha1⟩, hk1⟩ := run_sim' hvar hbool hF h1 hb hdub hT
+    obtain ⟨⟨_, h1', ha1⟩, hk1⟩ := run_sim' hvar hbool htt hF h1 hb hdub hT
     have hc := Compat.refl (Block.carriedVars body) hT
-    have hres := loopRun_sim hvar hbool hF h2 rfl (n := n) hb hl σ (hc.step hdub h1) hdub
+    have hres := loopRun_sim hvar hbool htt hF h2 rfl (n := n) hb hl σ (hc.step hdub h1) hdub
     obtain ⟨e, h', ha⟩ :=
-      LoopRunRes.ite (LoopRunRes.iter hvar hbool hF hg hc hdub h1 h1' ha1 hres)
+      LoopRunRes.ite (LoopRunRes.iter hvar hbool htt hF hg hc hdub h1 h1' ha1 hres)
     refine ⟨⟨e, h', ha⟩, fun hloc => ?_⟩
     have hresA :=
-      loopRun_simAt hvar hbool hF h2 rfl (n := n) hb hloc σ (hc.step hdub h1) hdub
+      loopRun_simAt hvar hbool htt hF h2 rfl (n := n) hb hloc σ (hc.step hdub h1) hdub
     exact LoopRunResAt.ite
-      (LoopRunResAt.iter hvar hbool hF hg hc hdub hloc.1 h1 (hk1 hloc.2) h2 hresA)
+      (LoopRunResAt.iter hvar hbool htt hF hg hc hdub hloc.1 h1 (hk1 hloc.2) h2 hresA)
   | _, σ, _, _, .loop_break (body := body) hg h1, _, hr, hdu, hT => by
     obtain ⟨n, body', hb, hl, rfl⟩ := hr.loop_inv
     have hdub := defUse_loop_body hdu
-    obtain ⟨⟨_, h1', ha1⟩, -⟩ := run_sim' hvar hbool hF h1 hb hdub hT
+    obtain ⟨⟨_, h1', ha1⟩, -⟩ := run_sim' hvar hbool htt hF h1 hb hdub hT
     obtain ⟨e, h', ha⟩ := LoopRunRes.ite
-      (LoopRunRes.break hvar hF hg (Compat.refl (Block.carriedVars body) hT) hdub hl h1 h1' ha1)
+      (LoopRunRes.break hvar htt hF hg (Compat.refl (Block.carriedVars body) hT) hdub hl h1 h1' ha1)
     exact ⟨⟨e, h', ha⟩, fun hloc => absurd (brun_exit_covered h1 hloc.1 _ _ rfl) (by simp)⟩
 
 /-- **A run of a loop from the start of an iteration, replayed in the encoding of the loop
     entered from `σ₀`.** -/
 private theorem loopRun_sim (hvar : WellFormedSemanticEvalVar (P := P) F)
-    (hbool : WellFormedSemanticEvalBool (P := P) F) (hF : allowed F) :
+    (hbool : WellFormedSemanticEvalBool (P := P) F)
+    (htt : ∀ σ, P.eval F σ (@HasBool.tt P HasBoolOps.toHasBool) = some (HasBool.ttVal F))
+    (hF : allowed F) :
     ∀ {s : PStmt P} {σ : SemanticStore P} {evs : List (Event P)} {o : Outcome P},
     BRunS F s σ evs o → ∀ {g : ExprOrNondet P} {m : Option P.Expr}
     {inv : List (String × P.Expr)} {body : PStmts P} {md : MetaData P},
@@ -736,19 +759,21 @@ private theorem loopRun_sim (hvar : WellFormedSemanticEvalVar (P := P) F)
   | _, σ, _, _, .loop_iter hg h1 h2, _, _, _, _, _, hs, n, _, hb, hl, σ₀, hc, hdu => by
     obtain ⟨rfl, -, -, rfl, rfl⟩ := Stmt.loop.inj hs
     have hdub := defUse_congr hc.dom hdu
-    obtain ⟨⟨_, h1', ha1⟩, -⟩ := run_sim' hvar hbool hF h1 hb hdub hc.storeWF
-    have hres := loopRun_sim hvar hbool hF h2 hs (n := n) hb hl σ₀ (hc.step hdu h1) hdu
-    exact LoopRunRes.iter hvar hbool hF hg hc hdu h1 h1' ha1 hres
+    obtain ⟨⟨_, h1', ha1⟩, -⟩ := run_sim' hvar hbool htt hF h1 hb hdub hc.storeWF
+    have hres := loopRun_sim hvar hbool htt hF h2 hs (n := n) hb hl σ₀ (hc.step hdu h1) hdu
+    exact LoopRunRes.iter hvar hbool htt hF hg hc hdu h1 h1' ha1 hres
   | _, σ, _, _, .loop_break hg h1, _, _, _, _, _, hs, _, _, hb, hl, σ₀, hc, hdu => by
     obtain ⟨rfl, -, -, rfl, rfl⟩ := Stmt.loop.inj hs
     obtain ⟨⟨_, h1', ha1⟩, -⟩ :=
-      run_sim' hvar hbool hF h1 hb (defUse_congr hc.dom hdu) hc.storeWF
-    exact LoopRunRes.break hvar hF hg hc hdu hl h1 h1' ha1
+      run_sim' hvar hbool htt hF h1 hb (defUse_congr hc.dom hdu) hc.storeWF
+    exact LoopRunRes.break hvar htt hF hg hc hdu hl h1 h1' ha1
 
 /-- **A run of a loop without escaping exits from the start of an iteration, replayed in the
     encoding of the loop entered from `σ₀` at each of its events.** -/
 private theorem loopRun_simAt (hvar : WellFormedSemanticEvalVar (P := P) F)
-    (hbool : WellFormedSemanticEvalBool (P := P) F) (hF : allowed F) :
+    (hbool : WellFormedSemanticEvalBool (P := P) F)
+    (htt : ∀ σ, P.eval F σ (@HasBool.tt P HasBoolOps.toHasBool) = some (HasBool.ttVal F))
+    (hF : allowed F) :
     ∀ {s : PStmt P} {σ : SemanticStore P} {evs : List (Event P)} {o : Outcome P},
     BRunS F s σ evs o → ∀ {g : ExprOrNondet P} {m : Option P.Expr}
     {inv : List (String × P.Expr)} {body : PStmts P} {md : MetaData P},
@@ -761,9 +786,9 @@ private theorem loopRun_simAt (hvar : WellFormedSemanticEvalVar (P := P) F)
   | _, σ, _, _, .loop_iter hg h1 h2, _, _, _, _, _, hs, n, _, hb, hloc, σ₀, hc, hdu => by
     obtain ⟨rfl, -, -, rfl, rfl⟩ := Stmt.loop.inj hs
     have hdub := defUse_congr hc.dom hdu
-    obtain ⟨-, hk1⟩ := run_sim' hvar hbool hF h1 hb hdub hc.storeWF
-    have hres := loopRun_simAt hvar hbool hF h2 rfl (n := n) hb hloc σ₀ (hc.step hdu h1) hdu
-    exact LoopRunResAt.iter hvar hbool hF hg hc hdu hloc.1 h1 (hk1 hloc.2) h2 hres
+    obtain ⟨-, hk1⟩ := run_sim' hvar hbool htt hF h1 hb hdub hc.storeWF
+    have hres := loopRun_simAt hvar hbool htt hF h2 rfl (n := n) hb hloc σ₀ (hc.step hdu h1) hdu
+    exact LoopRunResAt.iter hvar hbool htt hF hg hc hdu hloc.1 h1 (hk1 hloc.2) h2 hres
   | _, _, _, _, .loop_break _ h1, _, _, _, _, _, _, _, _, _, hloc, _, _, _ => by
     exact absurd (brun_exit_covered h1 hloc.1 _ _ rfl) (by simp)
 end
@@ -771,7 +796,9 @@ end
 mutual
 /-- **A reach of a list, replayed by its output.** -/
 private theorem reach_sim' (hvar : WellFormedSemanticEvalVar (P := P) F)
-    (hbool : WellFormedSemanticEvalBool (P := P) F) (hF : allowed F) :
+    (hbool : WellFormedSemanticEvalBool (P := P) F)
+    (htt : ∀ σ, P.eval F σ (@HasBool.tt P HasBoolOps.toHasBool) = some (HasBool.ttVal F))
+    (hF : allowed F) :
     ∀ {ss : PStmts P} {σ : SemanticStore P} {evs : List (Event P)},
     BReach F ss σ evs → ∀ {ss' : PStmts P}, BlockRel ss ss' →
     Block.defUseWellFormed (fun x => (σ x).isSome) df ss = true → WellFormedStore σ F →
@@ -780,21 +807,23 @@ private theorem reach_sim' (hvar : WellFormedSemanticEvalVar (P := P) F)
     cases hr with
     | cons hs _ =>
       simp only [Block.defUseWellFormed, Bool.and_eq_true] at hdu
-      obtain ⟨e, h', ha⟩ := reachS_sim hvar hbool hF h hs hdu.1 hT
+      obtain ⟨e, h', ha⟩ := reachS_sim hvar hbool htt hF h hs hdu.1 hT
       exact ⟨e, .here h', ha⟩
   | _, _, _, .later h1 h2, _, hr, hdu, hT => by
     cases hr with
     | cons hs hr =>
       have hdu' := defUse_rest h1 hdu
-      obtain ⟨⟨e1, h1', ha1⟩, -⟩ := runS_sim hvar hbool hF h1 hs hdu'.1 hT
-      obtain ⟨e2, h2', ha2⟩ := reach_sim' hvar hbool hF h2 hr hdu'.2 (brunS_typed h1 hT).1
+      obtain ⟨⟨e1, h1', ha1⟩, -⟩ := runS_sim hvar hbool htt hF h1 hs hdu'.1 hT
+      obtain ⟨e2, h2', ha2⟩ := reach_sim' hvar hbool htt hF h2 hr hdu'.2 (brunS_typed h1 hT).1
       exact ⟨e1 ++ e2, .later h1' h2',
         Trace.PreservesLastEvent.append_left Trace.mayDropEvents_insertsTrueAssumes_append ha1 ha2
           (breach_ne_nil h2')⟩
 
 /-- **A reach of a statement, replayed by its output.** -/
 private theorem reachS_sim (hvar : WellFormedSemanticEvalVar (P := P) F)
-    (hbool : WellFormedSemanticEvalBool (P := P) F) (hF : allowed F) :
+    (hbool : WellFormedSemanticEvalBool (P := P) F)
+    (htt : ∀ σ, P.eval F σ (@HasBool.tt P HasBoolOps.toHasBool) = some (HasBool.ttVal F))
+    (hF : allowed F) :
     ∀ {s : PStmt P} {σ : SemanticStore P} {evs : List (Event P)},
     BReachS F s σ evs → ∀ {s' : PStmt P}, StmtRel s s' →
     Stmt.defUseWellFormed (fun x => (σ x).isSome) df s = true → WellFormedStore σ F →
@@ -810,50 +839,52 @@ private theorem reachS_sim (hvar : WellFormedSemanticEvalVar (P := P) F)
     cases hr with
     | ite ht _ =>
       simp only [Stmt.defUseWellFormed, Bool.and_eq_true] at hdu
-      obtain ⟨e, h', ha⟩ := reach_sim' hvar hbool hF h ht hdu.1.2 hT
+      obtain ⟨e, h', ha⟩ := reach_sim' hvar hbool htt hF h ht hdu.1.2 hT
       exact ⟨e, .ite_true hc h', ha⟩
   | _, _, _, .ite_false hc h, _, hr, hdu, hT => by
     cases hr with
     | ite _ he =>
       simp only [Stmt.defUseWellFormed, Bool.and_eq_true] at hdu
-      obtain ⟨e, h', ha⟩ := reach_sim' hvar hbool hF h he hdu.2 hT
+      obtain ⟨e, h', ha⟩ := reach_sim' hvar hbool htt hF h he hdu.2 hT
       exact ⟨e, .ite_false hc h', ha⟩
   | _, _, _, .ite_nondet_true h, _, hr, hdu, hT => by
     cases hr with
     | ite ht _ =>
       simp only [Stmt.defUseWellFormed, Bool.and_eq_true] at hdu
-      obtain ⟨e, h', ha⟩ := reach_sim' hvar hbool hF h ht hdu.1.2 hT
+      obtain ⟨e, h', ha⟩ := reach_sim' hvar hbool htt hF h ht hdu.1.2 hT
       exact ⟨e, .ite_nondet_true h', ha⟩
   | _, _, _, .ite_nondet_false h, _, hr, hdu, hT => by
     cases hr with
     | ite _ he =>
       simp only [Stmt.defUseWellFormed, Bool.and_eq_true] at hdu
-      obtain ⟨e, h', ha⟩ := reach_sim' hvar hbool hF h he hdu.2 hT
+      obtain ⟨e, h', ha⟩ := reach_sim' hvar hbool htt hF h he hdu.2 hT
       exact ⟨e, .ite_nondet_false h', ha⟩
   | _, _, _, .block h, _, hr, hdu, hT => by
     cases hr with
     | block hb =>
       simp only [Stmt.defUseWellFormed] at hdu
-      obtain ⟨e, h', ha⟩ := reach_sim' hvar hbool hF h hb hdu hT
+      obtain ⟨e, h', ha⟩ := reach_sim' hvar hbool htt hF h hb hdu hT
       exact ⟨e, .block h', ha⟩
   | _, σ, _, .loop_here hg h, _, hr, hdu, hT => by
     obtain ⟨n, body', hb, -, rfl⟩ := hr.loop_inv
     have hdub := defUse_loop_body hdu
-    obtain ⟨e, h', ha⟩ := reach_sim' hvar hbool hF h hb hdub hT
+    obtain ⟨e, h', ha⟩ := reach_sim' hvar hbool htt hF h hb hdub hT
     exact LoopReachRes.ite
-      (LoopReachRes.here hvar hF hg (Compat.refl (Block.carriedVars (C := CmdExt P) _) hT) hdub
+      (LoopReachRes.here hvar htt hF hg (Compat.refl (Block.carriedVars (C := CmdExt P) _) hT) hdub
         h' ha)
   | _, σ, _, .loop_later (body := body) hg h1 h2, _, hr, hdu, hT => by
     obtain ⟨n, body', hb, hl, rfl⟩ := hr.loop_inv
     have hdub := defUse_loop_body hdu
     have hc := Compat.refl (Block.carriedVars body) hT
     exact LoopReachRes.ite (LoopReachRes.later hg
-      (loopReach_sim hvar hbool hF h2 rfl hb hl σ (hc.step hdub h1) hdub))
+      (loopReach_sim hvar hbool htt hF h2 rfl hb hl σ (hc.step hdub h1) hdub))
 
 /-- **A reach of a loop from the start of an iteration, replayed in the encoding of the loop
     entered from `σ₀`.** -/
 private theorem loopReach_sim (hvar : WellFormedSemanticEvalVar (P := P) F)
-    (hbool : WellFormedSemanticEvalBool (P := P) F) (hF : allowed F) :
+    (hbool : WellFormedSemanticEvalBool (P := P) F)
+    (htt : ∀ σ, P.eval F σ (@HasBool.tt P HasBoolOps.toHasBool) = some (HasBool.ttVal F))
+    (hF : allowed F) :
     ∀ {s : PStmt P} {σ : SemanticStore P} {evs : List (Event P)},
     BReachS F s σ evs → ∀ {g : ExprOrNondet P} {m : Option P.Expr}
     {inv : List (String × P.Expr)} {body : PStmts P} {md : MetaData P},
@@ -864,12 +895,12 @@ private theorem loopReach_sim (hvar : WellFormedSemanticEvalVar (P := P) F)
     LoopReachRes F allowed n g body body' md σ₀ σ evs
   | _, _, _, .loop_here hg h, _, _, _, _, _, hs, _, _, hb, _, σ₀, hc, hdu => by
     obtain ⟨rfl, -, -, rfl, rfl⟩ := Stmt.loop.inj hs
-    obtain ⟨e, h', ha⟩ := reach_sim' hvar hbool hF h hb (defUse_congr hc.dom hdu) hc.storeWF
-    exact LoopReachRes.here hvar hF hg hc hdu h' ha
+    obtain ⟨e, h', ha⟩ := reach_sim' hvar hbool htt hF h hb (defUse_congr hc.dom hdu) hc.storeWF
+    exact LoopReachRes.here hvar htt hF hg hc hdu h' ha
   | _, _, _, .loop_later hg h1 h2, _, _, _, _, _, hs, _, _, hb, hl, σ₀, hc, hdu => by
     obtain ⟨rfl, -, -, rfl, rfl⟩ := Stmt.loop.inj hs
     exact LoopReachRes.later hg
-      (loopReach_sim hvar hbool hF h2 hs hb hl σ₀ (hc.step hdu h1) hdu)
+      (loopReach_sim hvar hbool htt hF h2 hs hb hl σ₀ (hc.step hdu h1) hdu)
 end
 
 /-- **A run of a list, replayed by its output.**  If `ss'` is `ss` with its loops eliminated
@@ -877,15 +908,18 @@ end
     of `ss` from `σ` has a run of `ss'` from `σ` with the same outcome whose trace is the
     source's with some events dropped (`Trace.MayDropEvents`) and assumptions inserted that
     evaluate to `true` under `F`, an `allowed` factory (`Trace.InsertsTrueAssumes`), for a
-    factory whose evaluator reads variables from the store and respects negation. -/
+    factory whose evaluator reads variables from the store, respects negation, and maps the
+    `true` literal of the encoding's marker of a nondeterministic guard to the true value. -/
 theorem run_sim (hvar : WellFormedSemanticEvalVar (P := P) F)
-    (hbool : WellFormedSemanticEvalBool (P := P) F) (hF : allowed F)
+    (hbool : WellFormedSemanticEvalBool (P := P) F)
+    (htt : ∀ σ, P.eval F σ (@HasBool.tt P HasBoolOps.toHasBool) = some (HasBool.ttVal F))
+    (hF : allowed F)
     {ss ss' : PStmts P} (hr : BlockRel ss ss') {σ : SemanticStore P}
     (hdu : Block.defUseWellFormed (fun x => (σ x).isSome) df ss = true) (hT : WellFormedStore σ F)
     {evs : List (Event P)} {o : Outcome P} (h : BRun F ss σ evs o) :
     ∃ evs', BRun F ss' σ evs' o ∧
       RComp Trace.MayDropEvents (Trace.InsertsTrueAssumes allowed) evs evs' :=
-  (run_sim' hvar hbool hF h hr hdu hT).1
+  (run_sim' hvar hbool htt hF h hr hdu hT).1
 
 /-- **A run of a list without escaping exits, replayed by its output at any event.**  Under the
     premises of `run_sim`, if no loop iteration of `ss` leaves its loop by an `exit`
@@ -894,7 +928,9 @@ theorem run_sim (hvar : WellFormedSemanticEvalVar (P := P) F)
     outcome has `e` in its trace after events related to `pre` and before events related to
     `post` by dropping events and inserting true assumptions. -/
 theorem run_sim_at (hvar : WellFormedSemanticEvalVar (P := P) F)
-    (hbool : WellFormedSemanticEvalBool (P := P) F) (hF : allowed F)
+    (hbool : WellFormedSemanticEvalBool (P := P) F)
+    (htt : ∀ σ, P.eval F σ (@HasBool.tt P HasBoolOps.toHasBool) = some (HasBool.ttVal F))
+    (hF : allowed F)
     {ss ss' : PStmts P} (hr : BlockRel ss ss') (hloc : Block.loopExitsLocal ss)
     {σ : SemanticStore P}
     (hdu : Block.defUseWellFormed (fun x => (σ x).isSome) df ss = true) (hT : WellFormedStore σ F)
@@ -903,7 +939,7 @@ theorem run_sim_at (hvar : WellFormedSemanticEvalVar (P := P) F)
     ∃ pre' post', BRun F ss' σ (pre' ++ e :: post') o ∧
       RComp Trace.MayDropEvents (Trace.InsertsTrueAssumes allowed) pre pre' ∧
       RComp Trace.MayDropEvents (Trace.InsertsTrueAssumes allowed) post post' :=
-  (run_sim' hvar hbool hF h hr hdu hT).2 hloc pre e post hpos
+  (run_sim' hvar hbool htt hF h hr hdu hT).2 hloc pre e post hpos
 
 /-- **A run of a list without escaping exits, replayed by its output reflecting assertion
     validity.**  Under the premises of `run_sim_at`, for an interpretation `I` under which every
@@ -913,7 +949,9 @@ theorem run_sim_at (hvar : WellFormedSemanticEvalVar (P := P) F)
     an assertion of the source fails, the run of `ss'` keeping it (`run_sim_at`) fails it too. -/
 theorem run_sim_valid {I : ConditionInterp P} (htrue : I.TrueStutterHolds allowed)
     (hvar : WellFormedSemanticEvalVar (P := P) F)
-    (hbool : WellFormedSemanticEvalBool (P := P) F) (hF : allowed F)
+    (hbool : WellFormedSemanticEvalBool (P := P) F)
+    (htt : ∀ σ, P.eval F σ (@HasBool.tt P HasBoolOps.toHasBool) = some (HasBool.ttVal F))
+    (hF : allowed F)
     {ss ss' : PStmts P} (hr : BlockRel ss ss') (hloc : Block.loopExitsLocal ss)
     {σ : SemanticStore P}
     (hdu : Block.defUseWellFormed (fun x => (σ x).isSome) df ss = true) (hT : WellFormedStore σ F)
@@ -922,13 +960,13 @@ theorem run_sim_valid {I : ConditionInterp P} (htrue : I.TrueStutterHolds allowe
       RComp Trace.MayDropEvents (Trace.InsertsTrueAssumes allowed) evs evs' ∧
       (Trace.AssertionsValid P I evs' → Trace.AssertionsValid P I evs) := by
   by_cases hv : Trace.AssertionsValid P I evs
-  · obtain ⟨evs', hb, ha⟩ := run_sim hvar hbool hF hr hdu hT h
+  · obtain ⟨evs', hb, ha⟩ := run_sim hvar hbool htt hF hr hdu hT h
     exact ⟨evs', hb, ha, fun _ => hv⟩
   · have hfail := hv
     rw [Trace.AssertionsValid_iff_occurrences] at hfail
     simp only [Classical.not_forall] at hfail
     obtain ⟨pre, c, post, hpos, w, hw, hc⟩ := hfail
-    obtain ⟨pre', post', hb, hpre, hpost⟩ := run_sim_at hvar hbool hF hr hloc hdu hT h hpos
+    obtain ⟨pre', post', hb, hpre, hpost⟩ := run_sim_at hvar hbool htt hF hr hloc hdu hT h hpos
     refine ⟨_, hb, ?_, fun hv' => ?_⟩
     · subst hpos
       simpa using Trace.mayDropEvents_insertsTrueAssumes_append hpre
@@ -943,14 +981,16 @@ theorem run_sim_valid {I : ConditionInterp P} (htrue : I.TrueStutterHolds allowe
     events related to those before it in the source by dropping events and inserting true
     assumptions (`Trace.PreservesLastEvent`). -/
 theorem reach_sim (hvar : WellFormedSemanticEvalVar (P := P) F)
-    (hbool : WellFormedSemanticEvalBool (P := P) F) (hF : allowed F)
+    (hbool : WellFormedSemanticEvalBool (P := P) F)
+    (htt : ∀ σ, P.eval F σ (@HasBool.tt P HasBoolOps.toHasBool) = some (HasBool.ttVal F))
+    (hF : allowed F)
     {ss ss' : PStmts P} (hr : BlockRel ss ss') {σ : SemanticStore P}
     (hdu : Block.defUseWellFormed (fun x => (σ x).isSome) df ss = true) (hT : WellFormedStore σ F)
     {evs : List (Event P)} (h : BReach F ss σ evs) :
     ∃ evs', BReach F ss' σ evs' ∧
       Trace.PreservesLastEvent (RComp Trace.MayDropEvents (Trace.InsertsTrueAssumes allowed))
         evs evs' :=
-  reach_sim' hvar hbool hF h hr hdu hT
+  reach_sim' hvar hbool htt hF h hr hdu hT
 
 end -- public section
 

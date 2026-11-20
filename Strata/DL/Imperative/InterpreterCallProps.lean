@@ -47,6 +47,7 @@ variable {P : PureExpr}
 section Stepper
 variable [DecidableEq P.Ident] [HasOldIdent P]
   {Hdr : Type} [DecidableEq Hdr] [Inhabited Hdr] [ProcedureHeader P Hdr]
+  [ProcedureTypeInstantiation P Hdr]
 variable [HasBool P] [DecidableEq P.Expr] [InterpLang P] [HasFvar P]
 
 /-- The call-aware stepper on a base command runs `stepBaseCmdStore` and returns a `.terminal`
@@ -108,6 +109,7 @@ variable {P : PureExpr}
 variable [HasBool P] [DecidableEq P.Expr] [InterpLang P]
 variable [DecidableEq P.Ident] [HasOldIdent P] [HasFvar P]
   {Hdr : Type} [DecidableEq Hdr] [Inhabited Hdr] [ProcedureHeader P Hdr]
+  [ProcedureTypeInstantiation P Hdr]
 
 /-- A counterexample is genuine (its strict call-aware replay returns the `.genuine` verdict) iff
     the replay's trace contains an event on which the halting predicate `assertFailureHalt`

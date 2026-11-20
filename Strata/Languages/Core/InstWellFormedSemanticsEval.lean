@@ -39,7 +39,8 @@ and the operator expressions `coreIntLeOpExpr` / `coreIntAddOpExpr`.
 
 For operators with a concrete evaluator, `opInterp_of_concreteEval` says that every consistent
 model interprets the operator as its concrete evaluator computes, and `eval_app2_op` evaluates
-an operator applied to two values to its interpretation at them.
+an operator applied to two values to its interpretation at them; `eval_app2_op_of_sort` says
+that any operator of type `s → s → s` applied to two values of sort `s` evaluates to one.
 -/
 
 ---------------------------------------------------------------------
@@ -506,6 +507,38 @@ theorem eval_app2_op {f : Expression.Factory} (name : String) {m m' m'' : Expres
       some ⟨f.model.tcInterp, c.substTyVars f.tyVarVal, w⟩ := by
   rw [← hop]
   exact LExpr.denoteEval_app2_op_val (T := CoreLParams) ha hb hc hx hy
+
+/-- A semantic value of a sort `t` equal to `s` is the value of sort `s` it is cast from. -/
+private theorem SemValue.mk_cast {tc : TyConstrInterp} {s t : LSort} (h : t = s)
+    (val : SortDenote tc s) :
+    (⟨tc, t, cast (congrArg (SortDenote tc) h.symm) val⟩ : SemValue) = ⟨tc, s, val⟩ := by
+  subst h; rfl
+
+/-- **Binary operator evaluation at a sort.**  An operator annotated `s → s → s`, for a sort
+    `s`, applied to two expressions evaluating to values of the factory of sort `s`, evaluates
+    to a value of the factory of sort `s`, whatever the operator. -/
+theorem eval_app2_op_of_sort {f : Expression.Factory} (name : String)
+    {m m' m'' : ExpressionMetadata} {s : LSort} {σ : CoreStore} {x y : Expression.Expr}
+    {vx vy : Expression.Val} (hx : Expression.eval f σ x = some vx)
+    (hy : Expression.eval f σ y = some vy) (htx : vx.tc = f.model.tcInterp)
+    (hty : vy.tc = f.model.tcInterp) (hsx : vx.sort = s) (hsy : vy.sort = s) :
+    ∃ w, Expression.eval f σ (.app m (.app m' (.op m'' ⟨name, ()⟩
+        (some (LMonoTy.arrow s.toMonoTy (LMonoTy.arrow s.toMonoTy s.toMonoTy)))) x) y) =
+        some w ∧ w.tc = f.model.tcInterp ∧ w.sort = s := by
+  obtain ⟨tcx, sx, valx⟩ := vx
+  obtain ⟨tcy, sy, valy⟩ := vy
+  simp only at htx hty hsx hsy
+  subst htx hty hsy
+  subst hsx
+  have hg := LSort.toMonoTy_substTyVars f.tyVarVal sx
+  have hx' : Expression.eval f σ x = some ⟨f.model.tcInterp,
+      (sx.toMonoTy).substTyVars f.tyVarVal,
+      cast (congrArg (SortDenote f.model.tcInterp) hg.symm) valx⟩ := by rw [hx, SemValue.mk_cast hg]
+  have hy' : Expression.eval f σ y = some ⟨f.model.tcInterp,
+      (sx.toMonoTy).substTyVars f.tyVarVal,
+      cast (congrArg (SortDenote f.model.tcInterp) hg.symm) valy⟩ := by rw [hy, SemValue.mk_cast hg]
+  exact ⟨_, eval_app2_op (m := m) (m' := m') (m'' := m'') name (LSort.toMonoTy_isGround sx)
+    (LSort.toMonoTy_isGround sx) (LSort.toMonoTy_isGround sx) hx' hy' rfl, rfl, hg⟩
 
 end Core
 

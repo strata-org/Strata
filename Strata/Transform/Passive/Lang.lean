@@ -61,6 +61,10 @@ class WPOps (P : PureExpr) where
   substFn : P.Expr → (P.Ident → Option P.Expr) → P.Expr
   /-- Equality of types, decided. -/
   tyBEq : P.Ty → P.Ty → Bool
+  /-- Whether the SSA phase keeps an assumption with this label when its condition folds to
+      `true` (an assumption whose label the verifier reads in an obligation's path condition);
+      the SSA phase drops every other such assumption. -/
+  keepsTrueAssume : String → Bool := fun _ => false
 
 /-- The laws of the operations of `WPOps` that the correctness proofs of the WP and SSA phases
     need, beyond the mainline classes: the free variables of the literals, of a conditional and of

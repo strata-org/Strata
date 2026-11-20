@@ -820,6 +820,7 @@ namespace Calls
 variable [HasFvars P] [CallLangWF P] [HasOldIdent P]
 variable {m : Type → Type} [Monad m] [LawfulMonad m] [InterpEffects P m] [MonadExcept StopReason m]
 variable {Hdr : Type} [DecidableEq Hdr] [Inhabited Hdr] [ProcedureHeader P Hdr]
+  [ProcedureTypeInstantiation P Hdr]
 
 omit [CallLangWF P] in
 /-- **Call-aware completeness of the monadic Kleene interpreter.**  Every derivation of

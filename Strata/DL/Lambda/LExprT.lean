@@ -130,13 +130,15 @@ protected def varCloseT (k : Nat) (x : T.Identifier) (e : (LExprT T.mono)) : (LE
 ---------------------------------------------------------------------
 
 /--
-Generate a fresh identifier `xv` for a bound variable. Use the type annotation
+Generate a fresh identifier `xv` for a bound variable, outside both the context
+and `avoid` (the free variables of the binder's body). Use the type annotation
 `ty` if present, otherwise generate a fresh type variable. Add `xv` along with
 its type to the type context.
 -/
-def typeBoundVar (C: LContext T) (Env : TEnv T.IDMeta) (ty : Option LMonoTy) :
+def typeBoundVar (C: LContext T) (Env : TEnv T.IDMeta) (ty : Option LMonoTy)
+    (avoid : List T.Identifier) :
   Except Format (T.Identifier × LMonoTy × TEnv T.IDMeta) := do
-  let (xv, Env) ← liftGenEnv HasGen.genVar Env
+  let (xv, Env) ← liftGenEnv (HasGen.genVar avoid) Env
   let (xty, Env) ← match ty with
     | some bty =>
       let ans := LMonoTy.instantiateWithCheck bty C Env
@@ -247,10 +249,11 @@ def resolveAux (C: LContext T) (Env : TEnv T.IDMeta) (e : LExpr T.mono) :
     .ok (.app ⟨m, mty⟩ e1t e2t, TEnv.updateSubst Env S)
 
   | .abs m name bty e    =>
-    -- Generate a fresh expression variable to stand in for the bound variable
+    -- Generate a fresh expression variable to stand in for the bound variable,
+    -- outside the free variables of `e` so that opening `e` captures none of them.
     -- For the bound variable, use type annotation if present. Otherwise,
     -- generate a fresh type variable.
-    let (xv, xty, Env) ← typeBoundVar C Env bty
+    let (xv, xty, Env) ← typeBoundVar C Env bty (e.freeVars.map (·.1))
     -- Construct `e'` from `e`, where the bound variable has been replaced by
     -- `xv`.
     let e' := LExpr.varOpen 0 (xv, some xty) e
@@ -270,7 +273,7 @@ def resolveAux (C: LContext T) (Env : TEnv T.IDMeta) (e : LExpr T.mono) :
     .ok ((.abs ⟨m, mty⟩ name bty etclosed), Env)
 
   | .quant m qk name bty triggers e =>
-    let (xv, xty, Env) ← typeBoundVar C Env bty
+    let (xv, xty, Env) ← typeBoundVar C Env bty ((triggers.freeVars ++ e.freeVars).map (·.1))
     let e' := LExpr.varOpen 0 (xv, some xty) e
     have He'_size: (varOpen 0 (xv, some xty) e).sizeOf < 2 + e.sizeOf := by
       rw [varOpen_sizeOf]

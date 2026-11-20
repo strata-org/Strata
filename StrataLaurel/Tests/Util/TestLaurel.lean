@@ -165,7 +165,7 @@ def renderStaticFunctionsForIdiomaticity (p : Laurel.LaurelProgram) : IO Unit :=
     procedures it declares itself. Resolution errors are printed either way, so a
     snippet that does need the prelude says so in its golden rather than silently
     running the pass over an unresolved program. -/
-def runPassForIdiomaticityCore (pass : Laurel.LaurelPass)
+public def runPassForIdiomaticityCore (pass : Laurel.LaurelPass)
     (toInput : Laurel.LaurelProgram → Laurel.SemanticModel → Laurel.LaurelProgram)
     (render : Laurel.LaurelProgram → IO Unit)
     (prelude : Bool) (options : Laurel.LaurelTranslateOptions) (program : StrataDDM.Program) :

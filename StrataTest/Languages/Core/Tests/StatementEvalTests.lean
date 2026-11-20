@@ -6,6 +6,7 @@
 module
 
 meta import Strata.Languages.Core.StatementEval
+meta import Strata.Languages.Core.IncrementalSolve
 meta import StrataTest.DL.Lambda.RenamingFixtures
 
 meta section
@@ -478,6 +479,158 @@ private def contractStored (tyArgs : Option (List Core.Expression.Ty)) : Format 
 /-- info: ((~opR : (arrow $__callty0 bool)) u) -/
 #guard_msgs in
 #eval contractStored none
+
+/-- A stored `int` against an argument `u : bool`: the evaluator reports the disagreement. -/
+private def contractStoredClash : Format :=
+  let tvA : Lambda.LMonoTy := .ftvar "a"
+  let proc : Procedure :=
+    { header := { name := "r", typeArgs := ["a"], inputs := [("x", tvA)], outputs := [] },
+      spec := { preconditions := [], postconditions := [] } }
+  let E := { Env.init with program := { decls := [.proc proc .empty] } }
+  let (_, E) := Command.inlineCallContract E [] "r" (some [.forAll [] .int])
+    [.fvar Core.coreLoc "u" (some .bool)] .empty
+  match E.error with
+  | some e => format e
+  | none => "no error"
+
+/--
+info: [ERROR] Ill-formed call: the call to r stores a = int,
+but its arguments give a = bool
+-/
+#guard_msgs in
+#eval contractStoredClash
+
+/-- The callee `q<a, b>(x : a, y : b)` is called with arguments whose types are both the
+    generated variable `$__ty0`, so the call gives `a` and `b` one type. The stored `a = int`
+    binds `$__ty0`, and the stored `b = bool` disagrees; the message writes no generated name. -/
+private def contractStoredThreaded : Format :=
+  let tvA : Lambda.LMonoTy := .ftvar "a"
+  let tvB : Lambda.LMonoTy := .ftvar "b"
+  let proc : Procedure :=
+    { header := { name := "q", typeArgs := ["a", "b"],
+                  inputs := [("x", tvA), ("y", tvB)], outputs := [] },
+      spec := { preconditions := [], postconditions := [] } }
+  let E := { Env.init with program := { decls := [.proc proc .empty] } }
+  let (_, E) := Command.inlineCallContract E [] "q" (some [.forAll [] .int, .forAll [] .bool])
+    [.fvar Core.coreLoc "u" (some (.ftvar "$__ty0")),
+     .fvar Core.coreLoc "v" (some (.ftvar "$__ty0"))] .empty
+  match E.error with
+  | some e => format e
+  | none => "no error"
+
+/--
+info: [ERROR] Ill-formed call: the call to q stores b = bool,
+but its arguments give b = int
+-/
+#guard_msgs in
+#eval contractStoredThreaded
+
+/-- The callee `r<a>(x : a, y : MyInt)` names an alias that its header does not expand, so the
+    call's argument types cannot be matched against it. With stored `a = bool` and arguments
+    `u : bool`, `v : int`, the stored list is used and there is no error. -/
+private def contractStoredAlias : Format :=
+  let tvA : Lambda.LMonoTy := .ftvar "a"
+  let pre : Expression.Expr :=
+    .app Core.coreLoc (.op Core.coreLoc "opR" (some (.arrow tvA .bool)))
+      (.fvar Core.coreLoc "x" (some tvA))
+  let proc : Procedure :=
+    { header := { name := "r", typeArgs := ["a"], outputs := [],
+                  inputs := [("x", tvA), ("y", .tcons "MyInt" [])] },
+      spec := { preconditions := [("pre", ⟨pre, .Default, #[]⟩)], postconditions := [] } }
+  let E := { Env.init with program := { decls := [.proc proc .empty] } }
+  let (_, E) := Command.inlineCallContract E [] "r" (some [.forAll [] .bool])
+    [.fvar Core.coreLoc "u" (some .bool), .fvar Core.coreLoc "v" (some .int)] .empty
+  match E.error with
+  | some e => format e
+  | none => deferredFormat E
+
+/-- info: ((~opR : (arrow bool bool)) (u : bool)) -/
+#guard_msgs in
+#eval contractStoredAlias
+
+/-- The same call as `contractStoredAlias` with a wrong stored `a = int` for `u : bool`. The
+    matching still fails on the alias, so nothing is checked and the stored list is used. -/
+private def contractStoredAliasWrong : Format :=
+  let tvA : Lambda.LMonoTy := .ftvar "a"
+  let pre : Expression.Expr :=
+    .app Core.coreLoc (.op Core.coreLoc "opR" (some (.arrow tvA .bool)))
+      (.fvar Core.coreLoc "x" (some tvA))
+  let proc : Procedure :=
+    { header := { name := "r", typeArgs := ["a"], outputs := [],
+                  inputs := [("x", tvA), ("y", .tcons "MyInt" [])] },
+      spec := { preconditions := [("pre", ⟨pre, .Default, #[]⟩)], postconditions := [] } }
+  let E := { Env.init with program := { decls := [.proc proc .empty] } }
+  let (_, E) := Command.inlineCallContract E [] "r" (some [.forAll [] .int])
+    [.fvar Core.coreLoc "u" (some .bool), .fvar Core.coreLoc "v" (some .int)] .empty
+  match E.error with
+  | some e => format e
+  | none => deferredFormat E
+
+/-- info: ((~opR : (arrow int bool)) (u : bool)) -/
+#guard_msgs in
+#eval contractStoredAliasWrong
+
+/-- A call from a polymorphic caller whose argument has the caller's type variable `b`: the
+    stored `b` agrees with the argument type, so there is no error. -/
+private def contractStoredCallerVar : Format :=
+  let tvA : Lambda.LMonoTy := .ftvar "a"
+  let pre : Expression.Expr :=
+    .app Core.coreLoc (.op Core.coreLoc "opR" (some (.arrow tvA .bool)))
+      (.fvar Core.coreLoc "x" (some tvA))
+  let proc : Procedure :=
+    { header := { name := "r", typeArgs := ["a"], inputs := [("x", tvA)], outputs := [] },
+      spec := { preconditions := [("pre", ⟨pre, .Default, #[]⟩)], postconditions := [] } }
+  let E := { Env.init with program := { decls := [.proc proc .empty] } }
+  let (_, E) := Command.inlineCallContract E [] "r" (some [.forAll [] (.ftvar "b")])
+    [.fvar Core.coreLoc "u" (some (.ftvar "b"))] .empty
+  match E.error with
+  | some e => format e
+  | none => deferredFormat E
+
+/-- info: ((~opR : (arrow b bool)) (u : b)) -/
+#guard_msgs in
+#eval contractStoredCallerVar
+
+/-- `contractStoredAliasWrong` as a whole program: the call stores `a = int` for a `bool` argument,
+    which would prove `opR(x)` by the axiom. `Core.verify` type checks first and replaces the
+    stored list, so the precondition stays unproved. -/
+private def storedAliasProgram : Program :=
+  let tvA : Lambda.LMonoTy := .ftvar "a"
+  let opR (ty : Lambda.LMonoTy) : Expression.Expr :=
+    .op Core.coreLoc "opR" (some (.arrow ty .bool))
+  let rProc : Procedure :=
+    { header := { name := "r", typeArgs := ["a"], outputs := [],
+                  inputs := [("x", tvA), ("y", .tcons "MyInt" [])] },
+      spec := { preconditions :=
+                  [("pre", ⟨.app Core.coreLoc (opR tvA) (.fvar Core.coreLoc "x" (some tvA)),
+                    .Default, #[]⟩)],
+                postconditions := [] } }
+  let mainProc : Procedure :=
+    { header := { name := "main", typeArgs := [], inputs := [], outputs := [] },
+      spec := { preconditions := [], postconditions := [] },
+      body := .structured
+        [Statement.init "u" (.forAll [] .bool) .nondet .empty,
+         Statement.call "r" (some [.forAll [] .int])
+           [.inArg (.fvar Core.coreLoc "u" none), .inArg (.intConst Core.coreLoc 0)] .empty] }
+  { decls :=
+      [.type (.syn { name := "MyInt", typeArgs := [], type := .int }) .empty,
+       .func { name := "opR", typeArgs := ["a"], inputs := [("x", tvA)], output := .bool } .empty,
+       .ax { name := "opRInt",
+             e := .all Core.coreLoc "x" (some .int)
+                    (.app Core.coreLoc (opR .int) (.bvar Core.coreLoc 0)) } .empty,
+       .proc rProc .empty, .proc mainProc .empty] }
+
+private def verifyStoredAlias : IO Unit := do
+  IO.FS.withTempDir fun tempDir => do
+    match ← (Core.verify storedAliasProgram tempDir .quiet).toBaseIO with
+    | .ok results =>
+      for r in results do
+        IO.println s!"{r.obligation.label}: {r.formatOutcome}"
+    | .error e => IO.println s!"error: {e}"
+
+/-- info: callElimAssert_pre_2: ❓ unknown -/
+#guard_msgs in
+#eval verifyStoredAlias
 
 end Tests
 ---------------------------------------------------------------------

@@ -225,8 +225,9 @@ theorem ssaList_ind {Q : PStmts P → SSt P → PStmts P → SSt P → Prop} (ni
       sFresh x s = .ok (x', s1) → Q rest (s1.bound x (.name x' (some ty))) out s' →
       Q (.cmd (.cmd (.set x .nondet md)) :: rest) s (mkInit x' ty .nondet :: out) s')
     (assume : ∀ {l a md rest s out s'}, Q rest s out s' →
-      Q (.cmd (.cmd (.assume l a md)) :: rest) s (if WPOps.boolLit? (foldE s.ρ a) == some true
-        then out else .cmd (.cmd (.assume l (foldE s.ρ a) md)) :: out) s')
+      Q (.cmd (.cmd (.assume l a md)) :: rest) s (if WPOps.boolLit? (foldE s.ρ a) == some true &&
+        !WPOps.keepsTrueAssume (P := P) l then out
+        else .cmd (.cmd (.assume l (foldE s.ρ a) md)) :: out) s')
     (check : ∀ {mk : String → P.Expr → MetaData P → Cmd P} {l e md rest s out s'},
       (mk = .assert ∨ mk = .cover) →
       ssaList rest { s with obls := some (.obl l (oblSubS s.ρ e)) :: s.obls } = .ok (out, s') →

@@ -13,6 +13,7 @@ public import Strata.Pipeline.Context
 public import Strata.DL.Imperative.EvalContext
 public import Strata.DL.SMT.Encoder
 public import Strata.DL.SMT.IncrementalSolver
+public import Strata.DL.SMT.VerdictReader
 public import Strata.Util.ListMapProps
 public import Strata.Languages.Core.Options
 
@@ -153,25 +154,6 @@ def failureOfMessage (detail : String) : SolverError :=
 ---------------------------------------------------------------------
 
 /--
-Parse a verdict line ("sat", "unsat", "unknown") via the SMTResponse DDM
-dialect. Returns `some .sat`, `some .unsat`, `some .unknown`, or `none`
-on parse/conversion failure.
--/
-private def parseVerdict (line : String) : IO (Option (Result PUnit)) := do
-  let inputCtx := StrataDDM.Parser.stringInputContext "solver" (line ++ "\n")
-  let prg ←
-    try StrataDDM.Elab.parseStrataProgramFromDialect
-          Strata.SMTResponseDDM.smtResponseDialects "SMTResponse" inputCtx
-    catch _ => return none
-  if prg.commands.isEmpty then return none
-  let op := prg.commands[0]!
-  match Strata.SMTResponseDDM.Command.ofAst op with
-  | .ok (.specific_success_response _ (.ssr_check_sat _ (.csr_sat _)))     => return some (.sat [])
-  | .ok (.specific_success_response _ (.ssr_check_sat _ (.csr_unsat _)))   => return some .unsat
-  | .ok (.specific_success_response _ (.ssr_check_sat _ (.csr_unknown _))) => return some .unknown
-  | _ => return none
-
-/--
 Parse a `(get-value ...)` model response using the SMTResponse DDM dialect.
 Uses `parseCategoryFromDialect` targeting `SMTResponse.GetValueResponse`
 directly, which avoids the ambiguity that arises when parsing at the
@@ -223,7 +205,7 @@ being reported as a malformed counterexample.
 -/
 def noModelOffered (modelStr : String) : Bool :=
   let t := modelStr.trimAscii.toString
-  t.isEmpty || t.startsWith "(error" || t == "sat" || t == "unsat" || t == "unknown"
+  t.isEmpty || t.startsWith "(error" || (Strata.SMT.decodeVerdict t.toList).isSome
 
 /--
 Best-effort parsing for solver-result paths where model absence must not change the verdict.
@@ -273,6 +255,10 @@ The satisfiability result is returned as the first element of the pair;
 the validity result is the second element.
 
 When only one check is enabled, the other is returned as `unknown`.
+
+The first verdict must be the first line of the output: anything else there is an error, not
+something to skip. Each later verdict is read after the responses that follow the previous one
+(see `Strata.SMT.dropToVerdict`).
 -/
 def solverResult {P : PureExpr} [ToFormat P.Ident]
     (typedVarToSMTFn : P.Ident → P.Ty → Except Format (String × Strata.SMT.TermType))
@@ -282,16 +268,9 @@ def solverResult {P : PureExpr} [ToFormat P.Ident]
     : IO (Except SolverError (Result P.Ident × Result P.Ident)) := do
   let stdout := output.stdout
 
-  -- Helper to parse a single verdict and model
-  -- Skip lines until we find a verdict (sat/unsat/unknown) or run out of input.
-  -- This is needed because get-value commands in the file may produce error
-  -- output when the preceding check-sat returned unsat.
+  -- The next verdict comes after the whole response to the previous verdict's `get-value`.
   let skipToNextVerdict (input : String) : String :=
-    let lines := input.splitOn "\n"
-    let rest := lines.dropWhile (fun l =>
-      let t := l.trimAscii.toString
-      t != "sat" && t != "unsat" && t != "unknown" && !t.isEmpty)
-    "\n".intercalate rest
+    String.ofList (Strata.SMT.dropToVerdict 0 .code input.toList)
 
   -- Parse the model that follows a sat/unknown verdict, falling back to the
   -- given default on any error.
@@ -307,15 +286,14 @@ def solverResult {P : PureExpr} [ToFormat P.Ident]
     | .error _ => return default
 
   let parseVerdict (input : String) : IO (Option (Result P.Ident × String)) := do
-    let pos := input.find (· == '\n')
-    let verdict := input.extract input.startPos pos |>.trimAscii.toString
-    let rest := (input.extract pos input.endPos |>.drop 1).toString
-    match verdict with
-    | "sat" =>
+    let (decision, restChars) := Strata.SMT.splitFirstLine input.toList
+    let rest := String.ofList restChars
+    match decision with
+    | some .sat =>
       let r ← parseFollowingModel rest (.sat [])
       return some (r, skipToNextVerdict rest)
-    | "unsat" => return some (.unsat, skipToNextVerdict rest)
-    | "unknown" =>
+    | some .unsat => return some (.unsat, skipToNextVerdict rest)
+    | some .unknown =>
       let r ← parseFollowingModel rest .unknown
       return some (r, skipToNextVerdict rest)
     | _ => return none

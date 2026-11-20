@@ -11,7 +11,7 @@ public import Strata.DL.Lambda.LExprEvalAnnotateProps
 import all Strata.DL.Lambda.Denote.LExprSemanticsConsistent
 import all Strata.DL.Lambda.Denote.Assumptions
 import all Strata.Languages.Core.Factory
-import all Strata.Languages.Core.Logic.FactoryInterp
+import all Strata.Languages.Core.FactoryInterp
 import all Strata.DL.Lambda.TypeFactory
 import all Strata.DL.Lambda.LExprWF
 import all Strata.DL.Lambda.Factory

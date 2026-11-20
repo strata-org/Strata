@@ -15,6 +15,7 @@ import StrataDDM.Ion
 import Strata.DL.SMT
 import Strata.DL.Lambda
 import Strata.DL.Imperative
+import Strata.DL.Str
 
 /- Utilities -/
 import Strata.Util.NameProofs
@@ -23,6 +24,7 @@ import Strata.Util.RealProps
 import Strata.Util.IonDeserializer
 import Strata.Util.Sarif
 import Strata.Util.Worklist
+import Strata.Util.WorklistProps
 
 /- Strata Languages -/
 import Strata.Languages.Core.BitVecEvalProps
@@ -30,6 +32,7 @@ import Strata.Languages.Core.IntEvalProps
 import Strata.Languages.Core.InstWellFormedSemanticsEval
 import Strata.Languages.Core.InstExprTyping
 import Strata.Languages.Core.FactoryWF
+import Strata.Languages.Core.FactoryInterp
 import Strata.Languages.Core.SeqModel
 import Strata.Languages.Core.SMTEncoderProps
 import Strata.Languages.Core.SMTEmitter
@@ -51,15 +54,14 @@ import Strata.Languages.Core.Analysis.DeductiveVerificationProps
 import Strata.Languages.Core.Analysis.FragmentFactory
 import Strata.DL.Lambda.LFuncEvalSound
 import Strata.DL.Lambda.LExprRenameOps
-import Strata.Transform.MonomorphizeBasics
-import Strata.Transform.MonomorphizeWorklist
-import Strata.Transform.MonomorphizeInstances
+import Strata.Transform.MonomorphizeFunctionsProps
 import Strata.Transform.MonomorphizeFunctionsCorrect
 import Strata.Languages.Core.ProcedureProps
 import Strata.Languages.Core.ProgramProps
 import Strata.Transform.CoreTransformProps
 import Strata.Transform.DetToKleeneCorrect
 import Strata.Transform.FunctionInlining
+import Strata.Transform.FreshPlainNameSanitizeProps
 import Strata.Transform.FunctionInliningProps
 import Strata.Transform.UnrollBoundedQuantifiersProps
 import Strata.Transform.LoopInitHoist
@@ -103,7 +105,6 @@ import Strata.Transform.StructuredToUnstructuredPipelineCoreCorrect
 import Strata.DL.Imperative.Logic.HoareTemplate
 import Strata.DL.Imperative.Logic.HoareTotalTemplate
 import Strata.Languages.Core.Logic.LangDefProps
-import Strata.Languages.Core.Logic.FactoryInterp
 import Strata.Languages.Core.Logic.TraceInterpUsingDenote
 import Strata.Languages.Core.Logic.TraceInterpUsingDenoteProps
 import Strata.Languages.Core.Logic.Hoare
@@ -143,7 +144,9 @@ import Strata.DL.SMT.DenoteTyped
 import Strata.DL.SMT.DenoteTypedProps
 import Strata.DL.SMT.DenoteSemanticsEquiv
 import Strata.DL.SMT.DenoteTypedSMTQuery
+import Strata.DL.SMT.Lean.QueryCorrect
 import Strata.DL.SMT.SymbolProps
+import Strata.DL.SMT.VerdictReaderProps
 import Strata.DL.SMT.RegexMatchProps
 
 /- Other -/

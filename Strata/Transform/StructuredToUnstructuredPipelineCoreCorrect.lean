@@ -74,11 +74,7 @@ theorem overapproximatesTraces (base : InitEnvWFParams)
         ∧ Block.noMeasureLoops ss = Bool.true
         ∧ Block.uniqueInits (C := Command) ss
         ∧ Block.exitsCoveredByBlocks (CmdT := Command) [] ss
-        ∧ Block.userLabelsShapeNodup (C := Command) ss
-        ∧ (∀ name : String, Imperative.NondetElim.isGeneratedName name →
-            HasIdent.ident (P := Expression) name ∉
-              (Block.definedVars (C := Command) ss false ++
-                Block.modifiedVars (C := Command) ss)))
+        ∧ Block.userLabelsShapeNodup (C := Command) ss)
       ((base.extend Imperative.StructuredToUnstructured.prefixesReserved).extend
         Imperative.NondetElim.prefixesReserved) base := by
   let params_src := (base.extend Imperative.StructuredToUnstructured.prefixesReserved).extend
@@ -96,22 +92,18 @@ theorem overapproximatesTraces (base : InitEnvWFParams)
         (EventLang.coreBlock π) (EventLang.coreBlock π)
         (fun ss => some (Imperative.Block.nondetElim ss))
         (fun ss =>
-          Statements.noCalls ss = Bool.true
+          (Statements.noCalls ss = Bool.true
           ∧ Block.loopHasNoInvariants ss = Bool.true
           ∧ Block.noMeasureLoops ss = Bool.true
           ∧ Block.uniqueInits (C := Command) ss
           ∧ Block.exitsCoveredByBlocks (CmdT := Command) [] ss
-          ∧ Block.userLabelsShapeNodup (C := Command) ss
-          ∧ (∀ name : String, Imperative.NondetElim.isGeneratedName name →
-              HasIdent.ident (P := Expression) name ∉
-                (Block.definedVars (C := Command) ss false ++
-                  Block.modifiedVars (C := Command) ss)))
+          ∧ Block.userLabelsShapeNodup (C := Command) ss)
+          ∧ ∃ ρ, Core.Logic.BlockInitEnvWF params_src ss ρ)
         params_src params_a := by
     intro ss out ht hpre ρ₀ ρ₀' hEq hwf
-    obtain ⟨hnc, _, _, _, _, _, hnogen⟩ := hpre
     obtain ⟨h1, h2, h3, h4⟩ :=
       Core.NondetElim.overapproximatesTraces π params_a hprefixes
-        ss out ht ⟨hnc, hnogen⟩ ρ₀ ρ₀' hEq hwf
+        ss out ht hpre.1.1 ρ₀ ρ₀' hEq hwf
     refine ⟨?_, ?_, ?_, h4⟩
     · exact h1
     · intro ρ' trace hrun
@@ -149,7 +141,7 @@ theorem overapproximatesTraces (base : InitEnvWFParams)
       (EventLang.coreBlock π) (EventLang.coreBlock π) (EventLang.coreBlock π)
       (fun ss => some (Imperative.Block.nondetElim ss)) Core.hoistLoopPrefixInits
       params_src params_a params_a
-      nondetElim_establishes_hoistPre
+      (nondetElim_establishes_hoistPre params_a)
       h_nd
       h_hoist).mono_trace
         (fun _ _ h => h.elim (fun _ hmid =>
@@ -159,16 +151,13 @@ theorem overapproximatesTraces (base : InitEnvWFParams)
       ∀ st st',
         ((fun ss => some (Imperative.Block.nondetElim ss)) st >>=
           Core.hoistLoopPrefixInits) = some st' →
-        (Statements.noCalls st = Bool.true
+        ((Statements.noCalls st = Bool.true
           ∧ Block.loopHasNoInvariants st = Bool.true
           ∧ Block.noMeasureLoops st = Bool.true
           ∧ Block.uniqueInits (C := Command) st
           ∧ Block.exitsCoveredByBlocks (CmdT := Command) [] st
-          ∧ Block.userLabelsShapeNodup (C := Command) st
-          ∧ (∀ name : String, Imperative.NondetElim.isGeneratedName name →
-              HasIdent.ident (P := Expression) name ∉
-                (Block.definedVars (C := Command) st false ++
-                  Block.modifiedVars (C := Command) st))) →
+          ∧ Block.userLabelsShapeNodup (C := Command) st)
+          ∧ ∃ ρ, Core.Logic.BlockInitEnvWF params_src st ρ) →
         (Statements.noCalls st' = Bool.true
           ∧ Block.noNondetGuards st' = Bool.true
           ∧ Block.uniqueInits (C := Command) st'
@@ -179,9 +168,13 @@ theorem overapproximatesTraces (base : InitEnvWFParams)
           ∧ Block.userLabelsShapeNodup (C := Command) st') := by
     intro st st' ht hpre
     simp only [bind, Option.bind] at ht
-    exact hoist_establishes_loweringPre _ _ ht (nondetElim_establishes_hoistPre _ _ rfl hpre)
+    exact hoist_establishes_loweringPre _ _ ht
+      (nondetElim_establishes_hoistPre params_a _ _ rfl hpre)
   -- Stage 2: compose the structured prefix with `stmtsToCFG`, then collapse
-  -- the relational composition to `Trace.WithWF` matching.
+  -- the relational composition to `Trace.WithWF` matching. The composed precondition's
+  -- assumption that some entry meets the source gate is then dropped: the theorem applies it
+  -- only to such entries.
+  refine OverapproximatesTracesUptoWhen.of_pre_and_initEnvWF ?_
   exact (OverapproximatesTracesUptoWhen.comp_trans_eq
     (Trace.WithWF (P := Expression) (EventArg.ExtendsEnv (fun _ => True)))
     (Trace.WithWF (P := Expression) (EventArg.ExtendsEnv (fun _ => True)))
@@ -219,11 +212,7 @@ theorem assertValid (base : InitEnvWFParams)
       ∧ Block.noMeasureLoops ss = Bool.true
       ∧ Block.uniqueInits (C := Command) ss
       ∧ Block.exitsCoveredByBlocks (CmdT := Command) [] ss
-      ∧ Block.userLabelsShapeNodup (C := Command) ss
-      ∧ (∀ name : String, Imperative.NondetElim.isGeneratedName name →
-          HasIdent.ident (P := Expression) name ∉
-            (Block.definedVars (C := Command) ss false ++
-              Block.modifiedVars (C := Command) ss)))
+      ∧ Block.userLabelsShapeNodup (C := Command) ss)
     {I : ConditionInterp Expression}
     (hstable : I.StableUnder
       (EventArg.WithWF (EventArg.ExtendsEnv (fun _ => True))
@@ -244,11 +233,7 @@ theorem assertValid (base : InitEnvWFParams)
       ∧ Block.noMeasureLoops block = Bool.true
       ∧ Block.uniqueInits (C := Command) block
       ∧ Block.exitsCoveredByBlocks (CmdT := Command) [] block
-      ∧ Block.userLabelsShapeNodup (C := Command) block
-      ∧ (∀ name : String, Imperative.NondetElim.isGeneratedName name →
-          HasIdent.ident (P := Expression) name ∉
-            (Block.definedVars (C := Command) block false ++
-              Block.modifiedVars (C := Command) block)))
+      ∧ Block.userLabelsShapeNodup (C := Command) block)
     ((base.extend Imperative.StructuredToUnstructured.prefixesReserved).extend
         Imperative.NondetElim.prefixesReserved) base
     (fun _ _ htrace aid =>
@@ -277,11 +262,7 @@ theorem triple (base : InitEnvWFParams)
       ∧ Block.noMeasureLoops ss = Bool.true
       ∧ Block.uniqueInits (C := Command) ss
       ∧ Block.exitsCoveredByBlocks (CmdT := Command) [] ss
-      ∧ Block.userLabelsShapeNodup (C := Command) ss
-      ∧ (∀ name : String, Imperative.NondetElim.isGeneratedName name →
-          HasIdent.ident (P := Expression) name ∉
-            (Block.definedVars (C := Command) ss false ++
-              Block.modifiedVars (C := Command) ss)))
+      ∧ Block.userLabelsShapeNodup (C := Command) ss)
     {F : Lambda.Factory CoreLParams} {Pre Post Post' : Env Expression → Prop}
     (hpin : ∀ ρ₀, Pre ρ₀ → ρ₀.factory.factory = F)
     (hpost : ∀ ρ₀ ρ' ρ'', Pre ρ₀ →

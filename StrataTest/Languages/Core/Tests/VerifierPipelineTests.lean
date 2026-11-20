@@ -216,7 +216,7 @@ procedure caller ()
   var tmp_arg_0 : int := 5;
   var tmp_z_1 : int := z;
   havoc z;
-  assume [callElimAssume_id_ensures_0_2]: z == tmp_arg_0;
+  assume [$__callElimAssume_id_ensures_0_2]: z == tmp_arg_0;
 };
 -/
 #guard_msgs in
@@ -256,6 +256,7 @@ procedure callee ()
         $__loopElim_havoc_loop_0: {
           
         }
+        assume [$__loopElimAssume_guard_loop_0]: true;
         if * {
           exit b;
         }
@@ -263,6 +264,7 @@ procedure callee ()
       $__loopElim_havoc_loop_0: {
         
       }
+      assume [$__loopElimAssume_not_guard_loop_0]: true;
     }
   }
 };
@@ -274,6 +276,7 @@ procedure caller ()
         $__loopElim_havoc_loop_1: {
           
         }
+        assume [$__loopElimAssume_guard_loop_1]: true;
         $__inline1_callee$inlined: {
           $__inline1_b: {
             if * {
@@ -281,6 +284,7 @@ procedure caller ()
                 $__loopElim_havoc_loop_2: {
                   
                 }
+                assume [$__loopElimAssume_guard_loop_2]: true;
                 if * {
                   exit $__inline1_b;
                 }
@@ -288,6 +292,7 @@ procedure caller ()
               $__loopElim_havoc_loop_2: {
                 
               }
+              assume [$__loopElimAssume_not_guard_loop_2]: true;
             }
           }
         }
@@ -298,6 +303,7 @@ procedure caller ()
       $__loopElim_havoc_loop_1: {
         
       }
+      assume [$__loopElimAssume_not_guard_loop_1]: true;
     }
   }
 };
@@ -317,6 +323,7 @@ procedure callee ()
         $__loopElim_havoc_loop_0: {
           
         }
+        assume [$__loopElimAssume_guard_loop_0]: true;
         if * {
           exit b;
         }
@@ -324,6 +331,7 @@ procedure callee ()
       $__loopElim_havoc_loop_0: {
         
       }
+      assume [$__loopElimAssume_not_guard_loop_0]: true;
     }
   }
 };
@@ -335,6 +343,7 @@ procedure caller ()
         $__loopElim_havoc_loop_1: {
           
         }
+        assume [$__loopElimAssume_guard_loop_1]: true;
         if * {
           exit c;
         }
@@ -342,6 +351,7 @@ procedure caller ()
       $__loopElim_havoc_loop_1: {
         
       }
+      assume [$__loopElimAssume_not_guard_loop_1]: true;
     }
   }
 };

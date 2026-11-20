@@ -419,6 +419,16 @@ Core extends the `Imperative` commands with a procedure `call`. A call is
 executed by descending into the callee's body
 ({name Imperative.EvalCmdExtE.call_sem}`EvalCmdExtE.call_sem`).
 
+The callee a call runs is the named procedure instantiated at the call's type
+arguments ({name Imperative.Calls.typeInstantiatedCallee}`Calls.typeInstantiatedCallee`),
+which the type checker records on the call. Instantiating substitutes the type arguments for
+the procedure's type parameters throughout its signature, contract and body
+({name Core.Procedure.instantiateTypes}`Procedure.instantiateTypes`), so a polymorphic
+procedure runs at the types of the call. A call without type arguments runs a monomorphic
+callee as it is, and a call whose type arguments do not instantiate the callee (a wrong
+number of them, or none for a polymorphic callee) has no step. The steps below
+are those of this instance.
+
 1. Evaluate the input and inout argument expressions, and read the current values
    of caller-side `out` actuals.
 2. Initialize a fresh callee frame: bind input and inout formals to the evaluated
@@ -435,7 +445,8 @@ inlining transform exactly semantics-preserving.
 A contract version of call semantics is also defined at
 {name Imperative.EvalCmdExtContractE.call_sem}`EvalCmdExtContractE.call_sem`. It does not
 execute the body: after checking preconditions, it havocs all initialized callee
-output formals, including inouts, and assumes the postconditions. In this semantics, procedure
+output formals, including inouts, and assumes the postconditions, of the same instance of the
+callee. In this semantics, procedure
 inlining becomes an underapproximating transform because it replaces the values
 of havoc'ed output variables with concrete values.
 
@@ -595,14 +606,22 @@ guarantees) together with the typing of the inputs and outputs as precondition, 
 checked, non-`free` `ensures` clauses as
 postcondition (`free` postconditions are assumed at call sites, not proved by the
 body) — so that "this procedure meets its contract" is a single Hoare judgement.
+For a polymorphic procedure, the judgement asks every instance of the procedure
+(`Procedure.instantiateTypes`) to meet the instantiated contract, since a call may run
+any of them; a monomorphic procedure has one instance, itself.
 The precondition also assumes the axioms and `distinct` declarations that precede
 the procedure, as the entry environments of `ProcedureAssertsValidOnTraces` do, and
 a proved `Procedure.contractTriple` gives the contract part of that property
-(`contract_of_contractTriple`).
+(`contract_of_contractTriple`); for a polymorphic procedure, through its instance at its own
+type parameters.
 `StrataTest/Languages/Core/Tests/Logic/Hoare.lean` has examples of Hoare triples
-derived from procedure contracts and their proofs, and
+derived from procedure contracts and their proofs,
 `StrataTest/Languages/Core/Tests/Logic/HoareAxioms.lean` has contracts that rest on
-an axiom or a `distinct` declaration.
+an axiom or a `distinct` declaration, and
+`StrataTest/Languages/Core/Tests/Logic/HoarePolymorphicProcedure.lean` proves, at every type,
+the partial and total contracts of polymorphic procedures that call polymorphic and monomorphic
+procedures and are called by monomorphic ones, of a polymorphic procedure with a CFG body, and of
+one that calls a polymorphic function.
 
 ### Total Correctness
 
@@ -675,8 +694,9 @@ and a direct proof of that termination.
 The termination a Core total triple guarantees counts a call as one step: `call_sem` runs the
 callee's body to completion inside a single command step, so a call steps as soon as some run
 of the callee finishes. `Core.Logic.HoareTotal.Procedure.call_of_contract` is the partial call
-rule together with the premises that make the call execute: a callee entry store, a finished
-run of the body, and a write-back. A finished run can come from the callee's
+rule together with the premises that make the call execute: the call's type arguments
+instantiate the callee, and there are a callee entry store, a finished run of the body, and a
+write-back. Both call rules state their premises of the instance the call runs. A finished run can come from the callee's
 `contractTripleTotal` when no `assume` of its body can fail.
 `StrataTest/Languages/Core/Tests/Logic/HoareTotal.lean` proves the total-correctness contracts
 of two counting loops, the two examples above about `assume`, and that the program above

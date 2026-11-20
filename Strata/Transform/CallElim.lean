@@ -7,6 +7,7 @@ module
 public import Strata.Pipeline.Messages
 
 public import Strata.Languages.Core.PipelinePhase
+public import Strata.Languages.Core.MarkerLabels
 import Strata.Languages.Core.StatementType
 import Strata.Languages.Core.CallWF
 import Strata.DL.Lambda.LExprType
@@ -35,9 +36,6 @@ inductive Stats where
 /-- Label prefix for call-elimination assert statements. -/
 def callElimAssertPrefix : String := "callElimAssert_"
 
-/-- Label prefix for call-elimination assume statements. -/
-def callElimAssumePrefix : String := "callElimAssume_"
-
 /--
 The call elimination kernel: replace the call `procName(callArgs)` (with call-site metadata `md`)
 by the callee's contract, as a flat sequence of commands: `init`s for the argument, output and
@@ -61,7 +59,8 @@ def callElimCall (taken : Std.HashSet String) (vt : TypeSpec.TypeScopes) (procNa
     throw (wellFormedCallsBreach "Call elimination" md msg)
 
   -- Instantiates the callee's contract at this call's type instance.
-  let tySubst ← callTypeSubst callElimTyPrefix taken vt proc callArgs tyArgs
+  let tySubst ←
+    callTypeSubstOrBreach "Call elimination" md callElimTyPrefix taken vt proc callArgs tyArgs
   let instantiatedTy (ty : Lambda.LMonoTy) : Lambda.LMonoTy := Lambda.LMonoTy.subst tySubst ty
   let instantiatedExpr (e : Expression.Expr) : Expression.Expr :=
     Lambda.LExpr.applyTypeSubst e tySubst
@@ -232,7 +231,9 @@ end CallElim
     on a cycle are rejected by `CFG.typeCheck` (`checkNoLoopInits`) if the body is checked
     again. -/
 def callElimPipelinePhase : PipelinePhase where
-  transform := CallElim.callElim'
+  transform p := do
+    rejectMarkerLabels "call elimination" CallElim.callElimAssumePrefix p
+    CallElim.callElim' p
   phase.name := "callElim"
   phase.getValidation obligation :=
     if obligationHasLabelPrefix obligation CallElim.callElimAssumePrefix then

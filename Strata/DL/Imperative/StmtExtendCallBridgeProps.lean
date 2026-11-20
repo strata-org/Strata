@@ -969,6 +969,7 @@ section Semantics
 variable [DecidableEq P.Ident] [HasOldIdent P]
   [HasBool P] [HasBoolOps P] [HasFvar P] [HasFvars P] [HasVal P]
   {Hdr : Type} [DecidableEq Hdr] [Inhabited Hdr] [ProcedureHeader P Hdr]
+  [ProcedureTypeInstantiation P Hdr]
   (π : String → Option (Procedure P (CmdExt P) Hdr))
 
 /-! ### Single event-trace steps -/

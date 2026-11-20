@@ -166,14 +166,43 @@ private def preIdsAt (md : Imperative.MetaData Core.Expression) :
 #guard (preIdsAt (callMdsOf twoCalls "f")[1]!).map (·.1) == ["gpre"]
 #guard preIdsAt (callMdsOf twoCalls "f")[0]! != preIdsAt (callMdsOf twoCalls "f")[1]!
 
+/-! ## Precondition checks of two call arguments
+
+PrecondElim numbers the checks of each call argument from 0 and gives them the
+call's metadata, so the first checks of two arguments would share a label and an
+identifier. Generated labels are made fresh, so the second one takes a suffix and
+the two checks have different identifiers. -/
+
+private def callArgsPgm : StrataDDM.Program :=
+#strata
+program Core;
+procedure q(x : int, y : int) { };
+procedure p(a : int, b : int)
+{
+  call q(int.safeDiv(1, a), int.safeDiv(1, b));
+};
+#end
+
+private def callArgs? : Except String Core.Program :=
+  match Core.Transform.run (translateCore callArgsPgm) Core.PrecondElim.precondElim
+      { Core.Transform.CoreTransformState.emp with factory := Core.Factory } with
+  | .error e => .error s!"PrecondElim failed: {e}"
+  | .ok (_changed, program) => .ok program
+
+#guard callArgs?.isOk
+private def callArgs : Core.Program := callArgs?.toOption.getD default
+
+#guard (idsOf callArgs "p").map (·.1) ==
+  ["call_q_arg_calls_Int.SafeDiv_0", "call_q_arg_calls_Int.SafeDiv_0_1"]
+#guard (idsOf callArgs "p")[0]! != (idsOf callArgs "p")[1]!
+#guard (assertExprsOf callArgs "p")[0]! != (assertExprsOf callArgs "p")[1]!
+
 /-! ## Shared identifiers
 
 Each case below has two assertions with one label and equal metadata, hence one
 identifier:
 - a loop written in Core syntax records no per-invariant source location, so its
   unlabeled invariants both carry the loop's metadata;
-- PrecondElim numbers the checks of each call argument from 0 and gives them the
-  call's metadata, so the first check of two arguments shares label and metadata;
 - assertions without metadata are told apart by their label only.
 -/
 
@@ -196,30 +225,6 @@ private def twoInvariants : Core.Program := translateCore twoInvariantsPgm
 
 #guard (idsOf twoInvariants "p").length == 2
 #guard (idsOf twoInvariants "p")[0]! == (idsOf twoInvariants "p")[1]!
-
-private def callArgsPgm : StrataDDM.Program :=
-#strata
-program Core;
-procedure q(x : int, y : int) { };
-procedure p(a : int, b : int)
-{
-  call q(int.safeDiv(1, a), int.safeDiv(1, b));
-};
-#end
-
-private def callArgs? : Except String Core.Program :=
-  match Core.Transform.run (translateCore callArgsPgm) Core.PrecondElim.precondElim
-      { Core.Transform.CoreTransformState.emp with factory := Core.Factory } with
-  | .error e => .error s!"PrecondElim failed: {e}"
-  | .ok (_changed, program) => .ok program
-
-#guard callArgs?.isOk
-private def callArgs : Core.Program := callArgs?.toOption.getD default
-
-#guard (idsOf callArgs "p").map (·.1) ==
-  ["call_q_arg_calls_Int.SafeDiv_0", "call_q_arg_calls_Int.SafeDiv_0"]
-#guard (idsOf callArgs "p")[0]! == (idsOf callArgs "p")[1]!
-#guard (assertExprsOf callArgs "p")[0]! != (assertExprsOf callArgs "p")[1]!
 
 private def unlocated : List Core.Statement :=
   [Core.Statement.assert "L" (Lambda.LExpr.boolConst Core.valueLoc true) #[],

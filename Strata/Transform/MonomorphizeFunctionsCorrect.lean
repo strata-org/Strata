@@ -5,46 +5,8 @@
 -/
 module
 
-public import Strata.Transform.MonomorphizeFunctions
-public import Strata.Languages.Core.Analysis.DeductiveVerificationProps
-public import Strata.Languages.Core
-public import Strata.Languages.Core.Analysis.FragmentFactory
-public import Strata.DL.Lambda.LFuncEvalSound
-import all Strata.Languages.Core
-import all Strata.Languages.Core.PipelinePhase
-import all Strata.Languages.Core.Factory
-import all Strata.DL.Lambda.IntBoolFactory
-import all Strata.DL.Lambda.FactoryWF
-import all Strata.DL.Lambda.TypeFactory
-import all Strata.DL.Lambda.Denote.Assumptions
-import all Strata.DL.Lambda.LExpr
-import all Strata.DL.Lambda.LExprDenoteEval
-import all Strata.DL.Lambda.Denote.LExprDenote
-import all Strata.DL.Lambda.Denote.LExprAnnotated
-import all Strata.DL.Lambda.LExprWF
-import Strata.DL.Lambda.LExprDenoteEvalProps
-import all Strata.DL.Lambda.Denote.LExprDenoteTySubst
-import Strata.DL.Lambda.LTyUnifyProps
-import Strata.DL.Lambda.LTyProps
-import Strata.Util.ListMapProps
-import Strata.Util.ListUtilsProps
-import all Strata.DL.Lambda.LExprTraversal
-import Strata.DL.Lambda.LExprTraversalProps
-import Std.Data.HashMap.Lemmas
-import all Strata.Transform.MonomorphizeFunctions
-import all Strata.Util.Worklist
-import all Init.Data.Queue
-import all Strata.Transform.CoreTransform
-import all Strata.DL.Lambda.FactoryProps
-import all Strata.DL.Lambda.LFuncEvalSound
-public import Strata.DL.Lambda.LExprRenameOps
-public import Strata.Transform.MonomorphizeBasics
-public import Strata.Transform.MonomorphizeWorklist
-public import Strata.Transform.MonomorphizeInstances
-import all Strata.DL.Lambda.LExprRenameOps
-import all Strata.Transform.MonomorphizeBasics
-import all Strata.Transform.MonomorphizeWorklist
-import all Strata.Transform.MonomorphizeInstances
+public import Strata.Transform.MonomorphizeFunctionsProps
+import all Strata.Transform.MonomorphizeFunctionsProps
 
 /-! # `MonomorphizeFunctions` reflects lemma entries
 
@@ -64,8 +26,8 @@ the instance's sort.
   shared contract over every entry (`PhaseOverapproximatesFrom`)
 - `Core.MonomorphizeFunctions.monomorphizeFunctions_noProcedures` — its output declares no
   procedure when its input declares none
-- `Lambda.LExpr.denoteEval_renameOps` — renaming operators keeps an expression's value under
-  the model that reads each new name as the old one
+
+The supporting definitions and lemmas are in `MonomorphizeFunctionsProps`.
 
 Correctness is stated with the shared predicate `PhaseReflectsLemmas`
 (`Strata/Languages/Core/Analysis/DeductiveVerification.lean`), the spec for transformations of
@@ -81,39 +43,6 @@ open Lambda Core.NameMangling Strata.PtrCache
 section Main
 
 open Core.Specification.Analysis
-
-/-- The model of a factory of instances, as a runtime factory. -/
-noncomputable def instModel (M : ModeledFactory CoreLParams) {F' : Lambda.Factory CoreLParams}
-    (hrel : ∀ n (hn : n ∈ F'), ∃ o, ∃ ho : o ∈ M.factory, FnInstance (M.factory[o]'ho) (F'[n]'hn))
-    (hnat : ConcreteEvalsCommuteDemangle M.factory)
-    (hconstr : ∀ f' ∈ F'.toArray, f'.isConstr = true →
-      f' ∈ M.factory.toArray ∧ demangleName f'.name.name = f'.name.name)
-    (hcover : ∀ f ∈ M.factory.toArray, f.isConstr = true → f ∈ F'.toArray) :
-    ModeledFactory CoreLParams :=
-  ⟨F', Interp.ofInstances M.model hrel hnat hconstr hcover, M.tyVarVal⟩
-
-/-- Renaming the operators of an expression without `#` keeps its value from the old model to
-    the model of instances. -/
-private theorem eval_instModel {g : CoreIdent → Option LMonoTy → CoreIdent} (hg : RenOK g)
-    (M : ModeledFactory CoreLParams) {F' : Lambda.Factory CoreLParams} {hrel hnat hconstr hcover}
-    (σ : ValStore CoreLParams) {e : Expression.Expr} (he : OpsUnmangled e) :
-    (e.renameOps g).denoteEval (instModel M (F' := F') hrel hnat hconstr hcover) σ =
-      e.denoteEval M σ := by
-  refine LExpr.denoteEval_renameOps (M := M) (M' := instModel M hrel hnat hconstr hcover) g σ e
-    rfl HEq.rfl rfl ?_
-  intro q hq
-  show HEq (M.model.opInterp (demangleName (g q.1 (some q.2)).name)) _
-  rw [hg _ _ (he _ (mem_getOps_of_opAnnots hq))]
-
-/-- The disequality of two expressions whose operators have no `#` has no operator with `#`. -/
-private theorem opsUnmangled_distinctPairExpr {a b : Expression.Expr} (ha : OpsUnmangled a)
-    (hb : OpsUnmangled b) : OpsUnmangled (distinctPairExpr a b) := by
-  intro o ho
-  simp only [distinctPairExpr, LExpr.getOps, LExpr.boolConst, List.append_nil,
-    List.mem_append] at ho
-  rcases ho with ho | ho
-  · exact ha o ho
-  · exact hb o ho
 
 /-- **`monomorphizeFunctions` reflects the declarations entry** from every state and program
     `MonoPre` admits: the model of the output's runtime factory reads each copy as the
@@ -150,13 +79,14 @@ public theorem monomorphizeFunctions_reflectsLemmas :
       ∃ o, ∃ ho : o ∈ runtimeFactoryOf s.factory p.decls,
         FnInstance ((runtimeFactoryOf s.factory p.decls)[o]'ho) (_[n]'hn) := by
     intro n hn
-    obtain ⟨lf, hlf, hinst, -, -⟩ := hsrc _ (getElem_mem_toArray _ n hn)
+    obtain ⟨lf, hlf, hinst, -, -⟩ := hsrc _ (Lambda.Factory.getElem_mem_toArray _ n hn)
     have hget := getElem?_runtimeFactoryOf_of_contributed hdist hlf
     exact ⟨lf.name.name, Lambda.Factory.getElem?_some_implies_mem hget, by
       rw [Lambda.Factory.getElem?_some_getElem hget]; exact hinst⟩
   have hnat : ConcreteEvalsCommuteDemangle (runtimeFactoryOf s.factory p.decls) := by
     intro o ho c hc
-    exact hpre.evals _ (mem_contributed_of_runtimeFactoryOf (getElem_mem_toArray _ o ho)) c hc
+    exact hpre.evals _
+      (mem_contributed_of_runtimeFactoryOf (Lambda.Factory.getElem_mem_toArray _ o ho)) c hc
   have hconstr : ∀ f' ∈ (runtimeFactoryOf s'.factory p'.decls).toArray, f'.isConstr = true →
       f' ∈ (runtimeFactoryOf s.factory p.decls).toArray ∧
         demangleName f'.name.name = f'.name.name := by
@@ -178,7 +108,7 @@ public theorem monomorphizeFunctions_reflectsLemmas :
   have hLi : ((p.decls.map (topDecl g)).zipIdx)[i]? =
       some (.lemma { l with e := l.e.renameOps g } md, i) := by
     simp [List.getElem?_zipIdx, hl, topDecl]
-  obtain ⟨hidx, htake⟩ := flatMap_index _ (updDecl g (specsByFnOf st.specializedFnsInProg)) hLi
+  obtain ⟨hidx, htake⟩ := List.flatMap_index _ (updDecl g (specsByFnOf st.specializedFnsInProg)) hLi
     (b := .lemma { l with e := l.e.renameOps g } md) (by simp [updDecl])
   rw [← hdecls] at hidx htake
   refine ⟨_, { l with e := l.e.renameOps g }, hidx, rfl, ?_, ?_, ?_⟩
@@ -187,11 +117,11 @@ public theorem monomorphizeFunctions_reflectsLemmas :
   · rw [htake]
     intro d hd c hc
     obtain ⟨⟨dT, j⟩, hx, hdx⟩ := List.mem_flatMap.mp hd
-    obtain ⟨hj, hdT⟩ := mem_take_zipIdx hx
+    obtain ⟨hj, hdT⟩ := List.mem_take_zipIdx hx
     simp only [List.getElem?_map, Option.map_eq_some_iff] at hdT
     obtain ⟨d0, hd0, rfl⟩ := hdT
     have hd0m : d0 ∈ p.decls := List.mem_of_getElem? hd0
-    have hf0 := hfacts d0 (mem_take_of_getElem? hj hd0)
+    have hf0 := hfacts d0 (List.mem_take_of_getElem? hj hd0)
     cases d0 with
     | ax a md' =>
       simp only [topDecl, updDecl, List.mem_singleton] at hdx

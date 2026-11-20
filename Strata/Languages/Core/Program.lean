@@ -338,6 +338,20 @@ def Program.getNames (P: Program) : List Expression.Ident :=
   go P.decls
   where go decls := decls.flatMap Decl.names
 
+/-- The type parameters of the program's datatypes. The SMT encoder declares a datatype with
+    its parameters bound by name (`par`), so a sort a pass generates must not reuse one. -/
+def Program.dataTypeParams (p : Program) : List String :=
+  p.decls.flatMap fun
+    | .type (.data block) _ => block.flatMap (·.typeArgs)
+    | _ => []
+
+/-- The names `p` declares: the names of its declarations, the types its procedure bodies
+    declare, and its datatypes' type parameters. Types, functions, axioms, lemmas and procedures share one
+    namespace of declaration names, so a pass that names a new declaration with a prefix
+    avoids every one of these names with that prefix, not only the type names. -/
+def Program.declaredNames (p : Program) : List String :=
+  p.getNames.map (·.name) ++ (p.typeNames ++ p.dataTypeParams)
+
 def Program.Type.find? (P : Program) (x : Expression.Ident) : Option TypeDecl :=
   match P.find? .type x with
   | none => none

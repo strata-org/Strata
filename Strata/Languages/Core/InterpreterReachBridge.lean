@@ -93,7 +93,8 @@ inductive Visits (π : String → Option Procedure) (c : CoreConfig) : CoreConfi
       {tyArgs : Option (List Expression.Ty)}
       {args : List (CallArg Expression)} {md : MetaData Expression}
       {p : Procedure} {ss : Statements} {σAO : CoreStore} :
-      Visits π c x → ActiveStmt x ρ (.cmd (.call n tyArgs args md)) → π n = some p →
+      Visits π c x → ActiveStmt x ρ (.cmd (.call n tyArgs args md)) →
+        Calls.typeInstantiatedCallee π n tyArgs = some p →
       p.body = .structured ss → CallEntry ρ.factory ρ.store p args σAO →
       Visits π c (.stmt (Stmt.block "" ss #[]) ⟨σAO, ρ.factory⟩)
   /-- The entry of the structured body of a call heading the residual commands of a visited CFG
@@ -103,7 +104,8 @@ inductive Visits (π : String → Option Procedure) (c : CoreConfig) : CoreConfi
       {tyArgs : Option (List Expression.Ty)}
       {args : List (CallArg Expression)} {md : MetaData Expression}
       {p : Procedure} {ss : Statements} {σAO : CoreStore} :
-      VisitsCFG π c (.inBlock g t (.call n tyArgs args md :: cs) tr ρ) → π n = some p →
+      VisitsCFG π c (.inBlock g t (.call n tyArgs args md :: cs) tr ρ) →
+        Calls.typeInstantiatedCallee π n tyArgs = some p →
       p.body = .structured ss → CallEntry ρ.factory ρ.store p args σAO →
       Visits π c (.stmt (Stmt.block "" ss #[]) ⟨σAO, ρ.factory⟩)
 
@@ -119,7 +121,8 @@ inductive VisitsCFG (π : String → Option Procedure) (c : CoreConfig) :
       {tyArgs : Option (List Expression.Ty)}
       {args : List (CallArg Expression)} {md : MetaData Expression}
       {p : Procedure} {g : Imperative.DetCFG Expression Command} {σAO : CoreStore} :
-      Visits π c x → ActiveStmt x ρ (.cmd (.call n tyArgs args md)) → π n = some p →
+      Visits π c x → ActiveStmt x ρ (.cmd (.call n tyArgs args md)) →
+        Calls.typeInstantiatedCallee π n tyArgs = some p →
       p.body = .cfg g → CallEntry ρ.factory ρ.store p args σAO →
       VisitsCFG π c (.atBlock g g.entry ⟨σAO, ρ.factory⟩)
   /-- The entry of the CFG body of a call heading the residual commands of a visited CFG
@@ -129,7 +132,8 @@ inductive VisitsCFG (π : String → Option Procedure) (c : CoreConfig) :
       {tyArgs : Option (List Expression.Ty)}
       {args : List (CallArg Expression)} {md : MetaData Expression}
       {p : Procedure} {g : Imperative.DetCFG Expression Command} {σAO : CoreStore} :
-      VisitsCFG π c (.inBlock g' t (.call n tyArgs args md :: cs) tr ρ) → π n = some p →
+      VisitsCFG π c (.inBlock g' t (.call n tyArgs args md :: cs) tr ρ) →
+        Calls.typeInstantiatedCallee π n tyArgs = some p →
       p.body = .cfg g → CallEntry ρ.factory ρ.store p args σAO →
       VisitsCFG π c (.atBlock g g.entry ⟨σAO, ρ.factory⟩)
   /-- A reference CFG step from a visited CFG configuration. -/
@@ -302,7 +306,8 @@ private def StmtCtx (π : String → Option Procedure) (Q : CoreConfig → Prop)
     (QC : CFGConfig String Command Expression → Prop) (ρ : Imperative.Env Expression)
     (s : Statement) : Prop :=
   (∀ e ∈ stmtEvalExprs s, ComputableEval ρ.factory ρ.store e) ∧
-    ∀ n tyArgs args md p σAO, s = .cmd (.call n tyArgs args md) → π n = some p →
+    ∀ n tyArgs args md p σAO, s = .cmd (.call n tyArgs args md) →
+      Calls.typeInstantiatedCallee π n tyArgs = some p →
       CallEntry ρ.factory ρ.store p args σAO →
       (∀ ss, p.body = .structured ss → Q (.stmt (Stmt.block "" ss #[]) ⟨σAO, ρ.factory⟩)) ∧
         ∀ g, p.body = .cfg g → QC (.atBlock g g.entry ⟨σAO, ρ.factory⟩)

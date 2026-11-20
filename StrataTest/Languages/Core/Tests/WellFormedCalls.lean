@@ -213,7 +213,7 @@ info: procedure caller ()
   var tmp_a_1 : int := a;
   var old_a_2 : int := a;
   havoc a;
-  assume [callElimAssume_inc_ensures_0_3]: a == int.add(old_a_2, 1);
+  assume [$__callElimAssume_inc_ensures_0_3]: a == int.add(old_a_2, 1);
   assert [a_is_1]: a == 1;
 };
 -/

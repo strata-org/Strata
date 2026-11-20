@@ -18,6 +18,8 @@ public import Strata.Languages.Core.InterpreterReplayProps
 public import Strata.DL.Imperative.InterpreterCallProps
 public import Strata.Languages.Core.InterpreterProps
 import all Strata.Languages.Core.StatementSemanticsProps
+import all Strata.Languages.Core.Procedure
+import Strata.DL.Imperative.StmtProps
 import Strata.Languages.Core.InterpreterInterruptBridge
 import all Strata.DL.Imperative.InterpreterObs
 import all Strata.DL.Imperative.InterpreterReplay
@@ -59,6 +61,9 @@ strict input actuals (`StrictActual`), input actuals whose values are typed
 (`TypedActual`: the reference call rule binds formals without a type premise, while
 the typed `set` rules read the type of a slot's current value), pairwise-distinct
 frame formals, and exit-covered structured callee bodies.
+
+`procOk_of_instantiateTypes` says that every instance of a procedure meets `ProcOk` when the
+procedure does, so `procsOk_of_procOk` gives `ProcsOk` from `ProcOk` of the declared procedures.
 
 Key theorems: `core_runInterp_sound`, `core_runCoreInterp_sound_eval`, `core_replayRun_sound`,
 `core_replayRun_interruptedSound`, `core_replaySound_interruptOn`, `core_replaySound_general`,
@@ -131,9 +136,131 @@ abbrev CmdCallOk (π : String → Option Procedure) : Command → Bool := Calls.
     Block.allCmds (P := Expression) (CmdCallOk π) ss = true) ∧
   ∀ g, p.body = .cfg g → g.allCmds (CmdCallOk π)
 
-/-- Flat program-level check: every procedure `π` resolves satisfies `ProcOk`. -/
+/-- Flat program-level check: every procedure a call can run, `π`'s procedure instantiated at
+    the call's type arguments (`Calls.typeInstantiatedCallee`), satisfies `ProcOk`. -/
 @[expose] def ProcsOk (π : String → Option Procedure) : Prop :=
-  ∀ n p, π n = some p → ProcOk π p
+  ∀ n tyArgs p, Calls.typeInstantiatedCallee π n tyArgs = some p → ProcOk π p
+
+/-- Rewriting the type annotations of an expression keeps whether it is a strict and a typed
+    call actual: a variable stays a variable, the free variables stay the same, and a literal
+    stays a literal. -/
+private theorem actual_mapExprTys (f : Lambda.LMonoTy → Lambda.LMonoTy) (e : Expression.Expr) :
+    StrictActual (Lambda.mapExprTys f e) = StrictActual e ∧
+      TypedActual (Lambda.mapExprTys f e) = TypedActual e := by
+  have hvars : HasFvars.getFvars (P := Expression) (Lambda.mapExprTys f e) =
+      HasFvars.getFvars (P := Expression) e :=
+    Lambda.getVars_replaceUserProvidedType e f
+  constructor
+  · simp only [StrictActual, Calls.StrictActual, hvars]
+    cases e <;> rfl
+  · cases e <;> rfl
+
+/-- A check `Q` that rewriting an expression by `fe` does not change gives the same verdict on
+    the inputs of a call whose `in` arguments are rewritten by `fe`. -/
+private theorem all_getInputExprs_mapInput (Q : Expression.Expr → Bool)
+    (fe : Expression.Expr → Expression.Expr) (hQ : ∀ e, Q (fe e) = Q e)
+    (args : List (CallArg Expression)) :
+    (Calls.getInputExprs (args.map (CallArg.mapInput fe))).all Q =
+      (Calls.getInputExprs args).all Q := by
+  induction args with
+  | nil => rfl
+  | cons a args ih =>
+    cases a <;> simp_all [Calls.getInputExprs, CallArg.mapInput]
+
+/-- Rewriting the `in` arguments of a call keeps the variables it writes. -/
+private theorem getLhs_mapInput (fe : Expression.Expr → Expression.Expr)
+    (args : List (CallArg Expression)) :
+    CallArg.getLhs (args.map (CallArg.mapInput fe)) = CallArg.getLhs args := by
+  induction args with
+  | nil => rfl
+  | cons a args ih => cases a <;> simp_all [CallArg.getLhs, CallArg.mapInput]
+
+/-- Rewriting the type annotations of a command keeps whether it is a well-formed call site. -/
+theorem cmdCallOk_mapCmdTys (π : String → Option Procedure) (f : Lambda.LMonoTy → Lambda.LMonoTy)
+    (c : Command) : CmdCallOk π (mapCmdTys f c) = CmdCallOk π c := by
+  cases c with
+  | cmd cc => cases cc <;> rfl
+  | call n tyArgs args md =>
+    simp only [CmdCallOk, Calls.CmdCallOk, mapCmdTys, mapCmdWith, getLhs_mapInput,
+      all_getInputExprs_mapInput StrictActual _ (fun e => (actual_mapExprTys f e).1),
+      all_getInputExprs_mapInput TypedActual _ (fun e => (actual_mapExprTys f e).2)]
+
+/-- A label of a list of labeled values each rewritten by `G` resolves to the rewrite of the value
+    it resolves to in the list. -/
+private theorem lookup_map_snd {β γ : Type} (G : String × β → γ) (t : String) :
+    ∀ (l : List (String × β)) (c : γ), (l.map fun x => (x.1, G x)).lookup t = some c →
+      ∃ b₀, l.lookup t = some b₀ ∧ c = G (t, b₀)
+  | [], c, h => by simp at h
+  | (k, b₀) :: l, c, h => by
+    rw [List.map_cons, List.lookup_cons] at h
+    rw [List.lookup_cons]
+    cases hk : t == k with
+    | true =>
+      rw [hk] at h
+      obtain rfl := eq_of_beq hk
+      exact ⟨b₀, rfl, (Option.some.inj h).symm⟩
+    | false =>
+      rw [hk] at h
+      exact lookup_map_snd G t l c h
+
+/-- **An instance of a procedure meets `ProcOk` when the procedure does.**  Instantiation
+    rewrites only type annotations, which none of the checks reads: it keeps the formals' names,
+    the labels and the shape of the body, and the variables and literals of each call. -/
+theorem procOk_of_instantiateTypes {π : String → Option Procedure} {p inst : Procedure}
+    {tys : List Expression.Ty} (h : ProcOk π p) (hi : p.instantiateTypes tys = some inst) :
+    ProcOk π inst := by
+  unfold Procedure.instantiateTypes at hi
+  split at hi
+  · split at hi
+    · cases hi; exact h
+    · cases hi
+  split at hi
+  · cases hi
+  split at hi
+  · cases hi
+  obtain ⟨ms, -, rfl⟩ := Option.map_eq_some_iff.1 hi
+  generalize Lambda.LMonoTy.subst _ = f
+  obtain ⟨hnodup, hstruct, hcfg⟩ := h
+  have hcmd : CmdCallOk π ∘ mapCmdTys f = CmdCallOk π := funext (cmdCallOk_mapCmdTys π f)
+  refine ⟨?_, fun ss hss => ?_, fun g hg => ?_⟩
+  · have hin : ListMap.keys (p.mapTys f []).header.inputs = ListMap.keys p.header.inputs :=
+      ListMap.keys_map_values _ _
+    have hout : ListMap.keys (p.mapTys f []).header.outputs = ListMap.keys p.header.outputs :=
+      ListMap.keys_map_values _ _
+    rw [Procedure.Header.keys_getOutputOnlyParams] at hnodup ⊢
+    simp only [Calls.outputOnlyParams] at hnodup ⊢
+    rw [show ProcedureHeader.outputParams (P := Expression) (p.mapTys f []).header =
+        ListMap.keys (p.mapTys f []).header.outputs from rfl,
+      show ProcedureHeader.inputParams (P := Expression) (p.mapTys f []).header =
+        ListMap.keys (p.mapTys f []).header.inputs from rfl, hin, hout]
+    exact hnodup
+  · cases hb : p.body with
+    | structured ss₀ =>
+      simp only [Procedure.mapTys, hb, Imperative.Body.structured.injEq] at hss
+      obtain ⟨hexits, hall⟩ := hstruct ss₀ hb
+      subst hss
+      exact ⟨(Block.exitsCoveredByBlocks_mapExpr _ _ _ ss₀).2 hexits, by
+        rw [mapStmtsTys, Block.allCmds_mapExpr, hcmd]; exact hall⟩
+    | cfg g₀ => simp [Procedure.mapTys, hb] at hss
+  · cases hb : p.body with
+    | structured ss₀ => simp [Procedure.mapTys, hb] at hg
+    | cfg g₀ =>
+      simp only [Procedure.mapTys, hb, Imperative.Body.cfg.injEq] at hg
+      subst hg
+      intro t b hlk
+      simp only [DetCFG.mapCmdsGuards] at hlk
+      obtain ⟨b₀, hb₀, rfl⟩ := lookup_map_snd _ t _ _ hlk
+      show (b₀.cmds.map (mapCmdTys f)).all (CmdCallOk π) = true
+      rw [List.all_map, hcmd]
+      exact hcfg g₀ hb t b₀ hb₀
+
+/-- A table every procedure of which meets `ProcOk` meets `ProcsOk`: a call runs an instance of
+    one of its procedures. -/
+theorem procsOk_of_procOk {π : String → Option Procedure}
+    (h : ∀ n p, π n = some p → ProcOk π p) : ProcsOk π := by
+  intro n tyArgs p hp
+  obtain ⟨p₀, hp₀, hinst⟩ := Option.bind_eq_some_iff.1 hp
+  exact procOk_of_instantiateTypes (h n p₀ hp₀) hinst
 
 /-- The configuration invariant Core call-aware replay soundness runs under: a value-only store,
     well-formed call sites, and typed stores (`Config.storeTyped`, needed by the typed `set`
@@ -146,10 +273,10 @@ abbrev CmdCallOk (π : String → Option Procedure) : Command → Bool := Calls.
 
 /-- **The call is the active redex of a config**, stable under the `.seq _ rest` and
     `.block l σ _` evaluation contexts: peeling seq/block wrappers from `C` reaches
-    the bare call `.stmt (.cmd (.call pn tyArgs args md)) env` for some `tyArgs`
-    (`Calls.CallActive` at `Expression`). -/
+    the bare call `.stmt (.cmd (.call pn tyArgs args md)) env` (`Calls.CallActive` at
+    `Expression`). -/
 abbrev CallActive :
-    CoreConfig → String → List (Imperative.CallArg Expression) →
+    CoreConfig → String → Option (List Expression.Ty) → List (Imperative.CallArg Expression) →
       Imperative.MetaData Expression → Imperative.Env Expression → Prop :=
   Calls.CallActive
 
@@ -168,13 +295,13 @@ inductive CoreInterruptedSound (π : String → Option Procedure)
       StepStmtStarE Expression (EvalCommandE π) start evs mid →
       CoreInterruptedSound π start evs
   | inCall {start : CoreConfig} {outerEvs : Trace Expression} {C : CoreConfig}
-      {env : Imperative.Env Expression} {pn : String}
+      {env : Imperative.Env Expression} {pn : String} {tyArgs : Option (List Expression.Ty)}
       {args : List (Imperative.CallArg Expression)} {md : Imperative.MetaData Expression}
       {p : Procedure} {σAO : CoreStore} {bodyStmts : List Statement}
       {calleeEvs : Trace Expression} :
       StepStmtStarE Expression (EvalCommandE π) start outerEvs C →
-      CallActive C pn args md env →
-      π pn = some p →
+      CallActive C pn tyArgs args md env →
+      Calls.typeInstantiatedCallee π pn tyArgs = some p →
       p.body = .structured bodyStmts →
       CallEntry env.factory env.store p args σAO →
       CoreInterruptedSound π
@@ -184,13 +311,13 @@ inductive CoreInterruptedSound (π : String → Option Procedure)
         (outerEvs ++ defaultAssertEvents env.factory σAO
             (Imperative.Calls.checksAtCall md p.spec.preconditions) ++ calleeEvs)
   | inCallCfg {start : CoreConfig} {outerEvs : Trace Expression} {C : CoreConfig}
-      {env : Imperative.Env Expression} {pn : String}
+      {env : Imperative.Env Expression} {pn : String} {tyArgs : Option (List Expression.Ty)}
       {args : List (Imperative.CallArg Expression)} {md : Imperative.MetaData Expression}
       {p : Procedure} {σAO : CoreStore} {g : Imperative.DetCFG Expression Command}
       {cfgEvs : Trace Expression} {mid : CFGConfig String Command Expression} :
       StepStmtStarE Expression (EvalCommandE π) start outerEvs C →
-      CallActive C pn args md env →
-      π pn = some p →
+      CallActive C pn tyArgs args md env →
+      Calls.typeInstantiatedCallee π pn tyArgs = some p →
       p.body = .cfg g →
       CallEntry env.factory env.store p args σAO →
       StepCFGStarE Expression (EvalCommandE π)
@@ -199,15 +326,15 @@ inductive CoreInterruptedSound (π : String → Option Procedure)
         (outerEvs ++ defaultAssertEvents env.factory σAO
             (Imperative.Calls.checksAtCall md p.spec.preconditions) ++ cfgEvs)
   | inCallCfgCmd {start : CoreConfig} {outerEvs : Trace Expression} {C : CoreConfig}
-      {env : Imperative.Env Expression} {pn : String}
+      {env : Imperative.Env Expression} {pn : String} {tyArgs : Option (List Expression.Ty)}
       {args : List (Imperative.CallArg Expression)} {md : Imperative.MetaData Expression}
       {p : Procedure} {σAO : CoreStore} {g g' : Imperative.DetCFG Expression Command}
       {cfgEvs : Trace Expression} {t : String} {c : Command} {cs : List Command}
       {tr : DetTransferCmd String Expression} {ρ : Imperative.Env Expression}
       {cmdEvs : Trace Expression} :
       StepStmtStarE Expression (EvalCommandE π) start outerEvs C →
-      CallActive C pn args md env →
-      π pn = some p →
+      CallActive C pn tyArgs args md env →
+      Calls.typeInstantiatedCallee π pn tyArgs = some p →
       p.body = .cfg g →
       CallEntry env.factory env.store p args σAO →
       StepCFGStarE Expression (EvalCommandE π)
@@ -220,12 +347,12 @@ inductive CoreInterruptedSound (π : String → Option Procedure)
             (Imperative.Calls.checksAtCall md p.spec.preconditions) ++ cfgEvs
           ++ cmdEvs)
   | inCallExit {start : CoreConfig} {outerEvs : Trace Expression} {C : CoreConfig}
-      {env : Imperative.Env Expression} {pn : String}
+      {env : Imperative.Env Expression} {pn : String} {tyArgs : Option (List Expression.Ty)}
       {args : List (Imperative.CallArg Expression)} {md : Imperative.MetaData Expression}
       {p : Procedure} {σAO σf : CoreStore} {bodyEvs : Trace Expression} :
       StepStmtStarE Expression (EvalCommandE π) start outerEvs C →
-      CallActive C pn args md env →
-      π pn = some p →
+      CallActive C pn tyArgs args md env →
+      Calls.typeInstantiatedCallee π pn tyArgs = some p →
       CallEntry env.factory env.store p args σAO →
       BigStepE π p.body ⟨σAO, env.factory⟩ σf bodyEvs →
       CoreInterruptedSound π start
@@ -233,25 +360,25 @@ inductive CoreInterruptedSound (π : String → Option Procedure)
             (Imperative.Calls.checksAtCall md p.spec.preconditions)
           ++ bodyEvs ++ defaultAssertEvents env.factory σf p.spec.postconditions)
   | preThrow {start : CoreConfig} {outerEvs : Trace Expression} {C : CoreConfig}
-      {env : Imperative.Env Expression} {pn : String}
+      {env : Imperative.Env Expression} {pn : String} {tyArgs : Option (List Expression.Ty)}
       {args : List (Imperative.CallArg Expression)} {md : Imperative.MetaData Expression}
       {p : Procedure} {σAO : CoreStore}
       {preEvs : Trace Expression} :
       StepStmtStarE Expression (EvalCommandE π) start outerEvs C →
-      CallActive C pn args md env →
-      π pn = some p →
+      CallActive C pn tyArgs args md env →
+      Calls.typeInstantiatedCallee π pn tyArgs = some p →
       CallEntry env.factory env.store p args σAO →
       preEvs <+: defaultAssertEvents env.factory σAO
           (Imperative.Calls.checksAtCall md p.spec.preconditions) →
       CoreInterruptedSound π start (outerEvs ++ preEvs)
   | postThrow {start : CoreConfig} {outerEvs : Trace Expression} {C : CoreConfig}
-      {env : Imperative.Env Expression} {pn : String}
+      {env : Imperative.Env Expression} {pn : String} {tyArgs : Option (List Expression.Ty)}
       {args : List (Imperative.CallArg Expression)} {md : Imperative.MetaData Expression}
       {p : Procedure} {σAO σf : CoreStore} {bodyEvs : Trace Expression}
       {postEvs : Trace Expression} :
       StepStmtStarE Expression (EvalCommandE π) start outerEvs C →
-      CallActive C pn args md env →
-      π pn = some p →
+      CallActive C pn tyArgs args md env →
+      Calls.typeInstantiatedCallee π pn tyArgs = some p →
       CallEntry env.factory env.store p args σAO →
       BigStepE π p.body ⟨σAO, env.factory⟩ σf bodyEvs →
       postEvs <+: defaultAssertEvents env.factory σf p.spec.postconditions →

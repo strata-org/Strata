@@ -173,6 +173,14 @@ variable {Hdr : Type} [DecidableEq Hdr] [Inhabited Hdr]
 instance : Inhabited (Procedure P C Hdr) :=
   ⟨{ header := default, spec := default }⟩
 
+/-- How a dialect instantiates a procedure's type parameters at a call.  `instantiate p tys` is
+    `p` with its type parameters replaced, positionally, by the call's type arguments `tys`: a
+    monomorphic procedure the call can run.  It is `none` when `tys` does not instantiate `p`
+    (for example, the wrong number of type arguments), and then the call has no step. -/
+class ProcedureTypeInstantiation (P : PureExpr) (Hdr : Type) [DecidableEq Hdr] [Inhabited Hdr]
+    where
+  instantiate : Procedure P (CmdExt P) Hdr → List P.Ty → Option (Procedure P (CmdExt P) Hdr)
+
 instance [DecidableEq C] [DecidableEq P.Expr] [DecidableEq P.Ident] [DecidableEq P.Ty]
     [DecidableEq P.ExprMetadata] : DecidableEq (Procedure P C Hdr) := fun a b =>
   decidable_of_iff (a.header = b.header ∧ a.spec = b.spec ∧ a.body = b.body)

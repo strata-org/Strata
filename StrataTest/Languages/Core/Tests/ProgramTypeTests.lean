@@ -342,6 +342,36 @@ info: [("l", ["a"])]
   | .ok p => p.decls.filterMap (fun | Decl.lemma l _ => some (l.name, l.typeArgs) | _ => none)
   | .error _ => []
 
+/-! A lemma's type parameter is one type in every quantifier that uses it. Here `L` holds
+because both quantifiers are over the same `a`; read with a different type in each, it would
+say that a one-element type makes every type have one element. -/
+
+def twoQuantifierLemmaPgm :=
+#strata
+program Core;
+lemma [L] <a>: (forall x : a, y : a :: x == y) ==> (forall u : a, v : a :: u == v);
+#end
+
+-- Every binder of the checked lemma is at the one parameter `a`.
+/--
+info: program Core;
+
+lemma [L] <a>: (forall x : a :: forall y : a :: x == y) ==> (forall u : a :: forall v : a :: u == v);
+-/
+#guard_msgs in
+#eval match Core.typeCheck .quiet (Strata.Core.getProgram twoQuantifierLemmaPgm).fst with
+  | .ok p => IO.println (toString (format p))
+  | .error e => IO.println s!"error: {e.message}"
+
+/--
+info:
+Obligation: L
+Property: assert
+Result: ✅ pass
+-/
+#guard_msgs in
+#eval Strata.Core.verify twoQuantifierLemmaPgm (options := .quiet)
+
 ---------------------------------------------------------------------
 
 /-- A `Decl.func` with `isRecursive := true` should be rejected.

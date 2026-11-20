@@ -294,6 +294,12 @@ class EvalContext (P : PureExpr) (State : Type) where
       assertion, not the assume. -/
   ignoreAssume : State → Bool := fun _ => false
 
+  /-- Whether symbolic evaluation (`Cmd.eval`) keeps an assumption with this label in the path
+      condition when its condition evaluates to `true`, where it otherwise drops it. Defaults
+      to `false`. An instance returns `true` for the labels a later check reads in an
+      obligation's path condition, so that the check sees every path the assumption is on. -/
+  keepsTrueAssume : String → Bool := fun _ => false
+
   -- /-- If two states give the same result to all `lookup` calls, they also
   -- give the same result to all `eval` calls. -/
   -- lookupEval : (s1 : State) → (s2 : State) → (∀ x, lookup s1 x = lookup s2 x) →

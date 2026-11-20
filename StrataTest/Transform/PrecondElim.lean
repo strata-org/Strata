@@ -1050,5 +1050,436 @@ cfg entry {
 
 end StoredTyArgs
 
+/-! A generated lemma name avoids the program's assert labels: the lemma for the
+body of `f` would be named `f_body_calls_Int.SafeDiv_0`, which a procedure's
+assert already uses, so it gets a fresh name. -/
+
+def assertLabelClashPgm :=
+#strata
+program Core;
+
+function f(x : int) : int
+  requires x != 0;
+{ int.safeDiv(10, x) }
+
+procedure P(y : int) {
+  assert [f_body_calls_Int.SafeDiv_0]: y == 2;
+};
+
+#end
+
+/--
+info: [Strata.Core] Type checking succeeded.
+
+---
+info: program Core;
+
+lemma [f_body_calls_Int.SafeDiv_0_1] (x : int): !(x == 0) ==> !(x == 0);
+function f (x : int) : int {
+  int.safeDiv(10, x)
+}
+procedure P (y : int)
+{
+  assert [f_body_calls_Int.SafeDiv_0]: y == 2;
+};
+-/
+#guard_msgs in
+#eval (Std.format (transformProgram assertLabelClashPgm))
+
+/-! The same holds for an assert at any depth of a procedure body: here inside
+an `if` branch. -/
+
+def nestedAssertLabelClashPgm :=
+#strata
+program Core;
+
+function f(x : int) : int
+  requires x != 0;
+{ int.safeDiv(10, x) }
+
+procedure P(y : int) {
+  if (int.gt(y, 0)) {
+    assert [f_body_calls_Int.SafeDiv_0]: y == 2;
+  }
+};
+
+#end
+
+/--
+info: [Strata.Core] Type checking succeeded.
+
+---
+info: program Core;
+
+lemma [f_body_calls_Int.SafeDiv_0_1] (x : int): !(x == 0) ==> !(x == 0);
+function f (x : int) : int {
+  int.safeDiv(10, x)
+}
+procedure P (y : int)
+{
+  if (int.gt(y, 0)) {
+    assert [f_body_calls_Int.SafeDiv_0]: y == 2;
+  }
+};
+-/
+#guard_msgs in
+#eval (Std.format (transformProgram nestedAssertLabelClashPgm))
+
+/-! And for a loop invariant's label. -/
+
+def invariantLabelClashPgm :=
+#strata
+program Core;
+
+function f(x : int) : int
+  requires x != 0;
+{ int.safeDiv(10, x) }
+
+procedure P(n : int) {
+  var i : int := 0;
+  while (int.lt(i, n))
+    invariant [f_body_calls_Int.SafeDiv_0]: int.ge(i, 0)
+  {
+    i := int.add(i, 1);
+  }
+};
+
+#end
+
+/--
+info: [Strata.Core] Type checking succeeded.
+
+---
+info: program Core;
+
+lemma [f_body_calls_Int.SafeDiv_0_1] (x : int): !(x == 0) ==> !(x == 0);
+function f (x : int) : int {
+  int.safeDiv(10, x)
+}
+procedure P (n : int)
+{
+  var i : int := 0;
+  while (int.lt(i, n))
+  invariant [f_body_calls_Int.SafeDiv_0]: int.ge(i, 0)
+  {
+    i := int.add(i, 1);
+  }
+};
+-/
+#guard_msgs in
+#eval (Std.format (transformProgram invariantLabelClashPgm))
+
+/-! And for a postcondition's label, which the procedure check asserts. -/
+
+def ensuresLabelClashPgm :=
+#strata
+program Core;
+
+function f(x : int) : int
+  requires x != 0;
+{ int.safeDiv(10, x) }
+
+procedure P(y : int)
+spec { ensures [f_body_calls_Int.SafeDiv_0]: y == y; }
+{
+};
+
+#end
+
+/--
+info: [Strata.Core] Type checking succeeded.
+
+---
+info: program Core;
+
+lemma [f_body_calls_Int.SafeDiv_0_1] (x : int): !(x == 0) ==> !(x == 0);
+function f (x : int) : int {
+  int.safeDiv(10, x)
+}
+procedure P (y : int)
+spec {
+  ensures [f_body_calls_Int.SafeDiv_0]: y == y;
+  } {
+  
+};
+-/
+#guard_msgs in
+#eval (Std.format (transformProgram ensuresLabelClashPgm))
+
+/-! And for a precondition's label, which the procedure check assumes. -/
+
+def requiresLabelClashPgm :=
+#strata
+program Core;
+
+function f(x : int) : int
+  requires x != 0;
+{ int.safeDiv(10, x) }
+
+procedure P(y : int)
+spec { requires [f_body_calls_Int.SafeDiv_0]: y == y; }
+{
+};
+
+#end
+
+/--
+info: [Strata.Core] Type checking succeeded.
+
+---
+info: program Core;
+
+lemma [f_body_calls_Int.SafeDiv_0_1] (x : int): !(x == 0) ==> !(x == 0);
+function f (x : int) : int {
+  int.safeDiv(10, x)
+}
+procedure P (y : int)
+spec {
+  requires [f_body_calls_Int.SafeDiv_0]: y == y;
+  } {
+  
+};
+-/
+#guard_msgs in
+#eval (Std.format (transformProgram requiresLabelClashPgm))
+
+/-! And for a `cover` in a structured body. -/
+
+def coverLabelClashPgm :=
+#strata
+program Core;
+
+function f(x : int) : int
+  requires x != 0;
+{ int.safeDiv(10, x) }
+
+procedure P(y : int) {
+  if (int.gt(y, 0)) {
+    cover [f_body_calls_Int.SafeDiv_0]: y == 2;
+  }
+};
+
+#end
+
+/--
+info: [Strata.Core] Type checking succeeded.
+
+---
+info: program Core;
+
+lemma [f_body_calls_Int.SafeDiv_0_1] (x : int): !(x == 0) ==> !(x == 0);
+function f (x : int) : int {
+  int.safeDiv(10, x)
+}
+procedure P (y : int)
+{
+  if (int.gt(y, 0)) {
+    cover [f_body_calls_Int.SafeDiv_0]: y == 2;
+  }
+};
+-/
+#guard_msgs in
+#eval (Std.format (transformProgram coverLabelClashPgm))
+
+/-! And for an `assume` in a structured body. -/
+
+def assumeLabelClashPgm :=
+#strata
+program Core;
+
+function f(x : int) : int
+  requires x != 0;
+{ int.safeDiv(10, x) }
+
+procedure P(y : int) {
+  assume [f_body_calls_Int.SafeDiv_0]: y == 2;
+};
+
+#end
+
+/--
+info: [Strata.Core] Type checking succeeded.
+
+---
+info: program Core;
+
+lemma [f_body_calls_Int.SafeDiv_0_1] (x : int): !(x == 0) ==> !(x == 0);
+function f (x : int) : int {
+  int.safeDiv(10, x)
+}
+procedure P (y : int)
+{
+  assume [f_body_calls_Int.SafeDiv_0]: y == 2;
+};
+-/
+#guard_msgs in
+#eval (Std.format (transformProgram assumeLabelClashPgm))
+
+/-! The checks inserted in a procedure are named apart within that procedure
+and from the program's declarations, not from the other procedures' checks, so
+their labels do not depend on which other procedures the program has or on
+their order: here both procedures get `init_calls_Int.SafeDiv_0`. -/
+
+def twoProcsChecksPgm :=
+#strata
+program Core;
+
+procedure A(a : int) {
+  var z : int := int.safeDiv(1, a);
+};
+procedure B(b : int) {
+  var w : int := int.safeDiv(1, b);
+};
+
+#end
+
+/--
+info: [Strata.Core] Type checking succeeded.
+
+---
+info: program Core;
+
+procedure A (a : int)
+{
+  assert [init_calls_Int.SafeDiv_0]: !(a == 0);
+  var z : int := int.safeDiv(1, a);
+};
+procedure B (b : int)
+{
+  assert [init_calls_Int.SafeDiv_0]: !(b == 0);
+  var w : int := int.safeDiv(1, b);
+};
+-/
+#guard_msgs in
+#eval (Std.format (transformProgram twoProcsChecksPgm))
+
+/-! The pass renames only the checks it inserts in this run: a check of its
+input keeps its label whatever metadata it carries, here an assert written with
+the annotation `wellFormednessCheck`. -/
+
+def taggedCheckPgm :=
+#strata
+program Core;
+
+procedure P(y : int) {
+  @[wellFormednessCheck] assert [mine]: y == 2;
+};
+
+#end
+
+/--
+info: [Strata.Core] Type checking succeeded.
+
+---
+info: program Core;
+
+procedure P (y : int)
+{
+  assert [mine]: y == 2;
+};
+-/
+#guard_msgs in
+#eval (Std.format (transformProgram taggedCheckPgm))
+
+/-! So running the pass on its own output renames none of the checks the first
+run inserted: the first run's check keeps `init_calls_Int.SafeDiv_0`, and the
+check the second run inserts again for the same call takes the suffix. -/
+
+def secondRunPgm :=
+#strata
+program Core;
+
+procedure P(a : int) {
+  var z : int := int.safeDiv(1, a);
+};
+
+#end
+
+private def precondElimTwice (t : StrataDDM.Program) : Core.Program :=
+  match Core.Transform.run (translate t) PrecondElim.precondElim coreFactoryState with
+  | .error e => panic! s!"PrecondElim failed: {e}"
+  | .ok (_, once) =>
+    match Core.Transform.run once PrecondElim.precondElim coreFactoryState with
+    | .error e => panic! s!"PrecondElim failed: {e}"
+    | .ok (_, twice) => twice.stripMetaData
+
+/--
+info: program Core;
+
+procedure P (a : int)
+{
+  assert [init_calls_Int.SafeDiv_0]: !(a == 0);
+  assert [init_calls_Int.SafeDiv_0_1]: !(a == 0);
+  var z : int := int.safeDiv(1, a);
+};
+-/
+#guard_msgs in
+#eval (Std.format (precondElimTwice secondRunPgm))
+
+/-! And for the `assert` and `cover` commands of a CFG body: the lemma for `f`'s
+body would be named `f_body_calls_Int.SafeDiv_0` and the one for `g`'s body
+`g_body_calls_Int.SafeDiv_0`, the labels of a block's cover and assert. -/
+
+def cfgLabelClashPgm :=
+#strata
+program Core;
+
+function f(x : int) : int
+  requires x != 0;
+{ int.safeDiv(10, x) }
+
+function g(x : int) : int
+  requires x != 0;
+{ int.safeDiv(20, x) }
+
+procedure P(y : int)
+cfg entry {
+  entry: { cover [f_body_calls_Int.SafeDiv_0]: y == 2;
+    assert [g_body_calls_Int.SafeDiv_0]: y == y; return; }
+};
+
+#end
+
+/--
+info: [Strata.Core] Type checking succeeded.
+
+program Core;
+
+lemma [f_body_calls_Int.SafeDiv_0_1] (x : int): !(x == 0) ==> !(x == 0);
+function f (x : int) : int {
+  int.safeDiv(10, x)
+}
+lemma [g_body_calls_Int.SafeDiv_0_1] (x : int): !(x == 0) ==> !(x == 0);
+function g (x : int) : int {
+  int.safeDiv(20, x)
+}
+procedure P (y : int)
+cfg entry {
+  entry: {
+    cover [f_body_calls_Int.SafeDiv_0]: y == 2;
+    assert [g_body_calls_Int.SafeDiv_0]: y == y;
+    return;
+  }
+};
+-/
+#guard_msgs (whitespace := lax) in
+#eval IO.println ((Std.format (transformProgram cfgLabelClashPgm)).pretty 96)
+
+/-! Verifying the nested case reports the lemma, which holds, and the assert,
+which fails, each under its own name and with its own verdict. -/
+
+/--
+info:
+Obligation: f_body_calls_Int.SafeDiv_0_1
+Property: division by zero check
+Result: ✅ pass
+
+Obligation: f_body_calls_Int.SafeDiv_0
+Property: assert
+Result: ❌ fail
+-/
+#guard_msgs in
+#eval Strata.Core.verify nestedAssertLabelClashPgm (options := .quiet)
+
 end PrecondElimTests
 end

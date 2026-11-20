@@ -75,6 +75,12 @@ each free variable of a substitution's result comes from.
 ### Fully annotated expressions
 In a fully annotated expression every free variable and every operator carries an
 annotation (`freeVars_isSome_of_fullyAnnotated`, `exists_opAnnots_of_fullyAnnotated`).
+
+### Rewriting annotations (`replaceUserProvidedType`)
+Rewriting annotations keeps the operators (`getOps_replaceUserProvidedType`), rewrites the
+annotations of free variables and operators (`freeVars_replaceUserProvidedType`,
+`opAnnots_replaceUserProvidedType`), and is the identity at the identity
+(`replaceUserProvidedType_id`, `mapExprTys_id`).
 -/
 
 namespace Lambda
@@ -1411,6 +1417,17 @@ theorem getOps_replaceUserProvidedType (e : LExpr T.mono)
     LExpr.getOps (LExpr.replaceUserProvidedType e φ) = LExpr.getOps e := by
   induction e <;> simp_all [LExpr.replaceUserProvidedType, LExpr.getOps]
 
+/-- The operator of an annotated operator node of an expression is among its operators. -/
+theorem mem_getOps_of_opAnnots {T : LExprParamsT} :
+    ∀ {e : LExpr T} {p}, p ∈ e.opAnnots → p.1 ∈ e.getOps := by
+  intro e
+  induction e with
+  | op m o ty =>
+    intro p hp
+    cases ty <;> simp_all [LExpr.opAnnots, LExpr.getOps]
+  | const | bvar | fvar => intro p hp; simp [LExpr.opAnnots] at hp
+  | _ => intro p hp; simp_all [LExpr.opAnnots, LExpr.getOps] <;> grind
+
 omit [DecidableEq T.IDMeta] in
 /-- Rewriting annotations by `φ` rewrites the annotation of each free-variable occurrence by
     `φ`. -/
@@ -1430,7 +1447,17 @@ theorem opAnnots_replaceUserProvidedType (e : LExpr T.mono)
   | op m o ty => cases ty <;> rfl
   | _ => simp_all [LExpr.replaceUserProvidedType, LExpr.opAnnots]
 
+omit [DecidableEq T.IDMeta] in
+/-- Rewriting annotations by the identity leaves an expression unchanged. -/
+@[simp] theorem replaceUserProvidedType_id (e : LExpr T.mono) :
+    LExpr.replaceUserProvidedType e id = e := by
+  induction e <;> simp_all [LExpr.replaceUserProvidedType]
+
 end LExpr
+
+/-- Mapping the type annotations of an expression by the identity leaves it unchanged. -/
+@[simp] theorem mapExprTys_id {T : LExprParams} : mapExprTys (T := T) id = id :=
+  funext LExpr.replaceUserProvidedType_id
 
 /-- Every user-provided annotation of `e` satisfies `p` exactly when every type
     `exprAnnotTys e` lists does: both visit the same operator, free-variable and

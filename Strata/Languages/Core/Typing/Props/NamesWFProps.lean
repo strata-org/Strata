@@ -278,7 +278,7 @@ private theorem ProcNamesWF.of_alphaVariant {P : Program} {fns : String → Prop
   cases hb : proc.body with
   | cfg _ => trivial
   | structured ss =>
-    simp only [Procedure.renameTypeArgs, hb] at hbody
+    simp only [Procedure.renameTypeArgs, Procedure.mapTys, hb] at hbody
     exact StatementsNamesWF.of_mapStmtsTys _ ss hbody
 
 /-- A procedure typed by the typechecker spec has valid names for any function scope made of
