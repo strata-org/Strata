@@ -95,4 +95,51 @@ private def warnThenDischarge : Core.MkDischargeFn :=
       (l.splitOn "\"phase\":\"vcDischarge.runSolver\"").length > 1).size
     IO.println s!"messages={msgs.size} tagged={tagged} runSolverMetrics={runSolver}"
 
+/-! ### Concurrent runs sharing a directory each get their own verdicts
+
+Two programs whose obligations carry the same labels, so both runs name their query files
+`same_0.smt2` to `same_3.smt2`: every obligation of the first holds and every one of the second
+fails. They are verified at the same time, several times over, into one `vcDirectory`. A run
+that solved the other's query would report a verdict of the other program. -/
+
+/-- Four obligations labeled `same` that hold. -/
+private def sameLabelPasses : Program :=
+#strata
+program Core;
+function g (x : int) : int;
+procedure Q0() { assume [h]: g(0) == 0; assert [same]: g(0) == 0; };
+procedure Q1() { assume [h]: g(1) == 1; assert [same]: g(1) == 1; };
+procedure Q2() { assume [h]: g(2) == 2; assert [same]: g(2) == 2; };
+procedure Q3() { assume [h]: g(3) == 3; assert [same]: g(3) == 3; };
+#end
+
+/-- Four obligations labeled `same` that fail. -/
+private def sameLabelFails : Program :=
+#strata
+program Core;
+function g (x : int) : int;
+procedure Q0() { assume [h]: g(0) == 0; assert [same]: g(0) == 1; };
+procedure Q1() { assume [h]: g(1) == 1; assert [same]: g(1) == 2; };
+procedure Q2() { assume [h]: g(2) == 2; assert [same]: g(2) == 3; };
+procedure Q3() { assume [h]: g(3) == 3; assert [same]: g(3) == 4; };
+#end
+
+/-- info: passing run: 32 of 32 passed; failing run: 32 of 32 failed; leftover hidden files: 0 -/
+#guard_msgs in
+#eval show IO Unit from do
+  IO.FS.withTempDir fun dir => do
+    let options := { Core.VerifyOptions.quiet with vcDirectory := some dir }
+    let mut passed := 0
+    let mut failed := 0
+    for _ in [0:8] do
+      let a ← IO.asTask (Core.verify sameLabelPasses (options := options))
+      let b ← IO.asTask (Core.verify sameLabelFails (options := options))
+      let ra ← IO.ofExcept a.get
+      let rb ← IO.ofExcept b.get
+      passed := passed + (ra.filter (·.isSuccess)).size
+      failed := failed + (rb.filter (·.isFailure)).size
+    let hidden := (← dir.readDir).filter (·.fileName.startsWith ".")
+    IO.println s!"passing run: {passed} of 32 passed; failing run: {failed} of 32 failed; \
+      leftover hidden files: {hidden.size}"
+
 end Strata

@@ -218,7 +218,9 @@ structure VerifyOptions where
   solver : String
   /-- Solver time limit in seconds. -/
   solverTimeout : Nat
-  /-- Directory to store generated SMT-Lib (`.smt2`) files. -/
+  /-- Directory to store generated SMT-Lib (`.smt2`) files. Concurrent runs may share it: each
+      verdict answers its own run's query, and a file name both runs use holds the query of the
+      run that wrote it last. -/
   vcDirectory : Option System.FilePath
   /-- Always generate SMT-Lib files, even if the verification
       condition is trivial (i.e. resolved by symbolic evaluation

@@ -140,14 +140,31 @@ def reasonUnknownIsIncomplete (stdout : String) : Bool :=
 def orFirst {α : Type} (first : α) (act : IO α) : IO α :=
   try act catch _ => pure first
 
-/-- Runs `solver` on `text`, written to `path`, which is removed afterwards. -/
-def runSolverOnText (solver path text : String) (args : Array String) :
+/-- A path beside `filename`, hidden and unique to this call, for a query a solver is about to
+    read. It keeps the `.smt2` extension, by which solvers recognize the input language. Its name
+    has a fixed length, independent of `filename`, so it is valid wherever `filename` is. Any
+    later read of the query, such as a second solver run on it, must use this path and not the
+    public name, which another run may have written meanwhile. -/
+private def privateQueryPath (filename : String) : IO System.FilePath := do
+  let nonce := (← IO.getRandomBytes 8).foldl (fun n b => n * 256 + b.toNat) 0
+  let hex := String.ofList (Nat.toDigits 16 nonce)
+  let path : System.FilePath := filename
+  return path.withFileName s!".strata-{"".pushn '0' (16 - hex.length)}{hex}.smt2"
+
+/-- Runs `solver` on `text`, written to a file private to this call beside `name` (see
+    `privateQueryPath`), which is removed afterwards. A file this call did not create, because
+    its name was taken, is someone else's and is left alone. -/
+def runSolverOnText (solver name text : String) (args : Array String) :
     IO IO.Process.Output := do
-  IO.FS.writeFile path text
+  let path ← privateQueryPath name
+  let created ← IO.mkRef false
   try
-    runSolver solver (#[path] ++ args)
+    IO.FS.withFile path .writeNew fun h => do
+      created.set true
+      h.putStr text
+    runSolver solver (#[path.toString] ++ args)
   finally
-    try IO.FS.removeFile path catch _ => pure ()
+    if ← created.get then try IO.FS.removeFile path catch _ => pure ()
 
 /-- The query file without its satisfiability check, or `none` if the check block is not found.
     The cut removes the lines from the last `; Satisfiability` comment line up to the one
@@ -165,14 +182,11 @@ def validityCheckOnly (text : String) : Option String :=
     | _ => none
   | _ => none
 
-/-- Whether the solver's last answer on `filename` (its validity check) was `unknown` for
-    `incomplete`: the file is rerun with `(get-info :reason-unknown)` appended.
-    Only cvc5 is asked; any other solver gives `false`. -/
-def reasonIsIncomplete (solver filename : String) (args : Array String) : IO Bool := do
+/-- Whether the solver's last answer on the query `text` written for `filename` (its validity
+    check) was `unknown` for `incomplete`: the query is rerun with `(get-info :reason-unknown)`
+    appended. Only cvc5 is asked; any other solver gives `false`. -/
+def reasonIsIncomplete (solver filename text : String) (args : Array String) : IO Bool := do
   if solver != "cvc5" then return false
-  let text ← IO.FS.readFile filename
-  -- `filename` is unique per obligation (the verifier numbers each file from an atomic
-  -- counter), so no two probes share this name.
   -- The last check in the file is the validity check (`writeCheckSatBlock` writes the
   -- satisfiability check first when both run), so `:reason-unknown` refers to it.
   let out ← runSolverOnText solver (filename ++ ".reason.smt2")
@@ -738,6 +752,11 @@ def dischargeObligationIncremental {P : PureExpr} [ToFormat P.Ident] [BEq P.Iden
 Writes the proof obligation to file, discharge the obligation using SMT solver,
 and parse the output of the SMT solver.
 
+The solver reads the query from a file private to this call, which is renamed to `filename`
+afterwards, so a verdict is always the answer to the query this call wrote, even when another
+verification writes the same `filename` at the same time. The file left under `filename` is
+then the query of whichever call renamed its file last.
+
 When two-sided checking is enabled, the generated SMT file will contain two
 `(check-sat-assuming)` commands, one for `P ∧ Q` and one for `P ∧ ¬Q`,
 and the return value includes both decisions.
@@ -764,26 +783,69 @@ def dischargeObligationWithRetry {P : PureExpr} [ToFormat P.Ident] [BEq P.Ident]
     match termCache with
     | some ref => do let m ← ref.get; pure { termStrings := m }
     | none => pure {}
-  let (encoded, solverState) ← pctx.withPhase "writeSMTLib" do
-    Strata.SMT.Solver.withFileWriter filename (state := initState) do
-      let r ← encodeSMT.run
-      pctx.withRepeatedPhase "flushFile" Strata.SMT.Solver.flush
-      pure r
-  let (_ids, estate) ← match encoded with
+  let query ← privateQueryPath filename
+  -- Where the query is left: under `filename`, or where it was written if it cannot be moved.
+  let publish : IO System.FilePath := do
+    -- Nothing to move when the call failed before the file was created.
+    if !(← query.pathExists) then return filename
+    try
+      IO.FS.rename query filename
+      return filename
+    catch e =>
+      let warn := Strata.Pipeline.emitMessage { category := "vcFile", impact := .internalWarning }
+        s!"could not rename {query} to {filename} ({e}); the query is kept at {query}"
+      discard (warn.run pctx).toBaseIO
+      return query
+  -- Set once the query is completely written; until then the private file is incomplete.
+  let written ← IO.mkRef false
+  -- Set once this call has created the private file; a name already taken is another call's
+  -- file, which this call must not touch.
+  let created ← IO.mkRef false
+  -- An incomplete query is removed rather than put under `filename`, where it would replace a
+  -- complete query another run wrote.
+  let finish : IO System.FilePath := do
+    if ← written.get then publish
+    else
+      if ← created.get then try IO.FS.removeFile query catch _ => pure ()
+      return filename
+  let writeAndSolve :
+      IO (Except SolverError (Option (IO.Process.Output × Option String) × Strata.SMT.EncoderState)) := do
+    let (encoded, solverState) ← pctx.withPhase "writeSMTLib" do
+      Strata.SMT.Solver.withFileWriter query.toString (state := initState) (mode := .writeNew) do
+        created.set true
+        let r ← encodeSMT.run
+        pctx.withRepeatedPhase "flushFile" Strata.SMT.Solver.flush
+        pure r
+    let (_ids, estate) ← match encoded with
+      | .ok value => pure value
+      | .error error => return Except.error (SolverError.encoding error)
+    written.set true
+    -- Persist newly produced strings back to the shared ref.
+    match termCache with
+    | some ref => ref.set solverState.termStrings
+    | none => pure ()
+    if skipSolver then return .ok (none, estate)
+    -- The solver names the file it read in its messages; they name the file the user keeps.
+    let output ← pctx.withPhase "runSolver" do
+      let out ← runSolver smtsolver (#[query.toString] ++ solver_options)
+      pure { out with stdout := out.stdout.replace query.toString filename,
+                      stderr := out.stderr.replace query.toString filename }
+    -- A retry reruns this call's own query, so its text is read before the file takes the
+    -- public name, which another run may write meanwhile. The retry is best effort, so a text
+    -- that cannot be read only skips it.
+    let text ← if retryOnIncomplete.isEmpty || !validityCheck then pure none
+      else try some <$> IO.FS.readFile query catch _ => pure none
+    return .ok (some (output, text), estate)
+  let solved ← try writeAndSolve catch e => do discard finish; throw e
+  let kept ← finish
+  let (solver_output, estate) ← match solved with
     | .ok value => pure value
-    | .error error => return .error (.encoding error)
-  -- Persist newly produced strings back to the shared ref.
-  match termCache with
-  | some ref => ref.set solverState.termStrings
-  | none => pure ()
+    | .error e => return .error e
 
-  if printFilename then IO.println s!"Wrote problem to {filename}."
+  if printFilename then IO.println s!"Wrote problem to {kept}."
 
-  if skipSolver then
-    return .ok (.unknown, .unknown, estate)
-
-  let solver_output ← pctx.withPhase "runSolver" do
-    runSolver smtsolver (#[filename] ++ solver_options)
+  let some (solver_output, queryText) := solver_output
+    | return .ok (.unknown, .unknown, estate)
   let parsed ← pctx.withPhase "parseResult" do
     solverResult typedVarToSMTFn vars solver_output estate smtsolver
       satisfiabilityCheck validityCheck
@@ -792,18 +854,14 @@ def dischargeObligationWithRetry {P : PureExpr} [ToFormat P.Ident] [BEq P.Ident]
   -- cannot be read, a solver cannot be run), the first verdict stands.
   let retry : IO (Except SolverError (Result P.Ident × Result P.Ident)) := match parsed with
     | .ok (satR, valR@(.unknown _)) => do
-      if retryOnIncomplete.isEmpty || !validityCheck then return parsed
-      if !(← reasonIsIncomplete smtsolver filename solver_options) then return parsed
+      let some queryText := queryText | return parsed
+      if !(← reasonIsIncomplete smtsolver filename queryText solver_options) then return parsed
       -- The retry asks only the validity check: its satisfiability check, if any, is dropped,
       -- since only the validity verdict of the retry is used.
-      let text ← IO.FS.readFile filename
-      let validityOnly := if satisfiabilityCheck then validityCheckOnly text else none
+      let validityOnly := if satisfiabilityCheck then validityCheckOnly queryText else none
       let out2 ← pctx.withPhase "runSolverRetry" do
-        match validityOnly with
-        | some retryText =>
-          runSolverOnText smtsolver (filename ++ ".retry.smt2") retryText
-            (solver_options ++ retryOnIncomplete)
-        | none => runSolver smtsolver (#[filename] ++ solver_options ++ retryOnIncomplete)
+        runSolverOnText smtsolver (filename ++ ".retry.smt2") (validityOnly.getD queryText)
+          (solver_options ++ retryOnIncomplete)
       let parsed2 ← solverResult typedVarToSMTFn vars out2 estate smtsolver
         (satisfiabilityCheck && validityOnly.isNone) validityCheck
       match parsed2 with

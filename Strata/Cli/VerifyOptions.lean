@@ -60,7 +60,9 @@ def verifyOptionsFlags : List Flag := [
     help := "Solver timeout in seconds (default: 10).",
     takesArg := .arg "seconds" },
   { name := "vc-directory",
-    help := "Store VCs in SMT-Lib format in <dir>.",
+    help := "Store VCs in SMT-Lib format in <dir>. Runs may share <dir>: each verdict is \
+      the answer to its own run's query, and a file both runs name holds the last writer's. \
+      Hidden .strata-<hex>.smt2 files left by an interrupted run are safe to delete.",
     takesArg := .arg "dir" },
   { name := "no-solve",
     help := "Generate SMT-Lib files but do not invoke the solver." },
