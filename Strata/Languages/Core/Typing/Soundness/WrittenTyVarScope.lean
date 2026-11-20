@@ -544,7 +544,7 @@ theorem TypeSpec.CmdExtHasType.rename_scopeAdmissible {C : LContext CoreLParams}
     cases h with
     | cmd _ _ _ hcmd =>
       cases hcmd with
-      | init_det _ _ _ _ _ _ _ _ _ _ _ hxty hdecl _ _ _ _ _ =>
+      | init_det _ _ _ _ _ _ _ _ _ _ hxty hdecl _ _ _ _ _ =>
         cases hxty
         exact ValidDeclaredTy.freeVars_admissible hwf hdecl.2
   | nondet =>
@@ -552,7 +552,7 @@ theorem TypeSpec.CmdExtHasType.rename_scopeAdmissible {C : LContext CoreLParams}
     cases h with
     | cmd _ _ _ hcmd =>
       cases hcmd with
-      | init_nondet _ _ _ _ _ _ _ _ _ hxty hdecl _ _ =>
+      | init_nondet _ _ _ _ _ _ _ _ hxty hdecl _ _ =>
         cases hxty
         exact ValidDeclaredTy.freeVars_admissible hwf hdecl.2
 
@@ -637,9 +637,9 @@ theorem TypeSpec.CmdExtHasType.of_rename {C : LContext CoreLParams} {P : Program
       | cons _ _ =>
         simp only [renameCmd] at h ⊢
         match h with
-        | .cmd _ _ _ _ _ (.init_det _ _ _ _ _ _ _ _ _ _ _ _ _ hxty _ _ _ _ _ _) =>
+        | .cmd _ _ _ _ _ (.init_det _ _ _ _ _ _ _ _ _ _ _ _ hxty _ _ _ _ _ _) =>
           cases hxty
-        | .cmd _ _ _ _ _ (.init_nondet _ _ _ _ _ _ _ _ _ _ _ hxty _ _ _) =>
+        | .cmd _ _ _ _ _ (.init_nondet _ _ _ _ _ _ _ _ _ _ hxty _ _ _) =>
           cases hxty
       | nil =>
         have hadmTy := hadmDecl x ty e md rfl
@@ -647,7 +647,7 @@ theorem TypeSpec.CmdExtHasType.of_rename {C : LContext CoreLParams} {P : Program
         | det e =>
           simp only [renameCmd, renameExprOrNondet, ExprOrNondet.map] at h hin ⊢
           match h with
-          | .cmd _ _ _ _ _ (.init_det _ _ _ _ _ mty _ _ _ _ hfind hfun hfv hxty ⟨hinst, hsrc⟩
+          | .cmd _ _ _ _ _ (.init_det _ _ _ _ _ mty _ _ _ _ hfind hfv hxty ⟨hinst, hsrc⟩
               hwk hexpr hann _ heqv) =>
             cases hxty
             refine ⟨rfl, fun Δ htr => ?_⟩
@@ -665,19 +665,19 @@ theorem TypeSpec.CmdExtHasType.of_rename {C : LContext CoreLParams} {P : Program
               rw [← instAnnots_substEnv_renameExpr htr' hfix e hscope]
               exact hexpr
             have hdecl := ValidDeclaredTy.of_renameTy _ hadmTy hsrc
-            exact ⟨_, htr', .cmd _ _ _ _ _ (.init_det _ _ _ _ _ _ _ _ _ _ hfind hfun hfv' rfl
+            exact ⟨_, htr', .cmd _ _ _ _ _ (.init_det _ _ _ _ _ _ _ _ _ _ hfind hfv' rfl
               ⟨hinst', hdecl⟩ hwk hexpr' (writtenAnnotsOk_of_renameExpr _ e hann) hscope
               heqv)⟩
         | nondet =>
           simp only [renameCmd, renameExprOrNondet, ExprOrNondet.map] at h ⊢
           match h with
           | .cmd _ _ _ _ _
-              (.init_nondet _ _ _ _ _ _ _ _ _ hfind hfun hxty ⟨hinst, hsrc⟩ hwk heqv) =>
+              (.init_nondet _ _ _ _ _ _ _ _ _ hfind hxty ⟨hinst, hsrc⟩ hwk heqv) =>
             cases hxty
             refine ⟨rfl, fun Δ htr => ?_⟩
             obtain ⟨hinst', htr'⟩ := scopedAnnotInst_of_exact hfix htr hinst
             have hdecl := ValidDeclaredTy.of_renameTy _ hadmTy hsrc
-            exact ⟨_, htr', .cmd _ _ _ _ _ (.init_nondet _ _ _ _ _ _ _ _ _ hfind hfun rfl
+            exact ⟨_, htr', .cmd _ _ _ _ _ (.init_nondet _ _ _ _ _ _ _ _ _ hfind rfl
               ⟨hinst', hdecl⟩ hwk heqv)⟩
     | set x e md =>
       cases e with

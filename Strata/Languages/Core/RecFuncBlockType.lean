@@ -22,19 +22,19 @@ def CheckedSignature.stub (sig : CheckedSignature) : LFunc CoreLParams :=
 
 namespace RecFuncBlock
 
-/-- Check a member `func` of the block `funcs` up to its expressions: its name is new to `C`,
-    it is marked recursive and not inline, its signature names are valid as written with the
-    functions of `C` and the members of `funcs` in scope, and its signature resolves. The
-    signature is resolved with the member's reserved type parameters renamed as for the full
-    member: the fresh names avoid the type variables of the member's expressions. -/
+/-- Check a member `func` of a recursive block up to its expressions: its name is new to `C`,
+    it is marked recursive and not inline, its signature names are valid as written, and its
+    signature resolves. The signature is resolved with the member's reserved type parameters
+    renamed as for the full member: the fresh names avoid the type variables of the member's
+    expressions. -/
 def checkSignature (C : Expression.TyContext) (Env : Expression.TyEnv)
-    (funcs : List Function) (func : Function) : Except Format CheckedSignature := do
+    (func : Function) : Except Format CheckedSignature := do
   Function.checkNameFresh C func
   if func.attr.any (· == .inline) then
     throw f!"recursive function '{func.name}' cannot be marked inline"
   unless func.isRecursive do
     throw f!"recursive function block member '{func.name}' must be marked recursive"
-  Function.checkHeaderNames (fun n => n ∈ C.functions ∨ n ∈ funcs.map (·.name.name)) func
+  Function.checkHeaderNames func
   Function.renameAndResolve C Env func
 
 /-- Extend a context with every stub. -/
@@ -57,7 +57,7 @@ def typeCheckIn (S : Std.HashSet String) (C : Expression.TyContext)
       (List Function × Expression.TyContext × Expression.TyEnv × Std.HashSet String) := do
   if funcs.isEmpty then
     throw f!"recursive function block must contain at least one function"
-  let sigs ← funcs.mapM (checkSignature C Env funcs)
+  let sigs ← funcs.mapM (checkSignature C Env)
   let Cstub := stubContext C (sigs.map (·.stub))
   let S := S.insertMany (Factory.tyNamesFrom C.functions.toArray.size Cstub.functions)
   let funcs' ← sigs.mapM fun sig => Prod.fst <$>

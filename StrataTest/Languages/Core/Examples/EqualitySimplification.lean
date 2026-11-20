@@ -594,6 +594,27 @@ info: {
     for d in q.decls do
       if let .proc { body := .structured ss _, .. } _ := d then IO.println (Std.format ss)
 
+/-! The same program as source text: the parameter `g` shadows the constant, so the phase must
+not rewrite it with the axiom's value: the goal reaches the solver. -/
+
+private def shadowPgm :=
+#strata
+program Core;
+const g : int;
+axiom [gOne]: g == 1;
+procedure P(g : int)
+{
+  assert [paramNotGlobal]: g == 1;
+};
+#end
+
+/--
+info: paramNotGlobal: pass
+discharge calls: 1
+-/
+#guard_msgs in
+#eval countedDischarge shadowPgm
+
 /-! ## An axiom declared after the procedure
 
 Obligation extraction gives a procedure only the axioms declared before it, so the
@@ -786,7 +807,7 @@ private def agreesWithSolver (checkMode : Core.VerificationMode) (p : StrataDDM.
     `checkMode`. -/
 private def allAgreeWithSolver (checkMode : Core.VerificationMode) : IO Unit := do
   for p in [literalPgm, constructorPgm, applicationPgm, booleanPgm, coverPgm, residualPgm,
-      unusedPgm, foldAxiomsPgm, axiomPgm, conjunctionPgm, definitionPgm,
+      unusedPgm, foldAxiomsPgm, axiomPgm, conjunctionPgm, definitionPgm, shadowPgm,
       axiomAfterPgm, contradictionPgm, opaqueEqPgm] do
     agreesWithSolver checkMode p
   agreesWithSolver checkMode foldFirstPgm (after := "genOpaqueTypeParams")
@@ -824,6 +845,7 @@ expanded: pass
 oriented: pass
 defDropped: fail
 boolDef: pass
+paramNotGlobal: fail
 cIsOne: fail
 vacuous: pass
 vacuousBySubstitution: pass
@@ -870,6 +892,7 @@ expanded: pass
 oriented: pass
 defDropped: fail
 boolDef: pass
+paramNotGlobal: fail
 cIsOne: fail
 vacuous: pass
 vacuousBySubstitution: pass
@@ -3005,6 +3028,7 @@ private def fixtures : List (String × StrataDDM.Program) :=
    ("definitionPgm", (definitionPgm : StrataDDM.Program)),
    ("opaqueEqPgm", (opaqueEqPgm : StrataDDM.Program)),
    ("depthPgm", (depthPgm : StrataDDM.Program)),
+   ("shadowPgm", (shadowPgm : StrataDDM.Program)),
    ("axiomAfterPgm", (axiomAfterPgm : StrataDDM.Program)),
    ("contradictionPgm", (contradictionPgm : StrataDDM.Program)),
    ("unseenContradictionPgm", (unseenContradictionPgm : StrataDDM.Program)),
@@ -3042,7 +3066,9 @@ private def fixtures : List (String × StrataDDM.Program) :=
    ("hintFlowPgm", (hintFlowPgm : StrataDDM.Program)),
    ("hintLimitPgm", (hintLimitPgm : StrataDDM.Program))]
 
-/-- info: before: 222 of 222 typed at bool; after: 222 of 222 -/
+/--
+info: before: 224 of 224 typed at bool; after: 224 of 224
+-/
 #guard_msgs in
 #eval show IO Unit from do
   let ps := fixtures
@@ -3111,9 +3137,9 @@ private def showCounts (label : String) (c : Nat × Nat × Nat × Nat) : String 
   s!"{label}: {c.2.1} of {c.1} consistent, {c.2.2.2} of {c.2.2.1} operators known"
 
 /--
-info: program: 258 of 258 consistent, 517 of 517 operators known
-after axiom folding: 258 of 258 consistent, 515 of 515 operators known
-after the phase: 258 of 258 consistent, 250 of 250 operators known
+info: program: 260 of 260 consistent, 518 of 518 operators known
+after axiom folding: 260 of 260 consistent, 516 of 516 operators known
+after the phase: 260 of 260 consistent, 251 of 251 operators known
 -/
 #guard_msgs in
 #eval show IO Unit from do
@@ -3293,7 +3319,7 @@ This counts them on every program of this file that type checks, as type checkin
 and after axiom folding. -/
 
 /--
-info: typed: 89 of 89, after axiom folding: 89 of 89
+info: typed: 90 of 90, after axiom folding: 90 of 90
 -/
 #guard_msgs in
 #eval show IO Unit from do

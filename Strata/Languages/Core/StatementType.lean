@@ -58,12 +58,6 @@ def typeCheckCmd (C: LContext CoreLParams) (Env : TEnv Unit) (P : Program) (c : 
   Except Message (Command × (TEnv Unit)) := do
   match c with
   | .cmd c =>
-    let _ ← (match c with
-      | .init x _ _ md => do
-          if x.name ∈ C.functions then
-            throw (md.toDiagnosticF
-              (nameClashMsg s!"Local variable '{x.name}'"))
-      | _ => pure ())
     -- Any errors in `Imperative.Cmd.typeCheck` already include source
     -- locations.
     let (c, Env) ← Imperative.Cmd.typeCheck C Env c

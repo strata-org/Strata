@@ -97,20 +97,19 @@ theorem keepsBodyFacts_typed {R : Program → Program → Prop} (hR : KeepsBodyF
     {p₂ out : Program} (hro : R p₂ out)
     (hfacts : ∀ q₂ md ss₂ o, Decl.proc q₂ md ∈ p₂.decls → q₂.body = .structured ss₂ o →
       q₂.header.inputs ++ q₂.header.outputs = [] ∧ ∃ D df Γ, WPRewriteLoop.BodyOK D df Γ ss₂) :
-    ∀ q md ss, Decl.proc q md ∈ out.decls → procedureStatements out.funcNames q = .ok ss →
+    ∀ q md ss, Decl.proc q md ∈ out.decls → procedureStatements q = .ok ss →
       ∃ D df Γ, Block.defUseWellFormed D df ss = true ∧ Block.fvarTypesWellAnnotated Γ ss ∧
         Block.initsTyped Expression.Typed ss := by
   intro q₃ md ss hq₃ hss
-  obtain ⟨q₂, hq₂, hhd, hb⟩ := hR _ _ hro _ _ hq₃
+  obtain ⟨q₂, hq₂, -, hb⟩ := hR _ _ hro _ _ hq₃
   simp only [procedureStatements] at hss
   split at hss
   · simp [throw, throwThe, MonadExceptOf.throw, bind, Except.bind] at hss
   rcases hb₃ : q₃.body with ⟨ss₃, o₃⟩ | _ | _ <;> simp only [hb₃, reduceCtorEq] at hss
   · cases hss
-    obtain ⟨ss₂, hb₂, hk⟩ := hb ss₃ o₃ hb₃
-    obtain ⟨hio, D, df, Γ, hok⟩ := hfacts q₂ _ ss₂ _ hq₂ hb₂
+    obtain ⟨ss₂, hb₂, hk⟩ := hb _ o₃ hb₃
+    obtain ⟨-, D, df, Γ, hok⟩ := hfacts q₂ _ ss₂ _ hq₂ hb₂
     obtain ⟨-, hdu₃, hw₃, hi₃⟩ := hk D df Γ hok
-    simp only [renameShadowingParams, hhd, hio, List.foldl_nil]
     exact ⟨D, df, Γ, hdu₃, hw₃, hi₃⟩
   · cases hss
     exact ⟨fun _ => False, fun _ => False, fun _ => none, by
@@ -316,7 +315,7 @@ theorem wpRewritePipelineProgram_typed {moreFns : Lambda.Factory CoreLParams}
     (h₃ : PhaseRuns betaReducePipelinePhase p₂ out)
     (params : Core.Logic.InitEnvWFParams) (hp : ∀ p ∈ params.prefixIdents, '@' ∉ p.toList)
     (hgate : WPPipelineEntryGates params moreFns mid) (hwt : WPPipelineEntryWellTyped mid) :
-    ∀ q md ss, Decl.proc q md ∈ out.decls → procedureStatements out.funcNames q = .ok ss →
+    ∀ q md ss, Decl.proc q md ∈ out.decls → procedureStatements q = .ok ss →
       ∃ D df Γ, Block.defUseWellFormed D df ss = true ∧ Block.fvarTypesWellAnnotated Γ ss ∧
         Block.initsTyped Expression.Typed ss :=
   keepsBodyFacts_typed betaReduce_keepsBodyFacts h₃

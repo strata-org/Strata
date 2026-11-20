@@ -966,12 +966,13 @@ REJECTED: Distinct 'g': #1 has type int but #true has type bool
 #eval printEach (bothVerdicts "g"
                  [.const Core.coreLoc (.intConst 1), .const Core.coreLoc (.boolConst true)])
 
--- A group must contain at least two expressions; two expressions of the same type are accepted.
+-- A group of no expression or of one, which is trivially distinct, and two expressions of the
+-- same type are accepted.
 /--
-info: REJECTED: Distinct 'g' must contain at least two expressions
-REJECTED: Distinct 'g' must contain at least two expressions
-REJECTED: Distinct 'g' must contain at least two expressions
-REJECTED: Distinct 'g' must contain at least two expressions
+info: ACCEPTED
+ACCEPTED
+ACCEPTED
+ACCEPTED
 ACCEPTED
 ACCEPTED
 -/
@@ -1335,9 +1336,10 @@ function mkI(f : int) : int;
 axiom [refl]: mkI(3) == mkI(3);
 #end
 
--- A parameter of an extra function may not share its name with an earlier extra function.
+-- A parameter of an extra function may share its name with an earlier extra function, which it
+-- shadows.
 /--
-info: REJECTED: Function 'mkI': parameter 'f' collides with a function or constant of the same name
+info: ACCEPTED
 -/
 #guard_msgs in
 #eval check paramCollisionPgm ["f", "mkI"]
@@ -1599,7 +1601,8 @@ rec function countdown (n : int) : int
 #guard_msgs (whitespace := lax) in
 #eval coreVerdict (translate recBlockFreshNamePgm)
 
--- Rejected: a recursive block member with a parameter named after another member of the block.
+-- Accepted: a recursive block member with a parameter named after another member of the block,
+-- which the parameter shadows in the member's body.
 
 def recBlockParamCollisionPgm : Program :=
 #strata
@@ -1618,12 +1621,12 @@ function g (n : int) : int
 #end
 
 /--
-info: REJECTED: Function 'f': parameter 'g' collides with a function or constant of the same name
+info: ACCEPTED
 -/
 #guard_msgs (whitespace := lax) in
 #eval coreVerdict (translate recBlockParamCollisionPgm)
 
--- A body-local `function` declares a local variable, which may not reuse a builtin's name.
+-- A body-local `function` declares a local variable, which may shadow a builtin.
 
 def nestedSelectCollisionPgm : Program :=
 #strata
@@ -1636,12 +1639,12 @@ procedure P()
 #end
 
 /--
-info: REJECTED: Procedure 'P': Local variable 'select' collides with a function or constant of the same name
+info: ACCEPTED
 -/
 #guard_msgs (whitespace := lax) in
 #eval coreVerdict (translate nestedSelectCollisionPgm)
 
--- A local variable may not reuse a datatype constructor's name.
+-- A local variable may shadow a datatype constructor.
 def nestedConstructorCollisionPgm : Program :=
 #strata
 program Core;
@@ -1655,12 +1658,12 @@ procedure P()
 #end
 
 /--
-info: REJECTED: Procedure 'P': Local variable 'MkBox' collides with a function or constant of the same name
+info: ACCEPTED
 -/
 #guard_msgs (whitespace := lax) in
 #eval coreVerdict (translate nestedConstructorCollisionPgm)
 
--- A local variable may not reuse the name of a function declared earlier in the program.
+-- A local variable may shadow a function declared earlier in the program.
 def nestedEarlierFunctionCollisionPgm : Program :=
 #strata
 program Core;
@@ -1674,7 +1677,7 @@ procedure P()
 #end
 
 /--
-info: REJECTED: Procedure 'P': Local variable 'dup' collides with a function or constant of the same name
+info: ACCEPTED
 -/
 #guard_msgs (whitespace := lax) in
 #eval coreVerdict (translate nestedEarlierFunctionCollisionPgm)

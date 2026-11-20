@@ -523,7 +523,8 @@ Result: ❌ fail
 #guard_msgs in
 #eval Core.verify shadowConstLemmaPgm (options := .quiet)
 
-/-! A function parameter named like a global constant is rejected. -/
+/-! A function parameter named like a global constant shadows it, so the constant's axiom says
+nothing about it and the division-by-zero check fails. -/
 
 def shadowConstPgm :=
 #strata
@@ -536,8 +537,10 @@ function f(n : int) : int { int.safeDiv(1, n) }
 #end
 
 /--
-error: ❌ Type checking error.
-Function 'f': parameter 'n' collides with a function or constant of the same name
+info:
+Obligation: f_body_calls_Int.SafeDiv_0
+Property: division by zero check
+Result: ❌ fail
 -/
 #guard_msgs in
 #eval Core.verify shadowConstPgm (options := .quiet)

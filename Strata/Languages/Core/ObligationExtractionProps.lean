@@ -373,26 +373,26 @@ theorem extractLinkedFromStatements_ok (pc : RevPathConditions Expression) (ss :
 /-- `extractDecl` from the obligations `acc` gives `acc` followed by the obligations of the
     same step from no obligations, with the same path-condition facts; the steps fail
     together. -/
-private theorem extractDecl_acc (funcNames : List String) (globalPc : PathCondition Expression)
+private theorem extractDecl_acc (globalPc : PathCondition Expression)
     (acc : Array (ProofObligation Expression)) (decl : Decl) :
-    extractDecl funcNames (globalPc, acc) decl =
-      (extractDecl funcNames (globalPc, #[]) decl).map fun r => (r.1, acc ++ r.2) := by
+    extractDecl (globalPc, acc) decl =
+      (extractDecl (globalPc, #[]) decl).map fun r => (r.1, acc ++ r.2) := by
   cases decl <;> simp only [extractDecl, bind, Except.bind] <;> (repeat' split) <;>
     simp [Except.map]
 
 /-- A step of `extractLinkedObligations` on a declaration that is not a lemma is the step of
     `extractObligations` once the back-links are dropped. -/
-private theorem extractLinkedDecl_map_fst (funcNames : List String)
+private theorem extractLinkedDecl_map_fst
     (globalPc : PathCondition Expression) (acc : Array LinkedObligation) (decl : Decl)
     (h : ∀ l md, decl ≠ .lemma l md) :
-    (extractLinkedDecl funcNames (globalPc, acc) decl).map (fun r => (r.1, r.2.map Prod.fst)) =
-      extractDecl funcNames (globalPc, acc.map Prod.fst) decl := by
+    (extractLinkedDecl (globalPc, acc) decl).map (fun r => (r.1, r.2.map Prod.fst)) =
+      extractDecl (globalPc, acc.map Prod.fst) decl := by
   rw [extractDecl_acc]
   cases decl
   case lemma l md => exact absurd rfl (h l md)
   all_goals simp only [extractLinkedDecl, extractDecl, bind, Except.bind, pure, Except.pure]
   case proc proc _ =>
-    rcases procedureStatements funcNames proc with _ | ss
+    rcases procedureStatements proc with _ | ss
     · rfl
     · simp only [extractFromStatements_eq]
       cases extractGo ⟨[globalPc]⟩ ss #[] <;> simp [Except.map, attachLinks_map_fst]
@@ -404,14 +404,14 @@ private theorem extractLinkedDecl_map_fst (funcNames : List String)
 
 /-- A step of `extractLinkedObligations` on a procedure appends the linked obligations of its
     statements (`procedureStatements`), extracted from the global path-condition facts. -/
-theorem extractLinkedDecl_proc (funcNames : List String) (globalPc : PathCondition Expression)
+theorem extractLinkedDecl_proc (globalPc : PathCondition Expression)
     (acc : Array LinkedObligation) (proc : Procedure) (md : MetaData Expression) :
-    extractLinkedDecl funcNames (globalPc, acc) (.proc proc md) = (do
-      let ss ← procedureStatements funcNames proc
+    extractLinkedDecl (globalPc, acc) (.proc proc md) = (do
+      let ss ← procedureStatements proc
       let obs ← extractLinkedFromStatements ⟨[globalPc]⟩ ss
       .ok (globalPc, acc ++ obs)) := by
   simp only [extractLinkedDecl, extractDecl, bind, Except.bind]
-  rcases procedureStatements funcNames proc with _ | ss
+  rcases procedureStatements proc with _ | ss
   · rfl
   · simp only [extractLinkedFromStatements, extractGoLinked, ← extractFromStatements_eq]
     rcases extractFromStatements ⟨[globalPc]⟩ ss with _ | obs <;> simp [Except.map, pure,
@@ -420,11 +420,11 @@ theorem extractLinkedDecl_proc (funcNames : List String) (globalPc : PathConditi
 /-- A step of `extractLinkedObligations` on a declaration other than a procedure or a lemma
     adds no obligation: it is the step of `extractObligations`, which only updates the global
     path-condition facts or fails, with the obligations `acc` kept. -/
-private theorem extractLinkedDecl_of_not_proc (funcNames : List String)
+private theorem extractLinkedDecl_of_not_proc
     (globalPc : PathCondition Expression) (acc : Array LinkedObligation) (decl : Decl)
     (hp : ∀ proc md, decl ≠ .proc proc md) (hl : ∀ l md, decl ≠ .lemma l md) :
-    extractLinkedDecl funcNames (globalPc, acc) decl =
-      (extractDecl funcNames (globalPc, #[]) decl).map fun r => (r.1, acc) := by
+    extractLinkedDecl (globalPc, acc) decl =
+      (extractDecl (globalPc, #[]) decl).map fun r => (r.1, acc) := by
   cases decl
   case proc proc md => exact absurd rfl (hp proc md)
   case lemma l md => exact absurd rfl (hl l md)
@@ -459,17 +459,21 @@ theorem extractObligations_of_extractLinkedObligations (p : Program)
     extractObligations p = .ok (arr.map Prod.fst) := by
   simp only [extractLinkedObligations, extractObligations, bind, Except.bind] at h ⊢
   split at h
+  · simp [throw, throwThe, MonadExceptOf.throw] at h
+  rename_i hv
+  simp only [hv, Bool.false_eq_true, ↓reduceIte, pure, Except.pure] at h ⊢
+  split at h
   · cases h
   rename_i r hr
-  have hstep : ∀ s d r, extractLinkedDecl p.funcNames s d = .ok r →
-      extractDecl p.funcNames (s.1, s.2.map Prod.fst) d = .ok (r.1, r.2.map Prod.fst) := by
+  have hstep : ∀ s d r, extractLinkedDecl s d = .ok r →
+      extractDecl (s.1, s.2.map Prod.fst) d = .ok (r.1, r.2.map Prod.fst) := by
     intro ⟨globalPc, acc⟩ d r hr
     have hd : ∀ l md, d ≠ .lemma l md := by
       rintro l md rfl
       simp [extractLinkedDecl] at hr
-    rw [← extractLinkedDecl_map_fst _ _ _ _ hd, hr]
+    rw [← extractLinkedDecl_map_fst _ _ _ hd, hr]
     rfl
-  have hp : p.decls.foldlM (extractDecl p.funcNames) ([], #[]) = .ok (r.1, r.2.map Prod.fst) :=
+  have hp : p.decls.foldlM extractDecl ([], #[]) = .ok (r.1, r.2.map Prod.fst) :=
     by simpa using foldlM_ok_of_step (fun r => (r.1, r.2.map Prod.fst)) _ _ hstep _ _ _ hr
   rw [hp]
   cases h
@@ -760,15 +764,19 @@ theorem extractFromStatements_defsOrdered {g : PathCondition Expression} {ss : S
 private theorem extractObligations_inv {p : Program} {obs : ProofObligations Expression}
     (P : ProofObligation Expression → Prop) (h : extractObligations p = .ok obs)
     (hss : ∀ q md ss (g : PathCondition Expression) obs, Decl.proc q md ∈ p.decls →
-      procedureStatements p.funcNames q = .ok ss → definitions g.reverse = [] →
+      procedureStatements q = .ok ss → definitions g.reverse = [] →
       extractFromStatements ⟨[g]⟩ ss = .ok obs → ∀ ob ∈ obs, P ob)
     (hg : ∀ (g : PathCondition Expression) (ob : ProofObligation Expression),
       definitions g.reverse = [] → ob.assumptions = RevPathConditions.consume ⟨[g]⟩ → P ob) :
     ∀ ob ∈ obs, P ob := by
+  simp only [extractObligations] at h
+  split at h
+  · simp [throw, throwThe, MonadExceptOf.throw, bind, Except.bind] at h
+  simp only [pure, Except.pure] at h
   obtain ⟨res, hres, h⟩ := (Except.bind_is_ok _ _ _).1 h
   suffices hf : ∀ (ds : List Decl) acc, (∀ q md, Decl.proc q md ∈ ds → Decl.proc q md ∈ p.decls) →
       definitions acc.1.reverse = [] → (∀ ob ∈ acc.2, P ob) →
-      ds.foldlM (extractDecl p.funcNames) acc = .ok res → ∀ ob ∈ res.2, P ob from
+      ds.foldlM extractDecl acc = .ok res → ∀ ob ∈ res.2, P ob from
     Except.ok.inj h ▸ hf _ _ (fun _ _ h => h) rfl (by simp) hres
   intro ds
   induction ds with
@@ -803,7 +811,7 @@ private theorem extractObligations_inv {p : Program} {obs : ProofObligations Exp
     own variable or the variable of a later definition. -/
 theorem extractObligations_defsOrdered {p : Program} {obs : ProofObligations Expression}
     (h : extractObligations p = .ok obs)
-    (hwf : ∀ q md ss, Decl.proc q md ∈ p.decls → procedureStatements p.funcNames q = .ok ss →
+    (hwf : ∀ q md ss, Decl.proc q md ∈ p.decls → procedureStatements q = .ok ss →
       ∃ D df, Block.defUseWellFormed D df ss = true) :
     ∀ ob ∈ obs, DefsOrdered (definitions ob.assumptions.reverse.flatten) :=
   extractObligations_inv _ h (fun q md ss _ _ hq hss hg hx =>
@@ -817,7 +825,7 @@ theorem extractObligations_defsOrdered {p : Program} {obs : ProofObligations Exp
     needs. -/
 theorem extractObligations_defsOrdered_of_gate {p : Program} {obs : ProofObligations Expression}
     (h : extractObligations p = .ok obs)
-    (hwf : ∀ q md ss, Decl.proc q md ∈ p.decls → procedureStatements p.funcNames q = .ok ss →
+    (hwf : ∀ q md ss, Decl.proc q md ∈ p.decls → procedureStatements q = .ok ss →
       ∃ params ρ, Imperative.Logic.BlockInitEnvWF params ss ρ) :
     ∀ ob ∈ obs, DefsOrdered (definitions ob.assumptions.reverse.flatten) :=
   extractObligations_defsOrdered h fun q md ss hq hss =>
@@ -829,7 +837,7 @@ theorem extractObligations_defsOrdered_of_gate {p : Program} {obs : ProofObligat
     `extractObligations p` returns has typed definitions (`DefsTyped`). -/
 theorem extractObligations_defsTyped {p : Program} {obs : ProofObligations Expression}
     (h : extractObligations p = .ok obs)
-    (hwf : ∀ q md ss, Decl.proc q md ∈ p.decls → procedureStatements p.funcNames q = .ok ss →
+    (hwf : ∀ q md ss, Decl.proc q md ∈ p.decls → procedureStatements q = .ok ss →
       ∃ D df Γ, Block.defUseWellFormed D df ss = true ∧ Block.fvarTypesWellAnnotated Γ ss ∧
         Block.initsTyped Expression.Typed ss) :
     ∀ ob ∈ obs, DefsTyped (typedDefinitions ob.assumptions.reverse.flatten) := by

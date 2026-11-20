@@ -176,20 +176,25 @@ theorem Statements.hasObligationForm_eq (ss : Statements) :
 
 /-! ### Facts and the declarations they read -/
 
-/-- Every fact but `wellFormedCalls` and `noLambdas` asks the same check of each declaration on
-    its own. `wellFormedCalls` also reads, for each call, which procedure its callee names, and
-    `noLambdas` which functions the other declarations reach. -/
+/-- Every fact but `wellFormedCalls`, `noLambdas` and `varsNotFunctions` asks the same check of
+    each declaration on its own. `wellFormedCalls` also reads, for each call, which procedure its
+    callee names, `noLambdas` which functions the other declarations reach, and
+    `varsNotFunctions` the program's function names. -/
 theorem ProgramFact.holds_iff_decls_all {f : ProgramFact} (hf : f ≠ .wellFormedCalls)
-    (hl : f ≠ .noLambdas) :
+    (hl : f ≠ .noLambdas) (hv : f ≠ .varsNotFunctions) :
     ∃ g : Decl → Bool, ∀ p : Program, f.holds p ↔ p.decls.all g = true := by
-  cases f <;> first | exact absurd rfl hf | exact absurd rfl hl | exact ⟨_, fun _ => Iff.rfl⟩
+  cases f <;> first
+    | exact absurd rfl hf
+    | exact absurd rfl hl
+    | exact absurd rfl hv
+    | exact ⟨_, fun _ => Iff.rfl⟩
 
-/-- A fact other than `wellFormedCalls` and `noLambdas` that holds of a program holds of any
-    program whose declarations are among its own. -/
+/-- A fact other than `wellFormedCalls`, `noLambdas` and `varsNotFunctions` that holds of a
+    program holds of any program whose declarations are among its own. -/
 theorem ProgramFact.holds_of_decls_subset {f : ProgramFact} (hf : f ≠ .wellFormedCalls)
-    (hl : f ≠ .noLambdas) {p p' : Program} (hsub : ∀ d ∈ p'.decls, d ∈ p.decls)
-    (h : f.holds p) : f.holds p' := by
-  obtain ⟨g, hg⟩ := ProgramFact.holds_iff_decls_all hf hl
+    (hl : f ≠ .noLambdas) (hv : f ≠ .varsNotFunctions) {p p' : Program}
+    (hsub : ∀ d ∈ p'.decls, d ∈ p.decls) (h : f.holds p) : f.holds p' := by
+  obtain ⟨g, hg⟩ := ProgramFact.holds_iff_decls_all hf hl hv
   rw [hg] at h ⊢
   simp only [List.all_eq_true] at h ⊢
   exact fun d hd => h d (hsub d hd)
@@ -238,6 +243,40 @@ theorem ProgramFact.holds_of_procs_eq {f : ProgramFact} (hf : f.readsOnlyProcedu
     rw [decls_all_eq_procs_all hother] at h ⊢
     rwa [hprocs]
 
+/-- Dropping declarations keeps `varsNotFunctions`: the declarations kept are among the
+    program's, and the function names kept are among its function names. -/
+private theorem Program.varsNotFunctions_of_subset {p p' : Program}
+    (hsub : ∀ d ∈ p'.decls, d ∈ p.decls) (h : Program.varsNotFunctions p = true) :
+    Program.varsNotFunctions p' = true := by
+  have hnames : ∀ n, n ∈ Program.funcNames p' → n ∈ Program.funcNames p := by
+    intro n hm
+    simp only [Program.funcNames, List.mem_flatMap] at hm ⊢
+    obtain ⟨e, he, hne⟩ := hm
+    exact ⟨e, hsub e he, hne⟩
+  have hclear : ∀ ns : List String,
+      ns.all (!(Std.HashSet.ofList (Program.funcNames p)).contains ·) = true →
+      ns.all (!(Std.HashSet.ofList (Program.funcNames p')).contains ·) = true := by
+    intro ns hns
+    simp only [List.all_eq_true, Bool.not_eq_eq_eq_not, Bool.not_true,
+      Std.HashSet.contains_ofList] at hns ⊢
+    intro n hn
+    cases hc : (Program.funcNames p').contains n with
+    | false => rfl
+    | true =>
+      have hnot := hns n hn
+      simp [hnames n (by simpa using hc)] at hnot
+  unfold Program.varsNotFunctions at h ⊢
+  simp only [List.all_eq_true] at h ⊢
+  intro d hd
+  have hdp := h d (hsub d hd)
+  cases d with
+  | proc r md => exact hclear _ hdp
+  | func f md => exact hclear _ hdp
+  | recFuncBlock fs md =>
+    rw [List.all_eq_true] at hdp ⊢
+    exact fun g hg => hclear _ (hdp g hg)
+  | _ => trivial
+
 /-- A program whose declarations are among those of a program a fact holds of, with the same
     procedures in the same order, has the fact too, unless it is `noLambdas`: what a phase that
     only deletes declarations other than procedures keeps. -/
@@ -246,7 +285,9 @@ theorem ProgramFact.holds_of_procs_eq_of_subset {f : ProgramFact} (hl : f ≠ .n
     (hsub : ∀ d ∈ p'.decls, d ∈ p.decls) (h : f.holds p) : f.holds p' := by
   by_cases hf : f = .wellFormedCalls
   · subst hf; exact Program.callsWellFormed_of_procs_eq hprocs h
-  · exact ProgramFact.holds_of_decls_subset hf hl hsub h
+  by_cases hv : f = .varsNotFunctions
+  · subst hv; exact Program.varsNotFunctions_of_subset hsub h
+  · exact ProgramFact.holds_of_decls_subset hf hl hv hsub h
 
 end -- public section
 

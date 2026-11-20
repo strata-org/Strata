@@ -759,11 +759,12 @@ spec {
 #guard typeChecks mutualDiffAritiesPgm
 
 ---------------------------------------------------------------------
-/-! ### Example 12: polymorphic recursion and the specialization cap
+/-! ### Example 12: polymorphic recursion whose instances never end
 
-The pass caps the number of specializations it processes. Type checking rejects only a
-self-call annotated at the function's own type parameters. Monomorphization specializes calls
-at ground types, and stops a self-call whose argument type grows at its specialization cap. -/
+Type checking accepts polymorphic recursion: here `f<a>` calls itself at `MyList a`. That
+would produce an unbounded family of ground instantiations (`f<int>`, `f<MyList int>`, …),
+so the pass refuses it before specializing, naming the first instances the recursion needs. Its
+cap on the number of specializations stays as a backstop. -/
 
 private def refiningRecPgm :=
 #strata
@@ -793,19 +794,140 @@ private def monoProgramCappedMsg (prog : Core.Program) (cap : Nat) : String :=
 private def monoFnsCappedMsg (t : StrataDDM.Program) (cap : Nat) : String :=
   monoProgramCappedMsg (translateWithMetaData t) cap
 
--- Type checking rejects the program: the recursive call refines the rigid type parameter `a`.
 /--
-info: "Rigid type variable 'a' was refined to '(MyList a)'"
+info: "MonomorphizeFunctions: polymorphic recursion is not supported: f<a> needs f<(MyList a)>, which needs f<(MyList (MyList a))>, which needs f<(MyList (MyList (MyList a)))>, ..."
 -/
 #guard_msgs in
 #eval monoFnsCappedMsg refiningRecPgm 10
 
+/-- A self-call at a type that grows once and then repeats: from `f<int>` the pass reaches
+    `f<MyList int>`, which calls `f<MyList int>` again, so the specializations are finite. -/
+private def growsOnceRecPgm :=
+#strata
+program Core;
+datatype MyList (a : Type) { Nil(), Cons(hd: a, tl: MyList a) };
+rec function f<a>(x : a) : int { f(Cons(1, Nil())) };
+procedure P(out r : int)
+spec {
+  ensures true;
+}
+{
+  r := f(5);
+};
+#end
+
+/-- info: "OK" -/
+#guard_msgs in
+#eval monoFnsCappedMsg growsOnceRecPgm 10
+
+/-! The verification pipeline runs termination checking before monomorphization, so `f`
+above, which has no `decreases` clause, is refused there: polymorphic recursion is accepted by
+type checking and the program gets termination checking's verdict. -/
+
+/--
+info: error: recursive function 'f' requires a 'decreases' clause or a '@[cases]' parameter for termination checking
+-/
+#guard_msgs in
+#eval show IO Unit from do
+  match ← (Core.verifyProgram (translateWithMetaData refiningRecPgm) quietOpts).toBaseIO with
+  | .ok rs => IO.println s!"{rs.size} obligations"
+  -- The message starts with the function's source range; leave it out, so the test does not
+  -- depend on where the program sits in this file.
+  | .error e => IO.println s!"error: {" ".intercalate ((e.splitOn " ").drop 1)}"
+
+/-- `refiningRecPgm` with a `decreases` clause, so termination checking accepts it. -/
+private def refiningRecDecreasesPgm :=
+#strata
+program Core;
+datatype MyList (a : Type) { Nil(), Cons(hd: a, tl: MyList a) };
+rec function f<a>(x : a, n : int) : int
+  decreases n
+{
+  if int.le(n, 0) then 0 else f(Cons(x, Nil()), int.sub(n, 1))
+};
+procedure P(out r : int)
+spec {
+  ensures true;
+}
+{
+  r := f(5, 3);
+};
+#end
+
+/-! Monomorphization refuses it at once, naming the instances the recursion needs, rather than
+running to its specialization cap. -/
+
+/--
+info: error: MonomorphizeFunctions: polymorphic recursion is not supported: f<a> needs f<(MyList a)>, which needs f<(MyList (MyList a))>, which needs f<(MyList (MyList (MyList a)))>, ...
+-/
+#guard_msgs in
+#eval show IO Unit from do
+  match ← (Core.verifyProgram (translateWithMetaData refiningRecDecreasesPgm)
+      quietOpts).toBaseIO with
+  | .ok rs => IO.println s!"{rs.size} obligations"
+  | .error e => IO.println s!"error: {e}"
+
+/-- Mutual polymorphic recursion: `g<a>` calls `h<MyList a>`, which calls `g` back at its own
+    type argument. The growing call lies on a cycle through both functions, so the chain shown
+    goes through both. -/
+private def mutualGrowingRecPgm :=
+#strata
+program Core;
+datatype MyList (a : Type) { Nil(), Cons(hd: a, tl: MyList a) };
+rec function g<a>(x : a, n : int) : int
+  decreases n
+{
+  if int.le(n, 0) then 0 else h(Cons(x, Nil()), int.sub(n, 1))
+}
+function h<b>(y : b, m : int) : int
+  decreases m
+{
+  if int.le(m, 0) then 0 else g(y, int.sub(m, 1))
+};
+procedure P(out r : int)
+spec {
+  ensures true;
+}
+{
+  r := g(5, 3);
+};
+#end
+
+/--
+info: "MonomorphizeFunctions: polymorphic recursion is not supported: g<a> needs h<(MyList a)>, which needs g<(MyList a)>, which needs h<(MyList (MyList a))>, ..."
+-/
+#guard_msgs in
+#eval monoFnsCappedMsg mutualGrowingRecPgm 10
+
+/-- The same function, never called: monomorphization leaves it alone and drops it. -/
+private def unreachedRecPgm :=
+#strata
+program Core;
+datatype MyList (a : Type) { Nil(), Cons(hd: a, tl: MyList a) };
+rec function f<a>(x : a, n : int) : int
+  decreases n
+{
+  if int.le(n, 0) then 0 else f(Cons(x, Nil()), int.sub(n, 1))
+};
+procedure P(out r : int)
+spec {
+  ensures r == 1;
+}
+{
+  r := 1;
+};
+#end
+
+/-- info: "OK" -/
+#guard_msgs in
+#eval monoFnsCappedMsg unreachedRecPgm 10
+
 /-! ### Non-uniform recursion that type checking accepts
 
-Only a self-call annotated at the function's own type parameters is rejected. A self-call at a
-ground type, whether directly or around a mutual block, is accepted, and the pass specializes it
-at that type. A self-call whose operator is unannotated and whose argument has a type that grows
-(here `int -> a`) is also accepted by the checker; the pass stops it at the specialization cap. -/
+A self-call at a ground type, whether directly or around a mutual block, is accepted, and the
+pass specializes it at that type. A self-call whose operator is unannotated and whose argument
+has a type that grows (here `int -> a`) is also accepted by the checker; the pass refuses it
+before specializing, naming the instances it needs. -/
 
 /-- The application of the operator `fn`, with no type annotation, to `arg`. -/
 private def callOf (fn : String) (arg : Core.Expression.Expr) : Core.Expression.Expr :=
@@ -869,7 +991,7 @@ private def growingSelfCall : Core.Program :=
 #eval Core.TestUtil.coreVerdict growingSelfCall
 
 /--
-info: "MonomorphizeFunctions: too many specializations (non-uniform polymorphic recursion is not supported)"
+info: "MonomorphizeFunctions: polymorphic recursion is not supported: f<a> needs f<(arrow int a)>, which needs f<(arrow int (arrow int a))>, which needs f<(arrow int (arrow int (arrow int a)))>, ..."
 -/
 #guard_msgs in
 #eval monoProgramCappedMsg growingSelfCall 10

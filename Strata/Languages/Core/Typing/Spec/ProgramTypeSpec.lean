@@ -137,10 +137,9 @@ inductive DeclHasType (P : Program) :
       AnnotsInScope l'.typeArgs (fun _ => none) l'.e →
       DeclHasType P C Γ (.lemma l md) C Γ
 
-  /-- A `distinct` declaration: two or more expressions of one monotype; contexts are
-      unchanged. -/
+  /-- A `distinct` declaration: expressions of one monotype, any number of them (fewer than two
+      hold trivially); contexts are unchanged. -/
   | distinct : ∀ (C : LContext CoreLParams) Γ l es md,
-      2 ≤ es.length →
       (∃ mty, ∀ e ∈ es, HasType C Γ e (.forAll [] mty)) →
       (∀ e ∈ es, WrittenAnnotsOk C Γ e) →
       (∀ e ∈ es, AnnotsInScope [] (fun _ => none) e) →

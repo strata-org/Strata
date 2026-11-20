@@ -674,10 +674,9 @@ def checkDeclTyVarsBound (procName : CoreIdent) (md : MetaData Expression)
       f!"{procedureMsgPrefix procName}{"; ".intercalate (m :: rest.map (·.2)).eraseDups}")
 
 /-- Check the names of a procedure header (`checkSignatureNames`). -/
-def checkHeaderNames (C : Core.Expression.TyContext) (h : Procedure.Header) :
-    Except Format Unit :=
-  checkSignatureNames (· ∈ C.functions) "Procedure" h.name.name h.typeArgs
-    (LMonoTys.freeVars (h.inputs.values ++ h.outputs.values)) (h.inputs.keys ++ h.outputs.keys)
+def checkHeaderNames (h : Procedure.Header) : Except Format Unit :=
+  checkSignatureNames "Procedure" h.name.name h.typeArgs
+    (LMonoTys.freeVars (h.inputs.values ++ h.outputs.values))
 
 /-- Type check a `Procedure` whose header names passed `checkHeaderNames`: validate the rest of
     its header, then check its conditions and body with the type parameters as rigid constants,
@@ -765,7 +764,7 @@ def typeCheckIn (scope progSigs : Thunk (Std.HashSet String))
     (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (p : Program)
     (proc : Procedure) (md : MetaData Expression) :
     Except Message (Procedure × Core.Expression.TyEnv) := do
-  (checkHeaderNames C proc.header).mapError md.toDiagnosticF
+  (checkHeaderNames proc.header).mapError md.toDiagnosticF
   let annot := Thunk.mk fun _ => procAnnotTys proc
   typeCheckCore scope progSigs C Env p
     (proc.renameReservedTypeArgs (fun _ => Statement.substTyVars Env ++ scopeTyVars C Env)
