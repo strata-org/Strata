@@ -300,4 +300,10 @@ theorem opsConsistent_op_of_mono {T : LExprParams} {F : Factory T} {m : T.mono.b
   rw [hts]
   simp only [Subst.empty]; exact (LMonoTy.subst_nil _).symm
 
+/-- Renaming every operator to itself leaves an expression unchanged. -/
+theorem LExpr.renameOps_id {T : LExprParams} :
+    ∀ e : LExpr T.mono, e.renameOps (fun o _ => o) = e := by
+  intro e
+  induction e <;> simp_all [LExpr.renameOps]
+
 end Lambda

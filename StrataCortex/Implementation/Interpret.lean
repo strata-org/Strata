@@ -52,13 +52,20 @@ def cortexStopMessage : StopReason → String
   | .elementTypeMismatch t a =>
     s!"array type {Std.format a} is not a subtype of (Array {Std.format (t : Lambda.LTy)})"
   | .elementNotAReference a => s!"the elements of array type {Std.format a} are not references"
+  | .at _ r => cortexStopMessage r
+
+/-- Where a run stopped (`StopReason.locate`), when that has a source location. -/
+def stopLocation : StopReason → Option Strata.FileRange
+  | .at md _ => Imperative.getFileRange md
+  | _ => none
 
 /-- What running the `entry` procedures of a program on the Cortex interpreter
 produced. -/
 structure InterpretOutcome where
-  /-- The failed assertions and uncaught exceptions, each reported once. -/
+  /-- The failed assertions, the uncaught exceptions and the places of the interpreter errors, each reported once. -/
   diagnostics : Array Message := #[]
-  /-- The entry procedures that did not run to completion, each with the reason. -/
+  /-- The entry procedures that ended on an interpreter error, could not evaluate an assertion, or failed without a
+  source location, each with the reason. -/
   errors : Array (String × String) := #[]
 
 /-- Run every `entry` procedure of `m` on the Cortex interpreter, after the
@@ -72,34 +79,32 @@ def interpretProgram (m : Cortex.UnorderedProgram) (fuel : Nat) (cleanup : Bool 
   let m ← (Cortex.LowerDispatch.run m >>= Cortex.LowerGlobals.run >>= Cortex.FieldCasts.run
     >>= Cortex.LowerCTE.runWith true).mapError (s!"lowering: {·}")
   let mut out : Array Message := #[]
-  let mut seen : Std.HashSet Message := {}
   let mut errors : Array (String × String) := #[]
   for p in m.procedures do
     unless isEntry p do continue
     match runEntry m fuel p with
-    | .error e => errors := errors.push (p.name, cortexStopMessage e)
+    | .error e =>
+      errors := errors.push (p.name, cortexStopMessage e)
+      -- An interpreter error is also reported where it happened, when that has a source range.
+      if let some fr := stopLocation e then
+        out := out.push (Message.withRange fr s!"the interpreter fails here: {cortexStopMessage e}")
     | .ok (final, trace) =>
       if unevaluated trace > 0 then
         errors := errors.push (p.name, "an assertion could not be evaluated")
-      -- A failed check without a source range is in a helper procedure, whose
-      -- precondition reports the failure at the call.
-      let msgs := (failures trace).filterMap fun (md, summary) =>
-        (Imperative.getFileRange md).map fun fr => Message.withRange fr s!"{summary} does not hold"
-      let msgs := match final with
+      let escaped := match final with
         | .raised ρ v md =>
           let fallback := match dynType ρ.heap v with
             | some ty => s!"uncaught exception '{Std.format ty}' is not thrown"
             | none => "uncaught exception is not thrown"
-          let summary := ((md : Cortex.MD).getPropertySummary).getD fallback
-          match Imperative.getFileRange (md : Cortex.MD) with
-          | some fr => msgs ++ [Message.withRange fr s!"{summary} does not hold"]
-          | none => msgs ++ [Message.fromString s!"'{p.name}': {summary} does not hold"]
-        | _ => msgs
-      for dm in msgs do
-        unless seen.contains dm do
-          out := out.push dm
-          seen := seen.insert dm
-  return { diagnostics := out, errors }
+          [(md, ((md : Cortex.MD).getPropertySummary).getD fallback)]
+        | _ => []
+      -- A failure without a source range cannot be reported where it is, and dropping it would end the run as a pass:
+      -- it ends the entry as an error.
+      for (md, summary) in failures trace ++ escaped do
+        match Imperative.getFileRange md with
+        | some fr => out := out.push (Message.withRange fr s!"{summary} does not hold")
+        | none => errors := errors.push (p.name, s!"{summary} does not hold, at a check with no source location")
+  return { diagnostics := out.toList.eraseDups.toArray, errors := errors.toList.eraseDups.toArray }
 
 /-- Run every `entry` procedure of a Laurel program on the Cortex interpreter,
 as `interpretProgram` does. The error is the reason the program could not be
@@ -117,8 +122,8 @@ def interpretEntries (program : LaurelProgram) (fuel : Nat := 10000)
     throw "no entry point found: mark a procedure with `entry` in the Laurel source, or pass --entry <proc>"
   interpretProgram m fuel
 
-/-- The diagnostics of `interpretEntries`, or one error that also covers every
-entry procedure that did not run to completion. -/
+/-- The diagnostics of `interpretEntries`, or, when it has `errors`, one error that
+covers them. -/
 def interpretLaurel (program : LaurelProgram) (fuel : Nat := 10000) :
     IO (Except String (Array Message)) := do
   match interpretEntries program fuel with

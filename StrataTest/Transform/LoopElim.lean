@@ -109,11 +109,13 @@ procedure bareNondetLoop (n : int)
       $__loopElim_havoc_loop_0: {
         havoc i;
       }
+      assume [$__loopElimAssume_guard_loop_0]: true;
       i := int.add(i, 1);
     }
     $__loopElim_havoc_loop_0: {
       havoc i;
     }
+    assume [$__loopElimAssume_not_guard_loop_0]: true;
   }
 };
 -/

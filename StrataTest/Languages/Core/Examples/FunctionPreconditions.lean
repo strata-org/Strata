@@ -483,8 +483,9 @@ Property: division by zero check
 Assumptions:
 <label_ite_cond_true: int.lt(int.safeDiv(0, n), 10)>: int.lt(int.safeDiv(0, n@1), 10)
 $__loopElimAssume_guard_loop_1: int.lt(int.safeDiv(i@1, n@1), 10)
-insertLoopInvAssume_invariant_loop_0_0: int.ge(i@1, 0)
+$__insertLoopInvAssume_invariant_loop_0_0: int.ge(i@1, 0)
 test_requires_0: !(n@1 == 0)
+$__insertLoopInvAssume_entry_invariant_loop_0_0: true
 Obligation:
 !(n@1 == 0)
 
@@ -493,8 +494,9 @@ Property: assert
 Assumptions:
 <label_ite_cond_true: int.lt(int.safeDiv(0, n), 10)>: int.lt(int.safeDiv(0, n@1), 10)
 $__loopElimAssume_guard_loop_1: int.lt(int.safeDiv(i@1, n@1), 10)
-insertLoopInvAssume_invariant_loop_0_0: int.ge(i@1, 0)
+$__insertLoopInvAssume_invariant_loop_0_0: int.ge(i@1, 0)
 test_requires_0: !(n@1 == 0)
+$__insertLoopInvAssume_entry_invariant_loop_0_0: true
 Obligation:
 int.ge(int.add(i@1, 1), 0)
 

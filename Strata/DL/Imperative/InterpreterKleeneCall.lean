@@ -30,6 +30,7 @@ namespace Calls
 variable {P : PureExpr}
 variable [DecidableEq P.Ident] [HasOldIdent P]
   {Hdr : Type} [DecidableEq Hdr] [Inhabited Hdr] [ProcedureHeader P Hdr]
+  [ProcedureTypeInstantiation P Hdr]
 variable [HasBool P] [DecidableEq P.Expr] [InterpLang P] [HasFvar P]
 
 /-- The call-aware Kleene command stepper at call-depth budget `depth`: run

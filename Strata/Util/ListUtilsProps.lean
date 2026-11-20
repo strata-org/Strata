@@ -101,6 +101,25 @@ theorem List.Disjoint_cons_left {a : α} {l₁ l₂ : List α} :
     | inl he => exact h.1 (he ▸ hbl)
     | inr hm => exact h.2 hm hbl
 
+/-- Folding the appending of `h`'s results onto an array gives the array followed by `l.flatMap
+    h`. -/
+theorem List.foldl_append_toArray {α β : Type} (h : α → List β) :
+    ∀ (l : List α) (acc : Array β),
+      (l.foldl (fun acc x => acc ++ (h x).toArray) acc).toList = acc.toList ++ l.flatMap h
+  | [], acc => by simp
+  | x :: l, acc => by
+    rw [List.foldl_cons, foldl_append_toArray h l]
+    simp [List.flatMap_cons]
+
+/-- Folding the pushing of `h`'s results onto an array appends `l.map h` to it. -/
+theorem List.foldl_push_map {α β : Type} (h : α → β) :
+    ∀ (l : List α) (acc : Array β), l.foldl (fun acc x => acc.push (h x)) acc = acc ++ (l.map
+        h).toArray
+  | [], acc => by simp
+  | x :: l, acc => by
+    rw [List.foldl_cons, foldl_push_map h l]
+    simp
+
 end -- public section
 
 theorem List.removeAll_Sublist [BEq α] {xs ys : List α}:
@@ -1416,6 +1435,49 @@ theorem names_ne_of_not_any {α β : Type} [BEq β] [LawfulBEq β] {name : α �
     ∀ x ∈ xs, name x ≠ n := by
   intro x hx heq
   exact absurd (List.any_eq_true.mpr ⟨x, hx, by simp [heq]⟩) h
+
+/-- An indexed element among the first `i` of a list has an index below `i` and is the list's
+    element at that index. -/
+theorem mem_take_zipIdx {α : Type} {l : List α} {i : Nat} {x : α × Nat}
+    (h : x ∈ (l.zipIdx).take i) : x.2 < i ∧ l[x.2]? = some x.1 := by
+  refine ⟨?_, List.mem_zipIdx_iff_getElem?.mp (List.mem_of_mem_take h)⟩
+  obtain ⟨j, hj, hx⟩ := List.mem_take_iff_getElem.mp h
+  rw [List.getElem_zipIdx] at hx
+  rw [← hx]
+  simp only [Nat.zero_add]
+  exact Nat.lt_of_lt_of_le hj (Nat.min_le_left _ _)
+
+/-- The element at an index below `i` is among the first `i` elements. -/
+theorem mem_take_of_getElem? {α : Type} {l : List α} {i j : Nat} {d : α} (hj : j < i)
+    (h : l[j]? = some d) : d ∈ l.take i := by
+  apply List.mem_of_getElem? (i := j)
+  rw [List.getElem?_take, ite_eq_left hj, h]
+
+/-- The image of the `i`-th element starts the flat map right after the images of the first `i`
+    elements. -/
+theorem flatMap_index {α β : Type} (L : List α) (U : α → List β) {i : Nat} {a : α} {b : β}
+    (ha : L[i]? = some a) (hb : (U a).head? = some b) :
+    (L.flatMap U)[((L.take i).flatMap U).length]? = some b ∧
+      (L.flatMap U).take ((L.take i).flatMap U).length = (L.take i).flatMap U := by
+  have hsplit : L = L.take i ++ a :: L.drop (i + 1) := by
+    have h1 := List.take_append_drop i L
+    have h2 : L.drop i = a :: L.drop (i + 1) := by
+      obtain ⟨hlt, heq⟩ := List.getElem?_eq_some_iff.mp ha
+      rw [List.drop_eq_getElem_cons hlt, heq]
+    rw [← h2]; exact h1.symm
+  have hL : L.flatMap U = (L.take i).flatMap U ++ (U a ++ (L.drop (i + 1)).flatMap U) := by
+    conv => lhs; rw [hsplit]
+    simp [List.flatMap_append]
+  rw [hL]
+  refine ⟨?_, by simp⟩
+  rw [List.getElem?_append_right (Nat.le_refl _), Nat.sub_self]
+  obtain ⟨c, cs, hc⟩ : ∃ c cs, U a = c :: cs := by
+    cases h : U a with
+    | nil => rw [h] at hb; cases hb
+    | cons c cs => exact ⟨c, cs, rfl⟩
+  rw [hc] at hb ⊢
+  simp only [List.head?_cons, Option.some.injEq] at hb
+  simp [hb]
 
 end List
 

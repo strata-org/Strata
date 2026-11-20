@@ -8,6 +8,7 @@ module
 import Strata.DL.Imperative.InterpreterCFGProps
 import Strata.Languages.Core.InterpreterCFGProps
 import Strata.Languages.Core.InterpreterKleeneProps
+import Strata.Languages.Core.ProcedureProps
 import Strata.Languages.Core.InterpreterCallComplete
 import Strata.Languages.Core.InstWellFormedSemanticsEval
 import all Strata.Languages.Core.Interpreter
@@ -24,7 +25,7 @@ import all Strata.Languages.Core.InterpreterCallSound
 import all Strata.Languages.Core.StatementSemantics
 import Strata.Languages.Core.InterpreterProps
 import Strata.DL.Imperative.InterpreterReplayTactics
-import Strata.Languages.Core.Logic.FactoryInterp
+import Strata.Languages.Core.FactoryInterp
 import Strata.Languages.Core.FactoryWF
 import Strata.Languages.Core.InterpreterDomainProps
 
@@ -190,10 +191,10 @@ theorem cfgComplete : ∃ (evs : List (Event Expression)) (final : CFGConfig Str
 /-- Every procedure of `wPi` is well-formed for call-aware soundness: it has no formals, and its
     CFG body has no commands. -/
 private theorem procsOk_wPi : Calls.ProcsOk wPi := by
-  intro n p h
-  simp only [wPi] at h
-  split at h <;> cases h
-  exact ⟨by decide, nofun, fun g hg => by cases hg; exact CFG.allCmds_of_mem (by simp [wCfg])⟩
+  refine Procedure.forall_typeInstantiatedCallee_of_typeArgs_nil (fun n p h => ?_) (fun n p h => ?_)
+  all_goals simp only [wPi] at h; split at h <;> cases h
+  · rfl
+  · exact ⟨by decide, nofun, fun g hg => by cases hg; exact CFG.allCmds_of_mem (by simp [wCfg])⟩
 
 /-- Every command of the caller CFG `gC` is a well-formed call site. -/
 private theorem allCmds_gC : gC.allCmds (Calls.CmdCallOk wPi) := by

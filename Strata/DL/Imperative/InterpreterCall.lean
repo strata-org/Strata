@@ -88,6 +88,7 @@ section Stepper
 
 variable [DecidableEq P.Ident] [HasOldIdent P]
   {Hdr : Type} [DecidableEq Hdr] [Inhabited Hdr] [ProcedureHeader P Hdr]
+  [ProcedureTypeInstantiation P Hdr]
 
 /-- `withOldSnapshots` over stores of any value type (runtime or semantic): every name of
     `snapshot` is also readable under its `old` name. -/
@@ -154,15 +155,17 @@ variable [HasBool P] [DecidableEq P.Expr] [InterpLang P] [HasFvar P]
       | throw (.programCallBodyExited procName)
     pure (RStore.project entryStore ρEnd.store.get)
 
-/-- The call-aware command stepper, generic over the effect monad `m`.  `depth` is the
-    remaining call-depth budget: how many more calls may nest inside this one.  Base
-    commands go through `stepBaseCmdStore` (presented as `.terminal`).  `.call` at
-    fuel `fuel' + 1` stops with `callDepthExceeded` at budget `0`; at budget `depth' + 1` it
-    evaluates its arguments, builds the callee frame, emits the non-free preconditions with
-    their site metadata (`checksAtCall md`), runs the callee body (`runCallee`) at the caller's
-    factory with this stepper baked at budget `depth'` and fuel `fuel'`, emits the non-free
-    postconditions at the callee's final store, checks that each output has the type of the value
-    its target held (`writeBackTyped`; `illTypedValue` otherwise), and writes the outputs back. -/
+/-- The call-aware command stepper, generic over the effect monad `m`. `depth` is the remaining
+    call-depth budget: how many more calls may nest inside this one. Base commands go through
+    `stepBaseCmdStore` (presented as `.terminal`). `.call` at fuel `fuel' + 1` stops with
+    `callDepthExceeded` at budget `0`; at budget `depth' + 1` it instantiates the callee at the
+    call's type arguments (`programCallTypeArgsMismatch` if they do not instantiate it, as in
+    `Calls.typeInstantiatedCallee`), evaluates its arguments, builds the callee frame, emits the
+    non-free preconditions with their site metadata (`checksAtCall md`), runs the callee body
+    (`runCallee`) at the caller's factory with this stepper baked at budget `depth'` and fuel
+    `fuel'`, emits the non-free postconditions at the callee's final store, checks that each output
+    has the type of the value its target held (`writeBackTyped`; `illTypedValue` otherwise), and
+    writes the outputs back. -/
 def stepCmd {m : Type → Type} [Monad m] [InterpEffects P m] [MonadExcept StopReason m]
     (π : String → Option (Procedure P (CmdExt P) Hdr)) (depth : Nat)
     (fuel : Nat) (env : IEnv P) (cmd : CmdExt P) : m (IConfig P (CmdExt P)) :=
@@ -170,7 +173,7 @@ def stepCmd {m : Type → Type} [Monad m] [InterpEffects P m] [MonadExcept StopR
   | .cmd base => do
     let store ← stepBaseCmdStore fuel env.factory env.store base
     return .terminal { env with store }
-  | .call procName _ args md =>
+  | .call procName tyArgs args md =>
     match fuel with
     | 0 => throw .replayFuelExhausted
     | fuel' + 1 =>
@@ -179,6 +182,9 @@ def stepCmd {m : Type → Type} [Monad m] [InterpEffects P m] [MonadExcept StopR
       | depth' + 1 =>
       match π procName with
       | none => throw (.unsupportedCalleeNotFound procName)
+      | some p₀ =>
+      match ProcedureTypeInstantiation.instantiate p₀ (tyArgs.getD []) with
+      | none => throw (.programCallTypeArgsMismatch procName)
       | some p =>
         do
           let inArgs := getInputExprs args
@@ -294,6 +300,7 @@ variable [HasBool P] [DecidableEq P.Expr] [DecidableEq P.Ident] [InterpLang P]
 
 variable [HasOldIdent P] [HasFvar P]
   {Hdr : Type} [DecidableEq Hdr] [Inhabited Hdr] [ProcedureHeader P Hdr]
+  [ProcedureTypeInstantiation P Hdr]
 
 /-- Strict record-only replay of `cex` through `runCallInterp π` at fuel `fuel` and call-depth
     limit `maxCallDepth`, halting on the target id. -/

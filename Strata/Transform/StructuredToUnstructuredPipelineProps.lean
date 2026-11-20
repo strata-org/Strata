@@ -41,19 +41,19 @@ predicate.
 -/
 
 /-- A Core `Block.nondetElim` output satisfies the strengthened hoist input
-condition used by the pipeline. -/
-theorem nondetElim_establishes_hoistPre :
+condition used by the pipeline, for a source block that some entry environment runs under a
+gate reserving `nondetElim`'s prefixes: the gate keeps the source from defining a generated
+guard name, so the output's inits stay unique. -/
+theorem nondetElim_establishes_hoistPre (params : InitEnvWFParams) :
     ∀ ss out, (fun ss => some (Imperative.Block.nondetElim ss)) ss = some out →
-      (Statements.noCalls ss = Bool.true
+      ((Statements.noCalls ss = Bool.true
         ∧ Block.loopHasNoInvariants ss = Bool.true
         ∧ Block.noMeasureLoops ss = Bool.true
         ∧ Block.uniqueInits (C := Command) ss
         ∧ Block.exitsCoveredByBlocks (CmdT := Command) [] ss
-        ∧ Block.userLabelsShapeNodup (C := Command) ss
-        ∧ (∀ name : String, Imperative.NondetElim.isGeneratedName name →
-            HasIdent.ident (P := Expression) name ∉
-              (Block.definedVars (C := Command) ss false ++
-                Block.modifiedVars (C := Command) ss))) →
+        ∧ Block.userLabelsShapeNodup (C := Command) ss)
+        ∧ ∃ ρ, Core.Logic.BlockInitEnvWF
+          (params.extend Imperative.NondetElim.prefixesReserved) ss ρ) →
       (Statements.noCalls out = Bool.true
         ∧ Block.noNondetGuards out = Bool.true
         ∧ Block.uniqueInits (C := Command) out
@@ -64,7 +64,9 @@ theorem nondetElim_establishes_hoistPre :
   intro ss out ht hpre
   simp only [Option.some.injEq] at ht
   subst out
-  obtain ⟨hnc, hlhni, hnml, huniq, hcov, hlabels, hnogen⟩ := hpre
+  obtain ⟨⟨hnc, hlhni, hnml, huniq, hcov, hlabels⟩, ρ, hwf⟩ := hpre
+  have hnogen := hwf.toBlockInitEnvWF.nondetElim_notDefinedOrModified
+    (fun p hp => by simp [InitEnvWFParams.extend, hp])
   obtain ⟨bs, hproj, hemb⟩ := Core.noCalls_projectStmts hnc
   have hout : Imperative.Block.nondetElim ss =
       Imperative.embedStmts (Imperative.Block.nondetElim bs) := by

@@ -378,7 +378,7 @@ private theorem xFalse_notHolds (factory : Lambda.Factory Core.CoreLParams)
     assertion reached is the quantifier tautology. -/
 theorem pAssume_meets_contract :
     Core.Logic.Hoare.Procedure.contractTriple examplePgmAST testParams "pAssume" := by
-  refine Core.Logic.Hoare.Procedure.contractTriple_of_core_typed
+  refine Core.Logic.Hoare.Procedure.contractTriple_of_core_typed (hmono := by native_decide)
     examplePgmAST testParams "pAssume" pAssumeProc pAssumeBody
     pAssumeProc_named pAssumeProc_body (by native_decide) ?_
   intro ρ₀ ρ' trace hpre hwf hrun
@@ -581,9 +581,11 @@ theorem pNoAssume_contract_refuted :
   obtain ⟨model⟩ := Core.factoryInterp_nonempty
   intro h
   rw [Core.Logic.Hoare.Procedure.contractTriple, hfactory] at h
-  obtain ⟨proc, hfind, _htyped, htriple⟩ := h
+  obtain ⟨proc, hfind, hinsts⟩ := h
   obtain rfl : proc = pNoAssumeProc :=
     Option.some.inj (hfind.symm.trans pNoAssumeProc_named)
+  obtain ⟨_htyped, htriple⟩ := hinsts [] _
+    ((Core.Procedure.instantiateTypes_of_typeArgs_nil (by native_decide)).2 ⟨rfl, rfl⟩)
   rw [pNoAssumeProc_body] at htriple
   have hpre : Core.Logic.Hoare.Procedure.contractPre Core.Factory pNoAssumeProc
       (xFalseEnv model) := by
@@ -614,7 +616,7 @@ theorem pNoAssume_contract_refuted :
     asserted. -/
 theorem pReq_meets_contract :
     Core.Logic.Hoare.Procedure.contractTriple examplePgmAST testParams "pReq" := by
-  refine Core.Logic.Hoare.Procedure.contractTriple_of_core_typed
+  refine Core.Logic.Hoare.Procedure.contractTriple_of_core_typed (hmono := by native_decide)
     examplePgmAST testParams "pReq" pReqProc pReqBody
     pReqProc_named pReqProc_body (by native_decide) ?_
   intro ρ₀ ρ' trace hpre hwf hrun

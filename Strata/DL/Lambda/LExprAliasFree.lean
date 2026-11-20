@@ -251,11 +251,11 @@ omit [ToString T.IDMeta] [Std.ToFormat (LFunc T)] in
 /-- The type assigned to the bound variable by `typeBoundVar` is alias-free. -/
 theorem typeBoundVar_xty_aliasFree (C : LContext T) (Env : TEnv T.IDMeta)
     (bty : Option LMonoTy) (xv : T.Identifier) (xty : LMonoTy) (Env' : TEnv T.IDMeta)
-    (h : typeBoundVar C Env bty = .ok (xv, xty, Env'))
+    {avoid : List T.Identifier} (h : typeBoundVar C Env bty avoid = .ok (xv, xty, Env'))
     (h_resolved : TContext.AliasesResolved Env.context) :
     LMonoTy.aliasFree Env.context.aliases xty := by
   simp only [typeBoundVar, Bind.bind, Except.bind] at h
-  cases h_lift : liftGenEnv HasGen.genVar Env with
+  cases h_lift : liftGenEnv (HasGen.genVar avoid) Env with
   | error _ => rw [h_lift] at h; simp at h
   | ok res_lift =>
     obtain ⟨xv_raw, Env_g⟩ := res_lift

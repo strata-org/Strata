@@ -58,6 +58,7 @@ theorem embedIConfig_abs [DecidableEq P.Ident] (F : P.Factory) (c : IConfig P (C
 section Simulation
 variable [HasBool P] [DecidableEq P.Expr] [DecidableEq P.Ident] [InterpLang P] [HasFvar P]
   [HasOldIdent P] {Hdr : Type} [DecidableEq Hdr] [Inhabited Hdr] [ProcedureHeader P Hdr]
+  [ProcedureTypeInstantiation P Hdr]
   {m : Type → Type} [Monad m] [LawfulMonad m] [InterpEffects P m] [MonadExcept StopReason m]
 
 /-- On an embedded configuration, the call-aware stepper takes the embedding of the base stepper's
@@ -115,6 +116,7 @@ end Simulation
 section Replay
 variable [HasBool P] [DecidableEq P.Expr] [DecidableEq P.Ident] [InterpLang P] [HasFvar P]
   [HasOldIdent P] {Hdr : Type} [DecidableEq Hdr] [Inhabited Hdr] [ProcedureHeader P Hdr]
+  [ProcedureTypeInstantiation P Hdr]
 
 omit [HasBool P] [DecidableEq P.Expr] [DecidableEq P.Ident] [HasFvar P]
   [HasOldIdent P] in

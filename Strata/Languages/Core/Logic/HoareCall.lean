@@ -72,7 +72,10 @@ specified by its signature. -/
 
     When the callee named `procName` meets its `contractTriple` and every execution
     respects the output write set and declared output types, the call satisfies a
-    `Triple`. `hentry` establishes the contract precondition shared by both body kinds,
+    `Triple`.  The call runs the instance of the callee at its type arguments
+    (`Calls.typeInstantiatedCallee`), and the premises below are stated of that instance, which
+    meets the contract as `contractTriple` requires of every instance.
+    `hentry` establishes the contract precondition shared by both body kinds,
     which includes the callee's output typing at entry, and, depending on the resolved
     body, the structured block gate or the CFG gate.
     `haxioms` establishes, at the callee's entry, the axioms and `distinct`
@@ -90,15 +93,17 @@ theorem Procedure.call_of_contract (p : Core.Program) (params : InitEnvWFParams)
     (callArgs : List (Imperative.CallArg Expression)) (md : Imperative.MetaData Expression)
     (Pre Post : Imperative.Env Expression → Prop)
     (hcontract : Procedure.contractTriple p params procName)
-    (hframe : ∀ proc, p.findProcByString? procName = some proc →
+    (hframe : ∀ proc,
+      Calls.typeInstantiatedCallee p.findProcByString? procName tyArgs = some proc →
       Procedure.bodyFrame p.findProcByString? proc)
-    (houtputs : ∀ proc, p.findProcByString? procName = some proc →
+    (houtputs : ∀ proc,
+      Calls.typeInstantiatedCallee p.findProcByString? procName tyArgs = some proc →
       Procedure.bodyOutputsTyped (p.factoryBeforeProcedure procName)
         p.findProcByString? proc)
     (hentry : ∀ (ρ₀ : Imperative.Env Expression) (proc : Procedure)
         (σAO : CoreStore),
       Pre ρ₀ → InitEnvWF params (Statement.call procName tyArgs callArgs md) ρ₀ →
-      p.findProcByString? procName = some proc →
+      Calls.typeInstantiatedCallee p.findProcByString? procName tyArgs = some proc →
       CallEntry ρ₀.factory ρ₀.store proc callArgs σAO →
       Procedure.contractPre (p.factoryBeforeProcedure procName) proc
           { store := σAO, factory := ρ₀.factory } ∧
@@ -112,14 +117,14 @@ theorem Procedure.call_of_contract (p : Core.Program) (params : InitEnvWFParams)
     (haxioms : ∀ (ρ₀ : Imperative.Env Expression) (proc : Procedure)
         (σAO : CoreStore),
       Pre ρ₀ → InitEnvWF params (Statement.call procName tyArgs callArgs md) ρ₀ →
-      p.findProcByString? procName = some proc →
+      Calls.typeInstantiatedCallee p.findProcByString? procName tyArgs = some proc →
       CallEntry ρ₀.factory ρ₀.store proc callArgs σAO →
       Core.Specification.AxiomsBeforeProcedureDecl procName p
         { store := σAO, factory := ρ₀.factory })
     (hexit : ∀ (ρ₀ : Imperative.Env Expression) (proc : Procedure)
         (ρ' : Imperative.Env Expression) (σ' σAO : CoreStore),
       Pre ρ₀ → InitEnvWF params (Statement.call procName tyArgs callArgs md) ρ₀ →
-      p.findProcByString? procName = some proc →
+      Calls.typeInstantiatedCallee p.findProcByString? procName tyArgs = some proc →
       Procedure.contractPost (p.factoryBeforeProcedure procName) proc ρ' →
       Procedure.outputAsPredicate proc ρ' →
       ρ'.factory = ρ₀.factory →
@@ -130,15 +135,19 @@ theorem Procedure.call_of_contract (p : Core.Program) (params : InitEnvWFParams)
     Triple p.findProcByString? params Pre
       [Statement.call procName tyArgs callArgs md] Post
       (factory := p.factoryBeforeProcedure procName) := by
-  obtain ⟨cproc, hcproc, _hctyped, htriple⟩ := hcontract
+  obtain ⟨cproc₀, hcproc₀, hinsts⟩ := hcontract
   refine cmd (factory := p.factoryBeforeProcedure procName)
     p.findProcByString? params
     (Imperative.CmdExt.call procName tyArgs callArgs md)
     Pre Post (fun ρ₀ σ' emitted hpre hwf hstep => ?_)
   let I := DenoteBasedInterp (p.factoryBeforeProcedure procName)
   cases hstep with
-  | @call_sem _ _ _ _ _ _ _ _ _ _ σAO hlookup hcallentry hbodyE hcallexit =>
-    obtain rfl : cproc = _ := Option.some.inj (hcproc.symm.trans hlookup)
+  | @call_sem _ _ _ cproc _ _ _ _ _ _ σAO hcproc hcallentry hbodyE hcallexit =>
+    -- The call runs an instance of the callee, which meets the callee's contract.
+    obtain ⟨-, htriple⟩ : Procedure.contractChecksTyped cproc ∧ _ := by
+      have hinst := hcproc
+      simp only [Calls.typeInstantiatedCallee, hcproc₀, Option.bind_some] at hinst
+      exact hinsts _ _ hinst
     have hframeRel := hframe cproc hcproc _ _ _ _ hbodyE
     obtain ⟨hcontractPre, hbodyWF⟩ :=
       hentry ρ₀ cproc _ hpre hwf hcproc hcallentry
@@ -233,7 +242,8 @@ namespace HoareTotal
     `hcontract`, `hframe`, `houtputs`, `hentry`, `haxioms` and `hexit` premises, and which
     gives the validity of the assertions a call emits.  A call runs its callee's body to
     completion within one step, so the call then terminates with valid assertions as soon as it
-    can execute.  The further premises make sure it can: `hcallEntry` gives
+    can execute.  The further premises make sure it can: `hcallee` that the call's type
+    arguments instantiate the callee (`Calls.typeInstantiatedCallee`), `hcallEntry` gives
     a callee entry store, `hbodyRun` a finished run of the body from it, and `hcallExit` a
     write-back from the final store of every such run.  The callee's other runs do not
     matter to the call's termination; a proof of `hbodyRun` may use the callee's
@@ -243,15 +253,18 @@ theorem Procedure.call_of_contract (p : Core.Program) (params : InitEnvWFParams)
     (callArgs : List (Imperative.CallArg Expression)) (md : Imperative.MetaData Expression)
     (Pre Post : Imperative.Env Expression → Prop)
     (hcontract : Hoare.Procedure.contractTriple p params procName)
-    (hframe : ∀ proc, p.findProcByString? procName = some proc →
+    (hcallee : ∃ proc, Calls.typeInstantiatedCallee p.findProcByString? procName tyArgs = some proc)
+    (hframe : ∀ proc,
+      Calls.typeInstantiatedCallee p.findProcByString? procName tyArgs = some proc →
       Hoare.Procedure.bodyFrame p.findProcByString? proc)
-    (houtputs : ∀ proc, p.findProcByString? procName = some proc →
+    (houtputs : ∀ proc,
+      Calls.typeInstantiatedCallee p.findProcByString? procName tyArgs = some proc →
       Hoare.Procedure.bodyOutputsTyped (p.factoryBeforeProcedure procName)
         p.findProcByString? proc)
     (hentry : ∀ (ρ₀ : Imperative.Env Expression) (proc : Procedure)
         (σAO : CoreStore),
       Pre ρ₀ → InitEnvWF params (Statement.call procName tyArgs callArgs md) ρ₀ →
-      p.findProcByString? procName = some proc →
+      Calls.typeInstantiatedCallee p.findProcByString? procName tyArgs = some proc →
       CallEntry ρ₀.factory ρ₀.store proc callArgs σAO →
       Hoare.Procedure.contractPre (p.factoryBeforeProcedure procName) proc
           { store := σAO, factory := ρ₀.factory } ∧
@@ -265,14 +278,14 @@ theorem Procedure.call_of_contract (p : Core.Program) (params : InitEnvWFParams)
     (haxioms : ∀ (ρ₀ : Imperative.Env Expression) (proc : Procedure)
         (σAO : CoreStore),
       Pre ρ₀ → InitEnvWF params (Statement.call procName tyArgs callArgs md) ρ₀ →
-      p.findProcByString? procName = some proc →
+      Calls.typeInstantiatedCallee p.findProcByString? procName tyArgs = some proc →
       CallEntry ρ₀.factory ρ₀.store proc callArgs σAO →
       Core.Specification.AxiomsBeforeProcedureDecl procName p
         { store := σAO, factory := ρ₀.factory })
     (hexit : ∀ (ρ₀ : Imperative.Env Expression) (proc : Procedure)
         (ρ' : Imperative.Env Expression) (σ' σAO : CoreStore),
       Pre ρ₀ → InitEnvWF params (Statement.call procName tyArgs callArgs md) ρ₀ →
-      p.findProcByString? procName = some proc →
+      Calls.typeInstantiatedCallee p.findProcByString? procName tyArgs = some proc →
       Hoare.Procedure.contractPost (p.factoryBeforeProcedure procName) proc ρ' →
       Hoare.Procedure.outputAsPredicate proc ρ' →
       ρ'.factory = ρ₀.factory →
@@ -282,18 +295,18 @@ theorem Procedure.call_of_contract (p : Core.Program) (params : InitEnvWFParams)
       Post { ρ₀ with store := σ' })
     (hcallEntry : ∀ (ρ₀ : Imperative.Env Expression) (proc : Procedure),
       Pre ρ₀ → InitEnvWF params (Statement.call procName tyArgs callArgs md) ρ₀ →
-      p.findProcByString? procName = some proc →
+      Calls.typeInstantiatedCallee p.findProcByString? procName tyArgs = some proc →
       ∃ σAO, CallEntry ρ₀.factory ρ₀.store proc callArgs σAO)
     (hbodyRun : ∀ (ρ₀ : Imperative.Env Expression) (proc : Procedure) (σAO : CoreStore),
       Pre ρ₀ → InitEnvWF params (Statement.call procName tyArgs callArgs md) ρ₀ →
-      p.findProcByString? procName = some proc →
+      Calls.typeInstantiatedCallee p.findProcByString? procName tyArgs = some proc →
       CallEntry ρ₀.factory ρ₀.store proc callArgs σAO →
       ∃ σEnd bodyEvents,
         CoreBodyExecE p.findProcByString? proc.body ⟨σAO, ρ₀.factory⟩ σEnd bodyEvents)
     (hcallExit : ∀ (ρ₀ : Imperative.Env Expression) (proc : Procedure) (σAO σEnd : CoreStore)
         (bodyEvents : Trace Expression),
       Pre ρ₀ → InitEnvWF params (Statement.call procName tyArgs callArgs md) ρ₀ →
-      p.findProcByString? procName = some proc →
+      Calls.typeInstantiatedCallee p.findProcByString? procName tyArgs = some proc →
       CallEntry ρ₀.factory ρ₀.store proc callArgs σAO →
       CoreBodyExecE p.findProcByString? proc.body ⟨σAO, ρ₀.factory⟩ σEnd bodyEvents →
       ∃ σ', CallExit ρ₀.factory ρ₀.store proc callArgs σEnd σ') :
@@ -302,7 +315,7 @@ theorem Procedure.call_of_contract (p : Core.Program) (params : InitEnvWFParams)
       (factory := p.factoryBeforeProcedure procName) :=
   cmd (factory := p.factoryBeforeProcedure procName) p.findProcByString? params _ Pre Post
     (fun ρ₀ hpre hwf => by
-      obtain ⟨cproc, hcproc, -⟩ := hcontract
+      obtain ⟨cproc, hcproc⟩ := hcallee
       obtain ⟨σAO, hce⟩ := hcallEntry ρ₀ cproc hpre hwf hcproc
       obtain ⟨σEnd, bodyEvents, hb⟩ := hbodyRun ρ₀ cproc σAO hpre hwf hcproc hce
       obtain ⟨σ', hcx⟩ := hcallExit ρ₀ cproc σAO σEnd bodyEvents hpre hwf hcproc hce hb

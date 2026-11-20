@@ -665,7 +665,8 @@ theorem sum_to_n_meets_contract :
   have hfactory : sumToNAST.factoryBeforeProcedure "sum_to_n" = Core.Factory :=
     Core.Program.factoryBeforeProcedure_eq_core_of_noFunctions (by native_decide)
   rw [Core.Logic.Hoare.Procedure.contractTriple, hfactory]
-  refine ⟨sumToNProc, sumToN_find, by native_decide, ?_⟩
+  refine ⟨sumToNProc, sumToN_find,
+    Core.Procedure.forall_instance_of_typeArgs_nil (by native_decide) ⟨by native_decide, ?_⟩⟩
   rw [sumToN_body]
   intro ρEntry ρ₀ ρ' trace hpre hinit hterm
   obtain ⟨⟨hpre, _haxioms⟩, rfl⟩ := hpre
@@ -859,11 +860,13 @@ theorem false_ens_contract_refuted :
   obtain ⟨model⟩ := Core.factoryInterp_nonempty
   intro h
   rw [Core.Logic.Hoare.Procedure.contractTriple, hfactory] at h
-  obtain ⟨proc, hfind, _htyped, htriple⟩ := h
+  obtain ⟨proc, hfind, hinsts⟩ := h
   have hpe : proc = falseEnsProc := by
     have hf : falseEnsPgm.findProcByString? "false_ens" = some falseEnsProc := by native_decide
     exact Option.some.inj (hfind.symm.trans hf)
   subst hpe
+  obtain ⟨_htyped, htriple⟩ := hinsts [] _
+    ((Core.Procedure.instantiateTypes_of_typeArgs_nil (by native_decide)).2 ⟨rfl, rfl⟩)
   have hbody : falseEnsProc.body = .cfg falseEnsCFG := falseEns_body
   rw [hbody] at htriple
   have hout : Core.Logic.Hoare.Procedure.outputAsPredicate falseEnsProc (ρ0N model) := by
@@ -953,6 +956,10 @@ private def copySet : Core.Command :=
 
 /-- The DDM program resolves `copy` to `copyProc`. -/
 private theorem copy_find : copyPgm.findProcByString? "copy" = some copyProc := by native_decide
+/-- A call to `copy` without type arguments runs `copyProc`, which has no type parameters. -/
+private theorem copy_callee :
+    Imperative.Calls.typeInstantiatedCallee copyPgm.findProcByString? "copy" none = some copyProc :=
+  (Core.Procedure.typeInstantiatedCallee_of_typeArgs_nil copy_find (by native_decide)).2 ⟨rfl, rfl⟩
 /-- The translated `copy` procedure has CFG body `copyCFG`. -/
 private theorem copy_body : copyProc.body = .cfg copyCFG := by native_decide
 /-- The translated `copy` CFG's entry label is `"entry"`. -/
@@ -1058,7 +1065,8 @@ theorem copy_meets_contract :
   have hfactory : copyPgm.factoryBeforeProcedure "copy" = Core.Factory :=
     Core.Program.factoryBeforeProcedure_eq_core_of_noFunctions (by native_decide)
   rw [Core.Logic.Hoare.Procedure.contractTriple, hfactory]
-  refine ⟨copyProc, copy_find, by native_decide, ?_⟩
+  refine ⟨copyProc, copy_find,
+    Core.Procedure.forall_instance_of_typeArgs_nil (by native_decide) ⟨by native_decide, ?_⟩⟩
   rw [copy_body]
   intro ρEntry ρ₀ ρ' trace hpre hinit hterm
   obtain ⟨⟨hpre, _haxioms⟩, rfl⟩ := hpre
@@ -1176,10 +1184,11 @@ private theorem run_preserves_frame {π : String → Option Core.Procedure} {σ_
 
 /-- **Every `copy` body run respects the output frame `[result]`.** -/
 theorem copy_body_frame :
-    ∀ proc, copyPgm.findProcByString? "copy" = some proc →
+    ∀ proc,
+      Imperative.Calls.typeInstantiatedCallee copyPgm.findProcByString? "copy" none = some proc →
       Core.Logic.Hoare.Procedure.bodyFrame copyPgm.findProcByString? proc := by
   intro proc hlk
-  obtain rfl : proc = copyProc := Option.some.inj (hlk.symm.trans copy_find)
+  obtain rfl : proc = copyProc := Option.some.inj (hlk.symm.trans copy_callee)
   intro σ_entry fac σ_exit emitted hbody
   rw [copy_body] at hbody
   cases hbody with
@@ -1271,11 +1280,12 @@ private theorem run_preserves_typed {π : String → Option Core.Procedure}
 
 /-- Every `copy` body run binds `result` to a value of its declared type. -/
 private theorem copy_body_outputs_typed :
-    ∀ proc, copyPgm.findProcByString? "copy" = some proc →
+    ∀ proc,
+      Imperative.Calls.typeInstantiatedCallee copyPgm.findProcByString? "copy" none = some proc →
       Core.Logic.Hoare.Procedure.bodyOutputsTyped
         (copyPgm.factoryBeforeProcedure "copy") copyPgm.findProcByString? proc := by
   intro proc hlk
-  obtain rfl : proc = copyProc := Option.some.inj (hlk.symm.trans copy_find)
+  obtain rfl : proc = copyProc := Option.some.inj (hlk.symm.trans copy_callee)
   intro σ_entry fac σ_exit emitted _hfac hin hbody
   obtain ⟨vx, hvx, hvt⟩ := hin xIdC Lambda.LMonoTy.int (by native_decide)
   rw [copy_body] at hbody
@@ -1410,7 +1420,7 @@ theorem copy_call_triple :
     (fun _ _ _ _ _ _ _ => Core.Specification.axiomsBeforeProcedureDecl_of_noAxioms (by native_decide) _) ?_
   · -- hentry
     intro ρ₀ proc σAO hpre hwf hlk hce
-    obtain rfl : proc = copyProc := Option.some.inj (hlk.symm.trans copy_find)
+    obtain rfl : proc = copyProc := Option.some.inj (hlk.symm.trans copy_callee)
     obtain ⟨hfac, ⟨av, ha⟩, ⟨zv, hz⟩⟩ := hpre
     obtain ⟨hAOx, ⟨vz, hAOr, hzvz, hvzval⟩, hwfAO⟩ :=
       copy_callentry_facts ha hce
@@ -1466,7 +1476,7 @@ theorem copy_call_triple :
             simp at hty }
   · -- hexit
     intro ρ₀ proc ρ' σ' σAO hpre hwf hlk hpost houtputsρ hρ'fac hce hframeRel hcallexit
-    obtain rfl : proc = copyProc := Option.some.inj (hlk.symm.trans copy_find)
+    obtain rfl : proc = copyProc := Option.some.inj (hlk.symm.trans copy_callee)
     obtain ⟨hfac, ⟨av, ha⟩, _hz⟩ := hpre
     obtain ⟨hAOx, _, _⟩ := copy_callentry_facts ha hce
     have hdisjx : ([xIdC] : List Core.Expression.Ident).Disj

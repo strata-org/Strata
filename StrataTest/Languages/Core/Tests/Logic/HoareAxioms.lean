@@ -99,7 +99,8 @@ private theorem ensures_among_axioms :
     hold: a model may interpret `c` as `0`. -/
 theorem witness_meets_contract :
     Core.Logic.Hoare.Procedure.contractTriple axiomAST testParams "Witness" := by
-  refine Core.Logic.Hoare.Procedure.contractTriple_of_core_typed_axioms axiomAST testParams
+  refine Core.Logic.Hoare.Procedure.contractTriple_of_core_typed_axioms
+      (hmono := by native_decide) axiomAST testParams
     "Witness" witnessProc [] (by native_decide) (by native_decide) (by native_decide) ?_
   refine Core.Logic.Hoare.consequence _ _
     (Core.Logic.Hoare.skip axiomAST.findProcByString? testParams "" #[] _)
@@ -125,7 +126,7 @@ theorem witness_contract (ss : Core.Statements)
       (Core.Logic.DenoteBasedInterp (axiomAST.factoryBeforeProcedure "Witness"))
       (trace ++ Core.Specification.postconditionEvents witnessProc ρ') :=
   Core.Specification.contract_of_contractTriple witness_meets_contract witnessProc ss
-    (by native_decide) hbody ρ₀ ρ' trace hentry hrun
+    (by native_decide) hbody (by native_decide) ρ₀ ρ' trace hentry hrun
 
 /-! ## The position of a declaration decides -/
 
@@ -135,10 +136,11 @@ private theorem contractTriple_of_entry_absurd (p : Core.Program) (n : String)
     (hproc : p.findProcByString? n = some (procOf p n))
     (hbody : (procOf p n).body = .structured [])
     (htyped : Core.Logic.Hoare.Procedure.contractChecksTyped (procOf p n))
-    (habsurd : ∀ ρ, ¬ Core.Specification.AxiomsBeforeProcedureDecl n p ρ) :
+    (habsurd : ∀ ρ, ¬ Core.Specification.AxiomsBeforeProcedureDecl n p ρ)
+    (hmono : (procOf p n).header.typeArgs = [] := by native_decide) :
     Core.Logic.Hoare.Procedure.contractTriple p testParams n := by
-  refine Core.Logic.Hoare.Procedure.contractTriple_of_core_typed_axioms p testParams n
-    (procOf p n) [] hproc hbody htyped ?_
+  refine Core.Logic.Hoare.Procedure.contractTriple_of_core_typed_axioms (hmono := hmono) p
+    testParams n (procOf p n) [] hproc hbody htyped ?_
   exact Core.Logic.Hoare.consequence _ _
     (Core.Logic.Hoare.skip p.findProcByString? testParams "" #[] (fun _ => False))
     (fun ρ h => habsurd ρ h.2) (fun _ h => h.elim)
@@ -158,13 +160,16 @@ private theorem not_contractTriple_ensures_false (p : Core.Program) (n : String)
     (hpost : ∃ lc ∈ (procOf p n).spec.postconditions.toList,
       (Prod.snd lc).attr = Core.Procedure.CheckAttr.Default ∧
       (Prod.snd lc).expr = Lambda.LExpr.boolConst Core.valueLoc false)
-    (haxioms : ∀ ρ, Core.Specification.AxiomsBeforeProcedureDecl n p ρ) :
+    (haxioms : ∀ ρ, Core.Specification.AxiomsBeforeProcedureDecl n p ρ)
+    (hmono : (procOf p n).header.typeArgs = [] := by native_decide) :
     ¬ Core.Logic.Hoare.Procedure.contractTriple p testParams n := by
   obtain ⟨model⟩ := Core.factoryInterp_nonempty
   intro h
   rw [Core.Logic.Hoare.Procedure.contractTriple, hfactory] at h
-  obtain ⟨proc, hproc', _htyped, htb⟩ := h
+  obtain ⟨proc, hproc', hinsts⟩ := h
   obtain rfl : proc = procOf p n := Option.some.inj (hproc'.symm.trans hproc)
+  obtain ⟨_htyped, htb⟩ := hinsts [] _
+    ((Core.Procedure.instantiateTypes_of_typeArgs_nil hmono).2 ⟨rfl, rfl⟩)
   rw [hbody] at htb
   let ρ : Imperative.Env Core.Expression :=
     { store := fun _ => none, factory := boolFactory model }

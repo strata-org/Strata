@@ -5,6 +5,7 @@
 -/
 
 import Strata.Languages.Core.Logic.ContractToHoareTripleProps
+import Strata.Languages.Core.ProcedureProps
 import Strata.Languages.Core.ProgramProps
 import Strata.Languages.Core
 import Strata.Languages.Core.InstWellFormedSemanticsEval
@@ -316,7 +317,8 @@ theorem count_meets_contract :
   have hfactory : countPgmAST.factoryBeforeProcedure "Count" = Core.Factory :=
     Core.Program.factoryBeforeProcedure_eq_core_of_noFunctions (by decide +kernel)
   rw [Core.Logic.Hoare.Procedure.contractTriple, hfactory]
-  refine ⟨countProc, by native_decide, by native_decide, ?_⟩
+  refine ⟨countProc, by native_decide,
+    Core.Procedure.forall_instance_of_typeArgs_nil (by native_decide) ⟨by native_decide, ?_⟩⟩
   rw [count_body_eq]
   -- The body proof does not use the axioms visible to the procedure.
   refine Core.Logic.Hoare.consequence _ _

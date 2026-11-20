@@ -158,7 +158,7 @@ Obligation: init_calls_IntTree..right_0
 Property: assert
 Result: ✅ pass
 
-Obligation: init_calls_IntTree..left_0
+Obligation: init_calls_IntTree..left_0_1
 Property: assert
 Result: ✅ pass
 

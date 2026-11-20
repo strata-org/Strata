@@ -122,10 +122,12 @@ facts.
 private def calleeEnv (p : Procedure) : String → Option Procedure :=
   fun n => if n = "callee" then some p else none
 
-/-- `calleeEnv p` resolves the name `"callee"` to `p`. -/
-private theorem calleeEnv_callee (p : Procedure) :
-    calleeEnv p "callee" = some p := by
-  simp [calleeEnv]
+/-- A call to `"callee"` without type arguments runs `p` in `calleeEnv p` when `p` has no type
+    parameters. -/
+private theorem calleeEnv_callee (p : Procedure) (h : p.header.typeArgs = [] := by rfl) :
+    Calls.typeInstantiatedCallee (calleeEnv p) "callee" none = some p := by
+  simp [Calls.typeInstantiatedCallee, calleeEnv, ProcedureTypeInstantiation.instantiate,
+    Procedure.instantiateTypes, h]
 
 /-- The callee-local frame store for a one-parameter callee whose sole formal
     `calleeY` is bound to `v`: `emptyStore` extended with `calleeY ↦ v`. -/
@@ -397,7 +399,7 @@ private theorem uniqueEvalCommandE
     {tyArgs : Option (List Expression.Ty)}
     {p : Procedure} {args : List (CallArg Expression)}
     {md : MetaData Expression} {emitted : Trace Expression}
-    (hLookup : π n = some p)
+    (hLookup : Calls.typeInstantiatedCallee π n tyArgs = some p)
     (hBodyUnique : ∀ {frame end₁ end₂ : CoreStore}
       {bodyEvents₁ bodyEvents₂ : Trace Expression},
       CoreBodyExecE π p.body ⟨frame, fac⟩ end₁ bodyEvents₁ →
@@ -414,7 +416,8 @@ private theorem uniqueEvalCommandContractE
     {σ expected : CoreStore} {n : String} {tyArgs : Option (List Expression.Ty)} {p : Procedure}
     {args : List (CallArg Expression)} {md : MetaData Expression}
     {emitted : Trace Expression}
-    (hLookup : π n = some p) (hOutputs : ListMap.keys p.header.outputs = [])
+    (hLookup : Calls.typeInstantiatedCallee π n tyArgs = some p)
+    (hOutputs : ListMap.keys p.header.outputs = [])
     (h : EvalCommandContractE π fac σ (.call n tyArgs args md) expected emitted) :
     UniqueResult (EvalCommandContractE π fac σ (.call n tyArgs args md)) expected emitted :=
   ⟨h, fun _ _ h' => h'.call_unique_of_outputs_nil hLookup hOutputs h⟩
@@ -909,6 +912,20 @@ private def nestedProcEnv (name : String) : Option Procedure :=
   else if name == "middle" then some middleProc
   else none
 
+/-- A call to `leaf` without type arguments runs `leafProc`. -/
+private theorem nestedProcEnv_leaf :
+    Calls.typeInstantiatedCallee nestedProcEnv "leaf" none = some leafProc := by
+  simp [Calls.typeInstantiatedCallee, ProcedureTypeInstantiation.instantiate,
+    Procedure.instantiateTypes,
+    nestedProcEnv, leafProc, noArgProc]
+
+/-- A call to `middle` without type arguments runs `middleProc`. -/
+private theorem nestedProcEnv_middle :
+    Calls.typeInstantiatedCallee nestedProcEnv "middle" none = some middleProc := by
+  simp [Calls.typeInstantiatedCallee, ProcedureTypeInstantiation.instantiate,
+    Procedure.instantiateTypes,
+    nestedProcEnv, middleProc, noArgProc]
+
 /-- Initializing an argument-less procedure's call frame yields the empty store. -/
 private theorem emptyFrame (name : String) (body : Statements) :
     InitCallFrame (noArgProc name body) [] [] emptyStore := by
@@ -951,7 +968,7 @@ example
     simpa [defaultAssertEvents, Calls.defaultAssertEvents, Calls.checksAtCall,
       MetaData.setCallSiteFileRange_empty, ListMap.toList, leafProc,
       noArgProc] using
-      EvalCommandE.call_sem (π := nestedProcEnv) (by simp [nestedProcEnv, leafProc])
+      EvalCommandE.call_sem (π := nestedProcEnv) nestedProcEnv_leaf
         ⟨_, _, .eval_none, .read_none, emptyFrame "leaf" []⟩
         (emptyBodyExecE nestedProcEnv emptyStore fac)
         ⟨(by simp [Imperative.CallArg.getLhs]), _, .read_none, .update_none, .nil⟩
@@ -994,21 +1011,21 @@ example
       (.structured [.cmd (.call "leaf" none [] .empty)]) ⟨frame, fac⟩ end₂ emitted₂ at h₂
     exact h₁.singleton_cmd_unique
       (fun hcmd₁ hcmd₂ => hcmd₁.call_unique_of_body_unique (p := leafProc)
-        (by simp [nestedProcEnv, leafProc]) emptyBodyExecEUnique hcmd₂) h₂
+        nestedProcEnv_leaf emptyBodyExecEUnique hcmd₂) h₂
   refine ⟨?_, ?_⟩
-  · apply uniqueEvalCommandE (p := middleProc) (by simp [nestedProcEnv, middleProc]) hmiddleBodyEUnique
+  · apply uniqueEvalCommandE (p := middleProc) nestedProcEnv_middle hmiddleBodyEUnique
     simpa [defaultAssertEvents, Calls.defaultAssertEvents, Calls.checksAtCall,
       MetaData.setCallSiteFileRange_empty, ListMap.toList, middleProc,
       noArgProc] using
-      EvalCommandE.call_sem (by simp [nestedProcEnv, middleProc])
+      EvalCommandE.call_sem nestedProcEnv_middle
         ⟨_, _, .eval_none, .read_none, emptyFrame "middle" [.cmd (.call "leaf" none [] .empty)]⟩
         hmiddleBodyE ⟨(by simp [Imperative.CallArg.getLhs]), _, .read_none, .update_none, .nil⟩
   · apply uniqueEvalCommandContractE (p := middleProc)
-      (by simp [nestedProcEnv, middleProc]) (by rfl)
+      nestedProcEnv_middle (by rfl)
     simpa [defaultAssertEvents, Calls.defaultAssertEvents, Calls.checksAtCall,
       MetaData.setCallSiteFileRange_empty, ListMap.toList, assumeEvents,
       Calls.assumeEvents, middleProc, noArgProc] using
-      EvalCommandContractE.call_sem (by simp [nestedProcEnv, middleProc])
+      EvalCommandContractE.call_sem nestedProcEnv_middle
         ⟨_, _, .eval_none, .read_none, emptyFrame "middle" [.cmd (.call "leaf" none [] .empty)]⟩
         .update_none ⟨(by simp [Imperative.CallArg.getLhs]), _, .read_none, .update_none, .nil⟩
 

@@ -10,11 +10,13 @@ public import Strata.DL.Imperative.StmtProps
 import all Strata.Languages.Core.Statement
 import all Strata.DL.Imperative.Stmt
 import all Strata.DL.Imperative.Cmd
+import Strata.DL.Lambda.LExprWFProps
 
 /-! # Properties of Core statements
 
 Per-constructor equations for `mapStmtTys` and `mapStmtsTys`, which are defined
-through the well-founded `Stmt.mapExpr` and `Block.mapExpr`, and for
+through the well-founded `Stmt.mapExpr` and `Block.mapExpr`, the identity laws
+`mapCmdTys_id` and `mapStmtsTys_id`, and equations for
 `Statement.noCalls` and `Statements.noCalls`.
 -/
 
@@ -76,6 +78,38 @@ theorem mapStmtsTys_nil (f : LMonoTy → LMonoTy) : mapStmtsTys f [] = [] := by
 theorem mapStmtsTys_cons (f : LMonoTy → LMonoTy) (s : Statement) (rest : List Statement) :
     mapStmtsTys f (s :: rest) = mapStmtTys f s :: mapStmtsTys f rest := by
   simp only [mapStmtTys, mapStmtsTys, Block.mapExpr]
+
+/-- Mapping the type annotations of a command by the identity leaves it unchanged. -/
+theorem mapCmdTys_id (c : Command) : mapCmdTys id c = c := by
+  have hid : mapExprTys (T := CoreLParams) id = id := Lambda.mapExprTys_id
+  have hargs : ∀ args : List (CallArg Expression), args.map (CallArg.mapInput id) = args :=
+    fun args => by
+      conv => rhs; rw [← List.map_id args]
+      exact List.map_congr_left fun a _ => by cases a <;> rfl
+  cases c with
+  | cmd cc =>
+    cases cc with
+    | init x ty e md =>
+      cases ty; cases e <;> simp [mapCmdTys, mapCmdWith, mapLTyTys, ExprOrNondet.map, hid]
+    | set x e md => cases e <;> simp [mapCmdTys, mapCmdWith, ExprOrNondet.map, hid]
+    | _ => simp [mapCmdTys, mapCmdWith, hid]
+  | call n tyArgs args md =>
+    cases tyArgs with
+    | none => simp [mapCmdTys, mapCmdWith, hid, hargs]
+    | some tys =>
+      have htys : tys.map (mapLTyTys id) = tys := by
+        conv => rhs; rw [← List.map_id tys]
+        exact List.map_congr_left fun t _ => by cases t; rfl
+      simp [mapCmdTys, mapCmdWith, hid, hargs, htys]
+
+/-- Mapping the type annotations of a list of statements by the identity leaves it
+    unchanged. -/
+theorem mapStmtsTys_id (ss : List Statement) : mapStmtsTys id ss = ss := by
+  induction ss using Block.mapExpr.induct (motive1 := fun s => mapStmtTys id s = s) with
+  | case1 c => rw [mapStmtTys_cmd, mapCmdTys_id]
+  | _ =>
+    simp_all [mapStmtTys_block, mapStmtTys_ite, mapStmtTys_loop, mapStmtTys_exit,
+      mapStmtTys_typeDecl, mapStmtsTys_nil, mapStmtsTys_cons, ExprOrNondet.map]
 
 /-! ## No procedure call, one constructor at a time -/
 

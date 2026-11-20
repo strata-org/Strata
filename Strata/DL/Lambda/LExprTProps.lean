@@ -167,9 +167,9 @@ The goal is: every free variable name of a resolved expression is a known
 variable of the input context.  This is the freshness-free counterpart of a
 `WellScoped`-from-`resolve` result: an `input`-side statement ("all input free
 vars are known") would require the generated binder `xv` to be fresh in the
-body, which does NOT follow from `typeBoundVar`'s specification (`genExprVar`
-checks `xv` only against `knownVars`, never the expression).  Routing through
-the OUTPUT side avoids the gap: in the abs/quant cases the output body is
+body, which `typeBoundVar` guarantees (`typeBoundVar_xv_not_mem_avoid`, with the
+body's free variables as `avoid`).  Routing through the OUTPUT side needs no
+freshness at all: in the abs/quant cases the output body is
 `varCloseT 0 xv et_body`, and `getVars_varCloseT_subset` supplies `id ≠ xv` for
 free, so the reverse-monotonicity disjunction collapses to the "already known"
 branch with no freshness hypothesis.
@@ -224,7 +224,7 @@ omit [ToString T.IDMeta] [Std.ToFormat (LFunc T)] [Std.ToFormat T.Metadata] in
 theorem typeBoundVar_knownVars_reverse
     (C : LContext T) (Env : TEnv T.IDMeta) (bty : Option LMonoTy)
     (xv : T.Identifier) (xty : LMonoTy) (Env1 : TEnv T.IDMeta)
-    (h : typeBoundVar C Env bty = .ok (xv, xty, Env1))
+    {avoid : List T.Identifier} (h : typeBoundVar C Env bty avoid = .ok (xv, xty, Env1))
     (v : T.Identifier) (hv : v ∈ TContext.knownVars Env1.context) :
     v = xv ∨ v ∈ TContext.knownVars Env.context := by
   simp only [typeBoundVar, Bind.bind, Except.bind] at h
@@ -642,7 +642,7 @@ private theorem resolveAux_tyGen_mono (C : LContext T) :
     (fun E n E' hgen => by rw [genTyVar_tyGen E n E' hgen]; omega)
     (fun _ _ _ _ => Nat.le_refl _)
     (fun _ _ _ _ _ _ => Nat.le_refl _)
-    (fun E bty xv xty E1 _ hboundOk h12 =>
+    (fun E bty _ xv xty E1 _ hboundOk h12 =>
       Nat.le_trans (typeBoundVar_tyGen_mono C E bty xv xty E1 hboundOk) h12)
 
 end ResolveTyGenMono

@@ -15,6 +15,7 @@ import Strata.Util.Tactics
 import Strata.Languages.Core.AbstractCalls
 import Strata.Transform.FoldConnectives
 import Strata.Util.Name
+import Strata.Languages.Core.CheckLabels
 
 /-! # Termination Checking for Recursive Functions
 
@@ -364,8 +365,8 @@ private def mkAdtRankDecls
 /-- Main transformation: iterate over declarations, generating adtRank axioms
     and termination-checking lemmas for each `recFuncBlock`. -/
 def termCheck (p : Program) : CoreTransformM (Bool × Program) := do
-  -- Generated lemmas are named away from every declaration of the program.
-  let taken := Std.HashSet.ofList (p.decls.flatMap fun d => d.names.map (·.name))
+  -- Generated lemmas are named away from every name of the program.
+  let taken := Std.HashSet.ofList p.takenNames
   let (changed, newDecls) ← transformDecls taken p.decls TypeFactory.default {}
   return (changed, { decls := newDecls })
 where

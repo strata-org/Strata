@@ -6,7 +6,7 @@
 module
 
 meta import Strata.Languages.Core
-import Strata.Languages.Core.Logic.FactoryInterp
+import Strata.Languages.Core.FactoryInterp
 import Strata.Util.RealProps
 import StrataDDM.Integration.Lean.HashCommands
 

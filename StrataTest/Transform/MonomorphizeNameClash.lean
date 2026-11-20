@@ -218,8 +218,9 @@ info: "MonomorphizeFunctions: the name 'Foo#bar' contains '#', which is reserved
   | .ok _ => "OK"
   | .error m => toString m
 
-/-- A polymorphic procedure whose name contains `#` is rejected by the full pipeline with the
-    name the user wrote, before `genOpaqueTypeParams` builds an opaque type name from it. -/
+/-- A polymorphic procedure whose name contains `#` is accepted by the full pipeline:
+    `genOpaqueTypeParams` builds its opaque type's name with the `#` replaced by `_`, and the
+    procedure keeps its name. -/
 private def hashProcPgm :=
 #strata
 program Core;
@@ -233,7 +234,10 @@ spec {
 #end
 
 /--
-error: GenOpaqueTypeParams: the name 'P#1' contains '#', which is reserved for monomorphized copies
+info:
+Obligation: P#1_ensures_0
+Property: assert
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval EIO.toIO (fun s => IO.userError s)
@@ -242,8 +246,7 @@ error: GenOpaqueTypeParams: the name 'P#1' contains '#', which is reserved for m
 /-- `datatype List (a : Type) { Nil(), Cons(hd : a, tl : List a) }` and the
     lemma `L#1 : List..isNil(Nil())`. The formula leaves the element type of
     `Nil()` undetermined, so type checking rejects the lemma under the name the
-    user wrote, and no opaque type such as `$__free_L#1_0` is built from a name
-    containing `#`. -/
+    user wrote. -/
 private def hashLemmaPgm : Core.Program :=
   { decls := [Core.TestUtil.listDecl,
       .lemma { name := "L#1", typeArgs := [],
@@ -256,6 +259,32 @@ Lemma 'L#1' is typed at a generated type variable that is not declared
 -/
 #guard_msgs in
 #eval EIO.toIO (fun s => IO.userError s) (Core.verifyProgram hashLemmaPgm quietOpts)
+
+/-! A lemma `L#1` with a type parameter is accepted: the opaque type minted for the parameter
+has the `#` replaced by `_`, and the lemma keeps its name. -/
+
+/-- A lemma `L#1` over `List` with an explicit type parameter `t`. -/
+private def hashLemmaParamPgm :=
+#strata
+program Core;
+datatype List (a : Type) { Nil(), Cons(hd : a, tl : List a) };
+lemma [|L#1|] <t>: forall x : List t :: x == x;
+#end
+
+/-- info: "[List, $__opaque_L_1_t_0]" -/
+#guard_msgs in
+#eval match Core.typeCheck quietOpts (translateWithMetaData hashLemmaParamPgm) with
+  | .error m => toString m
+  | .ok tc => match Core.Transform.run tc Core.genOpaqueTypeParams with
+    | .ok (_, p) => toString (Core.Program.typeNames p)
+    | .error m => toString m
+
+/-- info: #[("L#1", true)] -/
+#guard_msgs in
+#eval do
+  let r ← EIO.toIO (fun s => IO.userError s)
+    (Core.verifyProgram (translateWithMetaData hashLemmaParamPgm) quietOpts)
+  return r.map fun (v : Core.VCResult) => (v.obligation.label, v.isSuccess)
 
 /-- A lemma whose name contains `#` but from which no opaque type is built is accepted, and
     is verified under its own name. -/

@@ -7,7 +7,6 @@
 import Strata.Languages.Core
 import StrataTest.Languages.Core.Tests.Logic.HoareUtils
 import Strata.Languages.Core.Logic.HoareCall
-import Strata.Languages.Core.ProcedureProps
 import Strata.Languages.Core.ProgramProps
 import Strata.Languages.Core.Analysis.ProcedureCorrectnessProps
 import Strata.Languages.Core.BitVecEvalProps
@@ -528,52 +527,6 @@ private theorem bv16_result_value
         (Lambda.LSort.toMonoTy_injective (t := .bitvec 16) hvtr) hne))))
   · exact absurd (by rw [hρ]; exact hF) hne
 
-/-- **Callee body block well-formedness for a `set result := setE` body.**  The body
-    declares nothing, its reads are covered by `hreads`, its one write `result` by `hres`;
-    every operator is declared because `testParams` declares all names.  `hty` gives a
-    typing of the store under which every type annotation on a free variable of `setE`
-    is the type of the value the store holds there. -/
-private theorem setBlockWF (setE : Core.Expression.Expr)
-    (md : Imperative.MetaData Core.Expression) (ρ : Imperative.Env Core.Expression)
-    (hf : ρ.factory.factory = Core.Factory)
-    (hsv : Imperative.WellFormedStore ρ.store ρ.factory)
-    (hreads : ∀ n ∈ Imperative.HasVarsImp.readVars (P := Core.Expression)
-        (Imperative.CmdExt.cmd (Imperative.Cmd.set resultId (.det setE) md)),
-        (ρ.store n).isSome = true)
-    (hres : (ρ.store resultId).isSome = true)
-    (hty : ∃ Γ, StoreHasTyping ρ.factory ρ.store Γ ∧
-      Γ.annotates (Imperative.HasTypedVarsImp.typedReadVars (P := Core.Expression)
-        (Imperative.CmdExt.cmd (Imperative.Cmd.set resultId (.det setE) md)))) :
-    Core.Logic.BlockInitEnvWF testParams
-      [Imperative.Stmt.block "" [Imperative.Stmt.cmd (Imperative.CmdExt.cmd
-        (Imperative.Cmd.set resultId (.det setE) md))] #[]] ρ := by
-  refine Core.Logic.BlockInitEnvWF.of_defUseOk (Core.coreFactory_WellFormedSemanticEval _ hf)
-    hsv (fun n hn => ?_) (fun n hn => ?_) (fun n _ p hp => ?_)
-    (fun _ _ p hp => by simp [testParams] at hp) ?_
-    (fun _ _ => rfl)
-    (by
-      simp [Block.InitTypesInhabited, Block.initTypes, Stmt.initTypes,
-        HasInitTypesImp.initTypes, CmdExt.initTypes, Cmd.initTypes])
-    (by obtain ⟨Γ, hσ, ha⟩ := hty; exact ⟨Γ, hσ, ⟨ha, trivial⟩, trivial⟩)
-    (by simp [Block.measures, Stmt.measures])
-  · simp [Imperative.Block.definedVars, Imperative.Stmt.definedVars,
-      Imperative.HasVarsImp.definedVars, Imperative.CmdExt.definedVars,
-      Imperative.Cmd.definedVars] at hn
-  · simp [Imperative.Block.definedVars, Imperative.Stmt.definedVars,
-      Imperative.HasVarsImp.definedVars, Imperative.CmdExt.definedVars,
-      Imperative.Cmd.definedVars] at hn
-  · simp [testParams] at hp
-  · simp only [Imperative.Block.defUseWellFormed, Imperative.Stmt.defUseWellFormed,
-      Imperative.HasVarsImp.definedVars, Imperative.CmdExt.definedVars, Imperative.Cmd.definedVars,
-      List.all_nil, Bool.and_true, testParams, Bool.and_eq_true, List.all_eq_true]
-    refine ⟨⟨?_, ?_⟩, ?_⟩
-    · intro n hn; exact hreads n hn
-    · intro n hn
-      simp only [Imperative.HasVarsImp.modifiedVars, Imperative.CmdExt.modifiedVars,
-        Imperative.Cmd.modifiedVars, List.mem_singleton] at hn
-      subst hn; exact hres
-    · intro n _; trivial
-
 /-! ### Generic single-call triple for a `(in,in,out)` bv16 callee -/
 
 /-- One `call P(exX, exY, out outVar)` where `P` is a two-input/one-output bv16
@@ -631,15 +584,25 @@ private theorem bv16_call_triple
     (hPreFac : ∀ ρ : Imperative.Env Core.Expression, Ppre ρ → ρ.factory.factory = Core.Factory)
     (hOutHeld : ∀ ρ : Imperative.Env Core.Expression, Ppre ρ → BvHeld ρ outVar)
     (hfactory : mmAST.factoryBeforeProcedure procName = Core.Factory)
-    (haxioms : ∀ ρ, Core.Specification.AxiomsBeforeProcedureDecl procName mmAST ρ) :
+    (haxioms : ∀ ρ, Core.Specification.AxiomsBeforeProcedureDecl procName mmAST ρ)
+    (hmono : proc.header.typeArgs = [] := by native_decide) :
     Core.Logic.Hoare.Triple mmAST.findProcByString? testParams Ppre
       [Core.Statement.call procName tyArgs callArgs md] Ppost := by
+  -- `proc` has no type parameters, so the procedure the call runs is the one `procName` names.
+  have hinst : ∀ q, Calls.typeInstantiatedCallee mmAST.findProcByString? procName tyArgs = some q →
+      mmAST.findProcByString? procName = some q := by
+    intro q hq
+    obtain ⟨p₀, hp₀, hi⟩ := Option.bind_eq_some_iff.1 hq
+    obtain rfl : p₀ = proc := Option.some.inj (hp₀.symm.trans hproc)
+    obtain ⟨-, rfl⟩ := (Core.Procedure.instantiateTypes_of_typeArgs_nil hmono).1 hi
+    exact hp₀
   rw [← hfactory]
   refine Core.Logic.Hoare.Procedure.call_of_contract mmAST testParams procName
-    callArgs md Ppre Ppost hcontract hframe houtputs ?_ (fun _ _ _ _ _ _ _ => haxioms _) ?_
+    callArgs md Ppre Ppost hcontract (fun q hq => hframe q (hinst q hq))
+    (fun q hq => houtputs q (hinst q hq)) ?_ (fun _ _ _ _ _ _ _ => haxioms _) ?_
   · -- hentry
     intro ρ₀ proc' σAO hpre hwf hlk hce
-    have hpe : proc' = proc := Option.some.inj (hlk.symm.trans hproc)
+    have hpe : proc' = proc := Option.some.inj ((hinst _ hlk).symm.trans hproc)
     subst proc'
     have hfac : ρ₀.factory.factory = Core.Factory := hPreFac ρ₀ hpre
     obtain ⟨⟨vx, hEEx, hAOx, _⟩, ⟨vy, hEEy, hAOy, _⟩,
@@ -667,7 +630,7 @@ private theorem bv16_call_triple
       obtain ⟨w, hw⟩ := hOutHeld ρ₀ hpre
       obtain rfl := Option.some.inj (hσr.symm.trans hw)
       exact ⟨_, hAOr, rfl⟩
-    · exact setBlockWF bodyE bmd { store := σAO, factory := ρ₀.factory } hfac hwfAO
+    · exact HoareUtils.setBlockWF resultId bodyE bmd { store := σAO, factory := ρ₀.factory } hfac hwfAO
         (fun n hn => (hReadsSub n hn).elim (fun h => by subst h; simp [hAOx])
           (fun h => by subst h; simp [hAOy]))
         (by simp [hAOr])
@@ -683,7 +646,7 @@ private theorem bv16_call_triple
             simp [hxy]⟩
   · -- hexit
     intro ρ₀ proc' ρ' σ' σAO hpre hwf hlk hpost hout hρ'fac hce hframeRel hcallexit
-    have hpe : proc' = proc := Option.some.inj (hlk.symm.trans hproc)
+    have hpe : proc' = proc := Option.some.inj ((hinst _ hlk).symm.trans hproc)
     subst proc'
     have hfac : ρ₀.factory.factory = Core.Factory := hPreFac ρ₀ hpre
     obtain ⟨va, vb, hExa, hExb, hcont⟩ := hActuals ρ₀ hpre hwf hfac
@@ -860,10 +823,11 @@ private theorem bv16_set_contract
         ρ'.store xId = some (bvV F a) → ρ'.store yId = some (bvV F b) →
         ρ'.store resultId = some (bvV F (fval a b)) →
         Core.Logic.Hoare.Procedure.postAsPredicate Core.Factory proc ρ')
-    (hfactory : mmAST.factoryBeforeProcedure procName = Core.Factory) :
+    (hfactory : mmAST.factoryBeforeProcedure procName = Core.Factory)
+    (hmono : proc.header.typeArgs = [] := by native_decide) :
     Core.Logic.Hoare.Procedure.contractTriple mmAST testParams procName := by
   rw [Core.Logic.Hoare.Procedure.contractTriple, hfactory]
-  refine ⟨proc, hproc, hChecksTyped, ?_⟩
+  refine ⟨proc, hproc, Core.Procedure.forall_instance_of_typeArgs_nil hmono ⟨hChecksTyped, ?_⟩⟩
   rw [hbody]
   -- The body proof does not use the axioms visible to the procedure.
   refine Core.Logic.Hoare.consequence _ _
@@ -1455,7 +1419,8 @@ compute two equal nested min/max compositions in its output parameters. -/
 theorem mm_run_meets_contract :
     Core.Logic.Hoare.Procedure.contractTriple mmAST testParams "Run" := by
   rw [Core.Logic.Hoare.Procedure.contractTriple, run_factory]
-  refine ⟨mmRunProc, by native_decide, by native_decide, ?_⟩
+  refine ⟨mmRunProc, by native_decide,
+    Core.Procedure.forall_instance_of_typeArgs_nil (by native_decide) ⟨by native_decide, ?_⟩⟩
   rw [mm_run_body_eq]
   refine Core.Logic.Hoare.of_storeWF_pre mmAST.findProcByString? testParams ?_
   -- The body proof does not use the axioms visible to the procedure.
