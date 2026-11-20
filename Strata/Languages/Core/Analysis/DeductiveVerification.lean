@@ -473,11 +473,10 @@ inductive CoreEntryWithDecls where
     - A procedure entry is an entry of mainline's procedure entries (`IsCoreEntry`): it
       names a procedure of `p` and an environment its body may start from
       (`ProcEntryEnv`), whose factory is Core's extended with the functions declared
-      before the procedure (`Program.factoryBeforeProcedure`). That factory has neither
-      `base` nor the functions generated for datatypes, so a body that evaluates a
-      datatype's constructor, tester or destructor gets stuck there, and deductive
-      verification says nothing about the assertions after it. Giving procedure entries
-      the runtime factory over `base` is follow-up work.
+      before the procedure and the functions generated for the datatypes declared before
+      it (`Program.factoryBeforeProcedure`). That factory is over Core's built-ins, not
+      over `base`. Giving procedure entries the runtime factory over `base` is follow-up
+      work.
     - The declarations entry starts from the empty store, with a runtime factory that is
       `base` extended with all of `p`'s declarations, and any model of it. A lemma refers
       to no variable. -/
