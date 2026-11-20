@@ -1408,18 +1408,30 @@ private def cfgBodyToCST {M} [Inhabited M]
   modify ToCSTContext.pushScope
   let mut blocks : Array (CFGBlock M) := #[]
   for (lbl, blk) in cfg.blocks do
+    -- The block's metadata, under the same `annFilter` as statement annotations,
+    -- except that a loop invariant is always printed: it decides what CFG loop
+    -- elimination checks, so a printed program without it would verify
+    -- differently when read back. It is printed before the block's commands, so
+    -- it is translated in the scope before their declarations.
+    let inv := Imperative.MetaData.loopInvariantKey
+    let blockFilter : MetadataAnnFilter := match (← get).annFilter with
+      | .none => .only (Std.HashSet.ofList [inv])
+      | .only ks => .only (ks.insert inv)
+      | .allExcept ks => .allExcept (ks.erase inv)
+      | .all => .all
+    let annotsAnn ← metadataToAnn blk.md blockFilter
     let (cmds, nondet) := splitNondetGoto blk.cmds blk.transfer
     let cmdsCST ← cmds.toArray.mapM fun c => stmtToCST (Imperative.Stmt.cmd c)
     let trCST ← transferToCST nondet blk.transfer
     let cmdsArg : CFGCmds M :=
       if cmdsCST.isEmpty then .cfg_cmds_nil default else .cfg_cmds default ⟨default, cmdsCST⟩
-    blocks := blocks.push (.cfg_block default ⟨default, lbl⟩ cmdsArg trCST)
+    blocks := blocks.push (.cfg_block default annotsAnn ⟨default, lbl⟩ cmdsArg trCST)
   modify ToCSTContext.popScope
   let blocksCST ← match blocks.back? with
     | none => do
       ToCSTM.logError "cfgBodyToCST" "CFG body has no blocks" cfg.entry
       pure (.cfg_blocks_one default
-        (.cfg_block default ⟨default, cfg.entry⟩ (.cfg_cmds_nil default)
+        (.cfg_block default ⟨default, none⟩ ⟨default, cfg.entry⟩ (.cfg_cmds_nil default)
           (.transfer_return default)))
     | some last =>
       pure (blocks.pop.foldr (fun b acc => .cfg_blocks_cons default b acc)

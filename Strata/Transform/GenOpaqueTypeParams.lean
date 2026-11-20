@@ -222,7 +222,8 @@ def genOpaqueTypeParamsPipelinePhase : PipelinePhase :=
                          .noLoopMeasures, .staticSingleAssignment,
                          .noBetaRedexes, .noPrecondsFromFuncs, .noNondetGuards,
                          .noProcedureContracts,
-                         .noPolymorphicFunctions, .typeAnnotated, .noInits, .exitsCovered])
+                         .noPolymorphicFunctions, .typeAnnotated, .noInits, .exitsCovered,
+                         .noCFGCycles])
     fun prog =>
       genOpaqueTypeParams prog
 

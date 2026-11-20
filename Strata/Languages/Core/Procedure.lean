@@ -311,12 +311,12 @@ section Collect
 variable {β : Type} (fe : Expression.Expr → List β) (ft : LMonoTy → List β)
 
 /-- What `fe` and `ft` collect from a procedure body, which is either a statement list or the
-    blocks of a control flow graph. -/
+    blocks of a control flow graph, with the expressions in their metadata. -/
 def bodyCollect (body : Procedure.Body) : List β :=
   match body with
   | .structured ss => stmtsCollect fe ft ss
   | .cfg c => c.blocks.flatMap fun (_, blk) =>
-      blk.cmds.flatMap (cmdCollect fe ft) ++
+      blk.md.exprs.flatMap fe ++ blk.cmds.flatMap (cmdCollect fe ft) ++
         match blk.transfer with
         | .condGoto g _ _ _ => fe g
         | .finish _ => []
@@ -329,8 +329,8 @@ def procCollect (proc : Procedure) : List β :=
 
 end Collect
 
-/-- Does every type annotation in a procedure body, including control-flow graph guards,
-    satisfy `p`? -/
+/-- Does every type annotation in a procedure body, including control-flow graph guards
+    and the expressions in block metadata, satisfy `p`? -/
 def Procedure.allBodyTys (p : LMonoTy → Bool) (body : Procedure.Body) : Bool :=
   (bodyCollect exprAnnotTys ([·]) body).all p
 
@@ -348,15 +348,18 @@ instance : Imperative.ProcedureHeader Expression Procedure.Header where
   inputParams  h := h.inputs.keys
   outputParams h := h.outputs.keys
 
-/-- Apply `fc` to every command and `fe` to every branch guard of a control-flow graph,
-    keeping its labels and shape. -/
+/-- Apply `fc` to every command, and `fe` to every branch guard and every expression of
+    the block metadata (a loop invariant), of a control-flow graph, keeping its labels
+    and shape. -/
 def DetCFG.mapCmdsGuards (cfg : DetCFG) (fc : Command → Command)
     (fe : Expression.Expr → Expression.Expr) : DetCFG :=
   { cfg with blocks := cfg.blocks.map fun (lbl, blk) =>
-      (lbl, { cmds := blk.cmds.map fc,
-              transfer := match blk.transfer with
-                | .condGoto p lt lf md => .condGoto (fe p) lt lf md
-                | .finish md => .finish md }) }
+      (lbl, { blk with
+                cmds := blk.cmds.map fc,
+                md := blk.md.mapExprs fe,
+                transfer := match blk.transfer with
+                  | .condGoto p lt lf md => .condGoto (fe p) lt lf md
+                  | .finish md => .finish md }) }
 
 def DetCFG.eraseTypes (cfg : DetCFG) : DetCFG :=
   DetCFG.mapCmdsGuards cfg Command.eraseTypes (·.eraseTypes)
@@ -413,9 +416,10 @@ def Procedure.renameTypeArgs (proc : Procedure) (ren : List (String × String)) 
 instance : Imperative.ProcedureTypeInstantiation Expression Procedure.Header where
   instantiate := Procedure.instantiateTypes
 
--- Only transfer metadata is stripped because command metadata (on assert,
--- assume, init, set, cover) is not included in formatted output — formatCmd
--- discards it. Transfer metadata, however, appears in CFG formatting.
+-- Only transfer metadata is stripped: command metadata (on assert, assume,
+-- init, set, cover) is not part of the formatted output (formatCmd discards
+-- it), while transfer metadata is. Block metadata is kept: it holds the block's
+-- annotations (`@[loopInvariant = (e)]`), which are part of the program.
 def DetCFG.stripMetaData (cfg : DetCFG) : DetCFG :=
   { cfg with blocks := cfg.blocks.map fun (lbl, blk) =>
       (lbl, { blk with transfer := match blk.transfer with

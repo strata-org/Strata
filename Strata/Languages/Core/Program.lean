@@ -5,6 +5,7 @@
 -/
 module
 
+public import Strata.DL.Imperative.CFG
 public import Strata.Languages.Core.Function
 public import Strata.Languages.Core.Factory
 public import Strata.Languages.Core.TypeDecl
@@ -460,8 +461,9 @@ statement. -/
   p.decls.all (Decl.allStatements f)
 
 /-- The expressions `d` carries outside its statements: a procedure's contract
-    and the guards of its CFG transfers, a function's body, axioms,
-    preconditions and measure, an axiom, a `distinct` fact. -/
+    and, in a CFG body, the guards of its transfers and the expressions in its
+    blocks' metadata (`@[loopInvariant = (e)]`); a function's body, axioms,
+    preconditions and measure; an axiom; a `distinct` fact. -/
 @[expose] def Decl.ownExprs (d : Decl) : List Expression.Expr :=
   match d with
   | Core.Decl.proc q _md =>
@@ -470,6 +472,7 @@ statement. -/
     (match q.body with
      | .structured _ => []
      | .cfg g => g.blocks.flatMap fun (_, blk) =>
+         blk.md.exprs ++
          match blk.transfer with
          | .condGoto p _ _ _ => [p]
          | .finish _ => [])
@@ -540,6 +543,15 @@ def Program.funcAttrs (p : Program) : Std.HashMap String (Array Strata.DL.Util.F
 /-- Does every procedure in `p` have a structured body? -/
 @[expose] def Program.allStructured (p : Program) : Bool :=
   p.decls.all Decl.isStructuredOrNonProc
+
+/-- Does no CFG body in `p` have a cycle reachable from its entry? A structured
+    body has no CFG, so it passes whatever loops it holds. -/
+@[expose] def Program.noCFGCycles (p : Program) : Bool :=
+  p.decls.all fun d => match d with
+    | Core.Decl.proc q _md => match q.body with
+      | .cfg g => (Imperative.CFG.cycleLabelsWith g.succMap [g.entry]).isEmpty
+      | .structured _ => true
+    | _ => true
 
 /-- The calls in a declaration: a procedure's calls, and nothing for any other
     declaration. -/

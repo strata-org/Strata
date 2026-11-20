@@ -24,7 +24,8 @@ cfg entry {
   }
 };
 
-// A CFG with a simple loop: increment y until it reaches n.
+// A CFG with a simple loop: increment y until it reaches n. The loop header
+// carries the invariant used to cut the loop for verification.
 procedure CountUp(n : int, out y : int)
 spec {
   requires (int.ge(n, 0));
@@ -35,6 +36,7 @@ cfg entry {
     y := 0;
     goto loop;
   }
+  @[loopInvariant = (int.le(y, n))]
   loop: {
     branch (int.lt(y, n)) goto body else goto done;
   }

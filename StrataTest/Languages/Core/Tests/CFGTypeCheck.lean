@@ -2194,7 +2194,7 @@ spec {
     y := 0;
     goto loop;
   }
-  loop: {
+  @[loopInvariant = ((int.le(y, n)))] loop: {
     branch (int.lt(y, n)) goto body else goto done;
   }
   body: {
@@ -2288,6 +2288,39 @@ info: "ok"
 -/
 #guard_msgs in
 #eval (match Core.typeCheck .default (guardProgram (forallEqGuard "x")) with
+  | .ok _ => "ok"
+  | .error e => s!"{Std.format e}")
+
+/-! A loop invariant is resolved as a branch guard is: the same undeclared free variable in
+the invariant of a loop header is rejected, and an invariant over a declared variable is
+accepted. -/
+
+/-- A CFG whose loop header `h` carries the loop invariant `inv`. -/
+private def invariantProgram (inv : Core.Expression.Expr) : Core.Program :=
+  let x : Core.Expression.Expr := .fvar Core.coreLoc ⟨"x", ()⟩ none
+  guardBlocksProgram
+    [("entry", { cmds := [], transfer := .goto "h" }),
+     ("h", { cmds := [], transfer := .condGoto x "h" "done" .empty,
+             md := #[{ fld := .label Imperative.MetaData.loopInvariantKey, value := .expr inv }] }),
+     ("done", { cmds := [], transfer := .finish .empty })]
+
+/--
+info: error: Procedure 'P': [P]: in metadata `loopInvariant` of block "h": No free variables
+  are allowed here!
+Free Variables: [$__var0, $__var0]
+-/
+#guard_msgs (whitespace := lax) in
+#eval Std.format
+  (Core.typeCheck .default (invariantProgram (forallEqGuard "$__var0")))
+
+/--
+info: [Strata.Core] Type checking succeeded.
+
+---
+info: "ok"
+-/
+#guard_msgs in
+#eval (match Core.typeCheck .default (invariantProgram (forallEqGuard "x")) with
   | .ok _ => "ok"
   | .error e => s!"{Std.format e}")
 

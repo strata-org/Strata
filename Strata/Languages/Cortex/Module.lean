@@ -180,7 +180,8 @@ def mapTransfer (g : Expr → Expr) : DetTransferCmd Label Core.Expression → D
   | .finish md => .finish md
 
 def mapBlock (h : IRCmd → List IRCmd) (g : Expr → Expr) (b : LBlock) : LBlock :=
-  { cmds := b.cmds.flatMap h, transfer := mapTransfer g b.transfer }
+  { b with cmds := b.cmds.flatMap h, transfer := mapTransfer g b.transfer,
+           md := b.md.mapExprs g }
 
 def mapBody (h : IRCmd → List IRCmd) (g : Expr → Expr) (b : Body) : Body :=
   { b with cfg := { b.cfg with blocks := b.cfg.blocks.map fun (l, blk) => (l, mapBlock h g blk) } }

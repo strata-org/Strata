@@ -201,9 +201,13 @@ private def parseProvenanceString (s : String) : Option Strata.Provenance :=
         | _, _ => none
       | _ => none
 
-/-- Translate a MetadataAnnEntry to a MetaDataElem (flags and string values only;
-    expression values are not yet supported). -/
-def translateMetadataAnnEntry (arg : Arg) :
+/-- Translate a MetadataAnnEntry to a MetaDataElem.
+
+    Expression values (`@[key = (e)]`) are translated with `translateE` when it is
+    given, and otherwise reported as an error: translating an expression needs the
+    bindings in scope at the annotation. -/
+def translateMetadataAnnEntry
+    (arg : Arg) (translateE : Option (Arg → TransM Core.Expression.Expr) := none) :
     TransM (Imperative.MetaDataElem Core.Expression) := do
   let .op op := arg
     | TransM.error s!"translateMetadataAnnEntry expected op {repr arg}"
@@ -227,14 +231,23 @@ def translateMetadataAnnEntry (arg : Arg) :
         | none => return { fld, value := .msg s }
       else
         return { fld := .label key, value := .msg s }
-    | q`Core.mdAnnValExpr, _ =>
-      TransM.error "translateMetadataAnnEntry: expression values not yet supported"
+    | q`Core.mdAnnValExpr, #[eArg] =>
+      match translateE with
+      | some f => return { fld := .label key, value := .expr (← f eArg) }
+      | none =>
+        let pos := (← StateT.get).inputCtx.fileMap.toPosition valArg.ann.start
+        TransM.recordError
+          s!"{pos.line}:{pos.column}: annotation `{key}`: an expression value \
+             (`@[{key} = (e)]`) is supported only on a CFG block"
+          { fld := .label key, value := .switch true }
     | _, _ => TransM.error s!"translateMetadataAnnEntry: unexpected value {repr valOp.name}"
   | _, _ => TransM.error s!"translateMetadataAnnEntry: unexpected {repr op.name}"
 
 /-- Translate an Option MetadataAnn argument into MetaData.
-    Returns empty metadata if the annotation is absent. -/
-def translateOptMetadataAnn (arg : Arg) :
+    Returns empty metadata if the annotation is absent. Expression values are
+    translated with `translateE` (see `translateMetadataAnnEntry`). -/
+def translateOptMetadataAnn
+    (arg : Arg) (translateE : Option (Arg → TransM Core.Expression.Expr) := none) :
     TransM (Imperative.MetaData Core.Expression) := do
   let .option _ ann := arg
     | TransM.error s!"translateOptMetadataAnn unexpected {repr arg}"
@@ -244,7 +257,7 @@ def translateOptMetadataAnn (arg : Arg) :
     let .op annOp := annArg
       | TransM.error s!"translateOptMetadataAnn expected op {repr annArg}"
     let _ ← checkOpArg annArg q`Core.mdAnn 1
-    let entries ← translateCommaSep translateMetadataAnnEntry annOp.args[0]!
+    let entries ← translateCommaSep (translateMetadataAnnEntry · translateE) annOp.args[0]!
     return entries
 
 /-- Merge explicit annotation metadata (`annMd`) into source-position metadata
@@ -2061,7 +2074,8 @@ def translateBlockCommand (p : Program) (bindings : TransBindings) (op : Operati
 
 private instance : Inhabited TransBindings := ⟨{}⟩
 private instance : Inhabited (Imperative.DetTransferCmd String Core.Expression) := ⟨.finish .empty⟩
-private instance : Inhabited (Imperative.BasicBlock (Imperative.DetTransferCmd String Core.Expression) Core.Command) := ⟨⟨[], .finish .empty⟩⟩
+private instance : Inhabited (Imperative.BasicBlock (Imperative.DetTransferCmd String Core.Expression)
+    Core.Command Core.Expression) := ⟨{ cmds := [], transfer := .finish .empty }⟩
 private instance : Inhabited (Imperative.CFG String (Imperative.DetBlock String Core.Command Core.Expression)) := ⟨⟨"", []⟩⟩
 
 partial def translateTransfer (p : Program) (bindings : TransBindings) (arg : Arg) :
@@ -2097,14 +2111,22 @@ partial def translateTransfer (p : Program) (bindings : TransBindings) (arg : Ar
     return ([], .finish md, bindings)
   | _ => TransM.error s!"translateTransfer: unknown transfer {repr op.name}"
 
-/-- Translate a single CFG block -/
+/-- Translate a single CFG block.
+
+    The block's annotations become its metadata (`BasicBlock.md`). Only the
+    explicit annotations are stored: unlike a statement, a block gets no derived
+    `provenance` entry (its source location is on its transfer), so an
+    unannotated block has empty metadata. Expression values are translated in the
+    bindings in scope at the start of the block. -/
 partial def translateCFGBlock (p : Program) (bindings : TransBindings) (arg : Arg) :
-  TransM (String × Imperative.BasicBlock (Imperative.DetTransferCmd String Core.Expression) Core.Command × TransBindings) := do
+  TransM (String × Imperative.BasicBlock (Imperative.DetTransferCmd String Core.Expression)
+    Core.Command Core.Expression × TransBindings) := do
   let .op op := arg
     | TransM.error s!"translateCFGBlock expected op {repr arg}"
-  let label ← translateIdent String op.args[0]!
+  let blockMd ← translateOptMetadataAnn op.args[0]! (some (translateExpr p bindings))
+  let label ← translateIdent String op.args[1]!
   -- `cfg_cmds_nil` has no commands; `cfg_cmds` holds a non-empty sequence.
-  let stmts : Array Arg ← match op.args[1]! with
+  let stmts : Array Arg ← match op.args[2]! with
     | .op cmdsOp =>
       match cmdsOp.name with
       | q`Core.cfg_cmds_nil => pure #[]
@@ -2125,14 +2147,15 @@ partial def translateCFGBlock (p : Program) (bindings : TransBindings) (arg : Ar
         match stmt with
         | .cmd c => cmds := cmds.push c
         | _ => TransM.error s!"translateCFGBlock: only commands allowed in CFG blocks, got statement"
-  let (transferCmds, transfer, bindings') ← translateTransfer p bindings op.args[2]!
+  let (transferCmds, transfer, bindings') ← translateTransfer p bindings op.args[3]!
   -- Append any commands the transfer needs declared in scope (e.g. the
   -- `$__nondet_N` declaration for a nondeterministic goto).
-  return (label, ⟨cmds.toList ++ transferCmds, transfer⟩, bindings')
+  return (label, { cmds := cmds.toList ++ transferCmds, transfer, md := blockMd }, bindings')
 
 /-- Translate a list of CFG blocks -/
 partial def translateCFGBlocks (p : Program) (bindings : TransBindings) (arg : Arg) :
-  TransM (List (String × Imperative.BasicBlock (Imperative.DetTransferCmd String Core.Expression) Core.Command) × TransBindings) := do
+  TransM (List (String × Imperative.BasicBlock (Imperative.DetTransferCmd String Core.Expression)
+    Core.Command Core.Expression) × TransBindings) := do
   let .op op := arg
     | TransM.error s!"translateCFGBlocks expected op {repr arg}"
   match op.name with

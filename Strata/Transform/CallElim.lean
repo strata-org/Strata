@@ -274,7 +274,7 @@ def callElimPipelinePhase : PipelinePhase where
   preserves := factSet![.wellFormedCalls, .noCFGBodies, .noLoops, .noLoopInvariants,
                       .noLoopMeasures, .noPrecondsFromFuncs, .noNondetGuards, .noProcedureContracts,
                          .noPolymorphicProcedures,
-                         .noPolymorphicFunctions, .typeAnnotated, .exitsCovered]
+                         .noPolymorphicFunctions, .typeAnnotated, .exitsCovered, .noCFGCycles]
 
 end Core
 

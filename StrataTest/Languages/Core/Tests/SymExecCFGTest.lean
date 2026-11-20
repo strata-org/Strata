@@ -642,10 +642,10 @@ info: error: ❌ Expected every procedure body to be structured, but found proce
     IO.println "verified"
   catch e => IO.println s!"error: {withoutRange (toString e)}"
 
--- A loop in a CFG body is refused by `verify --vcgen symexec`.
+-- A loop in a CFG body is cut at its header (`cfgLoopElim`), using the header's invariant.
 /--
-info: "error: ❌ Symbolic execution error.\nsymExec: procedure 'P': its CFG body has a loop (through
-  blocks [loop, body]), which --vcgen symexec does not analyze"
+info: "cfgLoopElimAssert_entry_loop_0: ✅ pass\ncfgLoopElimAssert_maintain_loop_body_0:
+  ✅ pass\neq: ✅ pass"
 -/
 #guard_msgs (whitespace := lax) in
 #eval verifyCFG <|
@@ -655,18 +655,18 @@ procedure P(n : int, out y : int)
 spec { requires [nneg]: int.ge(n, 0); ensures [eq]: y == n; }
 cfg entry {
   entry: { y := 0; goto loop; }
+  @[loopInvariant = (int.le(y, n))]
   loop: { branch (int.lt(y, n)) goto body else goto done; }
   body: { y := int.add(y, 1); goto loop; }
   done: { return; }
 };
 #end
 
--- A call in a block on a cycle: type checking runs first and accepts the call, call elimination
--- puts its `init`s in that block without checking them again, and `--vcgen symexec` rejects the
--- loop.
+-- A call in a block on a cycle: the loop is cut before call elimination, so the call's `init`s
+-- are in an acyclic body, and the invariant gives the callee's precondition.
 /--
-info: "error: ❌ Symbolic execution error.\nsymExec: procedure 'P': its CFG body has a loop (through
-  blocks [loop, body]), which --vcgen symexec does not analyze"
+info: "cfgLoopElimAssert_entry_loop_0: ✅ pass\ncallElimAssert_inc_pre_2:
+  ✅ pass\ncfgLoopElimAssert_maintain_loop_body_0: ✅ pass"
 -/
 #guard_msgs (whitespace := lax) in
 #eval verifyCFG <|
@@ -678,6 +678,7 @@ procedure P(n : int, out y : int)
 spec { requires [nneg]: int.ge(n, 0); }
 cfg entry {
   entry: { y := 0; goto loop; }
+  @[loopInvariant = (int.ge(y, 0))]
   loop: { branch (int.lt(y, n)) goto body else goto done; }
   body: { call Inc(y, out y); goto loop; }
   done: { return; }

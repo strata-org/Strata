@@ -18,6 +18,7 @@ public import Strata.Transform.DeadDefElim
 import Strata.Transform.UnrollBoundedQuantifiers
 import Strata.Transform.BetaReduce
 import Strata.Transform.CallElim
+import Strata.Transform.CFGLoopElim
 import Strata.Transform.CommonSubexprElim
 import Strata.Transform.FilterProcedures
 import Strata.Transform.FunctionInlining
@@ -1004,15 +1005,6 @@ private def symExecMaxSteps : Nat := 100000000
     run stops with an error (`toSymExecObligationProgram`). -/
 private def symExecMaxPaths : Nat := 10000
 
-/-- The blocks on a cycle reachable from the entry of `p`'s CFG body, in block order (`[]`
-    for a structured body). -/
-private def cfgLoopBlocks (p : Procedure) : List String :=
-  match p.body with
-  | .structured _ => []
-  | .cfg g =>
-    let onCycle := Imperative.CFG.cycleLabelsWith g.succMap [g.entry]
-    g.labels.filter onCycle.contains
-
 /-- The metadata field marking a check that is the only one in the program with its label and
     metadata. The per-path results of a marked check are grouped together even without a source
     range (`vcResultGroupKey`); for an unmarked one, label and metadata name several checks, so
@@ -1076,10 +1068,11 @@ private def markOnlyChecks (counts : Std.HashMap String Nat) (p : Procedure) : P
     one block per check no path reached. The lemma blocks and these become the `if *` branches
     of the obligation procedures, each block after exactly the `distinct` declarations before
     its lemma or procedure (`scopedObligationProgram`). Each
-    run stops past `symExecMaxPaths` paths. The whole run stops with an error, naming the
-    procedure and the reason, if the program fails a fact `SymExec.failedRequires` checks, a CFG
-    body has a loop (`cfgLoopBlocks`), or a procedure's run is incomplete (`symExecIncomplete`,
-    such as the path limit or a path that stopped); no obligations are produced then. -/
+    run stops past `symExecMaxPaths` paths. The whole run stops with an error if the program
+    fails a fact `SymExec.failedRequires` checks (a CFG body with a loop fails `noCFGCycles`), or,
+    naming the procedure and the reason, if a procedure's run is incomplete
+    (`symExecIncomplete`, such as the path limit or a path that stopped); no obligations are
+    produced then. -/
 def toSymExecObligationProgram (options : VerifyOptions) (program : Program)
     (moreFns : Lambda.Factory CoreLParams := Lambda.Factory.default)
     (policy : Option SymExec.MergePolicy := none) :
@@ -1115,10 +1108,6 @@ def toSymExecObligationProgram (options : VerifyOptions) (program : Program)
       | .proc p _ =>
         let p := markOnlyChecks counts p
         let pol := policy.getD (SymExec.MergePolicy.ofMode options.symExecMode)
-        let loops := cfgLoopBlocks p
-        if !loops.isEmpty then throw (Message.fromString
-            s!"symExec: procedure '{p.header.name}': its CFG body has a loop (through blocks \
-              {loops}), which --vcgen symexec does not analyze") else
         let r := SymExec.exploreProc { simpFuel := postEvalEnv.exprEnv.config.fuel,
                                        maxPaths := some symExecMaxPaths }
           symExecMaxSteps symExecRunFuel F p fnNames s!"{idx}_" pol
@@ -1605,7 +1594,12 @@ instance : ToFormat VCResult where
           f!"\n{r.modelHeading}\n{r.lexprModel}"
         else f!""
       let prop := r.obligation.property
-      f!"Obligation: {r.obligation.label}\nProperty: {prop}\nResult: {outcome.emoji prop r.checkLevel r.checkMode} {outcome.label prop r.checkLevel r.checkMode}{modelFmt}"
+      -- At `--verbose debug`, the condition checked, as the VC generator stated it.
+      let condFmt :=
+        if r.verbose >= .debug then f!"\nCondition: {r.obligation.obligation}" else f!""
+      f!"Obligation: {r.obligation.label}\nProperty: {prop}{condFmt}\nResult: \
+        {outcome.emoji prop r.checkLevel r.checkMode} \
+        {outcome.label prop r.checkLevel r.checkMode}{modelFmt}"
 
 /-- Compact single-line outcome string: emoji + label
     (e.g. "✅ pass", "❌ fail"). Uses the property, check level,
@@ -2072,9 +2066,11 @@ def preprocessObligation (obligation : ProofObligation Expression) (p : Program)
     procedure or ill-formed call is reported even when the filter then drops it. Every later
     phase relies on its annotations and on the well-formed calls it establishes. The filter
     follows. Without `--vcgen symexec`, `assertNoCFGBodies` comes next, so a CFG body is refused
-    by a message naming the fact. Under `--vcgen symexec` CFG bodies go on to symbolic
-    execution: call elimination and precondition elimination rewrite the commands of their
-    blocks, and the other phases keep them as they are. -/
+    by a message naming the fact. Under `--vcgen symexec` CFG bodies go on to the path
+    explorer: before type checking, `hoistNondetChoices` declares the choices of
+    nondeterministic `goto`s in CFG loops at the entry; after the filter, `cfgLoopElim` cuts
+    the loops of CFG bodies at their headers; call elimination and precondition elimination
+    rewrite the commands of their blocks, and the other phases keep them as they are. -/
 def transformPipelinePhases (options : VerifyOptions := VerifyOptions.default)
     (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default) :
     List PipelinePhase :=
@@ -2090,7 +2086,15 @@ def transformPipelinePhases (options : VerifyOptions := VerifyOptions.default)
     else [ProgramFact.assertPhase .noCFGBodies]
   -- The filter runs before `assertNoCFGBodies`, so a caller naming structured
   -- procedures to verify is not refused for an excluded CFG body.
-  [typeCheckPipelinePhase options (moreFns := moreFns)] ++ filterPhases ++ cfgCheck ++
+  -- Under `--vcgen symexec` the loops of CFG bodies are cut at their headers before call
+  -- elimination, so every later phase sees acyclic CFG bodies. The choices of
+  -- nondeterministic `goto`s in CFG loops are declared at the entry before type checking,
+  -- which rejects a declaration on a cycle.
+  let symExecCFG := options.symExec.isSome && options.vcgen == .symbolic
+  let hoistChoices := if symExecCFG then [hoistNondetChoicesPipelinePhase] else []
+  let cutCFGLoops := if symExecCFG then [cfgLoopElimPipelinePhase] else []
+  hoistChoices ++ [typeCheckPipelinePhase options (moreFns := moreFns)] ++ filterPhases ++
+    cfgCheck ++ cutCFGLoops ++
     [callElimPipelinePhase, termCheckPipelinePhase, precondElimPipelinePhase]
     ++ postFilterPhases ++ [insertLoopInvariantAssertsPipelinePhase, loopElimPipelinePhase]
 
@@ -2138,7 +2142,7 @@ def declObligationsPipelinePhase
     (preserves := factSet![.noCFGBodies, .noCalls, .noLoops, .noLoopInvariants, .noLoopMeasures,
                          .noPrecondsFromFuncs, .noNondetGuards,
                          .noPolymorphicProcedures,
-                         .noPolymorphicFunctions, .typeAnnotated, .exitsCovered])
+                         .noPolymorphicFunctions, .typeAnnotated, .exitsCovered, .noCFGCycles])
     fun prog => do
       let (prog', stats) ← Transform.liftDiag
         (Core.declObligationsProgram options prog moreFns |>.mapError fun err =>

@@ -610,4 +610,4 @@ def Core.simplifyPhase : Core.PipelinePhase :=
                          .noPrecondsFromFuncs, .noNondetGuards, .hasObligationForm,
                          .noProcedureContracts,
                          .noPolymorphicProcedures, .noPolymorphicFunctions,
-                         .typeAnnotated, .noInits, .treeForm, .exitsCovered])
+                         .typeAnnotated, .noInits, .treeForm, .exitsCovered, .noCFGCycles])

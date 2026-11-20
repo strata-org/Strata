@@ -217,7 +217,8 @@ theorem wGenuine_of_fragment :
 def wcProc : Procedure :=
   { header := { name := ⟨"wc", ()⟩, typeArgs := [], inputs := [], outputs := [] },
     spec := { preconditions := [], postconditions := [] },
-    body := .cfg (CFG.mk "b" [("b", BasicBlock.mk [.cmd (.assert "fail" ffE md)] (.finish md))]) }
+    body := .cfg (CFG.mk "b"
+      [("b", BasicBlock.mk [.cmd (.assert "fail" ffE md)] (.finish md) .empty)]) }
 
 /-- The procedure table: `"wc"` resolves to `wcProc`. -/
 def wcPi : String → Option Procedure := fun n => if n = "wc" then some wcProc else none
@@ -293,13 +294,14 @@ theorem wcGenuine_of_fragment :
 /-- A CFG body whose block guard `x + 1 < y` is in the fragment. -/
 private def cProcIn : Procedure :=
   { wcProc with
-    body := .cfg (CFG.mk "b" [("b", BasicBlock.mk [] (.condGoto e1 "b" "c" md)),
-      ("c", BasicBlock.mk [.cmd (.assert "fail" ffE md)] (.finish md))]) }
+    body := .cfg (CFG.mk "b" [("b", BasicBlock.mk [] (.condGoto e1 "b" "c" md) .empty),
+      ("c", BasicBlock.mk [.cmd (.assert "fail" ffE md)] (.finish md) .empty)]) }
 
 /-- A CFG body whose block guard is a division, outside the fragment. -/
 private def cProcOut : Procedure :=
   { wcProc with
-    body := .cfg (CFG.mk "b" [("b", BasicBlock.mk [] (.condGoto (.eq default e4 xE) "b" "b" md))]) }
+    body := .cfg (CFG.mk "b"
+      [("b", BasicBlock.mk [] (.condGoto (.eq default e4 xE) "b" "b" md) .empty)]) }
 
 #guard procInFragment (inFragment Core.Factory) wcProc
 #guard procInFragment (inFragment Core.Factory) cProcIn

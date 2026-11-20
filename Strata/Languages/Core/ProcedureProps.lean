@@ -13,6 +13,7 @@ import Strata.Languages.Core.StatementProps
 import Strata.DL.Lambda.LTyUnifyProps
 import Strata.Util.ListUtilsProps
 import Strata.Util.OrderedSetProps
+import Strata.DL.Imperative.MetaDataProps
 import Strata.Languages.Core.StatementProps
 import Strata.DL.Lambda.LExprWFProps
 import Strata.DL.Lambda.LTyUnifyProps
@@ -138,9 +139,11 @@ theorem DetCFG.mapCmdsGuards_id {fc : Command → Command}
   simp only [DetCFG.mapCmdsGuards]
   congr 1
   refine List.map_id'' (fun x => ?_) blocks
-  obtain ⟨l, ⟨cmds, tr⟩⟩ := x
+  obtain ⟨l, ⟨cmds, tr, md⟩⟩ := x
   have hcmds : cmds.map fc = cmds := List.map_id'' hfc cmds
-  cases tr <;> simp only [hcmds, hfe]
+  have hmd : md.mapExprs fe = md := by
+    rw [show fe = id from funext hfe]; exact Imperative.MetaData.mapExprs_id md
+  cases tr <;> simp only [hcmds, hfe, hmd]
 
 /-- A command relation that implies another lifts to control-flow graphs. -/
 theorem DetCFG.CmdsRel.imp {R S : Command → Command → Prop} (hRS : ∀ x y, R x y → S x y)
@@ -250,7 +253,7 @@ theorem Procedure.mapTys_id (proc : Procedure) (typeArgs : List Lambda.TyIdentif
       simp only [DetCFG.mapCmdsGuards, hcmd, List.map_id_fun, id_eq]
       congr 1
       exact List.map_id'' (fun ⟨l, b⟩ => by cases b with
-        | mk cmds tr => cases tr <;> rfl) blocks
+        | mk cmds tr md => cases tr <;> rw [Imperative.MetaData.mapExprs_id]) blocks
     simp only [Procedure.mapTys, id_eq, List.map_id_fun', Lambda.mapExprTys_id, hcfg,
       Imperative.Procedure.mk.injEq, and_true]
     exact ⟨rfl, rfl⟩

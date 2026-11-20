@@ -44,6 +44,7 @@ import Strata.DL.Imperative.StmtExtendCallBridge
 import Strata.Languages.Core.StmtExtendCallBridgeProps
 /- Code Transforms -/
 import Strata.Transform.CallElimCorrect
+import Strata.Transform.CFGLoopElimProps
 import Strata.Transform.CoreSpecification
 import Strata.Transform.CoreSpecificationProps
 import Strata.Languages.Core.Analysis.ProcedureCorrectness

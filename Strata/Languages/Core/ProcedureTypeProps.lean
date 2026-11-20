@@ -351,6 +351,7 @@ theorem typeCheck_establishes_wfcfg
   obtain ⟨hbn, hrun⟩ := Except.seq_guard_ok_iff.mp hrun
   obtain ⟨hic, hrun⟩ := Except.seq_guard_ok_iff.mp hrun
   obtain ⟨hds, hrun⟩ := Except.seq_guard_ok_iff.mp hrun
+  obtain ⟨-, hrun⟩ := Except.seq_guard_ok_iff.mp hrun
   obtain ⟨hnl, -⟩ := Except.seq_guard_ok_iff.mp hrun
   exact ⟨checkUniqueLabels_sound hu, checkEntryExists_sound he,
     checkTargetLabels_sound ht,
@@ -558,7 +559,7 @@ theorem typeCheck_cmdsRel {C : Core.Expression.TyContext} {Env : Core.Expression
   unfold CFG.typeCheck at hrun
   obtain ⟨hu, hrun⟩ := Except.seq_guard_ok_iff.mp hrun
   have huniq : (cfg.blocks.map Prod.fst).Nodup := checkUniqueLabels_sound hu
-  iterate 8 (obtain ⟨-, hrun⟩ := Except.seq_guard_ok_iff.mp hrun)
+  iterate 9 (obtain ⟨-, hrun⟩ := Except.seq_guard_ok_iff.mp hrun)
   rw [Except.bind_is_ok] at hrun
   obtain ⟨r1, -, hrun⟩ := hrun
   obtain ⟨-, hrun⟩ := Except.seq_guard_ok_iff.mp hrun
@@ -578,6 +579,9 @@ theorem typeCheck_cmdsRel {C : Core.Expression.TyContext} {Env : Core.Expression
       List.Rel₂ Q blk.cmds g.cmds) _ ?hbody cfg.blocks _ r4 huniq hloop
   case hbody =>
     intro x s r h
+    -- The block's metadata is checked first; its loop does not touch the commands.
+    rw [Except.bind_is_ok] at h
+    obtain ⟨s0, -, h⟩ := h
     rw [Except.bind_is_ok] at h
     obtain ⟨s1, hinner, h⟩ := h
     obtain ⟨ys, hys, hrel⟩ := forIn_typeCheckCmd_spec Q hQ x.2.cmds _ s1 hinner

@@ -655,6 +655,7 @@ noNondetGuards required: holds
 noPolymorphicProcedures required: holds
 typeAnnotated required: no check
 exitsCovered required: holds
+noCFGCycles required: holds
 noCFGBodies established: holds
 staticSingleAssignment established: holds
 hasObligationForm established: holds
@@ -681,6 +682,7 @@ noNondetGuards required: holds
 noPolymorphicProcedures required: holds
 typeAnnotated required: no check
 exitsCovered required: holds
+noCFGCycles required: holds
 noCFGBodies established: holds
 staticSingleAssignment established: holds
 hasObligationForm established: holds
@@ -707,6 +709,7 @@ noNondetGuards required: holds
 noPolymorphicProcedures required: holds
 typeAnnotated required: no check
 exitsCovered required: holds
+noCFGCycles required: holds
 noCFGBodies established: holds
 staticSingleAssignment established: holds
 hasObligationForm established: holds
@@ -824,7 +827,9 @@ procedure Q(x : int, out s : int) {
 #end
 
 /--
-info: typeCheck: all claims hold
+info: hoistNondetChoices: all claims hold
+typeCheck: all claims hold
+cfgLoopElim: all claims hold
 callElim: all claims hold
 termCheck: all claims hold
 precondElim: all claims hold
@@ -842,7 +847,9 @@ commonSubexprElim: all claims hold
 #eval allClaims (parse cfgFactsPgm) .never
 
 /--
-info: typeCheck: all claims hold
+info: hoistNondetChoices: all claims hold
+typeCheck: all claims hold
+cfgLoopElim: all claims hold
 callElim: all claims hold
 termCheck: all claims hold
 precondElim: all claims hold
@@ -860,7 +867,9 @@ commonSubexprElim: all claims hold
 #eval allClaims (parse cfgFactsPgm) .always
 
 /--
-info: typeCheck: all claims hold
+info: hoistNondetChoices: all claims hold
+typeCheck: all claims hold
+cfgLoopElim: all claims hold
 callElim: all claims hold
 termCheck: all claims hold
 precondElim: all claims hold

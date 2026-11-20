@@ -421,6 +421,23 @@ def createInitVarCmds (trips : List ((Expression.Ident × Expression.Ty) × Expr
     (md : Imperative.MetaData Expression) : List Command :=
   trips.map (createInitVarCmd · md)
 
+/-- `g` with `decls` at the start of its entry, where they dominate every block.
+    When the entry is a branch target (a loop header), declarations there would run
+    again on every iteration, so they go in a fresh entry block (labelled from
+    `base`) that falls through to the old one. The block holding the declarations is
+    listed first: in the concrete syntax a declaration is in scope only in the blocks
+    listed after it. -/
+def declareAtEntry (g : DetCFG) (decls : List Command) (base : String) : DetCFG :=
+  if decls.isEmpty then g
+  else if g.blocks.any fun (_, b) => b.transfer.targets.contains g.entry then
+    let entry := Strata.Name.freshName (Std.HashSet.ofList g.labels) base
+    { entry, blocks := (entry, { cmds := decls, transfer := .goto g.entry .empty }) :: g.blocks }
+  else
+    let (entryBlocks, rest) := g.blocks.partition (·.1 == g.entry)
+    let entryBlocks := entryBlocks.map fun (lbl, blk) =>
+      (lbl, { blk with cmds := decls ++ blk.cmds })
+    { g with blocks := entryBlocks ++ rest }
+
 /--
 Generate the substitution pairs needed for the body of the procedure
 -/

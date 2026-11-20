@@ -30,6 +30,7 @@ public def embeddedExampleFiles : Array (String × String) := #[
   ("dialects/Arith.dialect.st", include_str "../../Examples/dialects/Arith.dialect.st"),
   ("dialects/Bool.dialect.st", include_str "../../Examples/dialects/Bool.dialect.st"),
   ("expected/AxiomRelevancePaths.core.expected", include_str "../../Examples/expected/AxiomRelevancePaths.core.expected"),
+  ("expected/CFGSimple.cfgLoopElim.core.st", include_str "../../Examples/expected/CFGSimple.cfgLoopElim.core.st"),
   ("expected/CSEPathSplits.core.expected", include_str "../../Examples/expected/CSEPathSplits.core.expected"),
   ("expected/DoubleTwice.callElim.core.st", include_str "../../Examples/expected/DoubleTwice.callElim.core.st"),
   ("expected/DoubleTwice.inlineProcedures.core.expected", include_str "../../Examples/expected/DoubleTwice.inlineProcedures.core.expected"),

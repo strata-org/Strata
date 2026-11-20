@@ -56,12 +56,13 @@ private def inlineProceduresPass : String := Strata.Core.passInlineAll.phase.nam
 private def insertLoopInvariantAssertsPass : String := Strata.Core.passInsertLoopInvariantAsserts.phase.name
 private def loopElimPass : String := Strata.Core.passLoopElim.phase.name
 private def callElimPass : String := Strata.Core.passCallElim.phase.name
+private def cfgLoopElimPass : String := Strata.Core.passCFGLoopElim.phase.name
 private def filterProceduresPass : String := (Strata.Core.passFilterProcedures []).phase.name
 private def removeIrrelevantAxiomsPass : String := (Strata.Core.passRemoveIrrelevantAxioms []).phase.name
 
 private def validPasses : String := String.intercalate ", " [
   inlineProceduresPass, insertLoopInvariantAssertsPass, loopElimPass,
-  callElimPass, filterProceduresPass, removeIrrelevantAxiomsPass]
+  callElimPass, cfgLoopElimPass, filterProceduresPass, removeIrrelevantAxiomsPass]
 
 /-- A single transform pass together with the `--procedures`/`--functions`
     that were specified immediately after it on the command line. -/
@@ -205,10 +206,10 @@ def transformCommand (dialects : LoadedDialects) : Command where
     | .error msg =>
       exitFailure msg
     | .ok initProgram =>
-      -- Validate and convert pass configs to TransformPass values. The program is
-      -- type-checked first: every pass relies on its annotations.
+      -- Validate and convert pass configs to TransformPass values, after type checking and
+      -- what it needs first (`transformPrefix`).
       let mut passes : List Core.PipelinePhase :=
-        [Strata.Core.passTypeCheck Core.VerifyOptions.quiet]
+        Strata.Core.transformPrefix (passConfigs.map (·.name)).toList
       for pc in passConfigs do
         if pc.name == inlineProceduresPass then
           if pc.procedures.isEmpty then
@@ -221,6 +222,8 @@ def transformCommand (dialects : LoadedDialects) : Command where
           passes := passes ++ [Strata.Core.passLoopElim]
         else if pc.name == callElimPass then
           passes := passes ++ [Strata.Core.passCallElim]
+        else if pc.name == cfgLoopElimPass then
+          passes := passes ++ [Strata.Core.passCFGLoopElim]
         else if pc.name == filterProceduresPass then
           if pc.procedures.isEmpty then
             exitFailure s!"{filterProceduresPass} requires --procedures"

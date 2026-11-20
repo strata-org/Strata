@@ -46,6 +46,7 @@ import Strata.DL.Lambda.Factory
 import Strata.DL.Lambda.LTyWFProps
 import Strata.DL.Lambda.NamePrefixesProps
 import all Strata.Languages.Core.Procedure
+import Strata.DL.Imperative.MetaDataProps
 
 /-! # Rigid type parameters: names, renaming and skolemizer equations
 
@@ -305,7 +306,8 @@ private theorem procCollect_renameTypeArgs {β : Type} (fe : Expression.Expr →
     simp only [DetCFG.mapCmdsGuards, List.flatMap_map, List.map_flatMap, List.map_append, hc]
     congr 2
     funext lb
-    cases lb.2.transfer <;> simp only [hfe, List.map_nil]
+    cases lb.2.transfer <;>
+      simp only [hfe, List.map_nil, Imperative.MetaData.exprs_mapExprs, List.flatMap_map]
 
 /-- Mapping over the type annotations of a statement list keeps the types it declares. -/
 private theorem mapStmtsTys_localTypeDecls (f : LMonoTy → LMonoTy) (ss : List Statement) :

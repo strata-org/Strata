@@ -169,8 +169,16 @@ the assertions for the calls in its expressions (`collectCmdPrecondAssertCmds`, 
 `collectCallPrecondAssertCmds` for a `call`'s arguments), and a block that ends in a branch
 gets the assertions for the calls in its branch condition after its last command. Returns
 whether any assertion was added, and the new body.
+
+A block that still carries a `loopInvariant` is refused: CFG loop elimination runs first and
+turns each invariant into `assert`s and `assume`s, whose preconditions are then checked here
+like those of any other command.
 -/
-private def transformCFG (g : DetCFG) : CoreTransformM (Bool × DetCFG) := do
+private def transformCFG (procName : String) (g : DetCFG) : CoreTransformM (Bool × DetCFG) := do
+  if let some (l, _) := g.blocks.find? (fun (_, b) => !b.md.loopInvariantValues.isEmpty) then
+    throw (Strata.Message.fromString
+      s!"procedure '{procName}': block '{l}' has a `{Imperative.MetaData.loopInvariantKey}`; \
+         run `cfgLoopElim` before precondition elimination")
   let F ← getFactory
   let (changed, g') ← runCFGCmds (g := g) fun cmd => do
     let asserts := match cmd with
@@ -479,7 +487,7 @@ where
             let (c, body') ← transformStmts ss
             pure (c, { proc with body := .structured body' })
           | .cfg g =>
-            let (c, g') ← transformCFG g
+            let (c, g') ← transformCFG proc.header.name.1 g
             pure (c, { proc with body := .cfg g' })
         setFactory F -- reset factory
         let wfDecls := mkContractWFLemmas F taken proc
@@ -578,7 +586,8 @@ def precondElimPipelinePhase : PipelinePhase :=
     (preserves := factSet![.noCFGBodies, .noCalls, .noLoops, .noLoopInvariants,
                          .noLoopMeasures, .staticSingleAssignment, .noNondetGuards,
                          .noProcedureContracts,
-                         .noPolymorphicFunctions, .typeAnnotated, .noInits, .exitsCovered])
+                         .noPolymorphicFunctions, .typeAnnotated, .noInits, .exitsCovered,
+                         .noCFGCycles])
     fun prog => do
       PrecondElim.precondElim prog
 

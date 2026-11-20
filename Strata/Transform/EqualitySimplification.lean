@@ -640,6 +640,6 @@ def Core.equalitySimplificationPhase : Core.PipelinePhase :=
                          .noProcedureContracts,
                          .noPolymorphicProcedures, .noPolymorphicFunctions,
                          .typeAnnotated, .noInits, .treeForm, .exitsCovered,
-                         .armsHaveObligations])
+                         .armsHaveObligations, .noCFGCycles])
 
 end

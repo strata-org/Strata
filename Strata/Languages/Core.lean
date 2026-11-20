@@ -13,6 +13,7 @@ public import Strata.Languages.Core.PipelinePhasePrinter
 public import Strata.Transform.ProcedureInlining
 public import Strata.Languages.Core.IncrementalSolve
 import Strata.Transform.CallElim
+import Strata.Transform.CFGLoopElim
 import Strata.Transform.LoopElim
 import Strata.Transform.InsertLoopInvariantAsserts
 import Strata.Transform.FilterProcedures
@@ -188,6 +189,12 @@ def Core.passLoopElim : Core.PipelinePhase :=
 def Core.passCallElim : Core.PipelinePhase :=
   Core.callElimPipelinePhase
 
+/-- Cut the loops of CFG bodies at their headers, using the headers'
+    `@[loopInvariant = (e)]` metadata (`true` when there is none), so that every
+    CFG body becomes acyclic. -/
+def Core.passCFGLoopElim : Core.PipelinePhase :=
+  Core.cfgLoopElimPipelinePhase
+
 /-- Keep only the named procedures and their transitive callees. -/
 def Core.passFilterProcedures (procs : List String) : Core.PipelinePhase :=
   Core.filterProceduresPipelinePhase procs
@@ -257,6 +264,15 @@ def Core.passTypeCheck (options : Core.VerifyOptions := Core.VerifyOptions.defau
     Core.PipelinePhase :=
   Core.typeCheckPipelinePhase options
 
+/-- The phases to run before the transform passes named `passNames`: type checking, which
+    every pass relies on, preceded by `hoistNondetChoices` when `cfgLoopElim` is among them,
+    since type checking rejects the declaration of a nondeterministic `goto`'s choice in a
+    loop. -/
+def Core.transformPrefix (passNames : List String) : List Core.PipelinePhase :=
+  (if passNames.contains Core.passCFGLoopElim.phase.name then
+    [_root_.Core.hoistNondetChoicesPipelinePhase] else []) ++
+  [Core.passTypeCheck Core.VerifyOptions.quiet]
+
 /-- Partially evaluate the program into the passive form obligation extraction consumes. -/
 def Core.passSymbolicEval (options : Core.VerifyOptions := Core.VerifyOptions.default)
     (moreFns : @Lambda.Factory Core.CoreLParams := Lambda.Factory.default) :
@@ -320,8 +336,9 @@ def Core.passUnrollBoundedQuantifiers : Core.PipelinePhase :=
 
     The same phases are nameable in every mode (`options.vcgen`, `options.symExec`): the
     default order, then each phase in `others` it leaves out, each name once. Among these are
-    `assertNoCFGBodies`, which `--vcgen symexec` drops, and the VC generation phases outside the
-    mode's order. -/
+    `assertNoCFGBodies`, which `--vcgen symexec` drops, the CFG loop phases
+    (`hoistNondetChoices`, `cfgLoopElim`), which only `--vcgen symexec` runs, and the VC
+    generation phases outside the mode's order. -/
 def Core.nameablePhases (options : Core.VerifyOptions := Core.VerifyOptions.default) :
     List Core.PipelinePhase :=
   let defaults := Core.corePipelinePhases options
@@ -329,7 +346,8 @@ def Core.nameablePhases (options : Core.VerifyOptions := Core.VerifyOptions.defa
       Core.passFoldAxioms, Core.passEqualitySimplification, Core.passDeclObligations options,
       _root_.Core.ProgramFact.assertPhase .noCFGBodies,
       Core.passWP, Core.passSSA, Core.passDeadDefElim, Core.passSymbolicEval options,
-      Core.passSymExec options, Core.passCommonSubexprElim]
+      Core.passSymExec options, Core.passCommonSubexprElim,
+      _root_.Core.hoistNondetChoicesPipelinePhase, Core.passCFGLoopElim]
   defaults ++ others.filter fun p => !defaults.any (·.phase.name == p.phase.name)
 
 /-! ### Standard Core verification pipeline phases

@@ -71,26 +71,35 @@ private def loopWithInit : Program :=
 
 /-! ### Loop-init hoist -/
 
-/-- info: wellFormedCalls, noCFGBodies, noCalls, noLoopInvariants, noLoopMeasures, uniqueInits, noBetaRedexes, noPrecondsFromFuncs, noNondetGuards, noProcedureContracts, noPolymorphicProcedures, noPolymorphicFunctions, exitsCovered, armsHaveObligations -/
-#guard_msgs in
+/--
+info: wellFormedCalls, noCFGBodies, noCalls, noLoopInvariants, noLoopMeasures, uniqueInits,
+  noBetaRedexes, noPrecondsFromFuncs, noNondetGuards, noProcedureContracts, noPolymorphicProcedures,
+  noPolymorphicFunctions, exitsCovered, armsHaveObligations, noCFGCycles
+-/
+#guard_msgs (whitespace := lax) in
 #eval IO.println (factNames loopWithInit)
 
 /--
 info: changed: true
-facts: wellFormedCalls, noCFGBodies, noCalls, noLoopInvariants, noLoopMeasures, uniqueInits, loopBodyNoInits, noBetaRedexes, noPrecondsFromFuncs, noNondetGuards, noProcedureContracts, noPolymorphicProcedures, noPolymorphicFunctions, exitsCovered, armsHaveObligations
+facts: wellFormedCalls, noCFGBodies, noCalls, noLoopInvariants, noLoopMeasures, uniqueInits,
+  loopBodyNoInits, noBetaRedexes, noPrecondsFromFuncs, noNondetGuards, noProcedureContracts,
+  noPolymorphicProcedures, noPolymorphicFunctions, exitsCovered, armsHaveObligations, noCFGCycles
 claims hold: true
 -/
-#guard_msgs in
+#guard_msgs (whitespace := lax) in
 #eval IO.println (runPhase LoopInitHoist.loopInitHoistPipelinePhase loopWithInit)
 
 /-! A program without loops is unchanged. -/
 
 /--
 info: changed: false
-facts: wellFormedCalls, noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, uniqueInits, loopBodyNoInits, staticSingleAssignment, noBetaRedexes, noPrecondsFromFuncs, noNondetGuards, hasObligationForm, noProcedureContracts, noPolymorphicProcedures, noPolymorphicFunctions, treeForm, exitsCovered, armsHaveObligations
+facts: wellFormedCalls, noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures,
+  uniqueInits, loopBodyNoInits, staticSingleAssignment, noBetaRedexes, noPrecondsFromFuncs,
+  noNondetGuards, hasObligationForm, noProcedureContracts, noPolymorphicProcedures,
+  noPolymorphicFunctions, treeForm, exitsCovered, armsHaveObligations, noCFGCycles
 claims hold: true
 -/
-#guard_msgs in
+#guard_msgs (whitespace := lax) in
 #eval IO.println (runPhase LoopInitHoist.loopInitHoistPipelinePhase
   (progOf [Statement.init "x" intTy .nondet {}]))
 
@@ -118,10 +127,13 @@ claims hold: true
 
 /--
 info: changed: false
-facts: wellFormedCalls, noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, uniqueInits, loopBodyNoInits, staticSingleAssignment, noBetaRedexes, noPrecondsFromFuncs, noNondetGuards, hasObligationForm, noProcedureContracts, noPolymorphicProcedures, noPolymorphicFunctions, noInits, treeForm, exitsCovered, armsHaveObligations
+facts: wellFormedCalls, noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures,
+  uniqueInits, loopBodyNoInits, staticSingleAssignment, noBetaRedexes, noPrecondsFromFuncs,
+  noNondetGuards, hasObligationForm, noProcedureContracts, noPolymorphicProcedures,
+  noPolymorphicFunctions, noInits, treeForm, exitsCovered, armsHaveObligations, noCFGCycles
 claims hold: true
 -/
-#guard_msgs in
+#guard_msgs (whitespace := lax) in
 #eval IO.println (runPhase StructuredToUnstructured.structuredToUnstructuredPipelinePhase
   (progOf []))
 
@@ -167,10 +179,13 @@ preceding `_`, are accepted. -/
 
 /--
 info: changed: true
-facts: wellFormedCalls, noCalls, noLoops, noLoopInvariants, noLoopMeasures, uniqueInits, loopBodyNoInits, staticSingleAssignment, noBetaRedexes, noPrecondsFromFuncs, noNondetGuards, hasObligationForm, noProcedureContracts, noPolymorphicProcedures, noPolymorphicFunctions, noInits, treeForm, exitsCovered, armsHaveObligations
+facts: wellFormedCalls, noCalls, noLoops, noLoopInvariants, noLoopMeasures, uniqueInits,
+  loopBodyNoInits, staticSingleAssignment, noBetaRedexes, noPrecondsFromFuncs, noNondetGuards,
+  hasObligationForm, noProcedureContracts, noPolymorphicProcedures, noPolymorphicFunctions, noInits,
+  treeForm, exitsCovered, armsHaveObligations, noCFGCycles
 claims hold: true
 -/
-#guard_msgs in
+#guard_msgs (whitespace := lax) in
 #eval IO.println (runPhase StructuredToUnstructured.structuredToUnstructuredPipelinePhase
   (progOf [.block "b1" [.exit "b1" {}, assertTrue] {}, assertTrue]))
 
@@ -179,10 +194,13 @@ accepted. -/
 
 /--
 info: changed: true
-facts: wellFormedCalls, noCalls, noLoops, noLoopInvariants, noLoopMeasures, uniqueInits, loopBodyNoInits, staticSingleAssignment, noBetaRedexes, noPrecondsFromFuncs, noNondetGuards, hasObligationForm, noProcedureContracts, noPolymorphicProcedures, noPolymorphicFunctions, treeForm, exitsCovered, armsHaveObligations
+facts: wellFormedCalls, noCalls, noLoops, noLoopInvariants, noLoopMeasures, uniqueInits,
+  loopBodyNoInits, staticSingleAssignment, noBetaRedexes, noPrecondsFromFuncs, noNondetGuards,
+  hasObligationForm, noProcedureContracts, noPolymorphicProcedures, noPolymorphicFunctions,
+  treeForm, exitsCovered, armsHaveObligations, noCFGCycles
 claims hold: true
 -/
-#guard_msgs in
+#guard_msgs (whitespace := lax) in
 #eval IO.println (runPhase StructuredToUnstructured.structuredToUnstructuredPipelinePhase
   (progOf [Statement.init "iter" intTy .nondet {}, assertTrue]))
 
