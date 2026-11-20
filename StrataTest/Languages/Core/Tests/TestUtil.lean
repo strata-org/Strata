@@ -44,6 +44,15 @@ def translateWithMetaData (p : StrataDDM.Program) : Core.Program :=
 def translate (p : StrataDDM.Program) : Core.Program :=
   (translateWithMetaData p).stripMetaData
 
+/-- `p` type-checked, then through `genOpaqueTypeParams`, or the error message of the step
+    that rejected it. -/
+def typeCheckThenGenOpaque (p : Program) : Except String Program :=
+  match Core.typeCheck .quiet p with
+  | .error m => .error (toString m.message)
+  | .ok tc => match Core.Transform.run tc Core.genOpaqueTypeParams with
+    | .ok (_, q) => .ok q
+    | .error m => .error (toString m.message)
+
 /-- The type environment `Core.typeCheck` starts from. -/
 def Env0 : Expression.TyEnv := Lambda.TEnv.default
 

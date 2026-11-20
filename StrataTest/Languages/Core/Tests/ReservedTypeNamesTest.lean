@@ -793,8 +793,7 @@ def hashTyParamsLemma : Core.Decl :=
     .lemma { l with typeArgs := ["x#y", "x_y"], e := l.e.applyTypeSubst S } md
   | _ => .type (.con { name := "unexpected", params := [] }) .empty
 
-/-- The program `Core.Program.typeCheck` returns for `p`, before `Core.typeCheck` checks the
-    names its later passes build from lemma labels. -/
+/-- The program the type checker, `Core.Program.typeCheck`, returns for `p`. -/
 def printCheckerOutput (p : Core.Program) : IO Unit :=
   let C := { Lambda.LContext.default with
                 functions := _root_.Core.Factory, knownTypes := _root_.Core.KnownTypes }

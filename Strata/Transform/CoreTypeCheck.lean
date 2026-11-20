@@ -27,9 +27,7 @@ public section
     `moreFns`. A supplied factory is checked first; the built-in one is not. Each function of
     `moreFns` is then checked against the factory and the functions before it. The type names in
     scope are collected once into a set, which grows with the signatures of the added
-    functions. It rejects a lemma whose name contains `#` and whose formula mentions a type
-    variable, since the opaque type that later replaces the variable is named after the
-    lemma. -/
+    functions. -/
 def typeCheck (options : VerifyOptions) (program : Program)
     (factory : Option (Lambda.Factory CoreLParams) := none)
     (moreFns : Lambda.Factory CoreLParams := Lambda.Factory.default) :
@@ -47,7 +45,6 @@ def typeCheck (options : VerifyOptions) (program : Program)
   | .ok T =>
     let (C, S) ← Factory.checkThenAddIn S C T moreFns.toArray
     let (program, _) ← Program.typeCheckIn S C T program
-    GenOpaqueTypeParams.checkClosedLemmaNames program
     if options.verbose >= .normal then dbg_trace f!"[Strata.Core] Type checking succeeded.\n"
     return program
 

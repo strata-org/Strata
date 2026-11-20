@@ -440,11 +440,11 @@ lemma [L] (y : $__opaque_L_a_0) { true }
 #eval fmtPhase (lemmaPgm ["a"]
   (allAt "y" (.ftvar "a") (.eq Core.coreLoc (.bvar Core.coreLoc 0) (.bvar Core.coreLoc 0))))
 
--- Type checking rejects a lemma whose name contains `#` when it has a type
--- variable in its annotations, since the `$__free_` type built from its name
--- would contain `#`.
+-- Type checking accepts a lemma whose name contains `#` when it has a type
+-- variable in its annotations: the opaque type built from its name has the `#`
+-- replaced.
 /--
-info: GenOpaqueTypeParams: the name 'L#1' contains '#', which is reserved for monomorphized copies
+info: accepted
 -/
 #guard_msgs in
 #eval
@@ -455,17 +455,30 @@ info: GenOpaqueTypeParams: the name 'L#1' contains '#', which is reserved for mo
   | .error e => Std.format e
 
 -- The phase itself does only the closing: given such a lemma, it builds the type named
--- after it.
+-- after it, with the `#` replaced by `_`; the lemma keeps its name.
 /--
 info: program Core;
 
-type |$__free_L#1_0|;
-lemma [|L#1|] (z : |$__free_L#1_0|) { true }
+type $__free_L_1_0;
+lemma [|L#1|] (z : $__free_L_1_0) { true }
   : z == z;
 -/
 #guard_msgs in
 #eval fmtPhase (lemmaPgm []
   (allAt "z" (.ftvar "t") (.eq Core.coreLoc (.bvar Core.coreLoc 0) (.bvar Core.coreLoc 0))) "L#1")
+
+-- A declared type parameter of such a lemma gets an opaque type whose name has the `#`
+-- replaced too; the lemma keeps its name.
+/--
+info: program Core;
+
+type $__opaque_L_1_a_0;
+lemma [|L#1|] (z : $__opaque_L_1_a_0) { true }
+  : z == z;
+-/
+#guard_msgs in
+#eval fmtPhase (lemmaPgm ["a"]
+  (allAt "z" (.ftvar "a") (.eq Core.coreLoc (.bvar Core.coreLoc 0) (.bvar Core.coreLoc 0))) "L#1")
 
 
 ---------------------------------------------------------------------

@@ -61,6 +61,7 @@ import Strata.Languages.Core.ProgramProps
 import Strata.Transform.CoreTransformProps
 import Strata.Transform.DetToKleeneCorrect
 import Strata.Transform.FunctionInlining
+import Strata.Transform.FreshPlainNameSanitizeProps
 import Strata.Transform.FunctionInliningProps
 import Strata.Transform.UnrollBoundedQuantifiersProps
 import Strata.Transform.LoopInitHoist
