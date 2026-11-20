@@ -65,12 +65,12 @@ procedure countUp (n : int)
   i := 0;
   assert [insertLoopInvAssert_entry_invariant_loop_0_0]: int.le(0, i);
   assert [insertLoopInvAssert_entry_invariant_loop_0_1]: int.le(i, n);
-  assume [insertLoopInvAssume_entry_invariant_loop_0_0]: int.le(0, i);
-  assume [insertLoopInvAssume_entry_invariant_loop_0_1]: int.le(i, n);
+  assume [$__insertLoopInvAssume_entry_invariant_loop_0_0]: int.le(0, i);
+  assume [$__insertLoopInvAssume_entry_invariant_loop_0_1]: int.le(i, n);
   while (int.lt(i, n))
   {
-    assume [insertLoopInvAssume_invariant_loop_0_0]: int.le(0, i);
-    assume [insertLoopInvAssume_invariant_loop_0_1]: int.le(i, n);
+    assume [$__insertLoopInvAssume_invariant_loop_0_0]: int.le(0, i);
+    assume [$__insertLoopInvAssume_invariant_loop_0_1]: int.le(i, n);
     var $__loop_measure_loop_0 : int := int.sub(n, i);
     assert [insertLoopInvAssert_measure_lb_loop_0]: !(int.lt($__loop_measure_loop_0, 0));
     i := int.add(i, 1);
@@ -78,9 +78,9 @@ procedure countUp (n : int)
     assert [insertLoopInvAssert_arbitrary_iter_maintain_invariant_loop_0_1]: int.le(i, n);
     assert [insertLoopInvAssert_measure_decrease_loop_0]: int.lt(int.sub(n, i), $__loop_measure_loop_0);
   }
-  assume [insertLoopInvAssume_exit_invariant_loop_0_0]: int.le(0, i);
-  assume [insertLoopInvAssume_exit_invariant_loop_0_1]: int.le(i, n);
-  assume [insertLoopInvAssume_exit_not_guard_loop_0]: !(int.lt(i, n));
+  assume [$__insertLoopInvAssume_exit_invariant_loop_0_0]: int.le(0, i);
+  assume [$__insertLoopInvAssume_exit_invariant_loop_0_1]: int.le(i, n);
+  assume [$__insertLoopInvAssume_exit_not_guard_loop_0]: !(int.lt(i, n));
 };
 -/
 #guard_msgs in
@@ -119,26 +119,26 @@ procedure nested (n : int, m : int)
   var j : int;
   i := 0;
   assert [insertLoopInvAssert_entry_invariant_loop_0_0]: int.le(0, i);
-  assume [insertLoopInvAssume_entry_invariant_loop_0_0]: int.le(0, i);
+  assume [$__insertLoopInvAssume_entry_invariant_loop_0_0]: int.le(0, i);
   while (int.lt(i, n))
   {
-    assume [insertLoopInvAssume_invariant_loop_0_0]: int.le(0, i);
+    assume [$__insertLoopInvAssume_invariant_loop_0_0]: int.le(0, i);
     j := 0;
     assert [insertLoopInvAssert_entry_invariant_loop_1_0]: int.le(0, j);
-    assume [insertLoopInvAssume_entry_invariant_loop_1_0]: int.le(0, j);
+    assume [$__insertLoopInvAssume_entry_invariant_loop_1_0]: int.le(0, j);
     while (int.lt(j, m))
     {
-      assume [insertLoopInvAssume_invariant_loop_1_0]: int.le(0, j);
+      assume [$__insertLoopInvAssume_invariant_loop_1_0]: int.le(0, j);
       j := int.add(j, 1);
       assert [insertLoopInvAssert_arbitrary_iter_maintain_invariant_loop_1_0]: int.le(0, j);
     }
-    assume [insertLoopInvAssume_exit_invariant_loop_1_0]: int.le(0, j);
-    assume [insertLoopInvAssume_exit_not_guard_loop_1]: !(int.lt(j, m));
+    assume [$__insertLoopInvAssume_exit_invariant_loop_1_0]: int.le(0, j);
+    assume [$__insertLoopInvAssume_exit_not_guard_loop_1]: !(int.lt(j, m));
     i := int.add(i, 1);
     assert [insertLoopInvAssert_arbitrary_iter_maintain_invariant_loop_0_0]: int.le(0, i);
   }
-  assume [insertLoopInvAssume_exit_invariant_loop_0_0]: int.le(0, i);
-  assume [insertLoopInvAssume_exit_not_guard_loop_0]: !(int.lt(i, n));
+  assume [$__insertLoopInvAssume_exit_invariant_loop_0_0]: int.le(0, i);
+  assume [$__insertLoopInvAssume_exit_not_guard_loop_0]: !(int.lt(i, n));
 };
 -/
 #guard_msgs in
@@ -201,17 +201,17 @@ procedure nondetMeasure (n : int)
   var i : int;
   i := 0;
   assert [insertLoopInvAssert_entry_invariant_loop_0_0]: int.le(0, i);
-  assume [insertLoopInvAssume_entry_invariant_loop_0_0]: int.le(0, i);
+  assume [$__insertLoopInvAssume_entry_invariant_loop_0_0]: int.le(0, i);
   while *
   {
-    assume [insertLoopInvAssume_invariant_loop_0_0]: int.le(0, i);
+    assume [$__insertLoopInvAssume_invariant_loop_0_0]: int.le(0, i);
     var $__loop_measure_loop_0 : int := int.sub(n, i);
     assert [insertLoopInvAssert_measure_lb_loop_0]: !(int.lt($__loop_measure_loop_0, 0));
     i := int.add(i, 1);
     assert [insertLoopInvAssert_arbitrary_iter_maintain_invariant_loop_0_0]: int.le(0, i);
     assert [insertLoopInvAssert_measure_decrease_loop_0]: int.lt(int.sub(n, i), $__loop_measure_loop_0);
   }
-  assume [insertLoopInvAssume_exit_invariant_loop_0_0]: int.le(0, i);
+  assume [$__insertLoopInvAssume_exit_invariant_loop_0_0]: int.le(0, i);
 };
 -/
 #guard_msgs in
@@ -282,14 +282,14 @@ procedure nondetInv ()
   var i : int;
   i := 0;
   assert [insertLoopInvAssert_entry_invariant_loop_0_0]: int.le(0, i);
-  assume [insertLoopInvAssume_entry_invariant_loop_0_0]: int.le(0, i);
+  assume [$__insertLoopInvAssume_entry_invariant_loop_0_0]: int.le(0, i);
   while *
   {
-    assume [insertLoopInvAssume_invariant_loop_0_0]: int.le(0, i);
+    assume [$__insertLoopInvAssume_invariant_loop_0_0]: int.le(0, i);
     i := int.add(i, 1);
     assert [insertLoopInvAssert_arbitrary_iter_maintain_invariant_loop_0_0]: int.le(0, i);
   }
-  assume [insertLoopInvAssume_exit_invariant_loop_0_0]: int.le(0, i);
+  assume [$__insertLoopInvAssume_exit_invariant_loop_0_0]: int.le(0, i);
 };
 -/
 #guard_msgs in
@@ -331,7 +331,7 @@ procedure measureOnly (n : int)
     i := int.add(i, 1);
     assert [insertLoopInvAssert_measure_decrease_loop_0]: int.lt(int.sub(n, i), $__loop_measure_loop_0);
   }
-  assume [insertLoopInvAssume_exit_not_guard_loop_0]: !(int.lt(i, n));
+  assume [$__insertLoopInvAssume_exit_not_guard_loop_0]: !(int.lt(i, n));
 };
 -/
 #guard_msgs in
@@ -376,15 +376,15 @@ spec {
   } {
   i := 0;
   assert [insertLoopInvAssert_entry_invariant_loop_0_0]: int.le(i, n);
-  assume [insertLoopInvAssume_entry_invariant_loop_0_0]: int.le(i, n);
+  assume [$__insertLoopInvAssume_entry_invariant_loop_0_0]: int.le(i, n);
   while (int.lt(i, n))
   {
-    assume [insertLoopInvAssume_invariant_loop_0_0]: int.le(i, n);
+    assume [$__insertLoopInvAssume_invariant_loop_0_0]: int.le(i, n);
     i := int.add(i, 1);
     assert [insertLoopInvAssert_arbitrary_iter_maintain_invariant_loop_0_0]: int.le(i, n);
   }
-  assume [insertLoopInvAssume_exit_invariant_loop_0_0]: int.le(i, n);
-  assume [insertLoopInvAssume_exit_not_guard_loop_0]: !(int.lt(i, n));
+  assume [$__insertLoopInvAssume_exit_invariant_loop_0_0]: int.le(i, n);
+  assume [$__insertLoopInvAssume_exit_not_guard_loop_0]: !(int.lt(i, n));
 };
 procedure C (x : int, out y : int)
 cfg entry {
@@ -418,7 +418,7 @@ private def unknownResult : Result := .unknown (some [])
     was over-approximated, so a sat model must be demoted to unknown. -/
 private def insertObligation : Imperative.ProofObligation Core.Expression :=
   { label := "test_insert", property := .assert,
-    assumptions := [[.assumption "insertLoopInvAssume_invariant_loop_0_0" (.true testLoc)]],
+    assumptions := [[.assumption "$__insertLoopInvAssume_invariant_loop_0_0" (.true testLoc)]],
     obligation := .true testLoc, metadata := {} }
 
 /-- Obligation with no abstraction labels — models are sound. -/

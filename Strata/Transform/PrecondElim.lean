@@ -15,6 +15,7 @@ import Strata.Transform.TerminationCheck
 import Strata.Languages.Core.AbstractCalls
 import Strata.Util.Tactics
 import Strata.Util.Name
+import Strata.Languages.Core.CheckLabels
 
 /-! # Partial Function Precondition Elimination
 
@@ -75,6 +76,17 @@ private def classifyPrecondition (funcName : String) (precondIdx : Nat := 0) : O
     some Imperative.MetaData.outOfBoundsAccess
   | _ => none
 
+/-- Metadata field that marks a check inserted by the current run of the pass.
+    Its key is a variable, which no Core source can write (source annotations
+    have label keys), and `precondElim` removes it from its output, so it never
+    marks a check of the input. -/
+private def insertedCheck : Imperative.MetaDataElem.Field Expression :=
+  .var ⟨"precondElim inserted check", ()⟩
+
+/-- Whether metadata carries the `insertedCheck` mark. -/
+private def isInsertedCheck (md : Imperative.MetaData Expression) : Bool :=
+  (md.findElem insertedCheck).isSome
+
 /--
 Given a Factory and an expression, collect all partial function call
 precondition obligations and return them as `assert` statements.
@@ -93,6 +105,9 @@ def collectPrecondAssertCmds (F : @Lambda.Factory CoreLParams) (e : Expression.E
   -- (e.g., a Python assert message) should not propagate to generated
   -- precondition checks for called functions.
   let md := md.eraseAllElems Imperative.MetaData.propertySummary
+  -- Mark each check as inserted by this run, so that it is relabeled fresh
+  -- once the pass has named its lemmas.
+  let md := md.pushElem insertedCheck (.switch true)
   -- Use modulo to cycle the precondition index correctly across call sites.
   -- For nested calls like SafeSDiv(SafeSDiv(x,y),z), obligations arrive as
   -- [inner-0, inner-1, outer-0, outer-1] with the same funcName throughout.
@@ -219,7 +234,8 @@ def mkWFLemmas (taken : Std.HashSet String) (fns : List Function) (typeArgs : Li
         let e := hyps.foldl (init := q) fun body p => LExpr.mkApp coreLoc boolImpliesOp [p, body]
         let name := Strata.Name.freshName names label
         let e := Lemma.forallAbstractingCalls fns binders e
-        (hyps, names.insert name, .lemma { name, typeArgs, e } md :: lemmas)
+        (hyps, names.insert name,
+          .lemma { name, typeArgs, e } (md.eraseAllElems insertedCheck) :: lemmas)
       | _ => (hyps, names, lemmas)
   lemmas.reverse
 
@@ -378,6 +394,40 @@ def transformStmt (s : Statement)
   decreasing_by all_goals term_by_mem
 end
 
+/-! ## Fresh labels for the inserted checks -/
+
+/-- `decls` with each check that this run of the pass inserted in a procedure
+body, recognized by its `insertedCheck` mark, relabeled fresh in order against
+`global` (the program's declaration names, its lemmas' among them) and the
+procedure's other labels: its contract's and every check it already had. Each
+label chosen is reserved for the next checks of the same procedure, and the mark
+is removed. So a check's label depends only on its own procedure and the
+program's declarations, not on the other procedures or their order, and the
+pass never renames a check of its input. -/
+private def freshenCheckLabels (global : Std.HashSet String) (decls : List Decl) : List Decl :=
+  decls.map fun
+    | .proc proc md =>
+      let keep (l : String) (md : Imperative.MetaData Expression) :
+          StateM (Std.HashSet String) (String × Imperative.MetaData Expression) :=
+        modifyGet fun ls => ((l, md), if isInsertedCheck md then ls else ls.insert l)
+      let (_, kept) := (Procedure.Body.mapCheckLabelsM keep proc.body).run {}
+      let invariants := match proc.body with
+        | .structured ss => ((Statements.collectAssertIds ss).filter
+            fun a => !isInsertedCheck a.md).map (·.label)
+        | .cfg _ => []
+      let procLabels := kept.insertMany (proc.spec.preconditions.map (·.1) ++
+        proc.spec.postconditions.map (·.1) ++ invariants)
+      let rename (l : String) (md : Imperative.MetaData Expression) :
+          StateM (Std.HashSet String) (String × Imperative.MetaData Expression) :=
+        if isInsertedCheck md then
+          modifyGet fun t =>
+            let n := Strata.Name.freshNameBy (fun x => global.contains x || t.contains x)
+              (global.size + t.size) l
+            ((n, md.eraseAllElems insertedCheck), t.insert n)
+        else pure (l, md)
+      .proc { proc with body := (Procedure.Body.mapCheckLabelsM rename proc.body).run' procLabels } md
+    | d => d
+
 /-! ## Main transformation -/
 
 /--
@@ -398,12 +448,14 @@ def precondElim (p : Program)
   -- afresh and duplicates must surface as errors).
   let savedF ← getFactory
   try
-    -- Generated lemmas are named away from every declaration of the program.
-    let taken := Std.HashSet.ofList (p.decls.flatMap fun d => d.names.map (·.name))
+    -- The lemmas are named during the pass, apart from every name of the
+    -- program; the checks inserted in procedure bodies are renamed after it.
+    let taken := Std.HashSet.ofList p.takenNames
     let listed := Std.HashSet.ofList (p.decls.flatMap Decl.lemmaNames)
     let (changed, newDecls) ← transformDecls taken listed p.decls
+    let declNames := Std.HashSet.ofList (newDecls.flatMap fun d => d.names.map (·.name))
     setFactory savedF
-    return (changed, { decls := newDecls })
+    return (changed, { decls := freshenCheckLabels declNames newDecls })
   catch e =>
     setFactory savedF
     throw e

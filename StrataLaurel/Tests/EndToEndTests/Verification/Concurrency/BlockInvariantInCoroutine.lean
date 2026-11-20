@@ -21,8 +21,8 @@ Three cases:
 
   * **(2) Same block without the yield — invariant still checked.** A
     yield-free block is kept whole as one straight-line state, so its
-    `invariant false` survives into `RestructureGotos`' entry assert and fails
-    as it should.
+    `invariant false` survives into `RestructureGotos`' entry assert and is
+    not proved.
 
   * **(3) `goto` back into a yield-containing block — rejected.** The label
     dissolves with the block, so the backward jump has no sound lowering.
@@ -62,26 +62,28 @@ coroutine invariantOverYield(n: int)
 
 /-! ## (2) The same block without the yield still fails its invariant.
 
-The point of this case is the "assertion does not hold": the yield-free block
-is kept whole, so `RestructureGotos` still turns its `invariant false` into a
-failing entry assert. The `modifies` diagnostic is a pre-existing artifact of
-the full-elaboration path — the generated `resume` fails its own frame check
-for *any* coroutine on this path (which is why every other verification test
-uses `coroutineOptions`); it is pinned only because annotations must be
-exact. -/
+The point of this case is the diagnostic on the assertion: the yield-free block
+is kept whole, so `RestructureGotos` still turns its `invariant false` into an
+entry assert, which is not proved. The assert sits in the dispatch loop of the
+generated `resume`, which loop elimination replaces by one arbitrary iteration,
+so its counterexample is reported as "could not be proved", not as a failure.
+The `modifies` diagnostic is a pre-existing artifact of the full-elaboration
+path — the generated `resume` does not prove its own frame check for *any*
+coroutine on this path (which is why every other verification test uses
+`coroutineOptions`); it is pinned only because annotations must be exact. -/
 
 #eval testLaurelVerification <|
 #strata
 program Laurel;
 
 coroutine invariantBesideYield(n: int)
-//        ^^^^^^^^^^^^^^^^^^^^ error: modifies clause does not hold
+//        ^^^^^^^^^^^^^^^^^^^^ error: modifies clause could not be proved
   modifies *
 {
   var i: int := 0;
   var x: int := 0;
   { x := i; i := i + 1 } blk invariant false;
-//                                     ^^^^^ error: assertion does not hold
+//                                     ^^^^^ error: assertion could not be proved
   yield
 };
 #end
@@ -150,7 +152,7 @@ diagnostic is the same pre-existing full-elaboration-path artifact as in (2). -/
 program Laurel;
 
 coroutine exitBesideYield(n: int)
-//        ^^^^^^^^^^^^^^^ error: modifies clause does not hold
+//        ^^^^^^^^^^^^^^^ error: modifies clause could not be proved
   modifies *
 {
   var i: int := 0;

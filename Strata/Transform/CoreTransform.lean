@@ -126,28 +126,29 @@ def callArgType? (vt : TypeSpec.TypeScopes) : Expression.Expr → Option Lambda.
   | e => e.typeCheck []
 
 /-- The type instance of a call to `proc` whose stored type arguments are `tyArgs`: the instance
-    `Procedure.callTypeArgs?` gives; every other parameter gets a fresh opaque type at
+    `Procedure.callTypeArgs` gives; every other parameter gets a fresh opaque type at
     `prefixStr` that is not in `taken`, and so does every parameter when the matching fails. On a
     type-checked program the matching cannot fail; the fallback serves callers that pass a
-    program that was not type-checked. The stored `tyArgs` must satisfy the
-    precondition of `Procedure.callTypeArgs?`. -/
+    program that was not type-checked. An error means the stored `tyArgs` disagree with the
+    argument types. -/
 def callTypeSubst (prefixStr : String) (taken : Std.HashSet String) (vt : TypeSpec.TypeScopes)
     (proc : Procedure) (callArgs : List (Imperative.CallArg Expression))
-    (tyArgs : Option (List Expression.Ty)) : CoreGenM Lambda.Subst := do
+    (tyArgs : Option (List Expression.Ty)) : CoreGenM (Except String Lambda.Subst) := do
   let typeArgs := proc.header.typeArgs
   let argTy : Imperative.CallArg Expression → Option Lambda.LMonoTy
     | .inArg e => callArgType? vt e
     | .inoutArg x | .outArg x => vt.monoType? x
-  match proc.callTypeArgs? tyArgs ((Imperative.CallArg.inputArgs callArgs).map argTy)
+  match proc.callTypeArgs tyArgs ((Imperative.CallArg.inputArgs callArgs).map argTy)
       ((Imperative.CallArg.resultArgs callArgs).map argTy) with
-  | none =>
+  | .error msg => return .error msg
+  | .ok none =>
     -- TODO: prove that the transformations preserve typing; then this branch is provably
     -- unreachable on pipeline input.
-    freshenTypeArgsSubst prefixStr taken typeArgs
-  | some S =>
+    return .ok (← freshenTypeArgsSubst prefixStr taken typeArgs)
+  | .ok (some S) =>
     let fresh ← freshenTypeArgsSubst prefixStr taken
       (typeArgs.filter fun a => (S.find? a).isNone)
-    return fresh ++ [S]
+    return .ok (fresh ++ [S])
 
 /-- Cached results of program analyses that are helpful for program
     transformation.
@@ -219,6 +220,16 @@ def liftDiag {α : Type} (e : Except Strata.Message α) : CoreTransformM α :=
   match e with
   | .ok a => pure a
   | .error dm => throw dm
+
+/-- `callTypeSubst`, with an error reported as a breach of the well-formed-calls requirement
+    of the pass named `pass`. -/
+def callTypeSubstOrBreach (pass : String) (md : Imperative.MetaData Expression)
+    (prefixStr : String) (taken : Std.HashSet String) (vt : TypeSpec.TypeScopes)
+    (proc : Procedure) (callArgs : List (Imperative.CallArg Expression))
+    (tyArgs : Option (List Expression.Ty)) : CoreTransformM Lambda.Subst := do
+  match ← callTypeSubst prefixStr taken vt proc callArgs tyArgs with
+  | .ok S => pure S
+  | .error msg => throw (wellFormedCallsBreach pass md msg)
 
 /-- Get the factory from state. -/
 def getFactory : CoreTransformM (@Lambda.Factory CoreLParams) := do

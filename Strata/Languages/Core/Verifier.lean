@@ -7,6 +7,7 @@ module
 public import Strata.Pipeline.Messages
 
 public import Strata.Languages.Core.SMTEncoder
+public import Strata.Languages.Core.LeanExport
 public import Strata.DL.Lambda.RecursiveAxioms
 public import Strata.Languages.Core.PipelinePhase
 public import Strata.Transform.CoreTypeCheck
@@ -2301,7 +2302,7 @@ def mkDischargeFn : MkDischargeFn := fun (options : VerifyOptions) (counter : IO
     (pctx : PipelineContext) =>
   fun assumptionTerms obligationTerm ctx satisfiabilityCheck validityCheck
       varDefinitions varDeclarations => do
-    if options.incremental && !options.alwaysGenerateSMT then
+    if options.usesIncrementalBackend then
       -- `captured` does not apply: the incremental backend writes no files.
       SMT.dischargeObligationIncremental options vars md
         assumptionTerms obligationTerm ctx satisfiabilityCheck validityCheck label
@@ -2344,6 +2345,26 @@ def getObligationResult (assumptionTerms : List Term) (obligationTerm : Term)
       (fun e => Message.fromFormat f!"{e}")
       (discharge assumptionTerms obligationTerm ctx satisfiabilityCheck validityCheck
         varDefinitions varDeclarations)
+  -- The Lean export (`ExportConfig.exportCheck`). A cover asks whether its condition is
+  -- reachable, which a validity proof does not show, and a check that the backend reports as
+  -- an encoding error has no solver query: neither is exported.
+  if let some config := options.leanExport then
+    if validityCheck && obligation.property != .cover then
+      -- `skipSolver` is honoured by the batch backend only (`mkDischargeFn`): the incremental
+      -- one asks its solver all the same. A custom discharge function is taken to do likewise.
+      let asked := !options.skipSolver || options.usesIncrementalBackend
+      let answer? : Option LeanExport.Answer := match ans with
+        | .ok (_, valid, _) => some (.ofResult valid)
+        | .error (.timeout _) => some .timeout
+        | .error (.encoding _) => none
+        | .error _ => some .error
+      if let some answer := answer? then
+        -- Asked only for a check in scope, so the set is not built for the others.
+        let functionAmong (names : List String) : Option String :=
+          names.find? (Std.HashSet.ofList p.funcNames).contains
+        IO.toEIO (fun e => Message.fromFormat f!"{e}")
+          (config.exportCheck functionAmong (if asked then answer else .notAsked)
+            ctx assumptionTerms obligationTerm varDefinitions varDeclarations obligation.label)
   match ans with
   | .error solverError =>
     let vcError : VCError := match solverError with
@@ -2719,7 +2740,7 @@ def dischargeObligations (E : Env) (obligations : ProofObligations Expression)
   -- Env-scoped emission (`Core.SMT.Emitter`), for the sequential batch path
   -- only: the parallel path defers file writing to its dispatch phase, and
   -- the incremental backend does not write files.
-  let useCapture := !useParallel && !(options.incremental && !options.alwaysGenerateSMT)
+  let useCapture := !useParallel && !options.usesIncrementalBackend
   let emStateInit : Option Core.SMT.Emitter.EmitterState ←
     if useCapture then
       IO.toEIO (fun e => Message.fromFormat f!"{e}")

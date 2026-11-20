@@ -492,7 +492,7 @@ theorem compute_meets_contract :
     Core.Logic.Hoare.Procedure.contractTriple userFuncAST testParams "Compute" := by
   let command : Core.Command :=
     Imperative.CmdExt.cmd (Imperative.Cmd.set zId (.det bodyExpr) bodyMd)
-  refine Core.Logic.Hoare.Procedure.contractTriple_singleton_cmd
+  refine Core.Logic.Hoare.Procedure.contractTriple_singleton_cmd (hmono := by native_decide)
     userFuncAST testParams "Compute" computeProc (by native_decide) command ?_ (by native_decide)
       ?_ ?_
   · simpa [command] using compute_body_shape
@@ -767,7 +767,7 @@ private theorem specPost_holds (ρ : Imperative.Env Core.Expression) (a b : Int)
     Core's evaluator is denotational: every model interprets `fSpec` as its body. -/
 theorem checkProduct_meets_contract :
     Core.Logic.Hoare.Procedure.contractTriple specOnlyAST testParams "CheckProduct" := by
-  refine Core.Logic.Hoare.Procedure.contractTriple_of_core_typed
+  refine Core.Logic.Hoare.Procedure.contractTriple_of_core_typed (hmono := by native_decide)
     specOnlyAST testParams "CheckProduct" checkProductProc []
       (by native_decide) checkProduct_body (by native_decide) ?_
   refine Strata.Logic.Hoare.consequence

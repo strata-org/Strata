@@ -563,18 +563,89 @@ def TEnv.freeVarChecks [DecidableEq T.IDMeta] (Env : TEnv T.IDMeta) (es : List (
     Except Format Unit :=
   es.forM (fun e => Env.freeVarCheck e (fun _ => f!"[{e}]"))
 
-/-- Variable Generator -/
+/--
+Variable Generator. `genVar avoid Env` produces a variable that is neither a
+known variable of the context nor one of the names in `avoid`. The type checker
+passes the free variables of a binder's body as `avoid`, so opening the binder
+with the generated variable never captures a free variable of the body.
+-/
 class HasGen (IDMeta : Type) [DecidableEq IDMeta] [Hashable IDMeta] where
-  genVar : TGenEnv IDMeta → Except Format (Identifier IDMeta × TGenEnv IDMeta)
+  genVar : List (Identifier IDMeta) → TGenEnv IDMeta → Except Format (Identifier IDMeta × TGenEnv IDMeta)
   /-- `genVar` never decreases the type-variable generator counter. -/
-  genVar_tyGen_mono : ∀ (Env : TGenEnv IDMeta) (xv : Identifier IDMeta) (Env' : TGenEnv IDMeta),
-    genVar Env = .ok (xv, Env') → Env'.genState.tyGen ≥ Env.genState.tyGen
+  genVar_tyGen_mono : ∀ (avoid : List (Identifier IDMeta)) (Env : TGenEnv IDMeta)
+    (xv : Identifier IDMeta) (Env' : TGenEnv IDMeta),
+    genVar avoid Env = .ok (xv, Env') → Env'.genState.tyGen ≥ Env.genState.tyGen
   /-- `genVar` preserves the context. -/
-  genVar_context : ∀ (Env : TGenEnv IDMeta) (xv : Identifier IDMeta) (Env' : TGenEnv IDMeta),
-    genVar Env = .ok (xv, Env') → Env'.context = Env.context
+  genVar_context : ∀ (avoid : List (Identifier IDMeta)) (Env : TGenEnv IDMeta)
+    (xv : Identifier IDMeta) (Env' : TGenEnv IDMeta),
+    genVar avoid Env = .ok (xv, Env') → Env'.context = Env.context
   /-- `genVar` produces a variable not in knownVars. -/
-  genVar_fresh : ∀ (Env : TGenEnv IDMeta) (xv : Identifier IDMeta) (Env' : TGenEnv IDMeta),
-    genVar Env = .ok (xv, Env') → xv ∉ TContext.knownVars Env.context
+  genVar_fresh : ∀ (avoid : List (Identifier IDMeta)) (Env : TGenEnv IDMeta)
+    (xv : Identifier IDMeta) (Env' : TGenEnv IDMeta),
+    genVar avoid Env = .ok (xv, Env') → xv ∉ TContext.knownVars Env.context
+  /-- `genVar` produces a variable not in `avoid`. -/
+  genVar_avoid : ∀ (avoid : List (Identifier IDMeta)) (Env : TGenEnv IDMeta)
+    (xv : Identifier IDMeta) (Env' : TGenEnv IDMeta),
+    genVar avoid Env = .ok (xv, Env') → xv ∉ avoid
+
+/--
+Draw names from the expression-variable counter until one is not `taken`,
+trying at most `fuel` names. The counter yields a different name at each step,
+so one more try than the number of taken names always suffices.
+-/
+def TState.genExprSymAvoiding (taken : Identifier Unit → Bool) :
+    Nat → TState → Option (Identifier Unit × TState)
+  | 0, _ => none
+  | fuel + 1, state =>
+    let (new_var, state) := state.genExprSym
+    let xv : Identifier Unit := ⟨new_var, ()⟩
+    if taken xv then TState.genExprSymAvoiding taken fuel state
+    else some (xv, state)
+
+/-- A name `genExprSymAvoiding` returns is never `taken`. -/
+private theorem TState.genExprSymAvoiding_not_taken {taken : Identifier Unit → Bool} :
+    ∀ {fuel : Nat} {state state' : TState} {xv : Identifier Unit},
+    TState.genExprSymAvoiding taken fuel state = some (xv, state') → taken xv = false
+  | 0, _, _, _, h => by simp [TState.genExprSymAvoiding] at h
+  | _ + 1, _, _, _, h => by
+    simp only [TState.genExprSymAvoiding] at h
+    split at h
+    · exact TState.genExprSymAvoiding_not_taken h
+    · rename_i h_not
+      simp only [Option.some.injEq, Prod.mk.injEq] at h
+      obtain ⟨h_xv, _⟩ := h
+      subst h_xv
+      exact Bool.eq_false_iff.mpr h_not
+
+/-- `genExprSymAvoiding` leaves the type-variable counter unchanged. -/
+private theorem TState.genExprSymAvoiding_tyGen {taken : Identifier Unit → Bool} :
+    ∀ {fuel : Nat} {state state' : TState} {xv : Identifier Unit},
+    TState.genExprSymAvoiding taken fuel state = some (xv, state') → state'.tyGen = state.tyGen
+  | 0, _, _, _, h => by simp [TState.genExprSymAvoiding] at h
+  | _ + 1, _, _, _, h => by
+    simp only [TState.genExprSymAvoiding] at h
+    split at h
+    · rw [TState.genExprSymAvoiding_tyGen h]
+      simp [TState.genExprSym, TState.incExprGen]
+    · simp only [Option.some.injEq, Prod.mk.injEq] at h
+      obtain ⟨_, h_state⟩ := h
+      subst h_state
+      simp [TState.genExprSym, TState.incExprGen]
+
+/-- A name drawn by one of two `genExprSymAvoiding` attempts is never `taken`,
+    and the draw leaves the type-variable counter unchanged. -/
+private theorem TState.genExprSymAvoiding_orElse {taken : Identifier Unit → Bool}
+    {state state' : TState} {xv : Identifier Unit} {fuel₁ : Nat} {fuel₂ : Unit → Nat}
+    (h : (state.genExprSymAvoiding taken fuel₁).orElse
+          (fun u => state.genExprSymAvoiding taken (fuel₂ u)) = some (xv, state')) :
+    taken xv = false ∧ state'.tyGen = state.tyGen := by
+  cases h1 : state.genExprSymAvoiding taken fuel₁ with
+  | some r =>
+    rw [h1] at h; simp only [Option.orElse, Option.some.injEq] at h; subst h
+    exact ⟨TState.genExprSymAvoiding_not_taken h1, TState.genExprSymAvoiding_tyGen h1⟩
+  | none =>
+    rw [h1] at h; simp only [Option.orElse] at h
+    exact ⟨TState.genExprSymAvoiding_not_taken h, TState.genExprSymAvoiding_tyGen h⟩
 
 /--
 Generate a fresh variable (`LExpr.fvar`). This is needed to open the body of an
@@ -582,77 +653,106 @@ Generate a fresh variable (`LExpr.fvar`). This is needed to open the body of an
 variable using `LExpr.varOpen` -- during type inference.
 
 This function is the canonical way of obtaining fresh variables during type
-checking. Also, we rely on the parser disallowing Lambda variables to begin with
-`$__`, which is reserved for internal use; this is why `TState.exprPrefix` ==
-`$__var`.
-
-Together, these restrictions ensure that variables created using
-`TEnv.genExprVar` are fresh w.r.t. the Lambda expression.
+checking. Its names start with `TState.exprPrefix` (`$__var`), which a program
+may also use, and it skips every name that is a known variable of the context
+or is in `avoid`.
 -/
-def TEnv.genExprVar (Env : TGenEnv Unit) : Except Format (Identifier Unit × TGenEnv Unit) :=
-  let (new_var, state) := Env.genState.genExprSym
-  let Env := { Env with genState := state }
-  if (Env.context.types.find? ⟨new_var, ()⟩).isSome then
-    .error f!"[TEnv.genExprVar] Generated variable {new_var} is not fresh!\n\
+def TEnv.genExprVar (avoid : List (Identifier Unit)) (Env : TGenEnv Unit) :
+    Except Format (Identifier Unit × TGenEnv Unit) :=
+  let taken := fun xv => xv ∈ avoid || (Env.context.types.find? xv).isSome
+  -- A first attempt bounded by `avoid` alone succeeds unless the context binds
+  -- generated names, so the context's variables are counted only when it fails.
+  let first := Env.genState.genExprSymAvoiding taken (avoid.length + 1)
+  let drawn := first.orElse fun _ =>
+    Env.genState.genExprSymAvoiding taken
+      (avoid.length + (TContext.knownVars Env.context).length + 1)
+  match drawn with
+  | none =>
+    .error f!"[TEnv.genExprVar] No generated variable avoids {avoid}!\n\
               Context: {format Env.context}"
-  else
-    .ok (new_var, Env)
+  | some (new_var, state) => .ok (new_var, { Env with genState := state })
 
 instance : HasGen Unit where
   genVar := TEnv.genExprVar
   genVar_tyGen_mono := by
-    intro Env xv Env' h
+    intro avoid Env xv Env' h
     simp only [TEnv.genExprVar] at h
     split at h
     · simp at h
-    · simp only [Except.ok.injEq, Prod.mk.injEq] at h
+    · rename_i h_sym
+      simp only [Except.ok.injEq, Prod.mk.injEq] at h
       obtain ⟨_, h_env⟩ := h
       rw [← h_env]
-      simp [TState.genExprSym, TState.incExprGen]
+      exact Nat.le_of_eq (TState.genExprSymAvoiding_orElse h_sym).2.symm
   genVar_context := by
-    intro Env xv Env' h
+    intro avoid Env xv Env' h
     simp only [TEnv.genExprVar] at h
     split at h
     · simp at h
     · simp only [Except.ok.injEq, Prod.mk.injEq] at h; obtain ⟨_, h_env⟩ := h; rw [← h_env]
   genVar_fresh := by
-    intro Env xv Env' h
+    intro avoid Env xv Env' h
     simp only [TEnv.genExprVar] at h
     split at h
     · simp at h
-    · rename_i h_not_found
+    · rename_i h_sym
       simp only [Except.ok.injEq, Prod.mk.injEq] at h
       obtain ⟨h_xv, _⟩ := h
-      rw [← h_xv]
-      have h_none : Env.context.types.find? ⟨Env.genState.genExprSym.1, ()⟩ = none :=
-        Option.not_isSome_iff_eq_none.mp h_not_found
-      exact Strata.Util.HMaps.find?_of_not_mem_values _ h_none
+      subst h_xv
+      have h_none := (TState.genExprSymAvoiding_orElse h_sym).1
+      simp only [Bool.or_eq_false_iff, Option.isSome_eq_false_iff, Option.isNone_iff_eq_none] at h_none
+      exact Strata.Util.HMaps.find?_of_not_mem_values _ h_none.2
+  genVar_avoid := by
+    intro avoid Env xv Env' h
+    simp only [TEnv.genExprVar] at h
+    split at h
+    · simp at h
+    · rename_i h_sym
+      simp only [Except.ok.injEq, Prod.mk.injEq] at h
+      obtain ⟨h_xv, _⟩ := h
+      subst h_xv
+      have h_none := (TState.genExprSymAvoiding_orElse h_sym).1
+      simp only [Bool.or_eq_false_iff, decide_eq_false_iff_not] at h_none
+      exact h_none.1
 
 /-- `liftGenEnv` preserves the context. -/
-theorem liftGenEnv_context [HasGen IDMeta] [ToFormat IDMeta]
+theorem liftGenEnv_context [HasGen IDMeta] [ToFormat IDMeta] {avoid : List (Identifier IDMeta)}
     (Env : TEnv IDMeta) (xv : Identifier IDMeta) (Env' : TEnv IDMeta)
-    (h : liftGenEnv HasGen.genVar Env = .ok (xv, Env')) :
+    (h : liftGenEnv (HasGen.genVar avoid) Env = .ok (xv, Env')) :
     Env'.context = Env.context := by
   simp only [liftGenEnv] at h
-  generalize h_gen : HasGen.genVar Env.genEnv = res at h
+  generalize h_gen : HasGen.genVar avoid Env.genEnv = res at h
   match res with
   | .error _ => simp at h
   | .ok (xv_inner, Env_g) =>
     simp only [Except.ok.injEq, Prod.mk.injEq] at h; obtain ⟨_, h2⟩ := h; rw [← h2]; simp only [TEnv.context]
-    exact HasGen.genVar_context Env.genEnv xv_inner Env_g h_gen
+    exact HasGen.genVar_context avoid Env.genEnv xv_inner Env_g h_gen
 
 /-- `liftGenEnv HasGen.genVar` produces a fresh variable. -/
-theorem liftGenEnv_genVar_fresh [HasGen IDMeta] [ToFormat IDMeta]
+theorem liftGenEnv_genVar_fresh [HasGen IDMeta] [ToFormat IDMeta] {avoid : List (Identifier IDMeta)}
     (Env : TEnv IDMeta) (xv : Identifier IDMeta) (Env' : TEnv IDMeta)
-    (h : liftGenEnv HasGen.genVar Env = .ok (xv, Env')) :
+    (h : liftGenEnv (HasGen.genVar avoid) Env = .ok (xv, Env')) :
     xv ∉ TContext.knownVars Env.context := by
   simp only [liftGenEnv] at h
-  generalize h_gen : HasGen.genVar Env.genEnv = res at h
+  generalize h_gen : HasGen.genVar avoid Env.genEnv = res at h
   match res with
   | .error _ => simp at h
   | .ok (xv_inner, Env_g) =>
     simp only [Except.ok.injEq, Prod.mk.injEq] at h; obtain ⟨h_xv, _⟩ := h; rw [← h_xv]
-    exact HasGen.genVar_fresh Env.genEnv xv_inner Env_g h_gen
+    exact HasGen.genVar_fresh avoid Env.genEnv xv_inner Env_g h_gen
+
+/-- `liftGenEnv HasGen.genVar` produces a variable outside `avoid`. -/
+theorem liftGenEnv_genVar_avoid [HasGen IDMeta] [ToFormat IDMeta] {avoid : List (Identifier IDMeta)}
+    (Env : TEnv IDMeta) (xv : Identifier IDMeta) (Env' : TEnv IDMeta)
+    (h : liftGenEnv (HasGen.genVar avoid) Env = .ok (xv, Env')) :
+    xv ∉ avoid := by
+  simp only [liftGenEnv] at h
+  generalize h_gen : HasGen.genVar avoid Env.genEnv = res at h
+  match res with
+  | .error _ => simp at h
+  | .ok (xv_inner, Env_g) =>
+    simp only [Except.ok.injEq, Prod.mk.injEq] at h; obtain ⟨h_xv, _⟩ := h; rw [← h_xv]
+    exact HasGen.genVar_avoid avoid Env.genEnv xv_inner Env_g h_gen
 
 /--
 Generate a fresh type variable (`ftvar`).

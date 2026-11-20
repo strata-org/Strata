@@ -14,8 +14,9 @@ public import Strata.DL.Imperative.StmtSemantics
 This file gives the event-producing meaning of `CmdExt P` — a base command or a
 procedure call — for any expression language `P`.
 
-A call `call n args` to a procedure `p = π n` runs to completion in one command
-step:
+A call `call n<tyArgs> args` runs the procedure `π n` instantiated at the call's type
+arguments (`Calls.typeInstantiatedCallee`, through the dialect's `ProcedureTypeInstantiation`),
+written `p` below, to completion in one command step:
 - *Entry* (`Calls.CallEntry`): evaluate the input and inout arguments in the
   caller's store, read the caller's `out` variables, and build a fresh callee
   frame binding the input formals and the output-only formals.  Every inout
@@ -84,6 +85,17 @@ inductive HavocVars [HasVal P] :
 
 variable [DecidableEq P.Ident] [HasOldIdent P]
   {Hdr : Type} [DecidableEq Hdr] [Inhabited Hdr] [ProcedureHeader P Hdr]
+
+/-- The procedure a call to `n` with type arguments `tyArgs` runs: `π`'s procedure `n`,
+    instantiated at `tyArgs`.  A call without type arguments (`none`) instantiates at `[]`,
+    so it runs a monomorphic callee as it is and has no callee if `n` is polymorphic.  The type
+    checker records type arguments on every call to a polymorphic procedure, so such a call
+    arises only in a program that was not type-checked; there it has no step, and a theorem
+    about the program says nothing about what follows the call. -/
+@[expose] def typeInstantiatedCallee [ProcedureTypeInstantiation P Hdr]
+    (π : String → Option (Procedure P (CmdExt P) Hdr)) (n : String)
+    (tyArgs : Option (List P.Ty)) : Option (Procedure P (CmdExt P) Hdr) :=
+  (π n).bind (ProcedureTypeInstantiation.instantiate · (tyArgs.getD []))
 
 /-- Initialize a callee-local frame without colliding with caller names: starting
     from the empty store, the input formals are bound to `inputVals`, the
@@ -167,6 +179,7 @@ end Calls
 variable {P : PureExpr}
   [DecidableEq P.Ident] [HasOldIdent P]
   {Hdr : Type} [DecidableEq Hdr] [Inhabited Hdr] [ProcedureHeader P Hdr]
+  [ProcedureTypeInstantiation P Hdr]
   [HasBool P] [HasBoolOps P] [HasFvar P] [HasFvars P]
 
 mutual
@@ -219,10 +232,10 @@ inductive EvalCmdExtE
       `CallArg.getLhs callArgs` ↔ `ProcedureHeader.outputParams p.header`; and
       `CallArg.getOutArgs callArgs` ↔ `Calls.outputOnlyParams p.header`.  The third
       alignment follows from the second because every inout formal is passed as
-      `.inoutArg`. -/
-  -- TODO: Instantiate procedure type variables for polymorphic calls.
+      `.inoutArg`.  The callee `p` is `π`'s procedure `n` instantiated at the call's type
+      arguments (`Calls.typeInstantiatedCallee`). -/
   | call_sem {σ n tyArgs p callArgs σ' σ_final bodyEvents md fac σAO} :
-      π n = .some p →
+      Calls.typeInstantiatedCallee π n tyArgs = .some p →
       Calls.CallEntry fac σ p callArgs σAO →
       BigStepE π p.body ⟨σAO, fac⟩ σ_final bodyEvents →
       Calls.CallExit fac σ p callArgs σ_final σ' →
@@ -251,10 +264,10 @@ inductive EvalCmdExtContractE [HasVal P]
       ----
       EvalCmdExtContractE π fac σ (.cmd c) σ' emitted
 
-  /-- Arguments are matched positionally as in `EvalCmdExtE.call_sem`. -/
-  -- TODO: Instantiate procedure type variables for polymorphic calls.
+  /-- Arguments are matched positionally, and the callee instantiated, as in
+      `EvalCmdExtE.call_sem`. -/
   | call_sem {σ σO n tyArgs p callArgs σ' md fac σAO} :
-      π n = .some p →
+      Calls.typeInstantiatedCallee π n tyArgs = .some p →
       Calls.CallEntry fac σ p callArgs σAO →
       Calls.HavocVars fac σAO (ProcedureHeader.outputParams (P := P) p.header) σO →
       Calls.CallExit fac σ p callArgs σO σ' →

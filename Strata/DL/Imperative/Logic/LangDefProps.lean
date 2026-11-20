@@ -17,6 +17,8 @@ import Strata.DL.Imperative.Logic.TraceInterpProps
 Key results:
   * `BlockInitEnvWF.generatedNamesFresh` — no name under a reserved prefix is
     defined in a block-well-formed initial store.
+  * `BlockInitEnvWF.notReserved_of_mem` — no name a block-well-formed block reads,
+    modifies or defines has a reserved prefix.
   * `mustTerminateAndAssertsValid_seqE`, `mustTerminateAndAssertsValid_blockE`,
     `mustTerminateAndAssertsValid_stmts_appendE` — a sequence frame, a block frame, and a
     concatenation of statement lists must terminate with valid assertions when their parts do.
@@ -52,6 +54,24 @@ theorem BlockInitEnvWF.generatedNamesFresh {P : PureExpr} [HasBool P] [HasBoolOp
     exact absurd hprefix
       (h.reservedFresh (HasIdent.ident (P := P) name)
         (by rw [hstore]; rfl) name rfl pfx hpfx)
+
+/-- A name that a block-well-formed block reads, modifies or defines avoids every reserved
+prefix: the gate keeps the block's own definitions off the reserved prefixes, and any other
+name the block touches is bound at entry, where no binding has a reserved prefix. -/
+theorem BlockInitEnvWF.notReserved_of_mem {P : PureExpr} [HasBool P] [HasBoolOps P]
+    [HasFvar P] [HasFvars P] [HasInt P] [HasIntOps P] [HasSubstFvar P]
+    [HasIdent P] [HasOps P] [DecidableEq P.Ident]
+    {CmdT : Type} [HasVarsImp P CmdT] [HasOpsImp P CmdT]
+    [HasInitTypesImp P CmdT] [HasTypedVarsImp P CmdT]
+    {params : InitEnvWFParams P} {ss : List (Stmt P CmdT)} {ρ : Env P}
+    (h : BlockInitEnvWF params ss ρ) {name : String}
+    (hn : HasIdent.ident (P := P) name ∈ Block.touchedVars ss ∨
+      HasIdent.ident (P := P) name ∈ Block.definedVars ss false)
+    {p : String} (hp : p ∈ params.prefixIdents) :
+    ¬ p.toList.isPrefixOf name.toList := by
+  by_cases hd : HasIdent.ident (P := P) name ∈ Block.definedVars ss false
+  · exact h.definedVarsNotReserved _ hd name rfl p hp
+  · exact h.reservedFresh _ (h.readWritesDefined _ (hn.resolve_right hd) hd) name rfl p hp
 
 /-! ## Must-termination with valid assertions of the structured Imperative languages
 

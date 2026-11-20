@@ -30,9 +30,11 @@ Key results:
   * `StructuredToUnstructuredPipeline.overapproximatesTraces` composes the three event-trace
     simulations into one source-block-to-CFG refinement under `Trace.WithWF` matching.
   * `PipelinePre` is the syntactic source precondition of the generic
-    pipeline theorem. `pipeline_source_noEscapeE` states the accompanying
-    source no-escape guarantee: `EventLang.cfgE` maps exiting outcomes to
-    `.terminal`, and a `PipelinePre` source never reaches `.exiting`.
+    pipeline theorem. The source gate reserves `nondetElim`'s prefixes, so the
+    source reads, modifies and defines no generated guard name.
+    `pipeline_source_noEscapeE` states the accompanying source no-escape
+    guarantee: `EventLang.cfgE` maps exiting outcomes to `.terminal`, and a
+    `PipelinePre` source never reaches `.exiting`.
     `pipelinePre_nil` shows that the precondition is inhabited. -/
 
 public section
@@ -68,7 +70,7 @@ theorem intermediateParams_prefixesDisjoint {P : PureExpr}
 /-! ## Generic pipeline precondition -/
 
 /-- The purely syntactic precondition under which `s2uPipeline ss` refines `ss`:
-source shape restrictions, exit-coverage, and generated-name disjointness. -/
+source shape restrictions and exit-coverage. -/
 structure PipelinePre {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
     [HasIdent P] [HasInt P] [HasIntOps P] [HasSubstFvar P]
     [DecidableEq P.Ident]
@@ -78,8 +80,6 @@ structure PipelinePre {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
   h_unique : Block.uniqueInits ss
   h_userlabels : Block.userLabelsShapeNodup ss
   h_covered : Block.exitsCoveredByBlocks [] ss
-  h_ndelim_writes : SrcNoGenWrites (P := P) NondetElim.isGeneratedName ss
-  h_ndelim_reads : Block.exprsShapeFree (P := P) NondetElim.isGeneratedName ss
 
 open Imperative.Specification
 open Imperative.Specification.Transform
@@ -88,6 +88,20 @@ open Imperative.Logic
 variable [HasFvar P] [HasFvars P] [HasBoolOps P]
   [HasIdent P] [HasInt P] [HasIntOps P] [DecidableEq P.Ident]
   [HasOps P] [LawfulHasFvar P] [LawfulHasFvars P] [LawfulHasIdent P]
+
+omit [LawfulHasFvar P] [LawfulHasFvars P] [LawfulHasIdent P] in
+/-- A block that some entry runs under the source gate reads, modifies and defines no name
+`nondetElim` generates: the gate reserves `nondetElim`'s prefixes. -/
+private theorem nondetElim_namesFree [HasSubstFvar P] {base : InitEnvWFParams P}
+    {ss : List (Stmt P (Cmd P))} {ρ₀ : Env P}
+    (hwf : BlockInitEnvWF (sourceParams base) ss ρ₀) :
+    SrcNoGenWrites (P := P) NondetElim.isGeneratedName ss ∧
+      Block.exprsShapeFree (P := P) NondetElim.isGeneratedName ss := by
+  refine ⟨hwf.nondetElim_notDefinedOrModified
+    (fun p hp => by simp [sourceParams, InitEnvWFParams.extend, hp]), fun name hname hmem => ?_⟩
+  obtain ⟨p, hp, hpfx⟩ := NondetElim.isGeneratedName_reservedPrefix hname
+  exact hwf.notReserved_of_mem (.inl (by simp [Block.touchedVars, hmem])) (p := p)
+    (by simp [sourceParams, InitEnvWFParams.extend, hp]) hpfx
 
 /-- Under `PipelinePre`, `nondetElim` overapproximates the source
 imperative-block event-trace language by itself up to
@@ -106,9 +120,9 @@ private theorem nondetElim_overapproximates_upto [HasSubstFvar P]
       (EventLang.imperativeBlockE P (Cmd P) (EvalCmdE P)
         BlockInitEnvWF)
       (fun ss => some (Block.nondetElim ss))
-      (fun ss => PipelinePre ss)
+      (fun ss => PipelinePre ss ∧ ∃ ρ, BlockInitEnvWF (sourceParams base) ss ρ)
       (sourceParams base) (intermediateParams base) := by
-  intro ss ss' ht hpre ρ₀ ρ₀' hEq hwf
+  intro ss ss' ht _ ρ₀ ρ₀' hEq hwf
   subst hEq
   simp only [Option.some.injEq] at ht
   subst ht
@@ -117,7 +131,7 @@ private theorem nondetElim_overapproximates_upto [HasSubstFvar P]
     NondetElim.Internal.overapproximates_upto_base
       (P := P) (intermediateParams base) hprefixes
       ss (Block.nondetElim ss) rfl
-      ⟨hpre.h_ndelim_writes, hpre.h_ndelim_reads⟩
+      (nondetElim_namesFree hwf)
       ρ₀ ρ₀ rfl hwf
   refine ⟨?_, ?_, ?_, ?_⟩
   · exact h_prefix
@@ -136,12 +150,12 @@ output — the `hpre` bridges `comp_trans_eq` needs to chain the per-pass instan
 The facts are the structural-preservation properties of the `nondetElim`/`hoist`
 outputs, derived from the statement-only `pre`s. -/
 
-omit [HasOps P] [LawfulHasFvar P] [LawfulHasFvars P] in
+omit [LawfulHasFvar P] [LawfulHasFvars P] in
 /-- The `nondetElim` output satisfies the `hoist` pass's precondition whenever the
-source satisfies `PipelinePre`. -/
-private theorem nondetElim_establishes_hoistPre [HasSubstFvar P] :
+source satisfies `PipelinePre` and some entry runs it under the source gate. -/
+private theorem nondetElim_establishes_hoistPre [HasSubstFvar P] (base : InitEnvWFParams P) :
     ∀ ss ss' : List (Stmt P (Cmd P)), (fun ss => some (Block.nondetElim ss)) ss = some ss' →
-      (fun ss => PipelinePre ss) ss →
+      (fun ss => PipelinePre ss ∧ ∃ ρ, BlockInitEnvWF (sourceParams base) ss ρ) ss →
       (fun ss =>
         Block.containsNondetLoop ss = false
         ∧ Block.loopHasNoInvariants ss = true
@@ -150,7 +164,7 @@ private theorem nondetElim_establishes_hoistPre [HasSubstFvar P] :
         ∧ Block.exitsCoveredByBlocks [] ss
         ∧ Block.noNondetGuards ss = true
         ∧ Block.userLabelsShapeNodup ss) ss' := by
-  intro ss ss' ht hpre
+  intro ss ss' ht ⟨hpre, _, hwf⟩
   simp only [Option.some.injEq] at ht
   subst ht
   refine ⟨nondetElim_containsNondetLoop ss,
@@ -161,7 +175,7 @@ private theorem nondetElim_establishes_hoistPre [HasSubstFvar P] :
   · -- `uniqueInits (nondetElim ss)`.
     exact (Block.nondetElimM_initVars_nodup ss StringGenState.emp StringGenState.wf_emp
       hpre.h_unique (fun str hk hmem =>
-        hpre.h_ndelim_writes str hk (List.mem_append_left _ hmem))).2
+        (nondetElim_namesFree hwf).1 str hk (List.mem_append_left _ hmem))).2
   · -- exit coverage is preserved by `nondetElim`.
     exact Block.nondetElim_exitsCoveredByBlocks ss hpre.h_covered
   · -- `noNondetGuards (nondetElim ss) = true` (`nondetElim` removes every nondet guard).
@@ -287,7 +301,7 @@ private theorem pipeline_overapproximates_upto_composed [HasSubstFvar P] [Lawful
         BlockInitEnvWF)
       (fun s => some (Block.nondetElim s)) (fun s => some (Block.hoistLoopPrefixInits s))
       (sourceParams base) (intermediateParams base) (intermediateParams base)
-      nondetElim_establishes_hoistPre
+      (nondetElim_establishes_hoistPre base)
       (nondetElim_overapproximates_upto base
         (intermediateParams_prefixesDisjoint base hbase))
       (hoist_overapproximates_upto_when (intermediateParams base))).mono_trace
@@ -298,7 +312,7 @@ private theorem pipeline_overapproximates_upto_composed [HasSubstFvar P] [Lawful
       ∀ st st',
         ((fun s => some (Block.nondetElim s)) st >>=
           (fun s => some (Block.hoistLoopPrefixInits s))) = some st' →
-        PipelinePre st →
+        PipelinePre st ∧ (∃ ρ, BlockInitEnvWF (sourceParams base) st ρ) →
         (fun ss =>
           Block.noNondetGuards ss = true
           ∧ Block.uniqueInits ss
@@ -310,9 +324,13 @@ private theorem pipeline_overapproximates_upto_composed [HasSubstFvar P] [Lawful
     intro st st' ht hpre
     simp only [bind, Option.bind, Option.some.injEq] at ht
     subst ht
-    exact hoist_establishes_loweringPre _ _ rfl (nondetElim_establishes_hoistPre _ _ rfl hpre)
+    exact hoist_establishes_loweringPre _ _ rfl
+      (nondetElim_establishes_hoistPre base _ _ rfl hpre)
   -- Stage 2: compose the structured prefix with `stmtsToCFG`, then collapse
-  -- the resulting relational composition to `Trace.WithWF` matching.
+  -- the resulting relational composition to `Trace.WithWF` matching. The composed
+  -- precondition's assumption that some entry meets the source gate is then dropped: the
+  -- theorem applies it only to such entries.
+  Specification.Transform.OverapproximatesTracesUptoWhen.of_pre_and_initEnvWF <|
   (Specification.Transform.OverapproximatesTracesUptoWhen.comp_trans_eq
     (Trace.WithWF (P := P) (EventArg.ExtendsEnv (fun _ => True)))
     (Trace.WithWF (P := P) (EventArg.ExtendsEnv (fun _ => True)))
@@ -395,8 +413,6 @@ theorem pipelinePre_nil {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
   h_unique := by simp [Block.uniqueInits, Block.initVars]
   h_userlabels := by simp [Block.userLabelsShapeNodup, Block.getBlockLabels]
   h_covered := by simp [Block.exitsCoveredByBlocks]
-  h_ndelim_writes := by intro s _ hmem; exact absurd hmem (by simp)
-  h_ndelim_reads := Block.exprsShapeFree_nil
 
 end Imperative.StructuredToUnstructuredPipeline
 

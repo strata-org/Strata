@@ -8,6 +8,7 @@ module
 meta import Strata.Languages.Core
 meta import Strata.Languages.Core.DDMTransform.Translate
 meta import Strata.Languages.Core.IncrementalSolve
+meta import StrataTest.Util.LeanExport
 meta import Strata.Languages.Core.ObligationExtraction
 meta import Strata.Transform.CommonSubexprElim
 meta import Strata.Examples.EmbeddedData
@@ -2488,6 +2489,149 @@ exact: usesF ✅ pass, other ❌ fail
     | .ok rs => IO.println s!"{name}: {", ".intercalate (rs.toList.map fun r =>
         s!"{r.obligation.label} {r.formatOutcome}")}"
     | .error e => IO.println s!"{name}: error: {e}"
+
+/-! The Lean export states each goal's own query, whatever else its session holds. `usesF`
+brings a contradiction (an axiom, or an axiom over an interpreted function) that the pruning of
+`other` drops. Under lazy pruning the solver still holds it when `other` is asked; exact
+pruning clears it, including when the reset needs a replacement solver. Either way the file of
+`usesF` has the contradiction as a premise and the file of `other` does not, and the files are
+the same in all three modes. -/
+
+private def contraDefinition :=
+#strata
+program Core;
+function f(x : int) : int { x }
+axiom [contra]: f(0) == 1;
+procedure P(x : int) {
+  assert [usesF]: f(0) == 1;
+  assert [other]: x == 3;
+};
+#end
+
+#guard_msgs in
+run_elab do
+  liftM (m := IO) <| IO.FS.withTempDir fun root => do
+    -- With each program, how often the file of `usesF` names `f`: as a symbol, in the goal,
+    -- and in the contradicting axiom, which is a premise.
+    for (name, program, mentions) in
+        [("axiom", contraAxiom, 4), ("definition", contraDefinition, 3)] do
+      let mut files : Array (Array (String × String)) := #[]
+      for (exactPruning, replace) in [(false, false), (true, false), (true, true)] do
+        let resets ← IO.mkRef 0
+        let opens ← IO.mkRef 0
+        let checks ← IO.mkRef 0
+        let (config, events) ← Core.LeanExport.Tests.recording
+          (root / s!"{name}-{exactPruning}-{replace}")
+        let factory : Core.IncrementalSolve.SessionFactory := {
+          τ := Strata.SMT.Term, σ := Strata.SMT.TermType
+          spawn := fun options => do
+            opens.modify (· + 1)
+            let solver ← localCvc5 options
+            return { solver with
+              checkSatAssuming := fun _ => do
+                checks.modify (· + 1)
+                pure .unknown
+              getModelText := fun _ => pure ""
+              reset := do
+                resets.modify (· + 1)
+                if replace then throw <| IO.userError "fixture requires a replacement"
+                solver.reset } }
+        let options := { VerifyOptions.quiet with
+          removeIrrelevantAxioms := .Aggressive, exactPruning, leanExport := some config }
+        let result ← Core.IncrementalSolve.verifyProgramWith factory (parse program) 1 options
+        let (results, _, _) ← IO.ofExcept (result.mapError toString)
+        -- The export does not change a verdict: both goals stay as the solver left them.
+        let actual := results.map Core.IncrementalSolve.verdictOf
+        unless actual == #["unknown", "unknown"] do
+          throw <| IO.userError s!"{name} (exact={exactPruning}, replace={replace}): \
+            the export changed a verdict: {actual}"
+        let exported := (← events.get).filter (·.stage == .exported)
+        unless exported.size == 2 do
+          let diagnostics := (← events.get).map fun event =>
+            s!"{event.label}: {event.stage}: {event.diagnostic}"
+          throw <| IO.userError s!"{name} (exact={exactPruning}, replace={replace}): \
+            expected two exported goals; {diagnostics}"
+        unless (← checks.get) == 2 do
+          throw <| IO.userError "The context test did not walk both goals"
+        if exactPruning then
+          unless (← resets.get) > 0 && (!replace || (← opens.get) > 1) do
+            throw <| IO.userError "The context-clearing control did not reset or replace its solver"
+        let text (label : String) : IO (String × String) := do
+          let some event := exported.find? (·.label == label)
+            | throw <| IO.userError s!"{name}: no exported goal is labelled {label}"
+          let some file := event.file | throw <| IO.userError "An exported goal has no file"
+          return (file.fileName.getD "", ← IO.FS.readFile file)
+        let usesF ← text "usesF"
+        let other ← text "other"
+        let names (text : String) := Core.LeanExport.Tests.occurrences text "«f»"
+        unless names usesF.2 == mentions && names other.2 == 0 do
+          throw <| IO.userError s!"{name} (exact={exactPruning}, replace={replace}): \
+            an exported file does not state its goal's own query"
+        files := files.push #[usesF, other]
+        if name == "axiom" && !exactPruning then
+          -- `Strata.Core.verifyProgram`, with `incremental` set, walks the same tree and
+          -- exports on it.
+          events.set #[]
+          checks.set 0
+          let results ← EIO.toIO IO.userError <|
+            Strata.Core.verifyProgram (parse program)
+              { options with incremental := true, minSessions := some 1 }
+              (pipeline := withoutSymbolicEval) (mkSession := some factory)
+          -- The files of the first walk exist, so this one keeps them.
+          unless results.size == 2 && results.all (·.hasValidityUnknown) && (← checks.get) == 2 &&
+              ((← events.get).filter (·.stage == .kept)).size == 2 do
+            throw <| IO.userError "Core options did not reach the shared incremental tree"
+      unless files.all (· == files[0]!) do
+        throw <| IO.userError s!"{name}: the exported files depend on what the session holds"
+
+/-! When both checks of a goal are asked and the solver times out on the satisfiability check
+only, the walk still asks the validity check, and exports it with its own answer; the timeout
+is reported as without the export. Under the scope `all` a decided validity check is exported
+too. -/
+#guard_msgs in
+run_elab do
+  liftM (m := IO) <| IO.FS.withTempDir fun root => do
+    for (scope, validity, expected, answer) in [
+        (Core.LeanExport.Scope.undecided, Strata.SMT.Decision.unknown, 2, "unknown"),
+        (.undecided, .unsat, 0, ""), (.all, .unsat, 2,
+          "unsat (in a solver session that may hold more than this query states)")] do
+      let asked ← IO.mkRef 0
+      let (config, events) ← Core.LeanExport.Tests.recording
+        (root / s!"{repr scope}-{repr validity}") scope
+      let factory : Core.IncrementalSolve.SessionFactory := {
+        τ := Strata.SMT.Term, σ := Strata.SMT.TermType
+        spawn := fun options => do
+          let solver ← localCvc5 options
+          return { solver with
+            -- Each goal asks satisfiability first, then validity.
+            checkSatAssuming := fun _ => do
+              let n ← asked.modifyGet fun n => (n, n + 1)
+              pure (if n % 2 == 0 then .timeout else validity)
+            getModelText := fun _ => pure "" } }
+      let run (leanExport : Option Core.LeanExport.ExportConfig) : IO (Array String) := do
+        asked.set 0
+        let options := { VerifyOptions.quiet with checkLevel := .full, leanExport }
+        let result ← Core.IncrementalSolve.verifyProgramWith factory (parse contraDefinition) 1
+          options
+        let (results, _, _) ← IO.ofExcept (result.mapError toString)
+        return results.map Core.IncrementalSolve.verdictOf
+      let baseline ← run none
+      unless baseline == #["timeout", "timeout"] do
+        throw <| IO.userError s!"The satisfiability timeout is not reported: {baseline}"
+      let actual ← run (some config)
+      unless actual == baseline && (← asked.get) == 4 do
+        throw <| IO.userError s!"The export changed a verdict after a satisfiability timeout: \
+          {actual} instead of {baseline}"
+      let exported := (← events.get).filter (·.stage == .exported)
+      unless exported.size == expected do
+        let seen := (← events.get).map fun event => s!"{event.label}: {event.stage}"
+        throw <| IO.userError s!"scope {repr scope}, validity {repr validity}: expected \
+          {expected} exported goals; {seen}"
+      for event in exported do
+        let some file := event.file | throw <| IO.userError "An exported goal has no file"
+        unless ((← IO.FS.readFile file).splitOn s!"-- Solver's answer: {answer}\n").length == 2 do
+          throw <| IO.userError s!"scope {repr scope}: {event.label} is not exported with the \
+            answer to its validity check"
 
 /-! A literal SMT-LIB cannot spell, which common-subexpression elimination hoists above the
 goals of an unrelated procedure, fails only the goal that uses it: the two goals of the

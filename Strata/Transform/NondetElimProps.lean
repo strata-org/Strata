@@ -9,6 +9,7 @@ public import Strata.Transform.NondetElim
 public import Strata.DL.Imperative.CmdProps
 public import Strata.Languages.Core.StmtExtendCallBridgeProps
 import Strata.DL.Imperative.StmtProps
+import Strata.DL.Imperative.Logic.LangDefProps
 import all Strata.Util.ListUtilsProps
 import all Strata.DL.Util.StringGen
 
@@ -42,8 +43,11 @@ Key results:
     `Stmt.nondetElimM_loop_det_state`, `Stmt.nondetElimM_loop_nondet_state`,
     `Block.nondetElimM_cons_state`: the output state of one pass step.
   * Generated names — `NondetElim.isGeneratedName_gen`: both guard prefixes
-    generate `NondetElim.isGeneratedName` names. `SrcNoGenWrites` is the source
-    precondition that no such name is defined or modified.
+    generate `NondetElim.isGeneratedName` names, and
+    `NondetElim.isGeneratedName_reservedPrefix`: every such name starts with one of
+    `NondetElim.prefixesReserved`. `SrcNoGenWrites` is the source precondition that no such
+    name is defined or modified; `Logic.BlockInitEnvWF.nondetElim_notDefinedOrModified`
+    derives it from a gate reserving those prefixes.
   * Core call-extension bridge — `Stmt.nondetElimM_isNotCall` and
     `Block.nondetElimM_isNotCall` preserve call-freeness, while
     `embedStmt_nondetElimM`, `embedStmts_nondetElimM`, and
@@ -469,6 +473,38 @@ theorem NondetElim.isGeneratedName_gen :
   refine ⟨fun sg => ?_, fun sg => ?_⟩
   · exact (NondetElim.isGeneratedName_iff _).2 (Or.inl ⟨sg, rfl⟩)
   · exact (NondetElim.isGeneratedName_iff _).2 (Or.inr ⟨sg, rfl⟩)
+
+/-- A generated guard name starts with one of `nondetElim`'s reserved prefixes. -/
+theorem NondetElim.isGeneratedName_reservedPrefix {name : String}
+    (h : NondetElim.isGeneratedName name) :
+    ∃ p ∈ NondetElim.prefixesReserved, p.toList.isPrefixOf name.toList := by
+  rcases (NondetElim.isGeneratedName_iff name).1 h with ⟨state, rfl⟩ | ⟨state, rfl⟩
+  · exact ⟨NondetElim.prefixIte, by simp [NondetElim.prefixesReserved],
+      String.HasGenPrefix.bare_isPrefixOf
+        (StringGenState.gen_hasGenPrefix NondetElim.prefixIte state)⟩
+  · exact ⟨NondetElim.prefixLoop, by simp [NondetElim.prefixesReserved],
+      String.HasGenPrefix.bare_isPrefixOf
+        (StringGenState.gen_hasGenPrefix NondetElim.prefixLoop state)⟩
+
+/-- A block run under a gate reserving `nondetElim`'s prefixes defines and modifies no name
+    `nondetElim` generates: every such name starts with a reserved prefix, and no name the
+    block touches does. -/
+theorem Logic.BlockInitEnvWF.nondetElim_notDefinedOrModified {P : PureExpr} [HasBool P]
+    [HasBoolOps P] [HasFvar P] [HasFvars P] [HasInt P] [HasIntOps P] [HasSubstFvar P]
+    [HasIdent P] [HasOps P] [DecidableEq P.Ident]
+    {CmdT : Type} [HasVarsImp P CmdT] [HasOpsImp P CmdT]
+    [HasInitTypesImp P CmdT] [HasTypedVarsImp P CmdT]
+    {params : Logic.InitEnvWFParams P} {ss : List (Stmt P CmdT)} {ρ : Env P}
+    (h : Logic.BlockInitEnvWF params ss ρ)
+    (hres : ∀ p ∈ NondetElim.prefixesReserved, p ∈ params.prefixIdents) :
+    ∀ name, NondetElim.isGeneratedName name →
+      HasIdent.ident (P := P) name ∉ Block.definedVars ss false ++ Block.modifiedVars ss := by
+  intro name hname hmem
+  obtain ⟨p, hp, hpfx⟩ := NondetElim.isGeneratedName_reservedPrefix hname
+  refine h.notReserved_of_mem ?_ (hres p hp) hpfx
+  rcases List.mem_append.mp hmem with hd | hm
+  · exact .inr hd
+  · exact .inl (by simp [Block.touchedVars, hm])
 
 section NondetElimStructuralState
 variable {P : PureExpr}

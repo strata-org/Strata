@@ -83,7 +83,8 @@ def Cmd.eval [BEq P.Ident] [EC : EvalContext P S] (σ : S) (c : Cmd P) : Cmd P �
       let c' := .assume label e md
       match EC.denoteBool e with
       | some true => -- Satisified via evaluation.
-        (c', σ)
+        if EC.keepsTrueAssume label then (c', EC.addPathCondition σ [.assumption label e])
+        else (c', σ)
       | some false =>
         let σ := EC.addWarning σ (.AssumeFail label e)
         (c', EC.addPathCondition σ [.assumption label e])

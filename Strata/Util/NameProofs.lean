@@ -4,6 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 module
+public import Strata.Util.Name
 import all Strata.Util.Name
 import Std.Data.HashSet.Lemmas
 import Strata.Util.ListUtilsProps
@@ -21,6 +22,8 @@ combines them into a single correctness theorem for `findUnique`.
 `freshNamesBy_fresh` and `freshNames_fresh` prove the same for several names at once, and that
 the names are pairwise distinct.
 -/
+
+public section
 
 namespace Strata.Name
 
@@ -240,3 +243,5 @@ theorem freshNames_fresh (taken : Std.HashSet String) (bases : List String) :
   cases this
 
 end Strata.Name
+
+end -- public section

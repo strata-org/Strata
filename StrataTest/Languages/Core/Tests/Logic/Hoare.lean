@@ -458,7 +458,7 @@ example : keepProc.body = .structured [] := by native_decide
     `requires`, so the contract holds of the empty body. -/
 theorem keep_meets_contract :
     Core.Logic.Hoare.Procedure.contractTriple keepPgmAST testParams "Keep" :=
-  Core.Logic.Hoare.Procedure.contractTriple_nil_of_ensuresAmongRequires
+  Core.Logic.Hoare.Procedure.contractTriple_nil_of_ensuresAmongRequires (hmono := by native_decide)
     keepPgmAST testParams "Keep" keepProc (by native_decide) (by native_decide)
     (by native_decide) (by native_decide)
 
@@ -530,7 +530,7 @@ example (model : Lambda.Interp Core.Factory) :
 /-- **Valid.**  The one non-`free` `ensures` is among the `requires`. -/
 theorem freeOk_meets_contract :
     Core.Logic.Hoare.Procedure.contractTriple freeOkPgmAST testParams "FreeOk" :=
-  Core.Logic.Hoare.Procedure.contractTriple_nil_of_ensuresAmongRequires
+  Core.Logic.Hoare.Procedure.contractTriple_nil_of_ensuresAmongRequires (hmono := by native_decide)
     freeOkPgmAST testParams "FreeOk" freeOkProc (by native_decide) (by native_decide)
     (by native_decide) (by native_decide)
 
@@ -578,9 +578,11 @@ theorem noReq_violates_contract :
   obtain ⟨model⟩ := Core.factoryInterp_nonempty
   intro h
   rw [Core.Logic.Hoare.Procedure.contractTriple, hfactory] at h
-  obtain ⟨proc, hproc, _htyped, htb⟩ := h
+  obtain ⟨proc, hproc, hinsts⟩ := h
   have hp : proc = noReqProc := (procOf_eq hproc).symm
   subst hp
+  obtain ⟨_htyped, htb⟩ := hinsts [] _
+    ((Core.Procedure.instantiateTypes_of_typeArgs_nil (by native_decide)).2 ⟨rfl, rfl⟩)
   have hbody : noReqProc.body = .structured [] := by native_decide
   have htbm := htb
   rw [hbody] at htbm
@@ -646,9 +648,11 @@ theorem offByOne_violates_contract :
   obtain ⟨model⟩ := Core.factoryInterp_nonempty
   intro h
   rw [Core.Logic.Hoare.Procedure.contractTriple, hfactory] at h
-  obtain ⟨proc, hproc, _htyped, htb⟩ := h
+  obtain ⟨proc, hproc, hinsts⟩ := h
   have hp : proc = offByOneProc := (procOf_eq hproc).symm
   subst hp
+  obtain ⟨_htyped, htb⟩ := hinsts [] _
+    ((Core.Procedure.instantiateTypes_of_typeArgs_nil (by native_decide)).2 ⟨rfl, rfl⟩)
   have hbody : offByOneProc.body = .structured [] := by native_decide
   have htbm := htb
   rw [hbody] at htbm
@@ -848,10 +852,11 @@ private theorem contractTriple_set_const (p : Core.Program)
     (κ : Lambda.LConst) (md : Imperative.MetaData Core.Expression)
     (hbody : proc.body = .structured [Core.Statement.set x (Lambda.LExpr.const Core.valueLoc κ) md])
     (hChecksTyped : Core.Logic.Hoare.Procedure.contractChecksTyped proc)
-    (hsyn : ensuresAllEqConst proc [(x, ty, κ)] = Bool.true) (hκ : κ.wt = true := by rfl) :
+    (hsyn : ensuresAllEqConst proc [(x, ty, κ)] = Bool.true) (hκ : κ.wt = true := by rfl)
+    (hmono : proc.header.typeArgs = [] := by native_decide) :
     Core.Logic.Hoare.Procedure.contractTriple p params procName := by
-  refine Core.Logic.Hoare.Procedure.contractTriple_of_core p params procName proc _ hproc hbody
-    hChecksTyped ?_
+  refine Core.Logic.Hoare.Procedure.contractTriple_of_core (hmono := hmono) p params procName proc
+    _ hproc hbody hChecksTyped ?_
   refine (Core.Logic.Hoare.block p.findProcByString? params
     (set_const p.findProcByString? params x κ md _ _
       (fun _ρ₀ _σ' hpre hnew _hoth =>
@@ -1014,7 +1019,8 @@ private theorem set2_body_eq :
     `y == 1` and `z == 2` true and raises no failure. -/
 theorem set2_meets_contract :
     Core.Logic.Hoare.Procedure.contractTriple set2PgmAST testParams "Set2" := by
-  refine Core.Logic.Hoare.Procedure.contractTriple_of_core set2PgmAST testParams
+  refine Core.Logic.Hoare.Procedure.contractTriple_of_core
+      (hmono := by native_decide) set2PgmAST testParams
     "Set2" set2Proc _ (by native_decide) set2_body_eq (by native_decide) ?_
   refine (Core.Logic.Hoare.block set2PgmAST.findProcByString? testParams
     ?_ (Imperative.Logic.Hoare.postWF_of_definedVars_nil _ (by native_decide)))
@@ -1118,7 +1124,8 @@ private theorem initVar_body_eq : initVarProc.body = .structured initVarBody := 
     `y`. -/
 theorem initVar_meets_contract :
     Core.Logic.Hoare.Procedure.contractTriple initVarPgmAST testParams "InitVar" := by
-  refine Core.Logic.Hoare.Procedure.contractTriple_of_core initVarPgmAST testParams
+  refine Core.Logic.Hoare.Procedure.contractTriple_of_core
+      (hmono := by native_decide) initVarPgmAST testParams
     "InitVar" initVarProc _ (by native_decide) initVar_body_eq (by native_decide) ?_
   -- The body declares `t`, which leaving the procedure block drops, so the
   -- postcondition is carried as a store fact about `y` and read off outside the block.
@@ -1229,7 +1236,8 @@ private theorem ite1Else_eq :
     preservation side condition. -/
 theorem ite1_meets_contract :
     Core.Logic.Hoare.Procedure.contractTriple ite1PgmAST testParams "Ite1" := by
-  refine Core.Logic.Hoare.Procedure.contractTriple_of_core ite1PgmAST testParams
+  refine Core.Logic.Hoare.Procedure.contractTriple_of_core
+      (hmono := by native_decide) ite1PgmAST testParams
     "Ite1" ite1Proc _ (by native_decide) ite1_body_eq (by native_decide) ?_
   refine (Core.Logic.Hoare.block ite1PgmAST.findProcByString? testParams
     ?_ (Imperative.Logic.Hoare.postWF_of_definedVars_nil _ (by native_decide)))
@@ -1321,7 +1329,8 @@ private theorem blk1Inner_eq :
     fact survives leaving the block, which is what `PostWF` asks of it. -/
 theorem blk1_meets_contract :
     Core.Logic.Hoare.Procedure.contractTriple blk1PgmAST testParams "Blk1" := by
-  refine Core.Logic.Hoare.Procedure.contractTriple_of_core blk1PgmAST testParams
+  refine Core.Logic.Hoare.Procedure.contractTriple_of_core
+      (hmono := by native_decide) blk1PgmAST testParams
     "Blk1" blk1Proc _ (by native_decide) blk1_body_eq (by native_decide) ?_
   refine (Core.Logic.Hoare.block blk1PgmAST.findProcByString? testParams
     ?_ (Imperative.Logic.Hoare.postWF_of_definedVars_nil _ (by native_decide)))
@@ -1415,7 +1424,8 @@ private theorem exitBlkInner_eq :
     catches it. -/
 theorem exitBlk_meets_contract :
     Core.Logic.Hoare.Procedure.contractTriple exitBlkPgmAST testParams "ExitBlk" := by
-  refine Core.Logic.Hoare.Procedure.contractTriple_of_core exitBlkPgmAST testParams
+  refine Core.Logic.Hoare.Procedure.contractTriple_of_core
+      (hmono := by native_decide) exitBlkPgmAST testParams
     "ExitBlk" exitBlkProc _ (by native_decide) exitBlk_body_eq (by native_decide) ?_
   refine (Core.Logic.Hoare.block exitBlkPgmAST.findProcByString? testParams
     ?_ (Imperative.Logic.Hoare.postWF_of_definedVars_nil _ (by native_decide)))
@@ -1555,7 +1565,8 @@ private theorem chk_input_mem :
     precedes it. -/
 theorem chk_meets_contract :
     Core.Logic.Hoare.Procedure.contractTriple chkPgmAST testParams "Chk" := by
-  refine Core.Logic.Hoare.Procedure.contractTriple_of_core_typed chkPgmAST testParams
+  refine Core.Logic.Hoare.Procedure.contractTriple_of_core_typed
+      (hmono := by native_decide) chkPgmAST testParams
     "Chk" chkProc _ (by native_decide) chk_body_eq (by native_decide) ?_
   refine (Core.Logic.Hoare.block chkPgmAST.findProcByString? testParams
     ?_
@@ -1602,7 +1613,8 @@ theorem chk_meets_contract :
     and the input's value is never inspected. -/
 theorem chk_meets_contract_by_rules :
     Core.Logic.Hoare.Procedure.contractTriple chkPgmAST testParams "Chk" := by
-  refine Core.Logic.Hoare.Procedure.contractTriple_of_core_typed chkPgmAST testParams
+  refine Core.Logic.Hoare.Procedure.contractTriple_of_core_typed
+      (hmono := by native_decide) chkPgmAST testParams
     "Chk" chkProc _ (by native_decide) chk_body_eq (by native_decide) ?_
   refine (Core.Logic.Hoare.block chkPgmAST.findProcByString? testParams
     ?_
@@ -1687,7 +1699,8 @@ private theorem fresh_body_eq : freshProc.body = .structured freshBody := by nat
     and the havoc, the assignment leaves `y == 3`. -/
 theorem fresh_meets_contract :
     Core.Logic.Hoare.Procedure.contractTriple freshPgmAST testParams "Fresh" := by
-  refine Core.Logic.Hoare.Procedure.contractTriple_of_core freshPgmAST testParams
+  refine Core.Logic.Hoare.Procedure.contractTriple_of_core
+      (hmono := by native_decide) freshPgmAST testParams
     "Fresh" freshProc _ (by native_decide) fresh_body_eq (by native_decide) ?_
   refine (Core.Logic.Hoare.consequence freshPgmAST.findProcByString? testParams
     (Core.Logic.Hoare.block freshPgmAST.findProcByString? testParams
@@ -1857,7 +1870,8 @@ theorem loopTerm_meets_contract :
   have hfactory : loopTermPgmAST.factoryBeforeProcedure "LoopTerm" = Core.Factory :=
     Core.Program.factoryBeforeProcedure_eq_core_of_noFunctions (by decide +kernel)
   rw [Core.Logic.Hoare.Procedure.contractTriple, hfactory]
-  refine ⟨loopTermProc, by native_decide, by native_decide, ?_⟩
+  refine ⟨loopTermProc, by native_decide,
+    Core.Procedure.forall_instance_of_typeArgs_nil (by native_decide) ⟨by native_decide, ?_⟩⟩
   rw [loopTerm_body_eq]
   -- The body proof does not use the axioms visible to the procedure.
   refine Core.Logic.Hoare.consequence _ _
@@ -1993,7 +2007,8 @@ private theorem loopForeverGuard_eq :
     contradiction.  A partial-correctness contract about a body that never returns. -/
 theorem loopForever_meets_contract :
     Core.Logic.Hoare.Procedure.contractTriple loopForeverPgmAST testParams "LoopForever" := by
-  refine Core.Logic.Hoare.Procedure.contractTriple_of loopForeverPgmAST testParams
+  refine Core.Logic.Hoare.Procedure.contractTriple_of
+      (hmono := by native_decide) loopForeverPgmAST testParams
     "LoopForever" loopForeverProc _ (by native_decide) loopForever_body_eq (by native_decide) ?_
   refine (Core.Logic.Hoare.block loopForeverPgmAST.findProcByString? testParams
     ?_ (Imperative.Logic.Hoare.postWF_of_definedVars_nil _ (by native_decide)))

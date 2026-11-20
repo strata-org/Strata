@@ -6,6 +6,8 @@
 module
 
 public import Strata.DL.SMT.AbstractSolver
+import Strata.DL.SMT.VerdictReader
+meta import Strata.DL.SMT.VerdictReader
 import Strata.DL.SMT.Symbol
 import Strata.DL.SMT.DDMTransform.Translate
 import Strata.DL.SMT.Factory
@@ -127,7 +129,9 @@ def QuoteScan.quoted (st : QuoteScan) : Bool := st.inSymbol || st.inString
     from.
 
     Counting raw characters instead would end the response early on a name
-    containing `)`, truncating the model with no diagnostic. -/
+    containing `)`, truncating the model with no diagnostic. `Strata.SMT.dropToVerdict` skips
+    responses in a solver's batch output with the same rules for strings and quoted symbols;
+    keep the two in step. -/
 def scanParens (s : String) (st0 : QuoteScan) : Int × QuoteScan :=
   s.toList.foldl
     (fun (acc : Int × QuoteScan) c =>
@@ -248,13 +252,13 @@ private def refineUnknown (st : IncrementalSolverState) (elapsedMs : Nat) : Deci
     prints `interrupted by timeout.` on stderr, not on this stdout line. The bare
     `timeout`/`timeout.` arms cover a solver that does emit such a line. -/
 def parseDecision (line : String) : Except String Decision :=
-  match line with
-  | "sat" => .ok .sat
-  | "unsat" => .ok .unsat
-  | "unknown" => .ok .unknown
-  | "timeout" => .ok .timeout
-  | "timeout." => .ok .timeout
-  | other => .error s!"unrecognized solver output: {other}"
+  match decodeVerdict line.toList with
+  | some d => .ok d
+  | none =>
+    match line with
+    | "timeout" => .ok .timeout
+    | "timeout." => .ok .timeout
+    | other => .error s!"unrecognized solver output: {other}"
 
 #guard match parseDecision "timeout" with | .ok .timeout => true | _ => false
 #guard match parseDecision "unknown" with | .ok .unknown => true | _ => false

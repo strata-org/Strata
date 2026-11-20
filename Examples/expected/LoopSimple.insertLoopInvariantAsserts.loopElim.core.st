@@ -10,8 +10,8 @@ spec {
   i := 0;
   assert [insertLoopInvAssert_entry_invariant_loop_0_0]: int.le(i, n);
   assert [insertLoopInvAssert_entry_invariant_loop_0_1]: int.div(int.mul(i, int.sub(i, 1)), 2) == sum;
-  assume [insertLoopInvAssume_entry_invariant_loop_0_0]: int.le(i, n);
-  assume [insertLoopInvAssume_entry_invariant_loop_0_1]: int.div(int.mul(i, int.sub(i, 1)), 2) == sum;
+  assume [$__insertLoopInvAssume_entry_invariant_loop_0_0]: int.le(i, n);
+  assume [$__insertLoopInvAssume_entry_invariant_loop_0_1]: int.div(int.mul(i, int.sub(i, 1)), 2) == sum;
   if (int.lt(i, n)) {
     $__loopElim_arbitrary_iter_facts_loop_1: {
       $__loopElim_havoc_loop_1: {
@@ -19,8 +19,8 @@ spec {
         havoc i;
       }
       assume [$__loopElimAssume_guard_loop_1]: int.lt(i, n);
-      assume [insertLoopInvAssume_invariant_loop_0_0]: int.le(i, n);
-      assume [insertLoopInvAssume_invariant_loop_0_1]: int.div(int.mul(i, int.sub(i, 1)), 2) == sum;
+      assume [$__insertLoopInvAssume_invariant_loop_0_0]: int.le(i, n);
+      assume [$__insertLoopInvAssume_invariant_loop_0_1]: int.div(int.mul(i, int.sub(i, 1)), 2) == sum;
       var $__loop_measure_loop_0 : int := int.sub(n, i);
       assert [insertLoopInvAssert_measure_lb_loop_0]: !(int.lt($__loop_measure_loop_0, 0));
       sum := int.add(sum, i);
@@ -35,9 +35,9 @@ spec {
     }
     assume [$__loopElimAssume_not_guard_loop_1]: !(int.lt(i, n));
   }
-  assume [insertLoopInvAssume_exit_invariant_loop_0_0]: int.le(i, n);
-  assume [insertLoopInvAssume_exit_invariant_loop_0_1]: int.div(int.mul(i, int.sub(i, 1)), 2) == sum;
-  assume [insertLoopInvAssume_exit_not_guard_loop_0]: !(int.lt(i, n));
+  assume [$__insertLoopInvAssume_exit_invariant_loop_0_0]: int.le(i, n);
+  assume [$__insertLoopInvAssume_exit_invariant_loop_0_1]: int.div(int.mul(i, int.sub(i, 1)), 2) == sum;
+  assume [$__insertLoopInvAssume_exit_not_guard_loop_0]: !(int.lt(i, n));
   assert [sum_assert]: int.div(int.mul(n, int.sub(n, 1)), 2) == sum;
   assert [neg_cond]: i == n;
   r := sum;

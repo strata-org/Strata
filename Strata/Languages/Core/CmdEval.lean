@@ -6,6 +6,7 @@
 module
 
 public import Strata.Languages.Core.Env
+public import Strata.Languages.Core.AbstractionMarkers
 
 public section
 
@@ -145,6 +146,7 @@ instance : EvalContext Expression Env where
   continuePastAssert  := CmdEval.continuePastAssert
   recordAssertFailure := CmdEval.recordAssertFailure
   ignoreAssume        := CmdEval.ignoreAssume
+  keepsTrueAssume     := isAbstractionMarker
 
 instance instToFormatProdCmdsExpressionEnv : ToFormat (Cmds Expression × Env) where
   format arg :=

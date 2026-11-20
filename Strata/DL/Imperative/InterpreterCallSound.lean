@@ -126,6 +126,7 @@ variable {P : PureExpr} [HasBoolOps P] [HasFvar P] [HasFvars P]
   [DecidableEq P.Expr] [DecidableEq P.Ident] [InterpLang P] [CallLangWF P]
   [HasOldIdent P]
   {Hdr : Type} [DecidableEq Hdr] [Inhabited Hdr] [ProcedureHeader P Hdr]
+  [ProcedureTypeInstantiation P Hdr]
 
 /-- **Soundness of call-aware replay**: if the replay at call-depth limit `maxCallDepth` classifies
     the counterexample `genuine`, some run of the reference relation `StepStmtExtStarE π` from its
@@ -367,11 +368,12 @@ configuration invariant `CfgInv` the `.call` step obligation runs under. -/
     Block.allCmds (P := P) (CmdCallOk π) ss = true) ∧
   ∀ g, p.body = .cfg g → g.allCmds (CmdCallOk π)
 
-/-- Flat program-level check: every procedure `π` resolves satisfies `ProcOk`.
+/-- Flat program-level check: every procedure a call can run, `π`'s procedure instantiated at
+    the call's type arguments (`typeInstantiatedCallee`), satisfies `ProcOk`.
     No recursion: `ProcOk` says nothing about the *callees* of the calls inside a
     body, only that each such call site is locally well-formed. -/
 @[expose] def ProcsOk (π : String → Option (Procedure P (CmdExt P) Hdr)) : Prop :=
-  ∀ n p, π n = some p → ProcOk π p
+  ∀ n tyArgs p, typeInstantiatedCallee π n tyArgs = some p → ProcOk π p
 
 /-- The configuration invariant call-aware replay soundness runs under: a value-only store
     (`Config.storeWellDefined`), well-formed call sites everywhere (`CmdCallOk π`), and typed
@@ -526,7 +528,7 @@ private theorem cfgCfgInv_starE {l : Type} [BEq l]
   induction h <;> grind [cfgCfgInv_stepE]
 
 omit [HasFvar P] [HasFvars P] [DecidableEq P.Expr] [DecidableEq P.Ident]
-    [CallLangWF P] [HasOldIdent P] [ProcedureHeader P Hdr] in
+    [CallLangWF P] [HasOldIdent P] [ProcedureHeader P Hdr] [ProcedureTypeInstantiation P Hdr] in
 omit [InterpLang P] in
 /-- `CallEnvOk` (well-formed store, typed store) is preserved by projecting a store onto a
     parent store (`projectStore`), as at a block exit. -/
@@ -546,7 +548,8 @@ section CallArm
 variable {m : Type → Type} [Monad m] [LawfulMonad m] [InterpEffects P m]
   [MonadExcept StopReason m]
 
-omit [DecidableEq P.Expr] [HasOldIdent P] [ProcedureHeader P Hdr] in
+omit [DecidableEq P.Expr] [HasOldIdent P] [ProcedureHeader P Hdr]
+  [ProcedureTypeInstantiation P Hdr] in
 /-- `CfgInv` projects into the inner configuration of a `.seq`. -/
 private theorem cfgInv_seq (π : String → Option (Procedure P (CmdExt P) Hdr))
     (inner : Config P (CmdExt P)) (ss : List (Stmt P (CmdExt P)))
@@ -554,7 +557,8 @@ private theorem cfgInv_seq (π : String → Option (Procedure P (CmdExt P) Hdr))
   let ⟨hstore, hall, htyped⟩ := h
   ⟨hstore, hall.1, htyped⟩
 
-omit [DecidableEq P.Expr] [HasOldIdent P] [ProcedureHeader P Hdr] in
+omit [DecidableEq P.Expr] [HasOldIdent P] [ProcedureHeader P Hdr]
+  [ProcedureTypeInstantiation P Hdr] in
 /-- `CfgInv` projects into the inner configuration of a `.block`. -/
 private theorem cfgInv_block (π : String → Option (Procedure P (CmdExt P) Hdr))
     (l : Option String) (σ : SemanticStore P) (inner : Config P (CmdExt P))
@@ -575,7 +579,7 @@ private theorem callEntry_ok (π : String → Option (Procedure P (CmdExt P) Hdr
     (hfac : FactoryWF (P := P) F) (hden : RStore.Denoting F env.store.get)
     (hrf : env.factory = InterpLang.rfactory F)
     (hinv : CfgInv π (.stmt (.cmd (CmdExt.call n tyArgs args md)) (env.abs F)))
-    (hπ : π n = some p)
+    (hπ : typeInstantiatedCallee π n tyArgs = some p)
     (hi : evalBoundedList k env.factory env.store.get (getInputExprs args) = some i)
     (hil : ¬i.length ≠ (ProcedureHeader.inputParams (P := P) p.header).length)
     (ho : readVarList env.store.get (CallArg.getOutArgs args) = some o)
@@ -585,7 +589,7 @@ private theorem callEntry_ok (π : String → Option (Procedure P (CmdExt P) Hdr
     CallEnvOk F (callEntryStore p vi vo) ∧ RStore.Denoting F (callEntryStore p i o) ∧
     InterpLang.absStore F (callEntryStore p i o) = callEntryStore p vi vo := by
   obtain ⟨hstore, hall, htyped⟩ := hinv
-  obtain ⟨hnd, -⟩ := hprocs n p hπ
+  obtain ⟨hnd, -⟩ := hprocs n _ p hπ
   simp only [Config.allCmds, Stmt.allCmds, CmdCallOk, Bool.and_eq_true, List.all_eq_true] at hall
   rw [hrf] at hi
   have hvar := hfac.2.1
@@ -714,7 +718,8 @@ private theorem callee_run_ok [InterpLangBool P] (obs : InterpObs P m)
         ∃ revs : List (IEvent P), StepStmtE P (EvalCommandET π)
           (.stmt (.cmd cmd) (env.abs F)) (revs.map (REvent.abs F)) (cfg'.abs F)
           ∧ obs.trace st' = revs.reverse ++ obs.trace st ∧ cfg'.Denoting F)
-    (hπ : π n = some p) (hb : p.body = .structured ss)
+    {tyArgs : Option (List P.Ty)} (hπ : typeInstantiatedCallee π n tyArgs = some p)
+    (hb : p.body = .structured ss)
     (hI : CfgInv π (.stmt (.block "" ss #[]) (E.abs F))) (hfE : FactoryWF (P := P) F)
     (hdE : RStore.Denoting F E.store.get) (hrE : E.factory = InterpLang.rfactory F)
     (h : obs.run (runInterp (fun _ e c => stepCmd π d k e c) k (.stmt (.block "" ss #[]) E)) cfgr st
@@ -728,7 +733,7 @@ private theorem callee_run_ok [InterpLangBool P] (obs : InterpObs P m)
     ⟨hI, rfl⟩ trivial
   obtain ⟨⟨σ', f⟩, rfl⟩ := (obs_runInterp_ok_final obs _ _ _ _ _ _ _ h).resolve_right
     fun ⟨_, _, hfc⟩ => absurd (hfc ▸ R) (exitsCoveredByBlocks_noEscapeE _ (.block "" ss #[])
-      ((exitsCoveredByBlocks_weaken [] [""] nofun).2 ss ((hprocs n p hπ).2.1 ss hb).1) _ _ _)
+      ((exitsCoveredByBlocks_weaken [] [""] nofun).2 ss ((hprocs n _ p hπ).2.1 ss hb).1) _ _ _)
   obtain rfl : f = E.factory := hdf.2.trans hrE.symm
   exact ⟨_, rfl, hdf, cfgInv_stepStarE π R hI, revs, stepStarET_toE π R, htr⟩
 
@@ -857,7 +862,8 @@ private theorem runCallee_ok [InterpLangBool P] (obs : InterpObs P m)
         ∃ revs : List (IEvent P), StepStmtE P (EvalCommandET π)
           (.stmt (.cmd cmd) (env.abs F)) (revs.map (REvent.abs F)) (cfg'.abs F)
           ∧ obs.trace st' = revs.reverse ++ obs.trace st ∧ cfg'.Denoting F)
-    (hπ : π n = some p) (hfac : FactoryWF (P := P) F) (hd : RStore.Denoting F σ)
+    {tyArgs : Option (List P.Ty)} (hπ : typeInstantiatedCallee π n tyArgs = some p)
+    (hfac : FactoryWF (P := P) F) (hd : RStore.Denoting F σ)
     (henv : CallEnvOk F (InterpLang.absStore F σ))
     (h : obs.run (runCallee (fun _ e c => stepCmd π d k e c) n p.body (InterpLang.rfactory F) k σ)
         cfgr st = (.ok σf, st')) :
@@ -865,7 +871,7 @@ private theorem runCallee_ok [InterpLangBool P] (obs : InterpObs P m)
         (InterpLang.absStore F σf) (revs.map (REvent.abs F)) ∧
       CallEnvOk F (InterpLang.absStore F σf) ∧ RStore.Denoting F σf
       ∧ obs.trace st' = revs.reverse ++ obs.trace st := by
-  obtain ⟨-, hS, hC⟩ := hprocs n p hπ
+  obtain ⟨-, hS, hC⟩ := hprocs n _ p hπ
   have hE : IEnv.abs F (⟨.ofStore σ, InterpLang.rfactory F⟩ : IEnv P) =
       ⟨InterpLang.absStore F σ, F⟩ := by simp [IEnv.abs]
   revert h
@@ -949,8 +955,10 @@ private theorem call_cmd_arm_call [InterpLangBool P] (obs : InterpObs P m)
         InterpObs.run_pure, InterpObs.run_throw, Prod.mk.injEq, Except.ok.injEq, reduceCtorEq,
         false_and] at hrun)
   obtain ⟨rfl, rfl⟩ := hrun
-  rename_i _ p hπ _ i hi hil _ o ho hol hlen _ olds holds _ _ _ hpre _ σf _ hbody _ _ _ hpost _ w
+  rename_i _ p hinst _ i hi hil _ o ho hol hlen _ olds holds _ _ _ hpre _ σf _ hbody _ _ _ hpost _ w
     hw hwb
+  have hπ : typeInstantiatedCallee π n tyArgs = some p := by
+    simp only [typeInstantiatedCallee, ‹π n = some _›, Option.bind_some, hinst]
   rw [hrf] at hbody hpre hpost hwb
   obtain ⟨vi, vo, hreli, hrelo, hE, hen, hdEntry, habsEntry⟩ :=
     callEntry_ok π hprocs hEval hfac hden hrf hinv hπ hi (· hil) ho (· hol)
@@ -1073,18 +1081,20 @@ or at the write-back). -/
 /-- **The call is the active redex of a config**, stable under the `.seq _ rest` and
     `.block l σ _` evaluation contexts.  A callee body is `.block "" ss` → `.stmts ss`
     → `.seq (.stmt call env) rest`, so a call is almost never at a *bare* config when it
-    is stepped; `CallActive C pn args md env` says peeling seq/block wrappers from `C`
-    reaches the bare call `.stmt (.cmd (.call pn tyArgs args md)) env` for some `tyArgs`.
+    is stepped; `CallActive C pn tyArgs args md env` says peeling seq/block wrappers from `C`
+    reaches the bare call `.stmt (.cmd (.call pn tyArgs args md)) env`.
     This is what makes `InterruptedSound` closed under those wrappers. -/
 inductive CallActive :
-    Config P (CmdExt P) → String → List (CallArg P) →
+    Config P (CmdExt P) → String → Option (List P.Ty) → List (CallArg P) →
       MetaData P → Env P → Prop where
   | here {pn tyArgs args md env} :
-      CallActive (.stmt (.cmd (.call pn tyArgs args md)) env) pn args md env
-  | seq {inner rest pn args md env} :
-      CallActive inner pn args md env → CallActive (.seq inner rest) pn args md env
-  | block {inner label σ pn args md env} :
-      CallActive inner pn args md env → CallActive (.block label σ inner) pn args md env
+      CallActive (.stmt (.cmd (.call pn tyArgs args md)) env) pn tyArgs args md env
+  | seq {inner rest pn tyArgs args md env} :
+      CallActive inner pn tyArgs args md env →
+        CallActive (.seq inner rest) pn tyArgs args md env
+  | block {inner label σ pn tyArgs args md env} :
+      CallActive inner pn tyArgs args md env →
+        CallActive (.block label σ inner) pn tyArgs args md env
 
 /-- Certificate that `evs` is the event trace of a reference run from a configuration, possibly
     stopped inside a call: a flat reference run (`clean`), or a flat run to an active call
@@ -1099,14 +1109,14 @@ inductive InterruptedSound (π : String → Option (Procedure P (CmdExt P) Hdr))
       StepStmtStarE P (EvalCmdExtE π) start evs mid →
       InterruptedSound π start evs
   | inCall {start : Config P (CmdExt P)} {outerEvs : Trace P} {C : Config P (CmdExt P)}
-      {env : Env P} {pn : String}
+      {env : Env P} {pn : String} {tyArgs : Option (List P.Ty)}
       {args : List (CallArg P)} {md : MetaData P}
       {p : Procedure P (CmdExt P) Hdr} {σAO : SemanticStore P}
         {bodyStmts : List (Stmt P (CmdExt P))}
       {calleeEvs : Trace P} :
       StepStmtStarE P (EvalCmdExtE π) start outerEvs C →
-      CallActive C pn args md env →
-      π pn = some p →
+      CallActive C pn tyArgs args md env →
+      typeInstantiatedCallee π pn tyArgs = some p →
       p.body = .structured bodyStmts →
       CallEntry env.factory env.store p args σAO →
       InterruptedSound π
@@ -1118,13 +1128,13 @@ inductive InterruptedSound (π : String → Option (Procedure P (CmdExt P) Hdr))
   /-- A CFG callee body that stops between two of its steps: the trace carries the events of a
       CFG run from the entry block. -/
   | inCallCfg {start : Config P (CmdExt P)} {outerEvs : Trace P} {C : Config P (CmdExt P)}
-      {env : Env P} {pn : String}
+      {env : Env P} {pn : String} {tyArgs : Option (List P.Ty)}
       {args : List (CallArg P)} {md : MetaData P}
       {p : Procedure P (CmdExt P) Hdr} {σAO : SemanticStore P} {g : DetCFG P (CmdExt P)}
       {cfgEvs : Trace P} {mid : CFGConfig String (CmdExt P) P} :
       StepStmtStarE P (EvalCmdExtE π) start outerEvs C →
-      CallActive C pn args md env →
-      π pn = some p →
+      CallActive C pn tyArgs args md env →
+      typeInstantiatedCallee π pn tyArgs = some p →
       p.body = .cfg g →
       CallEntry env.factory env.store p args σAO →
       StepCFGStarE P (EvalCmdExtE π) (.atBlock g g.entry ⟨σAO, env.factory⟩) cfgEvs mid →
@@ -1134,14 +1144,14 @@ inductive InterruptedSound (π : String → Option (Procedure P (CmdExt P) Hdr))
   /-- A CFG callee body that stops inside its command `c`: the trace carries the events of a
       CFG run from the entry block to `c`, then events certified from `c`'s configuration. -/
   | inCallCfgCmd {start : Config P (CmdExt P)} {outerEvs : Trace P} {C : Config P (CmdExt P)}
-      {env : Env P} {pn : String}
+      {env : Env P} {pn : String} {tyArgs : Option (List P.Ty)}
       {args : List (CallArg P)} {md : MetaData P}
       {p : Procedure P (CmdExt P) Hdr} {σAO : SemanticStore P} {g g' : DetCFG P (CmdExt P)}
       {cfgEvs : Trace P} {t : String} {c : CmdExt P} {cs : List (CmdExt P)}
       {tr : DetTransferCmd String P} {ρ : Env P} {cmdEvs : Trace P} :
       StepStmtStarE P (EvalCmdExtE π) start outerEvs C →
-      CallActive C pn args md env →
-      π pn = some p →
+      CallActive C pn tyArgs args md env →
+      typeInstantiatedCallee π pn tyArgs = some p →
       p.body = .cfg g →
       CallEntry env.factory env.store p args σAO →
       StepCFGStarE P (EvalCmdExtE π) (.atBlock g g.entry ⟨σAO, env.factory⟩) cfgEvs
@@ -1156,12 +1166,12 @@ inductive InterruptedSound (π : String → Option (Procedure P (CmdExt P) Hdr))
       pre- and post-condition events emitted in full, but `CallExit` never fired, so this
       is neither `clean` (no `call_sem` step) nor `inCall` (the body is not still running). -/
   | inCallExit {start : Config P (CmdExt P)} {outerEvs : Trace P} {C : Config P (CmdExt P)}
-      {env : Env P} {pn : String}
+      {env : Env P} {pn : String} {tyArgs : Option (List P.Ty)}
       {args : List (CallArg P)} {md : MetaData P}
       {p : Procedure P (CmdExt P) Hdr} {σAO σf : SemanticStore P} {bodyEvs : Trace P} :
       StepStmtStarE P (EvalCmdExtE π) start outerEvs C →
-      CallActive C pn args md env →
-      π pn = some p →
+      CallActive C pn tyArgs args md env →
+      typeInstantiatedCallee π pn tyArgs = some p →
       CallEntry env.factory env.store p args σAO →
       BigStepE π p.body ⟨σAO, env.factory⟩ σf bodyEvs →
       InterruptedSound π start
@@ -1171,13 +1181,13 @@ inductive InterruptedSound (π : String → Option (Procedure P (CmdExt P) Hdr))
       precondition clause): the trace carries a *prefix* of the precondition events.
       Reachable only when `emit` throws on the target. -/
   | preThrow {start : Config P (CmdExt P)} {outerEvs : Trace P} {C : Config P (CmdExt P)}
-      {env : Env P} {pn : String}
+      {env : Env P} {pn : String} {tyArgs : Option (List P.Ty)}
       {args : List (CallArg P)} {md : MetaData P}
       {p : Procedure P (CmdExt P) Hdr} {σAO : SemanticStore P}
       {preEvs : Trace P} :
       StepStmtStarE P (EvalCmdExtE π) start outerEvs C →
-      CallActive C pn args md env →
-      π pn = some p →
+      CallActive C pn tyArgs args md env →
+      typeInstantiatedCallee π pn tyArgs = some p →
       CallEntry env.factory env.store p args σAO →
       preEvs <+: defaultAssertEvents env.factory σAO (checksAtCall md p.spec.preconditions) →
       InterruptedSound π start (outerEvs ++ preEvs)
@@ -1185,13 +1195,13 @@ inductive InterruptedSound (π : String → Option (Procedure P (CmdExt P) Hdr))
       carries the full pre-events, the full body events, and a *prefix* of the post-events.
       Reachable only when `emit` throws on the target. -/
   | postThrow {start : Config P (CmdExt P)} {outerEvs : Trace P} {C : Config P (CmdExt P)}
-      {env : Env P} {pn : String}
+      {env : Env P} {pn : String} {tyArgs : Option (List P.Ty)}
       {args : List (CallArg P)} {md : MetaData P}
       {p : Procedure P (CmdExt P) Hdr} {σAO σf : SemanticStore P} {bodyEvs : Trace P}
       {postEvs : Trace P} :
       StepStmtStarE P (EvalCmdExtE π) start outerEvs C →
-      CallActive C pn args md env →
-      π pn = some p →
+      CallActive C pn tyArgs args md env →
+      typeInstantiatedCallee π pn tyArgs = some p →
       CallEntry env.factory env.store p args σAO →
       BigStepE π p.body ⟨σAO, env.factory⟩ σf bodyEvs →
       postEvs <+: defaultAssertEvents env.factory σf p.spec.postconditions →
@@ -1533,7 +1543,7 @@ private theorem callee_run_err [InterpLangBool P] (obs : InterpObs P m)
     F k _ cfgr st st' _ h hfE hEval ⟨hdE, hrE⟩ ⟨hI, rfl⟩ trivial
 
 omit [HasFvar P] [HasFvars P] [CallLangWF P] [HasOldIdent P]
-    [ProcedureHeader P Hdr] [LawfulMonad m] in
+    [ProcedureHeader P Hdr] [ProcedureTypeInstantiation P Hdr] [LawfulMonad m] in
 /-- A throwing CFG step either leaves the state alone, or is a throwing command step of the store
     stepper on the first residual command of the current block. -/
 private theorem stepInterpCFG_err (obs : InterpObs P m) (S : StepCmdStoreM P (CmdExt P) m)
@@ -1666,7 +1676,8 @@ private theorem runCallee_err [InterpLangBool P] (obs : InterpObs P m)
         ∃ revs : List (IEvent P), InterruptedSound π (.stmt (.cmd cmd) (env.abs F)) (revs.map
             (REvent.abs F))
         ∧ obs.trace st' = revs.reverse ++ obs.trace st)
-    (hπ : π n = some p) (hfac : FactoryWF (P := P) F) (hd : RStore.Denoting F σ)
+    {tyArgs : Option (List P.Ty)} (hπ : typeInstantiatedCallee π n tyArgs = some p)
+    (hfac : FactoryWF (P := P) F) (hd : RStore.Denoting F σ)
     (henv : CallEnvOk F (InterpLang.absStore F σ))
     (h : obs.run (runCallee (fun _ e c => stepCmd π d k e c) n p.body (InterpLang.rfactory F) k σ)
         cfgr st = (.error r, st')) :
@@ -1676,7 +1687,7 @@ private theorem runCallee_err [InterpLangBool P] (obs : InterpObs P m)
         ∃ g, p.body = .cfg g ∧ CFGInterrupted π (.atBlock g g.entry ⟨InterpLang.absStore F σ, F⟩)
           (revs.map (REvent.abs F)))
       ∧ obs.trace st' = revs.reverse ++ obs.trace st := by
-  obtain ⟨-, hS, hC⟩ := hprocs n p hπ
+  obtain ⟨-, hS, hC⟩ := hprocs n _ p hπ
   have hE : IEnv.abs F (⟨.ofStore σ, InterpLang.rfactory F⟩ : IEnv P) =
       ⟨InterpLang.absStore F σ, F⟩ := by simp [IEnv.abs]
   have hdE : RStore.Denoting F (IStore.ofStore σ).get := by simpa using hd
@@ -1736,7 +1747,8 @@ private theorem callErr_pre (obs : InterpObs P m)
     {n : String} {tyArgs : Option (List P.Ty)}
     {args : List (CallArg P)} {md : MetaData P} {env : IEnv P}
     {p : Procedure P (CmdExt P) Hdr} {i o : List P.Expr} {vi vo : List P.Val}
-    {cfgr : obs.Cfg} {st st' : obs.St} {r : StopReason} (hπ : π n = some p)
+    {cfgr : obs.Cfg} {st st' : obs.St} {r : StopReason}
+    (hπ : typeInstantiatedCallee π n tyArgs = some p)
     (hE : CallEntry F (InterpLang.absStore F env.store.get) p args (callEntryStore p vi vo))
     (habs : InterpLang.absStore F (callEntryStore p i o) = callEntryStore p vi vo)
     (hpre : obs.run ((rDefaultAssertEvents (InterpLang.rfactory F) (callEntryStore p i o)
@@ -1760,7 +1772,8 @@ private theorem callErr_body (obs : InterpObs P m)
     {n : String} {tyArgs : Option (List P.Ty)}
     {args : List (CallArg P)} {md : MetaData P} {env : IEnv P}
     {p : Procedure P (CmdExt P) Hdr} {i o : List P.Expr} {vi vo : List P.Val}
-    {cfgr : obs.Cfg} {st s st' : obs.St} {u : Unit} {crevs : List (IEvent P)} (hπ : π n = some p)
+    {cfgr : obs.Cfg} {st s st' : obs.St} {u : Unit} {crevs : List (IEvent P)}
+    (hπ : typeInstantiatedCallee π n tyArgs = some p)
     (hE : CallEntry F (InterpLang.absStore F env.store.get) p args (callEntryStore p vi vo))
     (habs : InterpLang.absStore F (callEntryStore p i o) = callEntryStore p vi vo)
     (hpre : obs.run ((rDefaultAssertEvents (InterpLang.rfactory F) (callEntryStore p i o)
@@ -1802,7 +1815,8 @@ private theorem callErr_post (obs : InterpObs P m)
     {args : List (CallArg P)} {md : MetaData P} {env : IEnv P}
     {p : Procedure P (CmdExt P) Hdr} {i o : List P.Expr} {vi vo : List P.Val} {σf : RStore P}
     {cfgr : obs.Cfg} {st s s2 st' : obs.St} {u : Unit} {bevs : List (IEvent P)}
-    {res : Except StopReason Unit} (hπ : π n = some p)
+    {res : Except StopReason Unit}
+    (hπ : typeInstantiatedCallee π n tyArgs = some p)
     (hE : CallEntry F (InterpLang.absStore F env.store.get) p args (callEntryStore p vi vo))
     (habs : InterpLang.absStore F (callEntryStore p i o) = callEntryStore p vi vo)
     (hpre : obs.run ((rDefaultAssertEvents (InterpLang.rfactory F) (callEntryStore p i o)
@@ -1878,7 +1892,7 @@ private theorem call_cmd_errArm [InterpLangBool P] (obs : InterpObs P m)
   cases d
   · simp only [stepCmd, obs.run_throw, Prod.mk.injEq] at h
     exact ⟨[], .clean (.refl _), by rw [← h.2]; rfl⟩
-  rename_i n args md d
+  rename_i n tyArgs args md d
   have ih := ih d
   have A := fun k => call_cmd_arm obs π hprocs hEval (F := F) k d
   repeat' first
@@ -1888,6 +1902,10 @@ private theorem call_cmd_errArm [InterpLangBool P] (obs : InterpObs P m)
   all_goals cases h
   all_goals try exact ⟨[], .clean (.refl _), rfl⟩
   all_goals
+    have hπ := (congrArg (fun o => Option.bind o
+        (ProcedureTypeInstantiation.instantiate · (tyArgs.getD []))) ‹π n = some _›).trans
+      ‹ProcedureTypeInstantiation.instantiate _ (tyArgs.getD []) = some _›
+    change typeInstantiatedCallee π n tyArgs = _ at hπ
     obtain ⟨vi, vo, hreli, hrelo, hE, hen, hdEntry, habsEntry⟩ :=
       callEntry_ok π hprocs hEval hf hd hrf hi ‹_› ‹_› ‹_› ‹_› ‹_›
     rw [hrf] at *
@@ -2049,14 +2067,14 @@ target-reaching event of an `InterruptedSound` certificate lies in its flat oute
     (checks : ListMap String (Check P)) : Prop :=
   ∀ lc ∈ checks.toList, ¬ (target.label = lc.1 ∧ target.md = lc.2.md)
 
-/-- **The target id occurs in no procedure of `π`**: for every `p` that `π`
-    resolves, no pre- or postcondition clause of `p` has `target`'s label and
-    metadata, and no `assert`/`cover` command of `p`'s body does: anywhere in a
-    structured body (nested `block`/`ite`/`loop` bodies included, via `Block.allCmds`),
-    and in any block of a CFG body. -/
+/-- **The target id occurs in no procedure of `π`**: for every `p` a call can run (`π`'s procedure
+    instantiated at the call's type arguments), no pre- or postcondition clause of `p` has
+    `target`'s label and metadata, and no `assert`/`cover` command of `p`'s body does: anywhere in a
+    structured body (nested `block`/`ite`/`loop` bodies included, via `Block.allCmds`), and in any
+    block of a CFG body. -/
 @[expose] def TargetNotInProcs (π : String → Option (Procedure P (CmdExt P) Hdr))
     (target : AssertId P) : Prop :=
-  ∀ n p, π n = some p →
+  ∀ n tyArgs p, typeInstantiatedCallee π n tyArgs = some p →
     (∀ callMd, ChecksAvoidTarget target (checksAtCall callMd p.spec.preconditions)) ∧
     ChecksAvoidTarget target p.spec.postconditions ∧
     (∀ ss, p.body = .structured ss → Block.allCmds (cmdAvoidsTarget target) ss = true) ∧
@@ -2159,11 +2177,12 @@ omit [CallLangWF P] [InterpLang P] in
 private theorem bigStepE_avoid
     (π : String → Option (Procedure P (CmdExt P) Hdr))
     (target : AssertId P) (hπ : TargetNotInProcs π target)
-    {n : String} {p : Procedure P (CmdExt P) Hdr} (hp : π n = some p)
+    {n : String} {tyArgs : Option (List P.Ty)} {p : Procedure P (CmdExt P) Hdr}
+    (hp : typeInstantiatedCallee π n tyArgs = some p)
     {ρ : Env P} {σ' : SemanticStore P} {evs : Trace P}
     (h : BigStepE π p.body ρ σ' evs) :
     ∀ e ∈ evs, targetReachedE target e = false := by
-  obtain ⟨-, -, hs, hc⟩ := hπ n p hp
+  obtain ⟨-, -, hs, hc⟩ := hπ n tyArgs p hp
   revert h
   cases hb : p.body with
   | structured ss =>
@@ -2186,10 +2205,10 @@ private theorem interruptedSound_avoid
     ∀ e ∈ evs, targetReachedE target e = false := by
   induction h with
   | inCallCfg R _ hp hb _ hc =>
-    have hC := (stepCFGStarE_avoid π target hπ hc ((hπ _ _ hp).2.2.2 _ hb)).1
+    have hC := (stepCFGStarE_avoid π target hπ hc ((hπ _ _ _ hp).2.2.2 _ hb)).1
     grind [stepStarE_avoid, defaultAssertEvents_avoid, TargetNotInProcs]
   | inCallCfgCmd R _ hp hb _ hc _ ih =>
-    obtain ⟨hC, hr⟩ := stepCFGStarE_avoid π target hπ hc ((hπ _ _ hp).2.2.2 _ hb)
+    obtain ⟨hC, hr⟩ := stepCFGStarE_avoid π target hπ hc ((hπ _ _ _ hp).2.2.2 _ hb)
     simp only [CFGConfig.allCmds, List.all_cons, Bool.and_eq_true] at hr
     have hI := ih (by simpa [Config.allCmds, Stmt.allCmds] using hr.2.1)
     grind [stepStarE_avoid, defaultAssertEvents_avoid, TargetNotInProcs]
@@ -2219,10 +2238,10 @@ theorem interruptedSound_flatPrefix_of_targetReached
   have hI := fun s e (h : InterruptedSound π s e) => interruptedSound_avoid π target hπ h
   cases h with
   | inCallCfg R _ hp hb _ hc =>
-    have hC := (stepCFGStarE_avoid π target hπ hc ((hπ _ _ hp).2.2.2 _ hb)).1
+    have hC := (stepCFGStarE_avoid π target hπ hc ((hπ _ _ _ hp).2.2.2 _ hb)).1
     grind [stepStarE_avoid, defaultAssertEvents_avoid, TargetNotInProcs]
   | inCallCfgCmd R _ hp hb _ hc hcert =>
-    obtain ⟨hC, hr⟩ := stepCFGStarE_avoid π target hπ hc ((hπ _ _ hp).2.2.2 _ hb)
+    obtain ⟨hC, hr⟩ := stepCFGStarE_avoid π target hπ hc ((hπ _ _ _ hp).2.2.2 _ hb)
     simp only [CFGConfig.allCmds, List.all_cons, Bool.and_eq_true] at hr
     have hD := hI _ _ hcert (by simpa [Config.allCmds, Stmt.allCmds] using hr.2.1)
     grind [stepStarE_avoid, defaultAssertEvents_avoid, TargetNotInProcs]
@@ -2265,15 +2284,15 @@ private theorem interruptedSound_split
   cases h with
   | clean R => exact ⟨_, [], _, R, (List.append_nil _).symm, nofun⟩
   | inCall R _ hp hb _ hc =>
-    have hC := hI _ _ hc (by simpa [Config.allCmds, Stmt.allCmds] using (hπ _ _ hp).2.2.1 _ hb)
+    have hC := hI _ _ hc (by simpa [Config.allCmds, Stmt.allCmds] using (hπ _ _ _ hp).2.2.1 _ hb)
     refine ⟨_, _, _, R, List.append_assoc .., ?_⟩
     grind [defaultAssertEvents_avoid, TargetNotInProcs]
   | inCallCfg R _ hp hb _ hc =>
-    have hC := (stepCFGStarE_avoid π target hπ hc ((hπ _ _ hp).2.2.2 _ hb)).1
+    have hC := (stepCFGStarE_avoid π target hπ hc ((hπ _ _ _ hp).2.2.2 _ hb)).1
     refine ⟨_, _, _, R, List.append_assoc .., ?_⟩
     grind [defaultAssertEvents_avoid, TargetNotInProcs]
   | inCallCfgCmd R _ hp hb _ hc hcert =>
-    obtain ⟨hC, hr⟩ := stepCFGStarE_avoid π target hπ hc ((hπ _ _ hp).2.2.2 _ hb)
+    obtain ⟨hC, hr⟩ := stepCFGStarE_avoid π target hπ hc ((hπ _ _ _ hp).2.2.2 _ hb)
     simp only [CFGConfig.allCmds, List.all_cons, Bool.and_eq_true] at hr
     have hD := hI _ _ hcert (by simpa [Config.allCmds, Stmt.allCmds] using hr.2.1)
     refine ⟨_, _, _, R, by simp only [List.append_assoc]; rfl, ?_⟩
@@ -2284,10 +2303,10 @@ private theorem interruptedSound_split
     grind [defaultAssertEvents_avoid, TargetNotInProcs]
   | preThrow R _ hp _ hpre =>
     refine ⟨_, _, _, R, rfl, fun e he => ?_⟩
-    exact defaultAssertEvents_avoid _ _ _ _ ((hπ _ _ hp).1 _) e (hpre.subset he)
+    exact defaultAssertEvents_avoid _ _ _ _ ((hπ _ _ _ hp).1 _) e (hpre.subset he)
   | postThrow R _ hp _ hB hpost =>
     have hC := bigStepE_avoid π target hπ hp hB
-    have hQ := fun e he => defaultAssertEvents_avoid _ _ _ _ (hπ _ _ hp).2.1 e (hpost.subset he)
+    have hQ := fun e he => defaultAssertEvents_avoid _ _ _ _ (hπ _ _ _ hp).2.1 e (hpost.subset he)
     refine ⟨_, _, _, R, by simp only [List.append_assoc]; rfl, ?_⟩
     grind [defaultAssertEvents_avoid, TargetNotInProcs]
 

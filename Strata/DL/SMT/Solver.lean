@@ -7,6 +7,7 @@ module
 
 public import Strata.DL.SMT.Term
 public import Strata.DL.SMT.StringLit
+public import Strata.DL.SMT.VerdictReader
 import Strata.DL.SMT.Symbol
 import Strata.DL.SMT.DDMTransform.Translate
 import Strata.Languages.Core.Options
@@ -27,13 +28,6 @@ works purely with `Term` values and delegates string rendering to the Solver via
 namespace Strata.SMT
 
 public section
-
-inductive Decision where
-  | sat
-  | unsat
-  | unknown
-  | timeout
-deriving DecidableEq, Repr
 
 /--
  An SMT-LIB solver process wrapper.
@@ -365,36 +359,26 @@ private def readlnD (dflt : String) : SolverM String := do
   | .some stdout => stdout.getLine
   | .none        => pure dflt
 
+/-- Read the answer to the `check-sat` just sent and, after a `sat` or `unknown`, ask for the
+    values of `vars`. -/
+private def readCheckSatAnswer (vars : List String) : SolverM Decision := do
+  let result := (← readlnD "unknown").trimAscii.toString
+  match decodeVerdict result.toList with
+  | some .unsat => return .unsat
+  | some d =>
+    if !vars.isEmpty then
+      getValue vars
+    return d
+  | none => throw (IO.userError s!"Unrecognized solver output: {result}")
+
 def checkSat (vars : List String) : SolverM Decision := do
   emitln "(check-sat)"
-  let result := (← readlnD "unknown").trimAscii.toString
-  match result with
-  | "sat"     =>
-    if !vars.isEmpty then
-      getValue vars
-    return Decision.sat
-  | "unsat"   => return Decision.unsat
-  | "unknown" =>
-    if !vars.isEmpty then
-      getValue vars
-    return Decision.unknown
-  | other     => throw (IO.userError s!"Unrecognized solver output: {other}")
+  readCheckSatAnswer vars
 
 def checkSatAssuming (assumptions : List String) (vars : List String) : SolverM Decision := do
   let assumptionsStr := String.intercalate " " assumptions
   emitln s!"(check-sat-assuming ({assumptionsStr}))"
-  let result := (← readlnD "unknown").trimAscii.toString
-  match result with
-  | "sat"     =>
-    if !vars.isEmpty then
-      getValue vars
-    return Decision.sat
-  | "unsat"   => return Decision.unsat
-  | "unknown" =>
-    if !vars.isEmpty then
-      getValue vars
-    return Decision.unknown
-  | other     => throw (IO.userError s!"Unrecognized solver output: {other}")
+  readCheckSatAnswer vars
 
 def reset : SolverM Unit :=
   emitln "(reset)"

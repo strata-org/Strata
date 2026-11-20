@@ -23,7 +23,8 @@ the obligation program or a Boolean literal.
   without output (a copy); a literal is recorded, for folding, and defined by a fresh `init`,
   the name obligations read; any other value, a variable without that annotation included, is
   defined by a fresh `init`.
-* `assume a`: dropped when `a` folds to `true`.
+* `assume a`: dropped when `a` folds to `true` and its label is not one the language keeps
+  (`WPOps.keepsTrueAssume`).
 * `assert`/`cover`: the obligation on the current names, unfolded (its condition is the guarded
   condition under a substitution of variables for variables, `oblSubS`).  The output has an
   `init` only where the input has an `init` or a `set`, so only obligations follow an `assert`
@@ -243,7 +244,7 @@ abbrev SM (P : PureExpr) [DecidableEq P.Ident] [BEq P.Ident] [LawfulBEq P.Ident]
     | .cmd (.cmd (.assume l a md)) => do
       let a' := foldE (← get).ρ a
       let rest' ← ssaList rest
-      if WPOps.boolLit? a' == some true then pure rest'
+      if WPOps.boolLit? a' == some true && !WPOps.keepsTrueAssume (P := P) l then pure rest'
       else pure (.cmd (.cmd (.assume l a' md)) :: rest')
     | .cmd (.cmd (.assert l e md)) | .cmd (.cmd (.cover l e md)) => do
       let ρ := (← get).ρ

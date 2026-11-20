@@ -7,6 +7,7 @@ module
 
 public import Strata.Cli.Framework
 public import Strata.Languages.Core.Verifier
+import Std.Sync.Mutex
 
 /-! # Verify-options flag parsing
 
@@ -63,6 +64,17 @@ def verifyOptionsFlags : List Flag := [
     takesArg := .arg "dir" },
   { name := "no-solve",
     help := "Generate SMT-Lib files but do not invoke the solver." },
+  { name := "lean-directory",
+    help := "Store in <dir>, as Lean theorems with an open proof, the validity checks the \
+             solver leaves undecided (unknown or timeout). Results are unchanged. What became \
+             of each check is appended to <dir>/export.log, or printed on stderr when it \
+             cannot be. docs/LeanExport.md says which checks are never exported.",
+    takesArg := .arg "dir" },
+  { name := "lean-scope",
+    help := s!"Which validity checks --lean-directory stores, by the solver's answer: \
+              {Core.LeanExport.Scope.options}. Default: 'undecided'. 'all' also works with \
+              --no-solve.",
+    takesArg := .arg "scope" },
   { name := "stop-on-first-error",
     help := "Exit after the first verification error." },
   { name := "use-array-theory",
@@ -296,7 +308,51 @@ def parseVerifyOptions (pflags : ParsedFlags)
         exitFailure "--keep-all-files must be a non-empty directory."
       else
         pure (some s!"{dir}/{keepAllFilesBaseName inputFile}")
+  -- `--lean-directory <dir>`: each validity check in scope is also written as a Lean theorem
+  -- file. What became of each check is appended to `<dir>/export.log`, one line per check; a
+  -- file that cannot be written is reported on stderr as well, and so is a line that cannot be
+  -- appended to the log.
+  let scope? ← (pflags.getString "lean-scope").mapM fun s =>
+    match Core.LeanExport.Scope.ofString? s with
+    | some scope => pure scope
+    | none => exitFailure s!"Invalid lean-scope: '{s}'. Must be {Core.LeanExport.Scope.options}."
+  let leanExport ← match pflags.getString "lean-directory", base.leanExport with
+    -- The flags replace an export the preset sets.
+    | some dir, _ =>
+      if dir.isEmpty then
+        exitFailure "--lean-directory must be a non-empty directory."
+      -- The workers of a run report concurrently; the lock keeps their lines apart.
+      let lock ← Std.Mutex.new ()
+      let observe (event : Core.LeanExport.Event) : IO Unit := do
+        let outcome := match event.stage, event.file with
+          | .kept, some file => s!"kept existing {file}"
+          | _, some file => s!"wrote {file}"
+          | stage, none => s!"no file ({stage}): {event.diagnostic}"
+        -- One line per check, whatever its label and diagnostic contain.
+        let line := s!"{event.label}: {outcome}".map fun c =>
+          if c == '\n' || c == '\r' then ' ' else c
+        let appended ← lock.atomically do
+          try
+            IO.FS.createDirAll dir
+            IO.FS.withFile (System.FilePath.mk dir / "export.log") .append fun h => do
+              -- Runs that share the directory append to one log: the file lock keeps their
+              -- lines apart, and the flush makes a failed write an error here.
+              try h.lock catch _ => pure ()
+              h.putStrLn line
+              h.flush
+            pure true
+          catch _ => pure false
+        if event.stage == .writeFailure || !appended then
+          IO.eprintln
+            s!"Lean export: {line}{if appended then "" else " (not appended to export.log)"}"
+      pure (some { directory := dir, scope := scope?.getD .undecided, observe })
+    | none, some preset => pure (some { preset with scope := scope?.getD preset.scope })
+    | none, none =>
+      if scope?.isSome then
+        exitFailure "--lean-scope requires --lean-directory to specify where Lean files are stored."
+      pure none
   let options := { base with
+    leanExport,
     verbose := if pflags.getBool "verbose" then .normal
               else if pflags.getBool "quiet" then .quiet
               else base.verbose,

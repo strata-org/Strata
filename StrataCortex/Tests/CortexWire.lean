@@ -168,6 +168,7 @@ meta def helperProgram : Wire.Program :=
 /--
 info: 62: no int overflow on '+' does not hold
 72: uncaught exception 'Arith' is not thrown does not hold
+stopped: 'overflows': assertion does not hold, at a check with no source location
 -/
 #guard_msgs in
 #eval interpret helperProgram
@@ -177,6 +178,53 @@ info: Core type checking succeeded.
 -/
 #guard_msgs in
 #eval typeCheck helperProgram
+
+/-- A procedure without inputs or outputs at `source`, whose one block runs `cmds`: an entry unless `entry := false`. -/
+meta def proc (name : String) (source : FileRange) (cmds : List Cmd) (entry := true) : Wire.Procedure :=
+  { name, inputs := [], outputs := [], throws := none, requires := [], entry, source,
+    body := some { entry := "b0", handlers := [], blocks := [blk "b0" cmds (.finish source)] } }
+
+/-- Reads a field through a variable that refers to no object, at `r`. -/
+meta def readsNoObject (r : FileRange) : List Cmd :=
+  [.init "x" (.named "Box") none r, .init "t" i32 none r, .readField "t" (.var "x") "Box" "v" r]
+
+/-- An interpreter error is also reported where it happened: at the command or transfer that raised it (`deref`,
+`branchOnInt`), in a callee too (`viaCallee`), or, when that command has no source location, at the first located call
+on the way out (`viaForwarder`). A failed check (`unlocated`) or an uncaught exception (`throwsNowhere`) without a
+source location is never dropped, which would end the run with no diagnostic, as a pass: it ends the entry as an
+error, once however often it fails. -/
+meta def stopsProgram : Wire.Program :=
+  { composites := [{ name := "Box", extending := [], fields := [{ name := "v", ty := i32 }] },
+                   { name := "Exn", extending := [], fields := [] }],
+    constrained := [int32],
+    procedures := [
+      proc "deref" (at_ 70) (readsNoObject (at_ 73)),
+      proc "derefAt" (at_ 76) (entry := false) (readsNoObject (at_ 77)),
+      proc "viaCallee" (at_ 78) [.call [] "derefAt" [] (at_ 79)],
+      { name := "branchOnInt", inputs := [], outputs := [], throws := none, requires := [], entry := true,
+        source := at_ 86, body := some { entry := "b0", handlers := [],
+                                         blocks := [blk "b0" [] (.condGoto (.int 1) "b0" "b0" (at_ 87))] } },
+      proc "unlocated" (at_ 75)
+        [.assert "u1" (.eq (.int 1) (.int 2)) none noLoc, .assert "u2" (.eq (.int 1) (.int 2)) none noLoc],
+      proc "throwsNowhere" (at_ 88)
+        [.init "e" (.named "Exn") none (at_ 89), .new "e" "Exn" (at_ 89), .throw (.var "e") none noLoc],
+      proc "fwd" noLoc (entry := false) (readsNoObject noLoc),
+      proc "viaForwarder" (at_ 91) [.call [] "fwd" [] (at_ 92)]] }
+
+/--
+info: 73: the interpreter fails here: not a reference
+77: the interpreter fails here: not a reference
+87: the interpreter fails here: a branch condition was not a Boolean
+92: the interpreter fails here: not a reference
+stopped: 'deref': not a reference
+stopped: 'viaCallee': not a reference
+stopped: 'branchOnInt': a branch condition was not a Boolean
+stopped: 'unlocated': assertion does not hold, at a check with no source location
+stopped: 'throwsNowhere': uncaught exception 'Exn' is not thrown does not hold, at a check with no source location
+stopped: 'viaForwarder': not a reference
+-/
+#guard_msgs in
+#eval interpret stopsProgram
 
 meta def arityCaller (lhs : List String) (args : List Wire.Expr) : Wire.Program :=
   { helperProgram with procedures := helperProgram.procedures.take 1 ++
