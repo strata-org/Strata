@@ -1210,6 +1210,7 @@ private theorem copyCfg_gate {n : String} {T : Lambda.LMonoTy} {fac : Core.Expre
     cases hk
   reservedFresh := by intro _ _ _ _ p hp; simp [testParams] at hp
   factoryDeclared := fun _ _ => rfl
+  runtimeFactoryDeclared := fun _ _ => rfl
   initTypesInhabited := fun ty hty => by
     rw [show Imperative.DetCFG.initTypes (copyCfg n T) = [] from rfl] at hty
     cases hty

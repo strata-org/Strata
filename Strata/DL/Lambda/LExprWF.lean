@@ -732,6 +732,11 @@ end LExpr
     Prop :=
   ∀ x ty, (x, ty) ∈ LExpr.freeVars e → S x
 
+/-- Every operator of `e` satisfies `S`. -/
+@[expose] def LExpr.OpsIn {T : LExprParams} (S : T.Identifier → Prop) (e : LExpr T.mono) :
+    Prop :=
+  ∀ o ∈ LExpr.getOps e, S o
+
 /-- Apply a function to every user-provided type annotation in an expression. -/
 def mapExprTys {T : LExprParams} (f : LMonoTy → LMonoTy)
     (e : LExpr T.mono) : LExpr T.mono :=

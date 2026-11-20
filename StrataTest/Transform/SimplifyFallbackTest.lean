@@ -37,31 +37,29 @@ def body : List Statement :=
 
 -- Simplify expands the call, which brings in `ghost`.
 /--
-info: (some [assert [a]: ghost(m) == m;
+info: [assert [a]: ghost(m) == m;
 
  -- Errors encountered during conversion:
  Unsupported construct in handleUnaryOps: unknown operation, rendering as generic call: ghost
  Context: Global scope:
-   freeVars: [m]])
+   freeVars: [m]]
 -/
 #guard_msgs (whitespace := lax) in
-#eval (simplifyBody (Ctx.ofFactory factory []) [] {} body).map (·.map Std.format)
+#eval (sweptBody (Ctx.ofFactory factory []) default body).map Std.format
 
 -- The check fails on that output, so the installed body is the original.
-#guard !gateOK factory body
-  (dropDeadDefs factory (Defined.ofParams [] (simpStmts (Ctx.ofFactory factory []) body).1) {}
-    (simpStmts (Ctx.ofFactory factory []) body).1)
+#guard !gateOK factory body (sweptBody (Ctx.ofFactory factory []) default body)
 
 /--
-info: (some [assert [a]: wrap(m) == m;
+info: [assert [a]: wrap(m) == m;
 
  -- Errors encountered during conversion:
  Unsupported construct in handleUnaryOps: unknown operation, rendering as generic call: wrap
  Context: Global scope:
-   freeVars: [m]])
+   freeVars: [m]]
 -/
 #guard_msgs (whitespace := lax) in
-#eval (simplifyBodyChecked (Ctx.ofFactory factory []) [] {} body).map (·.map Std.format)
+#eval (checkedBody (Ctx.ofFactory factory []) default body).map Std.format
 
 /-! ## The annotation check
 

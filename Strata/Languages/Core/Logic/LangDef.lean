@@ -81,6 +81,11 @@ structure InitEnvWF (params : InitEnvWFParams)
   defUseOk : Stmt.defUseWellFormed (fun n => (ρ.store n).isSome) params.declaredFuncs s = Bool.true
   factoryDeclared : ∀ s, Core.isNameInFactory s = Bool.true →
     params.declaredFuncs ⟨s, ()⟩ = Bool.true
+  /-- Every function of the runtime factory is among the declared functions, so a pass may
+      write a call to any of them (inlining a function body, for instance) and keep the
+      body's operators declared. -/
+  runtimeFactoryDeclared : ∀ f : Expression.Ident, f.name ∈ ρ.factory.factory →
+    params.declaredFuncs f = Bool.true
   /-- Every init-type the statement declares has a value witness in `ρ`'s factory. -/
   initTypesInhabited : Stmt.InitTypesInhabited (P := Expression) (C := Command) ρ.factory s
   /-- The type annotations on the statement's free-variable occurrences agree with the types
@@ -109,6 +114,10 @@ structure BlockInitEnvWF (params : InitEnvWFParams)
       (P := Expression) (CmdT := Command) params bss ρ where
   factoryDeclared : ∀ s, Core.isNameInFactory s = Bool.true →
     params.declaredFuncs ⟨s, ()⟩ = Bool.true
+  /-- Every function of the runtime factory is among the declared functions (see
+      `InitEnvWF.runtimeFactoryDeclared`). -/
+  runtimeFactoryDeclared : ∀ f : Expression.Ident, f.name ∈ ρ.factory.factory →
+    params.declaredFuncs f = Bool.true
   /-- Every loop measure of the block has the integer type under the types its own
       annotations give its free variables (see `InitEnvWF.measuresTyped`). -/
   measuresTyped : ∀ m ∈ Block.measures bss,
@@ -126,6 +135,10 @@ structure CFGInitEnvWF (params : InitEnvWFParams)
   /-- Every builtin referenced by the CFG is included among the declared functions. -/
   factoryDeclared : ∀ s, Core.isNameInFactory s = Bool.true →
     params.declaredFuncs ⟨s, ()⟩ = Bool.true
+  /-- Every function of the runtime factory is among the declared functions (see
+      `InitEnvWF.runtimeFactoryDeclared`). -/
+  runtimeFactoryDeclared : ∀ f : Expression.Ident, f.name ∈ ρ.factory.factory →
+    params.declaredFuncs f = Bool.true
 
 /-! ## Core event-trace language bundles -/
 

@@ -87,8 +87,9 @@ import Strata.Transform.Simplify.StmtSim
 import Strata.Transform.Simplify.SimpRun
 import Strata.Transform.Simplify.SweepRun
 import Strata.Transform.Simplify.Compose
-import Strata.Transform.Simplify.TargetGate
-import Strata.Transform.Simplify.LawsFold
+import Strata.Transform.Simplify.SimpWF
+import Strata.Transform.Simplify.OutputGate
+import Strata.Transform.Simplify.EvalSoundFold
 import Strata.Transform.SimplifyCorrect
 import Strata.Transform.RecursiveFunctionAxioms
 import Strata.Transform.SpecHoareConnection

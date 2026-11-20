@@ -553,6 +553,7 @@ private theorem xFalseEnv_blockWF (model : Lambda.Interp Core.Factory) :
       rw [hdef]
       native_decide)
     (by intro nm _; rfl)
+    (by intro f _; rfl)
     (by
       intro ty hty
       rw [show Block.initTypes (P := Core.Expression) (C := Core.Command)

@@ -412,6 +412,7 @@ theorem ssaEntry_blockInitEnvWF {params : InitEnvWFParams}
            exitsNotReserved := by simp [Imperative.Block.labels_of_treeForm o1]
            defUseOk := d1
            factoryDeclared := hwf.factoryDeclared
+           runtimeFactoryDeclared := hF ▸ hwf.runtimeFactoryDeclared
            initTypesInhabited := o4
            fvarTypesOk := hty
            measuresTyped := by simp [Imperative.Block.measures_of_treeForm o1] }

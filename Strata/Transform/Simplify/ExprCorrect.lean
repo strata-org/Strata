@@ -30,6 +30,8 @@ procedure's factory gives (`Interp.withoutInline`).
 * `simplifyExpr_denoteEval`: the same under Core's evaluator. In a store that binds every
   variable the context types, simplifying an annotated expression leaves its value
   unchanged. The statement-level proofs use this form.
+* `simplifyExpr_inv`: a property of expressions that every reduction under the fold factory
+  keeps, in an environment holding some of the recorded values, simplifying keeps.
 * `simplifyExpr_namesIn`: simplifying introduces no free variable beyond those of the
   context's recorded values.
 * `CtxSound`: what that assumes of a context. Its fold factory is the factory with the
@@ -163,7 +165,7 @@ structure CtxSound (ctx : Ctx) (tf : @Lambda.TypeFactory CoreLParams.IDMeta)
   factories : ctx.FactoriesOK
   envWF : Lambda.Env.StepWF ctx.foldFactory (valuesEnv ctx)
   facWF : Lambda.Factory.WF ctx.foldFactory tf
-  fWF : Lambda.Factory.StepWF ctx.foldFactory envWF.typed.tyMap
+  fWF : Lambda.Factory.StepWFOn ctx.foldFactory envWF.typed.tyMap
   fic : Lambda.Factory.InterpConsistent tcInterp opInterp ctx.foldFactory
   cic : Lambda.ConstrInterpConsistent tcInterp opInterp ctx.foldFactory
   envIC : Lambda.Env.InterpConsistentAt tcInterp opInterp fvarVal vt (valuesEnv ctx)
@@ -209,6 +211,33 @@ private theorem Env.oneValue_sub {x : CoreIdent} {v : Expression.Expr}
     subst hyx'; exact hx
   · cases h
 
+/-- **What every reduction keeps, `simplifyExpr` keeps.** A property of expressions that every
+    reduction under the fold factory keeps, in an environment holding some of the recorded
+    values, holds of the simplified expression when it holds of the expression: each stage of
+    `simplifyExpr` is such a reduction. -/
+theorem simplifyExpr_inv (hok : ctx.FactoriesOK) {Q : Expression.Expr → Prop}
+    (hQ : ∀ {env : Lambda.Env CoreLParams} {e e' : Expression.Expr},
+      Env.Sub env (valuesEnv ctx) → ReachesModMeta ctx.foldFactory env e e' → Q e → Q e')
+    {e : Expression.Expr} (he : Q e) : Q (simplifyExpr ctx e) := by
+  have hgo : ∀ d fuel tried todo next acc, Q acc →
+      Q (trySubstWide.go ctx d fuel tried todo next acc) := by
+    intro d fuel tried todo next acc
+    fun_induction trySubstWide.go ctx d fuel tried todo next acc
+    all_goals first
+      | exact id
+      | assumption
+      | (intro hacc; rename_i ih
+         simpa only [List.unattach_reverse, List.unattach_attach] using ih hacc)
+      | (intro hacc; rename_i ih
+         exact ih (hQ (Env.oneValue_sub (by assumption)) (fold_reaches hok _ _ _) hacc))
+      | (intro hacc; rename_i ih; exact ih hacc)
+  unfold simplifyExpr
+  have hsimp := fun x => tryExpandRecursively_reaches _ ctx rfl hok x
+  refine hQ Env.noValues_sub ((hsimp _).trans (fold_reaches hok _ _ _)) ?_
+  unfold trySubstWide
+  exact hgo _ _ _ _ _ _ (hQ Env.smallValues_sub (fold_reaches hok _ _ _)
+    (hQ Env.noValues_sub (hsimp e) he))
+
 /-- `trySubstWide` preserves meaning: each substitution it keeps is a reduction in the
 environment holding the one value it substitutes. -/
 private theorem trySubstWide_preserves (h : CtxSound ctx tf tcInterp opInterp fvarVal vt)
@@ -236,36 +265,11 @@ private theorem CtxSound.namesIn (h : CtxSound ctx tf tcInterp opInterp fvarVal 
     e'.NamesIn (fun y => (Map.find? h.envWF.typed.tyMap y).isSome) :=
   hr.namesIn h.factories.2 (fun x r hx => h.cover x r (hsub x r hx)) he
 
-/-- `trySubstWide` introduces no free variable beyond those of the recorded values. -/
-private theorem trySubstWide_namesIn (h : CtxSound ctx tf tcInterp opInterp fvarVal vt)
-    {e : Expression.Expr} (he : e.NamesIn (fun y => (Map.find? h.envWF.typed.tyMap y).isSome)) :
-    (trySubstWide ctx e).NamesIn (fun y => (Map.find? h.envWF.typed.tyMap y).isSome) := by
-  suffices hgo : ∀ d fuel tried todo next acc,
-      acc.NamesIn (fun y => (Map.find? h.envWF.typed.tyMap y).isSome) →
-      (trySubstWide.go ctx d fuel tried todo next acc).NamesIn
-        (fun y => (Map.find? h.envWF.typed.tyMap y).isSome) by
-    unfold trySubstWide; exact hgo _ _ _ _ _ _ he
-  intro d fuel tried todo next acc
-  fun_induction trySubstWide.go ctx d fuel tried todo next acc
-  all_goals first
-    | exact id
-    | assumption
-    | (intro hacc; rename_i ih
-       simpa only [List.unattach_reverse, List.unattach_attach] using ih hacc)
-    | (intro hacc; rename_i ih
-       exact ih (h.namesIn (Env.oneValue_sub (by assumption)) (fold_reaches h.factories _ _ _)
-         hacc))
-    | (intro hacc; rename_i ih; exact ih hacc)
-
 /-- `simplifyExpr` introduces no free variable beyond those of the recorded values. -/
 theorem simplifyExpr_namesIn (h : CtxSound ctx tf tcInterp opInterp fvarVal vt)
     {e : Expression.Expr} (he : e.NamesIn (fun y => (Map.find? h.envWF.typed.tyMap y).isSome)) :
-    (simplifyExpr ctx e).NamesIn (fun y => (Map.find? h.envWF.typed.tyMap y).isSome) := by
-  unfold simplifyExpr
-  have hsimp := fun x => tryExpandRecursively_reaches _ ctx rfl h.factories x
-  exact h.namesIn Env.noValues_sub ((hsimp _).trans (fold_reaches h.factories _ _ _))
-    (trySubstWide_namesIn h (h.namesIn Env.smallValues_sub (fold_reaches h.factories _ _ _)
-      (h.namesIn Env.noValues_sub (hsimp e) he)))
+    (simplifyExpr ctx e).NamesIn (fun y => (Map.find? h.envWF.typed.tyMap y).isSome) :=
+  simplifyExpr_inv h.factories (fun hsub hr hq => h.namesIn hsub hr hq) he
 
 /-- **Expression soundness.** Simplifying an expression in a sound context preserves its
 meaning: the result is well-formed when the input is, has the input's types, and denotes
