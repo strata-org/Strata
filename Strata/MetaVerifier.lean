@@ -6,6 +6,7 @@
 module
 
 import Strata.Languages.Core.ObligationExtraction
+import Strata.Languages.Core.ObligationExtractionProps
 import Strata.Transform.InsertLoopInvariantAsserts
 import Strata.Transform.LoopElim
 import Strata.Transform.PrecondElim

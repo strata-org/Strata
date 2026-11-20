@@ -1518,3 +1518,22 @@ toCoreProofObligationProgram: procedure '_' has a CFG body; symbolic evaluation 
 #guard_msgs in
 #eval IO.println (runAsserter (symbolicEvalPipelinePhase) mixedProgram)
 
+/-! Linked extraction rejects a lemma declaration: symbolic evaluation turns lemmas into
+obligations, so a lemma reaching extraction would otherwise go unchecked. -/
+
+/-- Render a linked-extraction outcome. -/
+private def runLinkedExtraction (p : Program) : String :=
+  match Core.ObligationExtraction.extractLinkedObligations p with
+  | .ok obs => s!"extracted {obs.size}"
+  | .error e => s!"rejected: {e}"
+
+/-- info: rejected: ObligationExtraction: lemma 'l' reached linked obligation extraction; lemmas must be turned into obligations before extraction -/
+#guard_msgs in
+#eval IO.println (runLinkedExtraction { decls := [.lemma { name := "l", e := trueExpr } default] })
+
+/-! Linked extraction rejects a procedure that still carries a contract, as `extractObligations`
+does. -/
+
+/-- info: rejected: ObligationExtraction: procedure 'p' still carries a requires or ensures clause; obligations can only be extracted from procedures without a contract -/
+#guard_msgs in
+#eval IO.println (runLinkedExtraction withEnsures)

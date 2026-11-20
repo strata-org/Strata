@@ -1191,11 +1191,29 @@ def smtTermIsReal : Strata.SMT.Term → Bool
   | .prim (.real _) => true
   | _               => false
 
+/-- The rational a model term spells, if it is one: `(/ p q)` over numeric literals `p`
+    and `q ≠ 0` (how a solver prints a non-integral real), or `(- r)` over such a
+    rational. -/
+def smtTermRational? : Strata.SMT.Term → Option Rat
+  | .app (.core (.uf uf)) [p, q] _ =>
+    if uf.id != "/" then none else do
+      let q ← literal q
+      if q == 0 then none else return (← literal p) / q
+  | .app (.core (.uf uf)) [r] _ => if uf.id == "-" then (smtTermRational? r).map (- ·) else none
+  | _ => none
+where
+  /-- The value of a numeric literal. -/
+  literal : Strata.SMT.Term → Option Rat
+    | .prim (.int i) => some i
+    | .prim (.real d) => some d.toRat
+    | _ => none
+
 /--
 Convert an `SMT.Term` back to a Core `LExpr` (best-effort, partial inverse of `toSMTTerm`).
 
 Handles:
 - Primitives: bool, int, real, bitvec, string
+- Rationals `(/ p q)` (`smtTermRational?`), as real literals
 - UF applications (free variables, constructors, uninterpreted functions)
 - Datatype constructors/selectors/testers
 
@@ -1224,12 +1242,16 @@ def smtTermToLExpr (t : Strata.SMT.Term)
     else
       .fvar smtModelLoc v.id none
   | .app (.core (.uf uf)) args _retTy =>
+    match smtTermRational? t with
+    | some r => .rationalConst smtModelLoc r
+    | none =>
     -- Constructor names use `.op` so the formatter can distinguish them
     -- from plain variables (e.g., `Nil` constructor must not be .fvar).
     --
-    -- The model parser represents unary `-` as a UF application, but Core has
-    -- no `-` production.  Map it to `int.neg`/`real.neg` so models print
-    -- re-parseable syntax.
+    -- The model parser folds `(- <literal>)` into a negative literal, so a
+    -- unary `-` reaches here only over a non-literal argument. Core has no `-`
+    -- production, so map it to `Int.Neg`/`Real.Neg` to keep models
+    -- re-parseable; such a term is not a value (see `smtTermIsValue`).
     let fnExpr : LExpr CoreLParams.mono :=
       match uf.id, args with
       | "-", [arg] => .op smtModelLoc (if smtTermIsReal arg then "Real.Neg" else "Int.Neg") none
@@ -1262,6 +1284,38 @@ Extract the set of datatype constructor names from an `SMT.Context`.
 def SMT.Context.getConstructorNames (ctx : SMT.Context) : Std.HashSet String :=
   ctx.datatypeFuns.fold (init := {}) fun acc name (kind, _) =>
     if kind == .constructor then acc.insert name else acc
+
+/--
+Decide whether an `SMT.Term` from a solver model is a *recognized value* — a
+term whose lift to `LExpr` (via `smtTermToLExpr`) lands on an interpretable
+value rather than one of that lift's lossy catch-alls.
+
+`true` exactly when the term is either
+- a primitive value (`.prim`: bool/int/real/bitvec/string), or
+- a rational (`smtTermRational?`), or
+- a datatype constructor application: `.app (.core (.uf {id})) args` with
+  `id ∈ constructorNames` and every argument itself a value.
+
+Everything else is `false`: a real (uninterpreted-function) value, an
+uninterpreted-sort element, an array value, a `.some`/`.none` option wrapper, a
+`.quant`, a `.var` (even a zero-arg constructor arrives as `.var`; the model
+parser used here does not emit `.var`, so this is conservatively non-value), and
+any UF application whose head is not a known constructor or whose arguments are
+not all values.
+
+This is the value discriminator the VC check uses to decide which model
+bindings may enter the evaluation environment; it mirrors, term-for-term, where
+`smtTermToLExpr` produces something the evaluator cannot soundly consume. -/
+def smtTermIsValue (t : Strata.SMT.Term)
+    (constructorNames : Std.HashSet String := {}) : Bool :=
+  match t with
+  | .prim _ => true
+  | t@(.app (.core (.uf uf)) args _retTy) =>
+    (smtTermRational? t).isSome || constructorNames.contains uf.id &&
+      args.attach.all (fun ⟨a, _⟩ => smtTermIsValue a constructorNames)
+  | _ => false
+termination_by sizeOf t
+decreasing_by all_goals (first | omega | term_by_mem)
 
 /--
 Convert a model map from `SMT.Term` values to `LExpr` values,

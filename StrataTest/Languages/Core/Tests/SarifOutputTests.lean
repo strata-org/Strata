@@ -267,7 +267,8 @@ def makeVCResult (label : String) (outcome : VCOutcome)
     [({ name := "x", metadata := () }, .intConst testLoc 42)]
   let md := makeMetadata "/test/cex.st" 25 3
   let files := makeFilesMap "/test/cex.st"
-  let vcr := makeVCResult "cex_obligation" (mkOutcome .unsat (.sat cex)) md lexprCex
+  let vcr := { makeVCResult "cex_obligation" (mkOutcome .unsat (.sat cex)) md lexprCex with
+    checkModels := (some [], some lexprCex) }
   let sarifResult := vcResultToSarifResult .deductive files vcr
   sarifResult.level = Level.error &&
   (sarifResult.message.text.splitOn "counterexample").length > 1 &&
@@ -278,6 +279,128 @@ def makeVCResult (label : String) (outcome : VCOutcome)
     loc.physicalLocation.region.startLine = 1 &&
     loc.physicalLocation.region.startColumn = 0
   | none => false
+
+-- A result built without per-check models prints the model the validity check's result carries.
+/-- info: "Always false and reachable with counterexample: (x, 42)" -/
+#guard_msgs in
+#eval
+  let cex : List (Core.Expression.Ident × Strata.SMT.Term) :=
+    [({ name := "x", metadata := () }, .prim (.int 42))]
+  let lexprCex : LExprModel := [({ name := "x", metadata := () }, .intConst testLoc 42)]
+  let vcr := makeVCResult "cex_unfilled" (mkOutcome .unsat (.sat cex)) (lexprModel := lexprCex)
+  (vcResultToSarifResult .deductive (makeFilesMap "/test/cex.st") vcr).message.text
+
+-- A producer that filtered every variable out records two empty models: the message prints no
+-- model, not the unfiltered solver model the outcome carries.
+/-- info: "Always false and reachable" -/
+#guard_msgs in
+#eval
+  let cex : List (Core.Expression.Ident × Strata.SMT.Term) :=
+    [({ name := "x@1", metadata := () }, .prim (.int 42))]
+  let vcr := { makeVCResult "cex_filtered" (mkOutcome .unsat (.sat cex)) with
+    checkModels := (some [], some []) }
+  (vcResultToSarifResult .deductive (makeFilesMap "/test/cex.st") vcr).message.text
+
+-- The printed model is the producer's conversion: a nullary constructor prints as the
+-- constructor, whatever the solver's term for it.
+/-- info: "Always false and reachable with counterexample: (c, Red)" -/
+#guard_msgs in
+#eval
+  let cex : List (Core.Expression.Ident × Strata.SMT.Term) :=
+    [({ name := "c", metadata := () }, .var ⟨"Red", .prim .bool⟩)]
+  let lexprCex : LExprModel :=
+    [({ name := "c", metadata := () }, .op testLoc ⟨"Red", ()⟩ none)]
+  let vcr := { makeVCResult "cex_ctor" (mkOutcome .unsat (.sat cex)) (lexprModel := lexprCex) with
+    checkModels := (some [], some lexprCex) }
+  (vcResultToSarifResult .deductive (makeFilesMap "/test/cex.st") vcr).message.text
+
+-- Without per-check models, a `sat`/`sat` result prints each check's own model: the
+-- satisfiability check's as the true model and the validity check's as the false one.
+/-- info: "True or false depending on inputs (true: (x, 1), false: (x, 2))" -/
+#guard_msgs in
+#eval
+  let m1 : List (Core.Expression.Ident × Strata.SMT.Term) :=
+    [({ name := "x", metadata := () }, .prim (.int 1))]
+  let m2 : List (Core.Expression.Ident × Strata.SMT.Term) :=
+    [({ name := "x", metadata := () }, .prim (.int 2))]
+  let lexprCex : LExprModel := [({ name := "x", metadata := () }, .intConst testLoc 1)]
+  let vcr := makeVCResult "satsat" (mkOutcome (.sat m1) (.sat m2)) (lexprModel := lexprCex)
+  (vcResultToSarifResult .deductive (makeFilesMap "/test/cex.st") vcr).message.text
+
+-- Without per-check models, an empty satisfiability model prints nothing in the true slot and the
+-- validity check's model in the false slot.
+/-- info: "True or false depending on inputs (false: (x, 2))" -/
+#guard_msgs in
+#eval
+  let m2 : List (Core.Expression.Ident × Strata.SMT.Term) :=
+    [({ name := "x", metadata := () }, .prim (.int 2))]
+  let vcr := makeVCResult "emptysat" (mkOutcome (.sat []) (.sat m2))
+  (vcResultToSarifResult .deductive (makeFilesMap "/test/cex.st") vcr).message.text
+
+-- Two results without per-check models for one assertion (one source range), `(unsat, sat a)` and
+-- `(sat b, unsat)`, merge (`VCResults.mergeByAssertion`) into a `sat`/`sat` result that prints `b`
+-- as the true model and `a` as the false one, in either order.
+/-- info: ["True or false depending on inputs (true: (x, 2), false: (x, 1))",
+  "True or false depending on inputs (true: (x, 2), false: (x, 1))"] -/
+#guard_msgs in
+#eval
+  let ma : List (Core.Expression.Ident × Strata.SMT.Term) :=
+    [({ name := "x", metadata := () }, .prim (.int 1))]
+  let mb : List (Core.Expression.Ident × Strata.SMT.Term) :=
+    [({ name := "x", metadata := () }, .prim (.int 2))]
+  let md := makeMetadata "/test/cex.st" 1 0
+  let ra := makeVCResult "merged" (mkOutcome .unsat (.sat ma)) md
+  let rb := makeVCResult "merged" (mkOutcome (.sat mb) .unsat) md
+  [#[ra, rb], #[rb, ra]].flatMap fun rs =>
+    (VCResults.mergeByAssertion rs).toList.map fun r =>
+      (vcResultToSarifResult .deductive (makeFilesMap "/test/cex.st") r).message.text
+
+-- A result with per-check models, `(unsat, sat a)` whose validity model is `y = 3` and lacks
+-- `x`, merges with a result without them, `(sat b, unsat)`: the merge keeps the recorded false
+-- model with its partial marker and prints `b`, the model the satisfiability check carries, as
+-- the true model, in either order.
+/-- info: ["True or false depending on inputs (true: (x, 2), false: (y, 3)) (partial; the false model has no value for x)",
+  "True or false depending on inputs (true: (x, 2), false: (y, 3)) (partial; the false model has no value for x)"] -/
+#guard_msgs in
+#eval
+  let ma : List (Core.Expression.Ident × Strata.SMT.Term) :=
+    [({ name := "y", metadata := () }, .prim (.int 3))]
+  let mb : List (Core.Expression.Ident × Strata.SMT.Term) :=
+    [({ name := "x", metadata := () }, .prim (.int 2))]
+  let la : LExprModel := [({ name := "y", metadata := () }, .intConst testLoc 3)]
+  let md := makeMetadata "/test/cex.st" 1 0
+  let ra := { makeVCResult "mixed" (mkOutcome .unsat (.sat ma)) md with
+    checkModels := (some [], some la), checkModelMissing := ([], ["x"]) }
+  let rb := makeVCResult "mixed" (mkOutcome (.sat mb) .unsat) md
+  [#[ra, rb], #[rb, ra]].flatMap fun rs =>
+    (VCResults.mergeByAssertion rs).toList.map fun r =>
+      (vcResultToSarifResult .deductive (makeFilesMap "/test/cex.st") r).message.text
+
+-- Without per-check models, an `unknown` satisfiability check with a candidate model and a `sat`
+-- validity check print the validity check's model as the counterexample.
+/-- info: "Can be false and is reachable, unknown if always false with counterexample: (x, 2)" -/
+#guard_msgs in
+#eval
+  let m1 : List (Core.Expression.Ident × Strata.SMT.Term) :=
+    [({ name := "x", metadata := () }, .prim (.int 1))]
+  let m2 : List (Core.Expression.Ident × Strata.SMT.Term) :=
+    [({ name := "x", metadata := () }, .prim (.int 2))]
+  let vcr := makeVCResult "unknownsat" (mkOutcome (.unknown (some m1)) (.sat m2))
+  (vcResultToSarifResult .deductive (makeFilesMap "/test/cex.st") vcr).message.text
+
+-- Recorded per-check models print with the partial marker of `checkModelMissing`.
+/-- info: "True or false depending on inputs (true: (x, 1), false: (y, 2)) (partial; the true model has no value for y; the false model has no value for x)" -/
+#guard_msgs in
+#eval
+  let m1 : List (Core.Expression.Ident × Strata.SMT.Term) :=
+    [({ name := "x", metadata := () }, .prim (.int 1))]
+  let m2 : List (Core.Expression.Ident × Strata.SMT.Term) :=
+    [({ name := "y", metadata := () }, .prim (.int 2))]
+  let l1 : LExprModel := [({ name := "x", metadata := () }, .intConst testLoc 1)]
+  let l2 : LExprModel := [({ name := "y", metadata := () }, .intConst testLoc 2)]
+  let vcr := { makeVCResult "partial" (mkOutcome (.sat m1) (.sat m2)) with
+    checkModels := (some l1, some l2), checkModelMissing := (["y"], ["x"]) }
+  (vcResultToSarifResult .deductive (makeFilesMap "/test/cex.st") vcr).message.text
 
 /-! ## JSON Output Tests -/
 

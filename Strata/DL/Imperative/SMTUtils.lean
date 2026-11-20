@@ -211,6 +211,198 @@ def failureOfMessage (detail : String) : SolverError :=
 -- SMTDDM-based parsing
 ---------------------------------------------------------------------
 
+/-- The value and width of an SMT-LIB `#b`/`#x` literal's digits (`binary`: one bit
+    per digit; otherwise hexadecimal: four), or `none` if a digit is out of range. -/
+private def bvLiteralValue (binary : Bool) (digits : List Char) : Option (Nat × Nat) :=
+  let digitVal (c : Char) : Option Nat :=
+    if binary then
+      if c == '0' then some 0 else if c == '1' then some 1 else none
+    else hexDigitValue? c
+  let base := if binary then 2 else 16
+  let bitsPerDigit := if binary then 1 else 4
+  let value := digits.foldlM (init := 0) fun acc c => (digitVal c).map (acc * base + ·)
+  value.map fun v => (v, digits.length * bitsPerDigit)
+
+/-- Where a left-to-right scan of a solver response is: outside string literals and quoted
+    symbols, inside a string literal (`"…"`), or inside a quoted symbol (`|…|`). -/
+inductive ResponseScan where
+  | code
+  | str
+  | quoted
+
+/-- A piece of a solver response: text outside string literals and quoted symbols (`code`), a
+    string literal with its quotes (`str`, in which `""` is an escaped quote), or a quoted
+    symbol with its bars (`quoted`). A response that ends inside a literal ends with a `str` or
+    `quoted` piece that lacks its closing quote or bar. -/
+inductive ResponseSegment where
+  | code (text : String)
+  | str (text : String)
+  | quoted (text : String)
+
+/-- The text of a piece of a solver response. -/
+def ResponseSegment.text : ResponseSegment → String
+  | .code t | .str t | .quoted t => t
+
+/-- Whether a piece of a solver response is outside string literals and quoted symbols. -/
+def ResponseSegment.isCode : ResponseSegment → Bool
+  | .code _ => true
+  | _ => false
+
+/-- The pieces of a solver response, in order: their texts concatenate to the response, and
+    every string literal and quoted symbol is a piece of its own. -/
+def responseSegments (s : String) : List ResponseSegment :=
+  (go .code "" #[] s.toList).toList
+where
+  /-- `out` followed by the pieces of the rest of the response, the scan being at the given
+      `ResponseScan` with the text `acc` of the current piece read so far. -/
+  go : ResponseScan → String → Array ResponseSegment → List Char → Array ResponseSegment
+    | .code, acc, out, [] => out.push (.code acc)
+    | .str, acc, out, [] => out.push (.str acc)
+    | .quoted, acc, out, [] => out.push (.quoted acc)
+    | .str, acc, out, '"' :: '"' :: rest => go .str ((acc.push '"').push '"') out rest
+    | .str, acc, out, '"' :: rest => go .code "" (out.push (.str (acc.push '"'))) rest
+    | .str, acc, out, c :: rest => go .str (acc.push c) out rest
+    | .quoted, acc, out, '|' :: rest => go .code "" (out.push (.quoted (acc.push '|'))) rest
+    | .quoted, acc, out, c :: rest => go .quoted (acc.push c) out rest
+    | .code, acc, out, '"' :: rest => go .str "\"" (out.push (.code acc)) rest
+    | .code, acc, out, '|' :: rest => go .quoted "|" (out.push (.code acc)) rest
+    | .code, acc, out, c :: rest => go .code (acc.push c) out rest
+  termination_by _ _ _ l => l.length
+
+/-- Apply `f` to every piece of a solver response outside string literals and quoted symbols
+    (`responseSegments`), copying string literals and quoted symbols unchanged. -/
+def rewriteResponseCode (f : String → String) (s : String) : String :=
+  (responseSegments s).foldl (init := "") fun acc seg =>
+    acc ++ if seg.isCode then f seg.text else seg.text
+
+/-- The characters of a solver response, each with whether it lies outside string literals and
+    quoted symbols (`responseSegments`). -/
+def responseChars (s : String) : List (Char × Bool) :=
+  (responseSegments s).flatMap fun seg => seg.text.toList.map (·, seg.isCode)
+
+/-- Rewrite every SMT-LIB bitvector literal `#b…`/`#x…` of a solver response into the
+    indexed form `(_ bvV W)` the SMTResponse dialect parses (`#b`/`#x` are not tokens
+    of it). String literals (`"…"`, with `""` as the escaped quote) and quoted symbols
+    (`|…|`) are copied unchanged. This works around the SMT dialect's missing literal syntax
+    (`Strata/DL/SMT/DDMTransform/Parse.lean`, the token list: `<hexadecimal> and <binary> are
+    not available yet`). -/
+def rewriteBVLiterals (s : String) : String :=
+  rewriteResponseCode (go "" ·.toList) s
+where
+  /-- `acc` followed by the rewrite of the rest of a piece outside string literals and quoted
+      symbols. -/
+  go : String → List Char → String
+    | acc, [] => acc
+    | acc, '#' :: k :: rest =>
+      if k == 'b' || k == 'x' then
+        let digits := rest.takeWhile Char.isAlphanum
+        match bvLiteralValue (k == 'b') digits with
+        | some (v, w) =>
+          if digits.isEmpty then go (acc.push '#') (k :: rest)
+          else go (acc ++ s!"(_ bv{v} {w})") (rest.drop digits.length)
+        | none => go (acc.push '#') (k :: rest)
+      else go (acc.push '#') (k :: rest)
+    | acc, c :: rest => go (acc.push c) rest
+  termination_by _ l => l.length
+  decreasing_by all_goals simp only [List.length_cons, List.length_drop] <;> omega
+
+/-- A character that ends a bare symbol of a solver response. -/
+def isResponseDelim (c : Char) : Bool := c == '(' || c == ')' || c == ' ' || c == '\n' ||
+  c == '\t' || c == '\r' || c == '"' || c == '|'
+
+/-- Quote every bare symbol of a solver response that starts with `@` (`@S_0` =>
+    `|@S_0|`). SMT-LIB reserves a leading `@` for solver-invented symbols, which cvc5
+    uses to name the elements of an uninterpreted sort, and the SMTResponse dialect
+    reads `@` only as a reserved word, so a bare one fails to parse and drops the whole
+    model; a quoted one parses as a symbol. A `@` that does not start a symbol (as in
+    `x@1`), string literals and already-quoted symbols are copied unchanged. This works
+    around the SMT dialect's symbol syntax (`Strata/DL/SMT/DDMTransform/Parse.lean`: the
+    `("at", "@")` entry of `specialCharsInSimpleSymbol`, and the `<symbol>` TODO `Support
+    quoted symbols`). -/
+def quoteSolverSymbols (s : String) : String :=
+  rewriteResponseCode (go true "" ·.toList) s
+where
+  /-- `acc` followed by the rewrite of the rest of a piece outside string literals and quoted
+      symbols; the `Bool` says whether the next character begins a token. -/
+  go : Bool → String → List Char → String
+    | _, acc, [] => acc
+    | start, acc, '@' :: rest =>
+      if start then
+        let sym := rest.takeWhile (fun c => !isResponseDelim c)
+        go false ((acc ++ "|@" ++ String.ofList sym).push '|') (rest.drop sym.length)
+      else go false (acc.push '@') rest
+    | _, acc, c :: rest => go (isResponseDelim c) (acc.push c) rest
+  termination_by _ _ l => l.length
+  decreasing_by all_goals simp only [List.length_cons, List.length_drop] <;> omega
+
+/-- Quote every bare `/` token of a solver response (`/` becomes `|/|`). A solver prints a
+    non-integral real as `(/ p q)`, and the SMTResponse dialect does not read `/` as a
+    symbol, so a bare one fails to parse and drops the whole model; a quoted one parses
+    as the symbol `/`. A `/` inside a longer symbol, string literals and quoted symbols
+    are copied unchanged. This works around the SMT dialect's symbol syntax
+    (`Strata/DL/SMT/DDMTransform/Parse.lean`: the `("slash", "/")` entry left out of
+    `specialCharsInSimpleSymbol`). -/
+def quoteDivisionSymbol (s : String) : String :=
+  rewriteResponseCode (go true "" ·.toList) s
+where
+  /-- `acc` followed by the rewrite of the rest of a piece outside string literals and quoted
+      symbols; the `Bool` says whether the next character begins a token. -/
+  go : Bool → String → List Char → String
+    | _, acc, [] => acc
+    | start, acc, '/' :: rest =>
+      if start && rest.head?.all isResponseDelim then go false (acc ++ "|/|") rest
+      else go false (acc.push '/') rest
+    | _, acc, c :: rest => go (isResponseDelim c) (acc.push c) rest
+
+/-- The parenthesized items directly inside the first parenthesized list of a solver
+    response, as strings: `((x 1) (y 2))` becomes `["(x 1)", "(y 2)"]`. Parentheses inside
+    string literals and quoted symbols (`responseChars`) do not count, and everything after
+    the first list is ignored. -/
+def valuationPairStrings (s : String) : List String := Id.run do
+  let mut depth := 0
+  let mut current : List Char := []
+  let mut items : Array String := #[]
+  for (c, code) in responseChars s do
+    let before := depth
+    if code then
+      if c == '(' then depth := depth + 1
+      else if c == ')' then
+        depth := depth - 1
+        if before == 1 then break
+    if before ≥ 2 || depth ≥ 2 then current := c :: current
+    if before ≥ 2 && depth == 1 then
+      items := items.push (String.ofList current.reverse)
+      current := []
+  return items.toList
+
+/-- The lines of a solver response (split at every `\n`), each with the `responseChars` of its
+    characters and whether it starts outside string literals and quoted symbols. -/
+def responseLines (s : String) : List (List (Char × Bool) × Bool) :=
+  let (lines, line, start) := (responseChars s).foldl (init := (#[], #[], true))
+    fun (lines, line, start) (c, code) =>
+      if c == '\n' then (lines.push (line.toList, start), #[], code)
+      else (lines, line.push (c, code), start)
+  (lines.push (line.toList, start)).toList
+
+/-- The lines of a solver response before its first verdict line: a line that is `sat`, `unsat`
+    or `unknown` up to surrounding whitespace and starts outside every parenthesis, string
+    literal and quoted symbol (`responseLines`). This is the part of the output that answers
+    the current check, when the output goes on with the verdict and model of a later check; a
+    line of a model value that reads like a verdict does not end it. -/
+def beforeVerdictLine (s : String) : String := Id.run do
+  let mut depth := 0
+  let mut kept : Array String := #[]
+  for (l, start) in responseLines s do
+    let text := String.ofList (l.map (·.1))
+    let t := text.trimAscii.toString
+    if depth == 0 && start && (t == "sat" || t == "unsat" || t == "unknown") then break
+    kept := kept.push text
+    for (c, code) in l do
+      if code then
+        if c == '(' then depth := depth + 1
+        else if c == ')' then depth := depth - 1
+  return "\n".intercalate kept.toList
+
 /--
 Parse a `(get-value ...)` model response using the SMTResponse DDM dialect.
 Uses `parseCategoryFromDialect` targeting `SMTResponse.GetValueResponse`
@@ -227,32 +419,47 @@ decoded.
 `declaredNames` are the names the program already uses. A symbol the solver
 invented for an element of an uninterpreted sort is renamed if it would collide
 with one of them; see `Strata.SMT.Symbol.ofSolverSymbol`.
+
+A response that does not parse as a whole is parsed one valuation pair at a time
+(`valuationPairStrings`), so a pair the dialect cannot read loses only its own
+binding. Only the text before the next verdict line (`beforeVerdictLine`) is read this way,
+so the model of a later check in the same output is never taken for this one.
 -/
 def parseModelDDMExcept (modelStr : String) (declaredNames : Std.HashSet String := {}) :
     IO (Except String (List (String × Strata.SMT.Term))) := do
-  let inputCtx := StrataDDM.Parser.stringInputContext "solver-model" modelStr
-  let op ←
-    try StrataDDM.Elab.parseCategoryFromDialect
-          Strata.SMTResponseDDM.smtResponseDialects q`SMTResponse.GetValueResponse inputCtx
-    catch e =>
-      return .error s!"the response does not parse as a (get-value ...) response: {e}"
-  match Strata.SMTResponseDDM.GetValueResponse.ofAst op with
-  | .ok (.get_value_response _ vps) =>
-    let pairs ← vps.val.toList.filterMapM fun vp =>
-      match vp with
-      | .valuation_pair _ t1 t2 => do
-        match Strata.SMTResponseDDM.translateFromDDMTermToUntyped t2 declaredNames with
-        | .ok t2' =>
-          return .some (Strata.SMTResponseDDM.formatArg (.op (Strata.SMTResponseDDM.Term.toAst t1)),
-                  t2')
-        | .error _ =>
-          -- The model has an SMT expression (e.g., (lambda ...)) which cannot
-          -- be represented in Strata.SMT.Term. Filter out this variable from
-          -- the model.
-          return .none
-    return .ok pairs
-  | .error _ =>
-    return .error "the response parses but is not a (get-value ...) valuation list"
+  let text := quoteSolverSymbols (quoteDivisionSymbol (rewriteBVLiterals modelStr))
+  match ← parsePairs text with
+  | .ok pairs => return .ok pairs
+  | .error e =>
+    let pairs ← (valuationPairStrings (beforeVerdictLine text)).flatMapM fun pair =>
+      return (← parsePairs s!"({pair})").toOption.getD []
+    return if pairs.isEmpty then .error e else .ok pairs
+where
+  /-- The pairs of one response, or why it does not parse. -/
+  parsePairs (text : String) : IO (Except String (List (String × Strata.SMT.Term))) := do
+    let inputCtx := StrataDDM.Parser.stringInputContext "solver-model" text
+    let op ←
+      try StrataDDM.Elab.parseCategoryFromDialect
+            Strata.SMTResponseDDM.smtResponseDialects q`SMTResponse.GetValueResponse inputCtx
+      catch e =>
+        return .error s!"the response does not parse as a (get-value ...) response: {e}"
+    match Strata.SMTResponseDDM.GetValueResponse.ofAst op with
+    | .ok (.get_value_response _ vps) =>
+      let pairs ← vps.val.toList.filterMapM fun vp =>
+        match vp with
+        | .valuation_pair _ t1 t2 => do
+          match Strata.SMTResponseDDM.translateFromDDMTermToUntyped t2 declaredNames with
+          | .ok t2' =>
+            return .some
+              (Strata.SMTResponseDDM.formatArg (.op (Strata.SMTResponseDDM.Term.toAst t1)), t2')
+          | .error _ =>
+            -- The model has an SMT expression (e.g., (lambda ...)) which cannot
+            -- be represented in Strata.SMT.Term. Filter out this variable from
+            -- the model.
+            return .none
+      return .ok pairs
+    | .error _ =>
+      return .error "the response parses but is not a (get-value ...) valuation list"
 
 /--
 Return true when a solver response carries no `(get-value …)` valuation to parse.
@@ -286,7 +493,9 @@ def modelValues (pairs : List (String × Strata.SMT.Term)) :
 /--
 Process a parsed model (list of key-string / value-Term pairs) against the
 expected variables, matching each variable's SMT-encoded name to its
-value in the model.
+value in the model. A variable with no SMT encoding or no value in `pairs` is
+left out of the result; the other variables keep their values. The result is an
+error only when `vars` is not empty and none of its variables has a value.
 
 The keys of `pairs` are escaped spellings, since the solver echoes what the emitter
 wrote through `Strata.SMT.Symbol.toSMTString`, while the `id` from `getSMTId` is the
@@ -295,13 +504,12 @@ unescaped name. `modelValues` maps each key back once, so each variable is a loo
 def processModel {P : PureExpr} [ToFormat P.Ident]
     (typedVarToSMTFn : P.Ident → P.Ty → Except Format (String × Strata.SMT.TermType))
     (vars : List P.TypedIdent) (pairs : List (String × Strata.SMT.Term))
-    (E : Strata.SMT.EncoderState) : Except Format (Model P.Ident) := do
+    (E : Strata.SMT.EncoderState) : Except Format (Model P.Ident) :=
   let values := modelValues pairs
-  vars.mapM fun (var, ty) => do
-    let id ← @getSMTId P.Ident P.Ty _ typedVarToSMTFn var ty E
-    match values[id]? with
-    | none => .error f!"Cannot find model for id: {id}"
-    | some value => .ok (var, value)
+  let model := vars.filterMap fun (var, ty) =>
+    ((@getSMTId P.Ident P.Ty _ typedVarToSMTFn var ty E).toOption.bind (values[·]?)).map (var, ·)
+  if model.isEmpty && !vars.isEmpty then .error f!"No model value for any of {vars.length} ids"
+  else .ok model
 
 /--
 Interprets the output of SMT solver.

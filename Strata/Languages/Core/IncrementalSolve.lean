@@ -671,7 +671,9 @@ def obligationOf (item : WorkItem) : Imperative.ProofObligation Expression :=
   item.goal.obligation (item.path.toList.flatMap (·.toList))
 
 /-- Encode one assertion against this session's own state, send whatever that
-    turned out to need and this solver has not been told, and check it.
+    turned out to need and this solver has not been told, and check it. The result is the
+    outcome, the counterexample model, and the variables asked for that a non-empty model has
+    no value for.
 
     Encoding and sending are one step because they are one thing: advancing the
     fold discovers the sorts, functions and axioms the assertion mentions, and
@@ -681,7 +683,7 @@ def obligationOf (item : WorkItem) : Imperative.ProofObligation Expression :=
 def Session.prove {τ σ : Type} (s : Session τ σ) (factory : @Lambda.Factory CoreLParams)
     (item : WorkItem) (satCheck validCheck removeDatatypes : Bool)
     (leanExport : Option LeanExport.ExportConfig) :
-    IO ((Except VCError VCOutcome × LExprModel) × Session τ σ) := do
+    IO ((Except VCError VCOutcome × LExprModel × ModelReport) × Session τ σ) := do
   -- Append the runs of facts this session has not walked yet. `appendEntry` takes
   -- one entry at a time, so nothing is compared: a session knows what it holds
   -- because it walked there.
@@ -722,9 +724,11 @@ def Session.prove {τ σ : Type} (s : Session τ σ) (factory : @Lambda.Factory 
     let newUfs := ctx.ufs.toArray.toList.filter fun uf => !s.declUfs.contains uf.id
     let newIfs := ctx.ifs.toArray.toList.filter fun fn => !s.declIfs.contains fn.id
     let newAxms := ctx.axms.toArray.toList.filter fun ax => !s.declAxms.contains ax
-    -- The variables a counterexample reports: the ones the goal and its path reach, as the
-    -- per-obligation path chooses them.
-    let vars := (collectModelVars (obligationOf item) r.varDefs r.varDecls).filterMap fun
+    -- The variables a counterexample reports: the ones the goal and its path reach, chosen and
+    -- ordered as the per-obligation path chooses them, from the obligation without its unused
+    -- CSE definitions.
+    let vars := (collectModelVars (pruneUnusedCSEDefinitions (obligationOf item)) r.varDefs
+      r.varDecls).filterMap fun
       | (v, some ty) => some (v, Lambda.LTy.forAll [] ty)
       | (_, none) => none
     let solveTime ← IO.mkRef (0 : Nat)
@@ -796,13 +800,15 @@ def Session.prove {τ σ : Type} (s : Session τ σ) (factory : @Lambda.Factory 
     -- constructor the goal reaches, so a constructor in it comes back as one.
     let outcome ← if sat.1 == .timeout || valid.1 == .timeout then
         pure (Except.error
-          (VCError.solverTimeout "solver reported a timeout on the incremental check"), [])
+          (VCError.solverTimeout "solver reported a timeout on the incremental check"), [],
+          ({} : ModelReport))
       else do
         let satResult ← resultOfDecision ctx vars s.enc.base sat
         let validResult ← resultOfDecision ctx vars s.enc.base valid
+        let (model, missing) :=
+          reportModels ctx satResult validResult (vars.map (·.1.name)) fun _ => true
         pure (Except.ok
-          { satisfiabilityProperty := satResult, validityProperty := validResult },
-          modelOfResults ctx satResult validResult)
+          { satisfiabilityProperty := satResult, validityProperty := validResult }, model, missing)
     return (outcome,
       { s with core := core, managed := managed,
                declSorts := newSorts.foldl (fun acc x => acc.insert x.name) s.declSorts,
@@ -826,8 +832,10 @@ inductive Claim where
   /-- The outcome, in the shape the back end returns for any obligation. It has to be built
       while the session that produced it is alive: turning a `sat` into a model needs
       `processModel` against that session's `EncoderState`, which dies with the session, and so
-      does its counterexample. -/
+      does its counterexample. `missing` names the variables asked for that the
+      counterexample has no value for, and each check's own model (`ModelReport`). -/
   | done (by_ : Nat) (outcome : Except VCError VCOutcome) (model : LExprModel)
+      (missing : ModelReport)
   /-- The result of a goal session `by_` sent alone, as the per-obligation discharge built it. -/
   | sent (by_ : Nat) (result : VCResult)
 
@@ -903,12 +911,13 @@ where
 /-- Record a goal's outcome. Under `--stop-on-first-error`, any
     result short of success stops the schedule, as it stops the per-obligation loop. -/
 private def Schedule.finish (st : Schedule) (options : VerifyOptions) (item : WorkItem) (g : Nat)
-    (by_ : Nat) (outcome : Except VCError VCOutcome) (model : LExprModel) : Schedule :=
+    (by_ : Nat) (outcome : Except VCError VCOutcome) (model : LExprModel)
+    (missing : ModelReport) : Schedule :=
   -- The result is built only under `--stop-on-first-error`, since this runs under the lock.
   let failed := fun (_ : Unit) =>
     ({ obligation := obligationOf item, outcome, verbose := options.verbose,
        checkLevel := options.checkLevel, checkMode := options.checkMode } : VCResult).isNotSuccess
-  { st with claims := st.claims.setIfInBounds g (Claim.done by_ outcome model),
+  { st with claims := st.claims.setIfInBounds g (Claim.done by_ outcome model missing),
             stopped := st.stopped || (options.stopOnFirstError && failed ()) }
 
 /-- For `workLoop`, after a proved `assert false`: the goals of session `me` in the subtree of `u`
@@ -945,7 +954,8 @@ private def decideBelow (options : VerifyOptions) (me : Nat)
     (decided : Array (Nat × WorkItem × VCOutcome)) (st : Schedule) : Schedule :=
   decided.foldl (init := st) fun cur (g, item, outcome) =>
     -- A goal decided by a contradiction has no counterexample.
-    if (cur.claims.getD g default).isUnclaimed then cur.finish options item g me (.ok outcome) []
+    if (cur.claims.getD g default).isUnclaimed then
+      cur.finish options item g me (.ok outcome) [] ({} : ModelReport)
     else cur
 
 /-- For `workLoop`: whether proving this goal showed its context to be contradictory: the facts on
@@ -1009,7 +1019,7 @@ private partial def workLoop {τ σ : Type} (shared : Std.Mutex Schedule) (l : L
         let outcome : VCOutcome := { satisfiabilityProperty := sat, validityProperty := valid }
         -- The evaluator's verdicts carry no counterexample.
         Schedule.update shared fun st =>
-          ((), st.finish options item g me (.ok outcome) [])
+          ((), st.finish options item g me (.ok outcome) [] ({} : ModelReport))
         next s
       | _ =>
       -- This goal's pruning drops an axiom the solver holds, which cannot be taken back. Exact
@@ -1026,37 +1036,38 @@ private partial def workLoop {τ σ : Type} (shared : Std.Mutex Schedule) (l : L
       -- failure, the session to go on with, a new solver if one could be started, and the
       -- refusal when none could.
       let attempt (s : Session τ σ) :
-          IO (Sum ((Except VCError VCOutcome × LExprModel) × Session τ σ)
+          IO (Sum ((Except VCError VCOutcome × LExprModel × ModelReport) × Session τ σ)
             (IO.Error × Session τ σ × Option IO.Error)) := do
         s.encodingFailure.set none
         try
-          let ((o, model), s') ← s.prove factory item satCheck validCheck
+          let ((o, model, missing), s') ← s.prove factory item satCheck validCheck
             options.removeIrrelevantDatatypes options.leanExport
           -- Whether a `sat` reports as unknown depends on what this goal's
           -- pruning drops, as on the per-obligation path, even when lazy
           -- pruning left those axioms in the solver.
           let o := o.map (·.afterPruning options.removeIrrelevantAxioms
             item.pruned)
-          pure (.inl ((o, model), s'))
+          pure (.inl ((o, model, missing), s'))
         catch e =>
           -- A goal whose terms cannot be written gets that as its result, and the rest carry
           -- on. What the solver was sent before the failure is not recorded on the session,
           -- so the session starts again from an empty solver.
           match ← s.encodingFailure.get with
-          | some msg => pure (.inl ((Except.error (VCError.encoding msg), []), ← fresh s))
+          | some msg =>
+            pure (.inl ((Except.error (VCError.encoding msg), [], ({} : ModelReport)), ← fresh s))
           | none =>
             let (s', refused) ← replace s
             pure (.inr (e, s', refused))
       -- Read as the per-obligation path reads a live solver's failure: a timeout when its message
       -- says so, such as a remote session that reached its time limit, else a crash.
       let crash (e : IO.Error) (refused : Option IO.Error) :
-          Except VCError VCOutcome × LExprModel :=
+          Except VCError VCOutcome × LExprModel × ModelReport :=
         let detail := match refused with
           | some r => s!"{e}; no new solver could be started: {r}"
           | none => s!"{e}"
         (.error (match Imperative.SMT.failureOfMessage s!"{e}" with
           | .timeout _ => VCError.solverTimeout detail
-          | _ => VCError.solverCrash detail), [])
+          | _ => VCError.solverCrash detail), [], ({} : ModelReport))
       -- A solver failing after it has answered checks, such as a remote session reaching its
       -- time limit, says nothing about the goal, which is asked once more on the new solver,
       -- also when the failure comes right after the context was rebuilt. A failure on a solver
@@ -1064,9 +1075,10 @@ private partial def workLoop {τ σ : Type} (shared : Std.Mutex Schedule) (l : L
       -- would be asked the same thing, and so is a second failure; either is kept to this goal,
       -- as the per-obligation path keeps it to the obligation.
       let (s, refusedBefore) ← if s.dead then replace s else pure (s, none)
-      let ((outcome, model), s') ← match refusedBefore with
+      let ((outcome, model, missing), s') ← match refusedBefore with
         | some r =>
-          pure ((Except.error (VCError.solverCrash s!"no solver could be started: {r}"), []), s)
+          pure ((Except.error (VCError.solverCrash s!"no solver could be started: {r}"), [],
+            ({} : ModelReport)), s)
         | none => match ← attempt s with
         | .inl r => pure r
         | .inr (e, s', refused) =>
@@ -1084,7 +1096,7 @@ private partial def workLoop {τ σ : Type} (shared : Std.Mutex Schedule) (l : L
         | true, some u => decidedBelow l options owner u me s'.heldAxioms
         | _, _ => #[]
       Schedule.update shared fun st =>
-        ((), decideBelow options me decided (st.finish options item g me outcome model))
+        ((), decideBelow options me decided (st.finish options item g me outcome model missing))
       hook Event.afterCheck s'.name s'.checks
       -- Throwing the context away here turns this worker into one that rebuilds per goal,
       -- which is what the per-obligation path does. Everything else is unchanged, so the
@@ -1290,10 +1302,12 @@ def run {τ σ : Type} (factory : @Lambda.Factory CoreLParams)
     let results : VCResults := tasks.map fun t =>
       match st.claims.getD t.id default with
       | .sent _ r => r
-      | .done _ outcome model =>
+      | .done _ outcome model missing =>
         { obligation := obligationOf t, outcome,
           verbose := options.verbose, checkLevel := options.checkLevel,
-          checkMode := options.checkMode, lexprModel := model }
+          checkMode := options.checkMode, lexprModel := model, modelMissing := missing.missing,
+          checkModelMissing := missing.checkMissing,
+          checkModels := (some missing.checkModels.1, some missing.checkModels.2) }
       | .unclaimed =>
         -- No verdict was obtained, which `unknown` says.
         let outcome := match firstError with
@@ -1306,7 +1320,7 @@ def run {τ σ : Type} (factory : @Lambda.Factory CoreLParams)
     let trace : Trace :=
       { perGoal := tasks.map fun t =>
           (t.pos, t.goal.label, match st.claims.getD t.id default with
-            | .done by_ _ _ | .sent by_ _ => by_
+            | .done by_ _ _ _ | .sent by_ _ => by_
             -- Only a run whose workers failed reports a goal without an outcome.
             | .unclaimed => 0),
         -- A session no worker took, in a stopped run, is left out.

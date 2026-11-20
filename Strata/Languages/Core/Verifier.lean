@@ -11,6 +11,7 @@ public import Strata.Languages.Core.LeanExport
 public import Strata.DL.Lambda.RecursiveAxioms
 public import Strata.Languages.Core.PipelinePhase
 public import Strata.Transform.CoreTypeCheck
+public import Strata.Languages.Core.Counterexample.Model
 public import Strata.Transform.WP.WPCoreProgram
 public import Strata.Transform.SSA.SSACoreProgram
 public import Strata.Transform.DeadDefElim
@@ -1502,13 +1503,6 @@ def VCOutcome.merge (a b : VCOutcome) : VCOutcome :=
     solverLog := a.solverLog ++ b.solverLog
     mergedFrom := aPaths ++ bPaths }
 
-/--
-A model with values lifted to LExpr for display purposes.
-This is used for formatting models in a human-readable way
-using Core's expression formatter and for future use as program metadata.
--/
-abbrev LExprModel := List (Expression.Ident × LExpr CoreLParams.mono)
-
 /-- Format a model value using the Core DDM formatter.
     Renders constructors, applications, and primitives with Core syntax
     (e.g. `Cons(0, Nil)`, `Right(true)`). -/
@@ -1553,6 +1547,34 @@ structure VCResult where
   /-- model with values converted from `SMT.Term` to Core `LExpr`.
       The contents must be consistent with the outcome, if the outcome was a failure. -/
   lexprModel : LExprModel := []
+  /-- The variables the solver was asked for that a non-empty `lexprModel` has no value for:
+      the model is partial exactly when this is not empty. -/
+  modelMissing : List String := []
+  /-- The same as `modelMissing` for the satisfiability check's model and for the validity
+      check's model, each the `sat` model or `unknown` candidate that check's result carries. -/
+  checkModelMissing : List String × List String := ([], [])
+  /-- The satisfiability check's model (`.1`) and the validity check's model (`.2`), each
+      converted as `lexprModel` is and filtered as it is (a model filtered to nothing is empty):
+      the models a SARIF message prints. A component is `none` when the result was built without
+      that check's model (by a custom back end or by hand); the SARIF message then prints, for
+      that check, the model the outcome's check carries (`Sarif.sarifMessage`). -/
+  checkModels : Option LExprModel × Option LExprModel := (none, none)
+
+/-- The marker of a partial counterexample model, ` (partial; no value for …)` naming the
+    variables `missing` the model has no value for, or the empty string when `missing` is
+    empty. -/
+def partialModelMarkerOf (missing : List String) : String :=
+  if missing.isEmpty then ""
+  else s!" (partial; no value for {", ".intercalate missing})"
+
+/-- The marker of a partial `lexprModel` (`partialModelMarkerOf`). -/
+def VCResult.partialModelMarker (r : VCResult) : String :=
+  partialModelMarkerOf r.modelMissing
+
+/-- The heading of a printed counterexample model: `Model:`, followed, when the model is
+    partial, by the variables it has no value for. -/
+def VCResult.modelHeading (r : VCResult) : String :=
+  s!"Model:{r.partialModelMarker}"
 
 /-- Mask outcome properties that were not requested.
     When the evaluator resolves a check that wasn't requested by the
@@ -1580,7 +1602,7 @@ instance : ToFormat VCResult where
     | .ok outcome =>
       let modelFmt :=
         if r.verbose >= .models && !r.lexprModel.isEmpty then
-          f!"\nModel:\n{r.lexprModel}"
+          f!"\n{r.modelHeading}\n{r.lexprModel}"
         else f!""
       let prop := r.obligation.property
       f!"Obligation: {r.obligation.label}\nProperty: {prop}\nResult: {outcome.emoji prop r.checkLevel r.checkMode} {outcome.label prop r.checkLevel r.checkMode}{modelFmt}"
@@ -1685,9 +1707,17 @@ def VCResult.merge (a b : VCResult) : VCResult :=
   | .ok oa, .ok ob =>
     let merged := oa.merge ob
     -- Keep the model from whichever result had a sat satisfiability or validity
-    let model := if oa.satisfiabilityProperty.isSat || oa.validityProperty.isSat
-                 then a.lexprModel else b.lexprModel
-    { a with outcome := .ok merged, lexprModel := model }
+    let src := if oa.satisfiabilityProperty.isSat || oa.validityProperty.isSat then a else b
+    { a with outcome := .ok merged, lexprModel := src.lexprModel,
+             modelMissing := src.modelMissing,
+             -- Each check keeps the `checkModelMissing` and `checkModels` components of the
+             -- result whose model `oa.merge ob` keeps for that check.
+             checkModelMissing :=
+               ((if oa.satisfiabilityProperty.isSat then a else b).checkModelMissing.1,
+                (if oa.validityProperty.isSat then a else b).checkModelMissing.2),
+             checkModels :=
+               ((if oa.satisfiabilityProperty.isSat then a else b).checkModels.1,
+                (if oa.validityProperty.isSat then a else b).checkModels.2) }
 
 /-- The grouping key of a `VCResult` (`mergeByAssertion`). A result with a source range is keyed
     by its display label (property summary, else label), its primary `FileRange` and the related
@@ -1737,6 +1767,29 @@ def modelOfResults (ctx : SMT.Context) (satResult validityResult : SMT.Result) :
   | .sat m, _ | _, .sat m | .unknown (some m), _ | _, .unknown (some m) =>
     convertModel m (SMT.Context.getConstructorNames ctx)
   | _, _ => []
+
+/-- What a check reports about its counterexample beside the model reported: the variables
+    asked for that the model reported has no value for (`VCResult.modelMissing`), the same for
+    each check's own model (`VCResult.checkModelMissing`), and each check's own model
+    (`VCResult.checkModels`). -/
+structure ModelReport where
+  missing : List String := []
+  checkMissing : List String × List String := ([], [])
+  checkModels : LExprModel × LExprModel := ([], [])
+
+/-- The counterexample of the check results `satResult` and `validityResult`, keeping in every
+    model only the variables `keep` accepts: the model reported (`modelOfResults`) and its
+    `ModelReport`, whose lists of missing variables name, in `requested` order, the names in
+    `requested` the model has no value for, and are empty for an empty model. -/
+def reportModels (ctx : SMT.Context) (satResult validityResult : SMT.Result)
+    (requested : List String) (keep : String → Bool) : LExprModel × ModelReport :=
+  let kept (m : LExprModel) : LExprModel := m.filter fun (name, _) => keep name.name
+  let missingOf (m : LExprModel) : List String := if m.isEmpty then [] else
+    requested.filter fun v => !m.any (·.1.name == v)
+  let model := kept (modelOfResults ctx satResult validityResult)
+  let checkModels := (kept (modelOfResults ctx satResult .unsat),
+    kept (modelOfResults ctx .unsat validityResult))
+  (model, ⟨missingOf model, (missingOf checkModels.1, missingOf checkModels.2), checkModels⟩)
 
 /-- Which of the two solver checks an obligation needs, shared by every back end so they agree on
     what a verdict means. It is asked per obligation: an obligation
@@ -2359,6 +2412,7 @@ def getObligationResult (assumptionTerms : List Term) (obligationTerm : Term)
     (varDeclarations : List VarDeclaration := [])
     -- Labels of the axioms pruning dropped from this query.
     (prunedAxiomLabels : List String := [])
+    (requestedVars : List Expression.TypedIdent := [])
     : EIO Message VCResult := do
   -- Formatting the whole program is costly on a large one, so it is done only when the debug
   -- trace below shows it.
@@ -2422,17 +2476,19 @@ def getObligationResult (assumptionTerms : List Term) (obligationTerm : Term)
     -- unknown (some m) arises when the solver returns a candidate model it cannot
     -- certify (e.g. cvc5 with quantified bridge axioms). Phases may promote it
     -- to sat; we still want the model available for display.
-    let model := modelOfResults ctx satResult validityResult
     -- A counterexample reports the variables `Core.SMT.isReportedName` names.
-    let definedNames := definedNameSet varDefinitions
-    let model := model.filter fun (name, _) => Core.SMT.isReportedName definedNames name.name
+    let isReported := Core.SMT.isReportedName (definedNameSet varDefinitions)
+    let (model, report) := reportModels ctx satResult validityResult
+      ((requestedVars.map (·.1.name)).filter isReported) isReported
     let result := { obligation,
                     outcome := .ok outcome,
                     estate,
                     verbose := options.verbose,
                     checkLevel := options.checkLevel,
                     checkMode := options.checkMode,
-                    lexprModel := model }
+                    lexprModel := model, modelMissing := report.missing,
+                    checkModelMissing := report.checkMissing,
+                    checkModels := (some report.checkModels.1, some report.checkModels.2) }
     return result
 
 /-- Data needed to dispatch a single obligation to the solver. Produced by the
@@ -2475,7 +2531,8 @@ private def dispatchSolverJob (job : SolverJob) (p : Program)
   let resultOrErr ← (getObligationResult job.assumptionTerms job.obligationTerm job.ctx
     job.obligation p options discharge job.needSatCheck job.needValCheck phases
     (varDefinitions := job.varDefs) (varDeclarations := job.varDecls)
-    (prunedAxiomLabels := job.prunedAxiomLabels)).toBaseIO
+    (prunedAxiomLabels := job.prunedAxiomLabels)
+    (requestedVars := job.typedVarsInObligation)).toBaseIO
   match resultOrErr with
   | .error diag => return .error diag
   | .ok result =>
@@ -2878,6 +2935,7 @@ def dischargeObligations (E : Env) (obligations : ProofObligations Expression)
                         discharge needSatCheck needValCheck (externalPhases ++ corePhases)
                         (varDefinitions := varDefs) (varDeclarations := varDecls)
                         (prunedAxiomLabels := prunedAxiomLabels)
+                        (requestedVars := typedVarsInObligation)
           -- Merge evaluator results with solver results
           let result := match result.outcome with
             | .ok solverOutcome =>

@@ -96,12 +96,6 @@ unterminated literals. Rejecting ambiguous solver output is safer than accepting
 a counterexample containing a different string from the one the solver meant.
 -/
 
-private def hexDigitValue? (c : Char) : Option Nat :=
-  if '0' ≤ c && c ≤ '9' then some (c.toNat - '0'.toNat)
-  else if 'a' ≤ c && c ≤ 'f' then some (c.toNat - 'a'.toNat + 10)
-  else if 'A' ≤ c && c ≤ 'F' then some (c.toNat - 'A'.toNat + 10)
-  else none
-
 /-- The character a `\u` escape denotes, or an error naming why it has none. -/
 private def escapeChar (n : Nat) : Except String Char :=
   if 0xD800 ≤ n && n ≤ 0xDFFF then

@@ -315,7 +315,8 @@ theorem name_nodup {T} (f : Factory T) : List.Nodup (f.toArray |>.toList |>.map 
     have hdj : nameMap[l[j].name.name]? = some j := toArrayDefined ⟨j, hj⟩
     grind
 
-private theorem mem_pushIfNew {T} {f : Factory T} {g h : LFunc T}
+/-- A function in `f.pushIfNew h` is either already in `f` or is `h` itself. -/
+public theorem mem_pushIfNew {T} {f : Factory T} {g h : LFunc T}
     (p : g ∈ (f.pushIfNew h).toArray) : g ∈ f.toArray ∨ g = h := by
   revert p
   simp [pushIfNew, push]
@@ -609,6 +610,13 @@ theorem mem_iff_getElem?_isSome {T : LExprParams} (F : Factory T) (nm : String) 
   · intro hsome
     obtain ⟨fn, hfn⟩ := Option.isSome_iff_exists.mp hsome
     exact getElem?_some_implies_mem hfn
+
+/-- A name `F` holds is found by `F[n]?`, as `F[n]`. -/
+public theorem getElem?_of_mem {T : LExprParams} {F : Factory T} {n : String} (h : n ∈ F) :
+    F[n]? = some (F[n]'h) := by
+  have hm : n ∈ F.nameMap := h
+  simp +instances only [instGetElem?, get?, get]
+  split <;> grind
 
 end Factory
 

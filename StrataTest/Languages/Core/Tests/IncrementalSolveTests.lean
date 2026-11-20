@@ -2229,7 +2229,7 @@ info: DoubleTwice.core.st: agree on 2
 HeapReasoning.core.st: agree on 50
 IrrelevantAxioms.core.st: agree on 1
 LoopSimple.core.st: agree on 8
-SafeBvOps.core.st: agree on 8
+SafeBvOps.core.st: agree on 8, 8 with a counterexample
 SimpleProc.core.st: agree on 2
 TwoLoops.core.st: agree on 4
 -/
@@ -2249,7 +2249,7 @@ info: DoubleTwice.core.st: agree on 2
 HeapReasoning.core.st: agree on 50
 IrrelevantAxioms.core.st: agree on 1
 LoopSimple.core.st: agree on 8
-SafeBvOps.core.st: agree on 8
+SafeBvOps.core.st: agree on 8, 8 with a counterexample
 SimpleProc.core.st: agree on 2
 TwoLoops.core.st: agree on 4
 -/

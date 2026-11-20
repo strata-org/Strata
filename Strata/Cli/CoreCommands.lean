@@ -387,7 +387,7 @@ def verifyCommand (dialects : LoadedDialects)
         -- tools that parse this output.
         let modelFmt :=
           if vcResult.verbose >= .models && !vcResult.lexprModel.isEmpty then
-            f!" Model: {Std.format vcResult.lexprModel}"
+            f!" {vcResult.modelHeading} {Std.format vcResult.lexprModel}"
           else f!""
         println! f!"{posStr} [{vcResult.obligation.label}]: \
                       {vcResult.formatOutcome}{modelFmt}"

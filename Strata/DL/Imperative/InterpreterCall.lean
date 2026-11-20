@@ -280,6 +280,15 @@ variable [HasBool P] [DecidableEq P.Expr] [DecidableEq P.Ident] [InterpLang P]
        | none => false)
   | _ => false
 
+/-- Does `e` evaluate under the bounded evaluator at fuel `fuel`, with factory `factory` and
+    store `store`, to the false literal, up to metadata (`InterpLang.eqModuloMeta`)? It is the
+    condition check `assertFailureHalt` applies to an `.assert` event. -/
+@[expose] def evalsFalse (fuel : Nat) (factory : InterpLang.RFactory P) (store : RStore P)
+    (e : P.Expr) : Bool :=
+  match InterpLang.boundedEval (P := P) fuel factory store e with
+  | some v => InterpLang.eqModuloMeta v (HasBool.ff (P := P))
+  | none => false
+
 /-- Target-id match of an event (an `.assert`/`.cover` with the target's label and
     metadata), with no evaluation of the condition. -/
 @[expose] def targetReached (target : AssertId P) : IEvent P → Bool
@@ -324,6 +333,16 @@ variable [HasBool P] [DecidableEq P.Expr] [DecidableEq P.Ident] [InterpLang P]
   ∀ arg, REvent.assume arg ∈ evs →
     (InterpLang.boundedEval (P := P) fuel arg.factory arg.store arg.expr).bind
       InterpLang.boolLit? = some true
+
+/-- The decision procedure of `PathFeasible`: every `.assume` event of `evs` evaluates under
+    the bounded evaluator at fuel `fuel` to `tt` up to metadata (`InterpLang.boolLit?`). -/
+@[expose] def PathFeasibleB (fuel : Nat) (evs : List (IEvent P)) : Bool :=
+  evs.all fun ev =>
+    match ev with
+    | .assume arg =>
+      (InterpLang.boundedEval (P := P) fuel arg.factory arg.store arg.expr).bind
+        InterpLang.boolLit? == some true
+    | _ => true
 
 variable [HasOldIdent P] [HasFvar P]
   {Hdr : Type} [DecidableEq Hdr] [Inhabited Hdr] [ProcedureHeader P Hdr]

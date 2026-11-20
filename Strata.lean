@@ -228,6 +228,23 @@ import Strata.Languages.Core.InterpreterDomainProps
 import Strata.Languages.Core.InterpreterEvalSound
 import Strata.Languages.Core.FactoryEvalSoundWF
 import Strata.Languages.Core.InterpreterBridgeStatements
+-- Counterexample lifting (CEL): levels (c) model, (b) valuation, (a) run, and back-links
+-- (translations of runs across program transformations)
+import Strata.Languages.Core.Counterexample.Run
+import Strata.Languages.Core.Counterexample.BackLink
+import Strata.Languages.Core.Counterexample.ValuationToRun
+import Strata.Languages.Core.Counterexample.RunProps
+import Strata.Languages.Core.Counterexample.BackLinkChainReplayProps
+import Strata.DL.Imperative.Counterexample.RunProps
+import Strata.DL.Imperative.Counterexample.BackLinkProps
+import Strata.Languages.Core.Counterexample.ModelToValuation
+import Strata.Languages.Core.Counterexample.ModelToValuationProps
+import Strata.Languages.Core.Counterexample.ModelProps
+import Strata.Languages.Core.Counterexample.ModelAnonymousProps
+import Strata.Languages.Core.Counterexample.BackLinkRelSim
+import Strata.Languages.Core.Counterexample.BackLinkRelSimProps
+import Strata.Languages.Core.Counterexample.BackLinkExactProps
+import Strata.Languages.Core.Counterexample.BackLinkExact
 import Strata.Languages.Core.InterpreterCallComplete
 import Strata.Languages.Core.InterpreterCallSound
 import Strata.Languages.Core.InterpreterComplete
