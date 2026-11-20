@@ -32,9 +32,9 @@ type is the arrow from its inputs to its output); `FactorySigsKnown.tryAddAll`
 signature types keeps every signature and datatype registered);
 `LFunc.body_knownInstance` (the body of such a function's type scheme is a
 registered instance); `genBlockFactory_sigsKnown` (every signature a block
-generates uses only registered constructors); and `knownTypes_foldlM_add_mem`
-and `datatypesKnown_addMutualBlock` (registering a datatype block records each
-datatype at its arity). -/
+generates uses only registered constructors); and `knownTypes_foldlM_add_mem` and
+`datatypesKnown_addMutualBlock`
+(registering a datatype block records each datatype at its arity). -/
 
 namespace Lambda
 

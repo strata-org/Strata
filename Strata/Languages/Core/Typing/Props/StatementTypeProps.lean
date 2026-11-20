@@ -399,6 +399,19 @@ theorem allCmdTys_eq_all_cmdAnnotTys (p : LMonoTy → Bool) (c : Command) :
     rw [htys]
     exact congrArg (_ && ·) hargs
 
+/-- If every type annotation of a call satisfies `p`, then so does each stored type argument. -/
+theorem allCmdTys_call_tyArgs {p : LMonoTy → Bool} {pname : String}
+    {tyArgs : Option (List Expression.Ty)} {args : List (CallArg Expression)}
+    {md : MetaData Expression}
+    (h : allCmdTys p (.call pname tyArgs args md) = true) :
+    ∀ tys, tyArgs = some tys → ∀ ty ∈ tys, p ty.toMonoTypeUnsafe = true := by
+  intro tys htys ty hty
+  subst htys
+  simp only [allCmdTys, Bool.and_eq_true, Option.all_some, List.all_eq_true] at h
+  have hty' := h.1 ty hty
+  cases ty
+  exact hty'
+
 mutual
 
 /-- A statement's annotations all satisfy `p` exactly when every type `stmtAnnotTys` lists
@@ -726,8 +739,8 @@ private theorem TypeSpec.CmdExtWellTyped.of_findEq {C : LContext CoreLParams} {P
   | cmd _ _ hc =>
     obtain ⟨tsOut, hc', hout⟩ := hc.of_findEq hfind
     exact ⟨tsOut, .cmd _ _ _ hc', hout⟩
-  | call _ _ _ _ _ σ _ hpf hwf hlhs hargs hlhsTy hinst hEqv =>
-    refine ⟨tsIn, .call _ _ _ _ _ _ σ _ hpf hwf ?_ ?_ ?_ hinst (HMaps.Equiv.refl _),
+  | call _ _ _ _ _ σ _ hpf hwf hlhs hargs hlhsTy hinst hkind hEqv =>
+    refine ⟨tsIn, .call _ _ _ _ _ _ σ _ hpf hwf ?_ ?_ ?_ hinst hkind (HMaps.Equiv.refl _),
       fun y => (hfind y).trans (hEqv.find? y).symm⟩
     · intro v hv
       rw [hfind v]
@@ -802,14 +815,14 @@ private theorem TypeSpec.CmdExtWellTyped.program_congr_calls {C : LContext CoreL
     (h : CmdExtWellTyped C P1 ts c ts') : CmdExtWellTyped C P2 ts c ts' := by
   cases h with
   | cmd _ _ hc => exact .cmd _ _ _ hc
-  | call pname tyArgs callArgs proc md σ _ hpf hcall hlhs hin hout hinst hEqv =>
+  | call pname tyArgs callArgs proc md σ _ hpf hcall hlhs hin hout hinst hkind hEqv =>
     have hpmem : pname ∈ CmdExt.calledProcedureNames (.call pname tyArgs callArgs md) := by
       simp only [CmdExt.calledProcedureNames_call, List.mem_singleton]
     obtain ⟨proc2, hpf2, hsig⟩ := hagree pname hpmem proc hpf
     obtain ⟨σ2, hins, houts, htyArgs⟩ := hsig.inst σ
     refine .call _ pname tyArgs callArgs proc2 md σ2 _ hpf2
       (hcall.transfer (.boolConst Core.valueLoc true) hpf hpf2 hsig.inputsKeys hsig.outputsKeys rfl)
-      hlhs ?_ ?_ ?_ hEqv
+      hlhs ?_ ?_ ?_ hkind hEqv
     · intro i hi hj
       have hlen := congrArg List.length hins
       simp only [List.length_map] at hlen
@@ -905,10 +918,13 @@ private theorem TypeSpec.CmdExtWellTyped.withIdents {C : Expression.TyContext}
     | assert _ _ _ _ he hEqv => exact .assert _ _ _ _ _ he.withIdents hEqv
     | assume _ _ _ _ he hEqv => exact .assume _ _ _ _ _ he.withIdents hEqv
     | cover _ _ _ _ he hEqv => exact .cover _ _ _ _ _ he.withIdents hEqv
-  | call _ _ _ _ _ _ _ hpf hcall hlhs hin hout hinst hEqv =>
-    refine .call _ _ _ _ _ _ _ _ hpf hcall hlhs ?_ hout hinst hEqv
-    intro i hi hj
-    exact callInputMatch_mono (fun _ => rfl) (fun _ he => he.withIdents) _ (hin i hi hj)
+  | call _ _ _ _ _ _ _ hpf hcall hlhs hin hout hinst hkind hEqv =>
+    refine .call _ _ _ _ _ _ _ _ hpf hcall hlhs ?_ hout hinst ?_ hEqv
+    · intro i hi hj
+      exact callInputMatch_mono (fun _ => rfl) (fun _ he => he.withIdents) _ (hin i hi hj)
+    · intro tys htys ty hty
+      rw [← LContext.WellKindedTy_setIdents C j]
+      exact hkind tys htys ty hty
 
 mutual
 

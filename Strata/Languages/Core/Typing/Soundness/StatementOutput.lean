@@ -598,7 +598,7 @@ private theorem typeCheckCmd_call_sound_output_subst
         ((proc.header.typeArgs ++
           LMonoTys.freeVars (proc.header.inputs.values ++ proc.header.outputs.values)).map
           (fun v => (v, LMonoTy.subst S (LMonoTy.subst Sren (LMonoTy.ftvar v)))))
-        _ hpfR ?_ ?_ ?_ ?_ ?_ (HMaps.Equiv.refl _)
+        _ hpfR ?_ ?_ ?_ ?_ ?_ ?_ (HMaps.Equiv.refl _)
       · have hshape :
             ((CallArg.replaceInArgs callArgs (argsa.map LExpr.unresolved)).map
               (Statement.CallArg.subst S)).map
@@ -794,6 +794,9 @@ private theorem typeCheckCmd_call_sound_output_subst
         simp only [Function.comp_apply]
         rw [hkeyA]
         rfl
+      · intro tys htys ty hty
+        exact LMonoTy.knownInstance_wellKinded _ C.knownTypes
+          (Statement.allCmdTys_call_tyArgs hS tys htys ty hty)
     · have hresCtx : TContext.Equiv (T := CoreLParams) Env_res.context Env.context := by
         rw [← hsigCtx]; exact hresEq
       exact (TContext.FindEq.symm (hresCtx.dealias.subst S).toFindEq).1

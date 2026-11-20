@@ -4472,7 +4472,7 @@ private theorem TypeSpec.CmdExtWellTyped.monoScope {C : LContext CoreLParams} {P
       intro z tz hz
       rw [hEqv.find? z] at hz
       exact hmono z tz hz
-  | call _ _ _ _ _ _ _ _ _ _ _ _ _ hEqv =>
+  | call _ _ _ _ _ _ _ _ _ _ _ _ _ _ hEqv =>
     intro z tz hz
     rw [hEqv.find? z] at hz
     exact hmono z tz hz
@@ -4535,7 +4535,7 @@ private theorem TypeSpec.CmdExtWellTyped.deskolemize_call (σ : RigidNames)
       DeskolemizesScope σ { types := tsc } { types := ts' } :=
     fun hEqv => DeskolemizesScope.of_equiv_types hEqv hsc
   cases h with
-    | call pname tyArgs callArgs proc md callσ _ hproc hcall hlhs hin hout hinst hEqv =>
+    | call pname tyArgs callArgs proc md callσ _ hproc hcall hlhs hin hout hinst hkind hEqv =>
   let callσ' := callσ.map (fun q => (q.1, deskolemizeTy σ q.2))
   have hinput := CallArg.getInputExprs_map_types (deskolemizeTy σ) callArgs
   have hlhsMap := CallArg.getLhs_map_congr (mapExprTys (deskolemizeTy σ)) callArgs
@@ -4578,7 +4578,7 @@ private theorem TypeSpec.CmdExtWellTyped.deskolemize_call (σ : RigidNames)
     (.call pname (tyArgs.map (·.map (mapLTyTys (deskolemizeTy σ))))
       (callArgs.map (CallArg.mapInput (mapExprTys (deskolemizeTy σ)))) md) ts'
   refine .call ts' pname _ (callArgs.map (CallArg.mapInput (mapExprTys (deskolemizeTy σ))))
-    proc md callσ' ts' hproc ?_ ?_ ?_ ?_ ?_ (HMaps.Equiv.refl _)
+    proc md callσ' ts' hproc ?_ ?_ ?_ ?_ ?_ ?_ (HMaps.Equiv.refl _)
   · exact hcall.transfer (.boolConst Core.valueLoc true) hproc hproc rfl rfl
       (CallArg.map_mapInput_const _ _ callArgs)
   · intro v hv
@@ -4622,6 +4622,12 @@ private theorem TypeSpec.CmdExtWellTyped.deskolemize_call (σ : RigidNames)
     refine congrArg some (List.map_congr_left fun a _ => ?_)
     simp only [Function.comp_apply, mapLTyTys]
     rw [hsubst (.ftvar a) (deskolemizeTy_ftvar σ a)]
+  · intro tys' htys' ty' hty'
+    obtain ⟨tys, htys, rfl⟩ := Option.map_eq_some_iff.mp htys'
+    obtain ⟨ty0, hty0, rfl⟩ := List.mem_map.mp hty'
+    cases ty0 with
+    | forAll vs mty =>
+      exact WellKindedTy_deskolemizeTy hamb mty (hkind tys htys (.forAll vs mty) hty0)
 
 /-- A well-typed extended command, deskolemized, is well typed in a context making `σ`'s names
     rigid, from any deskolemization of its input scopes, ending in a deskolemization of its
