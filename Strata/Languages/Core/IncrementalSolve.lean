@@ -268,7 +268,10 @@ structure WorkItem where
   keptAxioms : Nat := 0
   /-- CSE definitions on the path that this goal does not use, which the solver is not sent
       for this goal. The per-obligation discharge drops the same ones, see
-      `pruneUnusedCSEDefinitions`. -/
+      `pruneUnusedCSEDefinitions`, and also the path explorer's join-symbol definitions a goal
+      does not use (`pruneUnusedDefinitions`); this set leaves those in, since a goal that
+      skips a definition runs on a fresh solver, and most goals after a join read only some of
+      its symbols. -/
   skippedDefs : Std.HashSet String := {}
 
 /-- The tree laid out for the walk. Nodes, and so goals, are numbered in pre-order, which is
@@ -1534,7 +1537,8 @@ def coreSMTSolver (sessions : Nat := 1) (options : VerifyOptions := VerifyOption
         (axiomProgram := axProg) (mkDischarge := mkDischarge) (pctx := pctx) : CoreSMTSolver)
         factory oblProgram)
     -- A goal sent alone is discharged against the environment of the whole program, as the
-    -- per-obligation path discharges it, and with that path's dropping of unused CSE definitions.
+    -- per-obligation path discharges it, and with that path's dropping of unused generated
+    -- definitions.
     -- Built on the first goal sent alone, and once, however many workers send at once.
     let env : Thunk (Except Strata.Pipeline.Message Env) := Thunk.mk fun _ =>
       (Core.buildEnv options oblProgram factory (registerCustomFunctions := true)).map (·.1)
@@ -1543,7 +1547,7 @@ def coreSMTSolver (sessions : Nat := 1) (options : VerifyOptions := VerifyOption
         | .ok E => pure E
         | .error m => throw (ofMsg m)
       let ob := obligationOf item
-      let ob := pruneUnusedCSEDefinitions ob
+      let ob := pruneUnusedDefinitions ob
       -- A goal sent alone is a single obligation, so it is discharged with one worker whatever
       -- the caller's worker count. That count describes this call only: several of the walk's
       -- workers may send goals at once, so a back end that shares one connection between

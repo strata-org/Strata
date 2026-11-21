@@ -2095,7 +2095,7 @@ partial def translateTransfer (p : Program) (bindings : TransBindings) (arg : Ar
     -- `translateCFGBlock`) so the type checker can see it. The symbolic evaluator
     -- leaves the fvar unchanged, so `evalCFGStep` forks into both paths; the
     -- concrete interpreter (runCFG) errors on it, as expected.
-    let condName : Core.CoreIdent := ⟨s!"$__nondet_{bindings.gen.var_def}", ()⟩
+    let condName : Core.CoreIdent := ⟨s!"{Core.nondetChoicePrefix}{bindings.gen.var_def}", ()⟩
     let bindings := incrNum .var_def bindings
     let boolMono := Lambda.LMonoTy.bool
     let boolTy : Lambda.LTy := .forAll [] boolMono

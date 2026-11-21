@@ -250,8 +250,8 @@ info: [a] under [int.gt($__symx_0, 0)]  check: true
 #guard_msgs in
 #eval obls sameGuard
 
--- `assume false` does not end the path (as in the symbolic evaluator): later checks are still
--- reported, under a path condition containing `false`.
+-- `assume false` ends the path (unlike `--vcgen symbolic`, the legacy evaluator): no run
+-- follows it, so the check after it gets no obligation (see "Ending infeasible paths").
 private def assumeFalse := procOf <|
 #strata
 program Core;
@@ -260,12 +260,9 @@ procedure P(x : int, out r : int) {
   assert [a]: false;
 };
 #end
-/-- info: some { finished := 1, stopped := 0, unmatchedExits := 0, obligations := 1 } -/
+/-- info: some { finished := 0, stopped := 0, unmatchedExits := 0, obligations := 0 } -/
 #guard_msgs in
 #eval summary assumeFalse
-/-- info: [a] under [false]  check: false -/
-#guard_msgs in
-#eval obls assumeFalse
 
 -- Path-condition entries keep the `assume`'s label.
 private def labelled := procOf <|
@@ -444,8 +441,8 @@ spec { requires [pre]: if int.gt(x, 0) then false else true; }
 #guard_msgs in
 #eval summary elsePruned
 
--- An `assume` contradicting the precondition does not end the path either: the assert after it
--- is still recorded.
+-- An `assume` contradicting the precondition without being literal `false` does not end the
+-- path: the assert after it gets an obligation, under both conditions, for the solver.
 private def contra := procOf <|
 #strata
 program Core;
@@ -459,11 +456,8 @@ spec { requires [pre]: int.gt(x, 0); }
 /-- info: some { finished := 1, stopped := 0, unmatchedExits := 0, obligations := 1 } -/
 #guard_msgs in
 #eval summary contra
-/--
-info: [a] under [int.gt($__symx_0, 0), if int.gt($__symx_0, 0) then false else true]  check: false
--/
-#guard_msgs in
-#eval obls contra
+#guard ((run contra).map (·.countStatus (· matches .infeasible _))) == some 0
+#guard (run contra).map unreachedLabels == some []
 
 -- A loop on a symbolic guard unrolls until the per-path budget (40) runs out: each loop exit is a
 -- finished path (4), and both branches of the last fork stop (2). Loop invariants are not
@@ -574,22 +568,36 @@ procedure P(x : int, out r : int) {
   | some (.error fs) => fs == [.noLoops] | _ => false)
 
 -- Obligation extraction from `treeStmts` yields the per-path obligations (same set and count),
--- each with its own path condition.
+-- each with its own path condition, a join symbol's declaration standing for its definition
+-- (`newAssumes`).
+/-- The equation `x == v` a declaration `init x : ty := v` stands for. -/
+private def declEq (x : CoreIdent) (ty : Expression.Ty) (v : Expression.Expr) : Expression.Expr :=
+  match ty with
+  | .forAll _ mty => LExpr.eq symExecLoc (.fvar symExecLoc x (some mty)) v
 /-- (label, assumptions, goal) per obligation, from extraction of `treeStmts`, under merge
-    policy `pol`. -/
+    policy `pol`; a declaration counts as its equation (`declEq`). -/
 private def viaTree (p : Option Procedure) (pol : MergePolicy := .never) :
     Option (List (String × List Expression.Expr × Expression.Expr)) :=
   (run p pol).bind fun r =>
     match ObligationExtraction.extractFromStatements ⟨[]⟩ r.treeStmts with
     | .ok obs => some (obs.toList.map fun o =>
-        (o.label, o.assumptions.flatten.filterMap (fun | .assumption _ e => some e | _ => none),
+        (o.label, o.assumptions.flatten.filterMap (fun
+          | .assumption _ e => some e
+          | .varDecl x ty (.det v) => some (declEq x ty v)
+          | _ => none),
          o.obligation))
     | .error _ => none
 /-- (label, assumptions, goal) per obligation, from the recorded paths, under merge policy
-    `pol`. -/
+    `pol`; a join symbol's definition counts as the equation of its declaration (`newAssumes`,
+    `declEq`). -/
 private def viaPaths (p : Option Procedure) (pol : MergePolicy := .never) :
     Option (List (String × List Expression.Expr × Expression.Expr)) :=
-  (run p pol).map fun r => r.obligations.map fun o => (o.label, (pcExprs o.pc).reverse, o.cond)
+  (run p pol).map fun r => r.obligations.map fun o =>
+    (o.label, (newAssumes o.pc 0).filterMap (fun
+        | .cmd (.cmd (.assume _ e _)) => some e
+        | .cmd (.cmd (.init x ty (.det v) _)) => some (declEq x ty v)
+        | _ => none),
+      o.cond)
 /-- `viaTree` and `viaPaths` agree as sets with equal counts, under merge policy `pol`. -/
 private def sameAsPaths (p : Option Procedure) (pol : MergePolicy := .never) : Bool :=
   match viaTree p pol, viaPaths p pol with
@@ -655,11 +663,13 @@ info: some { finished := 1, stopped := 0, unmatchedExits := 0, obligations := 2,
 -/
 #guard_msgs in
 #eval mergeSummary .always twoSeq
--- After the first merge `r` is `if x > 0 then 1 else 2`.
+-- After the first merge `r` is the join symbol `$__joinr_0`, defined as `if x > 0 then 1 else 2`;
+-- the second merge's value mentions `$__joinr_0`, not a copy of that term.
 /--
-info: [a1] under []  check: int.gt(if int.gt($__symx_0, 0) then 1 else 2, 0)
-[a2] under []  check: int.gt(if int.gt($__symx_0, 5) then int.add(if int.gt($__symx_0, 0) then 1
-  else 2, 1) else if int.gt($__symx_0, 0) then 1 else 2, 0)
+info: [a1] under [$__joinr_0 == (if int.gt($__symx_0, 0) then 1 else 2)]  check: int.gt($__joinr_0,
+  0)
+[a2] under [$__joinr_0 == (if int.gt($__symx_0, 0) then 1 else 2), $__joinr_1 == (if
+  int.gt($__symx_0, 5) then int.add($__joinr_0, 1) else $__joinr_0)]  check: int.gt($__joinr_1, 0)
 -/
 #guard_msgs (whitespace := lax) in
 #eval printObls (run twoSeq .always)
@@ -673,13 +683,13 @@ procedure P(x : int, out r : int) {
 };
 #end
 /--
-info: [a] under [if int.gt($__symx_0, 0) then int.gt($__symx_0, 3) else true]  check: int.gt(if
-  int.gt($__symx_0, 0) then 1 else 2, 0)
+info: [a] under [if int.gt($__symx_0, 0) then int.gt($__symx_0, 3) else true, $__joinr_0 == (if
+  int.gt($__symx_0, 0) then 1 else 2)]  check: int.gt($__joinr_0, 0)
 -/
 #guard_msgs (whitespace := lax) in
 #eval printObls (run branchAssume .always)
 #guard ((run branchAssume .always).map (·.obligations.map fun o => o.pc.map (·.1))) ==
-  some [["callElimAssume_q"]]
+  some [["<join_value: r>", "callElimAssume_q"]]
 -- A fork under a non-empty path condition (the precondition) still merges: the merged path
 -- condition keeps the precondition as its shared prefix.
 private def mergeUnderPre := procOf <|
@@ -698,8 +708,8 @@ info: some { finished := 1, stopped := 0, unmatchedExits := 0, obligations := 1,
 #guard_msgs in
 #eval mergeSummary .always mergeUnderPre
 /--
-info: [a] under [int.gt($__symx_0, 0), if int.gt($__symx_0, 5) then int.gt($__symx_0, 7) else true]
-  check: int.gt(if int.gt($__symx_0, 5) then 1 else 2, 0)
+info: [a] under [int.gt($__symx_0, 0), if int.gt($__symx_0, 5) then int.gt($__symx_0, 7) else true,
+  $__joinr_0 == (if int.gt($__symx_0, 5) then 1 else 2)]  check: int.gt($__joinr_0, 0)
 -/
 #guard_msgs (whitespace := lax) in
 #eval printObls (run mergeUnderPre .always)
@@ -944,9 +954,10 @@ procedure P(x : int, out r : int) {
 };
 #end
 /--
-info: [a] under []  check: int.gt(if int.gt($__symx_0, 0) then $__symr_2 else int.neg($__symr_3), 0)
+info: [a] under [$__joinr_0 == (if int.gt($__symx_0, 0) then $__symr_2 else int.neg($__symr_3))] 
+  check: int.gt($__joinr_0, 0)
 -/
-#guard_msgs in
+#guard_msgs (whitespace := lax) in
 #eval printObls (run havocBoth .always)
 #guard replayAt havocBoth .always 0 [("x_0", 3), ("r_2", -1), ("r_3", -1)] == some .genuine
 #guard replayAt havocBoth .always 0 [("x_0", 3), ("r_2", 5), ("r_3", 5)] == some .spurious
@@ -964,8 +975,7 @@ procedure P(x : int, out r : int) {
 };
 #end
 /--
-info: [a] under []  check: int.gt(if int.gt($__symx_0, 0) then if int.gt($__symx_0, 5) then
-  $__symr_2 else 0 else $__symr_3, 0)
+info: [a] under [$__joinr_0 == (if int.gt($__symx_0, 5) then $__symr_2 else 0), $__joinr_1 == (if int.gt($__symx_0, 0) then $__joinr_0 else $__symr_3)]  check: int.gt($__joinr_1, 0)
 -/
 #guard_msgs (whitespace := lax) in
 #eval printObls (run havocNested .always)
@@ -1019,17 +1029,200 @@ info: some (Core.SymExec.Completeness.notAnalyzed ["a path exited to unmatched l
 #guard_msgs in
 #eval (run unmatched).map (·.completeness)
 
-/-! ## Ending paths at failed checks (`ExploreCfg.endOnFailedChecks`) -/
+/-! ## Naming merged values at joins (`nameJoinValues`) -/
+
+/-- The join symbols the first obligation of `r` defines, each with its type, oldest first. -/
+private def joinDefs (r : Option Result) : Option (List String) :=
+  r.bind fun r => r.obligations.head?.map fun o =>
+    (o.pc.reverse.filterMap fun (l, e) =>
+      if l.startsWith "<join_value:" then
+        match e with
+        | .eq _ (.fvar _ s (some ty)) _ => some s!"{s.name} : {Std.format ty}"
+        | _ => some s!"unexpected: {Std.format e}"
+      else none)
+
+-- Merged values of every kind of type get a join symbol of their variable's declared type: a
+-- primitive, a map through a type synonym, a datatype, an opaque type, and a polymorphic
+-- function's result. None is left unnamed.
+private def joinTypes := procOf <|
+#strata
+program Core;
+type T;
+type IM := Map int int;
+datatype IntList { Nil(), Cons(hd: int, tl: IntList) };
+function idf<a>(y : a) : a { y }
+procedure P(x : int, t1 : T, t2 : T, out r : int) {
+  var b : bool;
+  var m : IM;
+  var l : IntList;
+  var t : T;
+  if (int.gt(x, 0)) {
+    r := 1; b := true; m := m[0 := 1]; l := Cons(1, Nil()); t := t1;
+  } else {
+    r := idf(x); b := false; m := m[0 := 2]; l := Nil(); t := t2;
+  }
+  assert [a]: int.gt(r, 0);
+};
+#end
+/--
+info: some ["$__joinb_0 : bool", "$__joinl_1 : IntList", "$__joinm_2 : (Map int int)",
+  "$__joinr_3 : int", "$__joint_4 : T"]
+-/
+#guard_msgs (whitespace := lax) in
+#eval joinDefs (run joinTypes .always)
+#guard ((run joinTypes .always).map (·.joinValuesUnnamed)) == some 0
+#guard ((run joinTypes .always).map (·.merges)) == some 1
+
+-- Two variables merged to the same value share one join symbol, so `r == y` folds to `true`.
+private def sharedValue := procOf <|
+#strata
+program Core;
+procedure P(x : int, out r : int) {
+  var y : int;
+  if (int.gt(x, 0)) { r := 1; y := 1; } else { r := 2; y := 2; }
+  assert [same]: r == y;
+};
+#end
+/-- info: some ["$__joinr_0 : int"] -/
+#guard_msgs in
+#eval joinDefs (run sharedValue .always)
+/-- info: [same] under [$__joinr_0 == (if int.gt($__symx_0, 0) then 1 else 2)]  check: true -/
+#guard_msgs in
+#eval printObls (run sharedValue .always)
+
+-- A function-typed value is never named, and an untyped one is left unnamed and counted
+-- (`nameJoinStep`; the explorer records every declared type, so the count stays 0 in a run).
+private def stepOn (ta tb : Std.TreeMap CoreIdent LMonoTy identCmp) :
+    Nat × Nat × Nat :=
+  letI := symLang ({} : ExploreCfg)
+  let x : CoreIdent := ⟨"f", ()⟩
+  let v := LExpr.ite symExecLoc (mkSym defaultSymPrefix 0 .bool "c")
+    (mkSym defaultSymPrefix 1 (.arrow .int .int) "g")
+    (mkSym defaultSymPrefix 2 (.arrow .int .int) "h")
+  let r := nameJoinStep (scfg := {}) ta tb (IStore.ofStore (fun _ => none), [], 0, 0, []) (x, v)
+  (r.2.1.length, r.2.2.1, r.2.2.2.1)
+private def tyMap (ty : Option LMonoTy) : Std.TreeMap CoreIdent LMonoTy identCmp :=
+  match ty with
+  | some ty => ({} : Std.TreeMap CoreIdent LMonoTy identCmp).insert ⟨"f", ()⟩ ty
+  | none => {}
+-- (definitions added, join counter, values left unnamed)
+#guard stepOn (tyMap (some (.arrow .int .int))) (tyMap (some (.arrow .int .int))) == (0, 0, 0)
+#guard stepOn (tyMap none) (tyMap none) == (0, 0, 1)
+#guard stepOn (tyMap (some .int)) (tyMap (some .bool)) == (0, 0, 1)
+#guard stepOn (tyMap (some .int)) (tyMap (some .int)) == (1, 1, 0)
+-- A type with a function inside, such as a map to functions, is not named either.
+#guard stepOn (tyMap (some (.tcons "Map" [.int, .arrow .int .int])))
+  (tyMap (some (.tcons "Map" [.int, .arrow .int .int]))) == (0, 0, 0)
+/-- The definitions one naming step adds, as (label, defined symbol). -/
+private def stepDefs (ty : LMonoTy) : List (String × String) :=
+  letI := symLang ({} : ExploreCfg)
+  let x : CoreIdent := ⟨"f", ()⟩
+  let v := LExpr.ite symExecLoc (mkSym defaultSymPrefix 0 .bool "c")
+    (mkSym defaultSymPrefix 1 ty "g") (mkSym defaultSymPrefix 2 ty "h")
+  let r := nameJoinStep (scfg := {}) (tyMap (some ty)) (tyMap (some ty))
+    (IStore.ofStore (fun _ => none), [], 0, 0, []) (x, v)
+  r.2.1.map fun (l, e) => match e with
+    | .eq _ (.fvar _ s _) _ => (l, s.name)
+    | _ => (l, "unexpected")
+#guard stepDefs .int == [("<join_value: f>", "$__joinf_0")]
+-- A value already named at this join by a symbol of another type gets a fresh symbol of its own
+-- type (`$__joinf_1`, from counter 1), not the earlier one.
+#guard
+  letI := symLang ({} : ExploreCfg)
+  let x : CoreIdent := ⟨"f", ()⟩
+  let v := LExpr.ite symExecLoc (mkSym defaultSymPrefix 0 .bool "c")
+    (mkSym defaultSymPrefix 1 .int "g") (mkSym defaultSymPrefix 2 .int "h")
+  let r := nameJoinStep (scfg := {}) (tyMap (some .int)) (tyMap (some .int))
+    (IStore.ofStore (fun _ => none), [], 1, 0, [(v, mkSym defaultJoinPrefix 0 .bool "y")]) (x, v)
+  (r.2.1.map fun (l, e) => match e with
+    | .eq _ (.fvar _ s _) _ => (l, s.name)
+    | _ => (l, "unexpected")) == [("<join_value: f>", "$__joinf_1")]
+
+-- The tree program declares a join symbol by an `init` at its first definition on the path
+-- (`newAssumes`); an entry with another label, one whose left side is not a join symbol, and a
+-- later entry of the same form for a symbol already defined stay `assume`s.
+private def joinDefFor (s : Expression.Expr) (n : Nat := 1) : Expression.Expr :=
+  LExpr.eq symExecLoc s (mkSym defaultSymPrefix n .int "x")
+
+private def stmtShape : Statement → String
+  | .cmd (.cmd (.init x (.forAll _ ty) (.det v) _)) =>
+    s!"init {x.name} : {Std.format ty} := {Std.format v}"
+  | .cmd (.cmd (.assume l e _)) => s!"assume [{l}] {Std.format e}"
+  | _ => "another statement"
+
+private def rJoin : Expression.Expr := mkSym "$__join0_" 0 .int "r"
+
+/--
+info: init $__join0_r_0 : int := $__symx_1
+assume [<join_value: r>] $__join0_r_0 == $__symx_2
+assume [a] $__join0_r_0 == $__symx_1
+assume [<join_value: r>] $__symr_0 == $__symx_1
+-/
+#guard_msgs in
+#eval IO.println <| "\n".intercalate <| (newAssumes
+  [((joinValueLabel ⟨"r", ()⟩), joinDefFor (mkSym defaultSymPrefix 0 .int "r")),
+   ("a", joinDefFor rJoin),
+   ((joinValueLabel ⟨"r", ()⟩), joinDefFor rJoin 2),
+   ((joinValueLabel ⟨"r", ()⟩), joinDefFor rJoin)] 0).map stmtShape
+
+-- At a merge, a branch's join definition is kept as it is and its other entries go under the
+-- guard (`mergeOwn`), so the definition of a symbol named before the fork, given here as
+-- `defined`, goes under the guard too.
+/-- info: [("<join_value: r>", "$__join0_r_0 == $__symx_1"), ("a", "$__symg_9")] -/
+#guard_msgs in
+#eval (mergeOwn (fun _ => mkSym defaultSymPrefix 9 .bool "g") {}
+  [((joinValueLabel ⟨"r", ()⟩), joinDefFor rJoin), ("a", Core.true)]).map
+    fun (l, e) => (l, toString (Std.format e))
+
+/-- info: [("<join_value: r>", "$__symg_9"), ("a", "$__symg_9")] -/
+#guard_msgs in
+#eval (mergeOwn (fun _ => mkSym defaultSymPrefix 9 .bool "g") (Std.HashSet.ofList ["$__join0_r_0"])
+  [((joinValueLabel ⟨"r", ()⟩), joinDefFor rJoin), ("a", Core.true)]).map
+    fun (l, e) => (l, toString (Std.format e))
+
+-- A merge guard can mention a join symbol. Replay reads a merge's guard when the merged branches
+-- made choices (here the havocs), to pick the branch the model's run takes; the second fork's
+-- guard is `$__joinr_0 > 1`, so the model must give `$__joinr_0`. Without it, replay cannot
+-- validate the model: it does not guess a default.
+private def guardOnJoin := procOf <|
+#strata
+program Core;
+procedure P(x : int, out r : int) {
+  if (int.gt(x, 0)) { r := 1; } else { r := 2; }
+  if (int.gt(r, 1)) { havoc r; } else { havoc r; }
+  assert [a]: int.gt(r, 5);
+};
+#end
+/-- A model giving each listed symbol, by its full name, its `int` value. -/
+private def fullModel (bs : List (String × Int)) : CoreIdent → Option Expression.Expr := fun x =>
+  (bs.find? fun (n, _) => x.name == n).map fun (_, v) => .intConst valueLoc v
+private def replayFull (p : Option Procedure) (bs : List (String × Int)) :
+    Option (CEValidationVerdict StopReason) :=
+  (run p .always).bind fun r => r.obligations[0]? >>= fun o =>
+    replayObl Core.Factory r o (fullModel bs)
+/--
+info: [a] under [$__joinr_0 == (if int.gt($__symx_0, 0) then 1 else 2), $__joinr_1 == (if
+  int.gt($__joinr_0, 1) then $__symr_2 else $__symr_3)]  check: int.gt($__joinr_1, 5)
+-/
+#guard_msgs (whitespace := lax) in
+#eval printObls (run guardOnJoin .always)
+-- `x = -1`: `r` is 2 after the first join, so the run takes the first havoc (`r_2`).
+#guard replayFull guardOnJoin
+  [("$__symx_0", -1), ("$__joinr_0", 2), ("$__symr_2", 9), ("$__symr_3", 0)] == some .spurious
+#guard replayFull guardOnJoin
+  [("$__symx_0", -1), ("$__joinr_0", 2), ("$__symr_2", 0), ("$__symr_3", 9)] == some .genuine
+#guard replayFull guardOnJoin [("$__symx_0", -1), ("$__symr_2", 9), ("$__symr_3", 0)] == none
+
+/-! ## Ending infeasible paths -/
 
 /-- How each path of `r` ended that did not finish or fork, in node order. -/
 private def endsOf (r : Option Result) : Option (List String) :=
   r.map fun r => r.nodes.toList.filterMap fun n => match n.status with
-    | .assertFailed l => some s!"assertFailed {l}"
     | .infeasible l => some s!"infeasible {l}"
     | .stopped reason => some s!"stopped: {reason}"
     | _ => none
 
--- A failed assert ends its path after it is recorded: the later check gets no obligation.
+-- A failed assert does not end its path: the later check gets an obligation too.
 private def failThenCheck := procOf <|
 #strata
 program Core;
@@ -1039,17 +1232,9 @@ procedure P(x : int, out r : int) {
 };
 #end
 #guard ((run failThenCheck).map fun r => r.obligations.map (·.label)) == some ["f", "later"]
-#guard ((run failThenCheck (cfg := { endOnFailedChecks := true })).map fun r =>
-  r.obligations.map (·.label)) == some ["f"]
-/-- info: some ["assertFailed f"] -/
-#guard_msgs in
-#eval endsOf (run failThenCheck (cfg := { endOnFailedChecks := true }))
-#guard ((run failThenCheck (cfg := { endOnFailedChecks := true })).map (·.completeness)) ==
-  some .complete
--- The check after the failed assert is not reported as unreached either.
-#guard ((run failThenCheck (cfg := { endOnFailedChecks := true })).map unreachedLabels) ==
-  some []
--- An assume that contradicts the path condition ends the path; by default it continues.
+#guard endsOf (run failThenCheck) == some []
+-- An assume that contradicts the path condition without being literal `false` does not end the
+-- path: the check after it gets an obligation, under both conditions, for the solver.
 private def contraAssume := procOf <|
 #strata
 program Core;
@@ -1061,17 +1246,15 @@ procedure P(x : int, out r : int) {
 };
 #end
 #guard ((run contraAssume).map fun r => r.obligations.map (·.label)) == some ["a"]
-#guard ((run contraAssume (cfg := { endOnFailedChecks := true })).map fun r =>
-  r.obligations.map (·.label)) == some []
-/-- info: some ["infeasible no"] -/
+/-- info: some [] -/
 #guard_msgs in
-#eval endsOf (run contraAssume (cfg := { endOnFailedChecks := true }))
--- No run gets past the contradicting assume, and the run is complete, so the check after it
--- is reported as unreached.
-#guard ((run contraAssume (cfg := { endOnFailedChecks := true })).map unreachedLabels) ==
-  some [("a", ["<unreachable_check: a>"])]
+#eval endsOf (run contraAssume)
+#guard ((run contraAssume).map (·.completeness)) == some .complete
+/-- info: some (1, 1, []) -/
+#guard_msgs in
+#eval (run contraAssume .always).map (fun r => (r.merges, r.obligations.length, unreachedLabels r))
 -- An assume of literal `false` ends the path too.
-#guard ((run assumeFalse (cfg := { endOnFailedChecks := true })).map fun r => (r.obligations.length,
+#guard ((run assumeFalse).map fun r => (r.obligations.length,
   r.countStatus (· matches .infeasible _))) == some (0, 1)
 
 /-! ## Many paths and checks -/
@@ -1161,18 +1344,18 @@ private def extraAtFork : ProcBodyShape {} (StmtConfig {}) :=
       else outs }
 
 /-- The engine's step, except that at the fork both sides' oldest fact (the one the fork started
-    with) is replaced by `pre: false`. Each side still has exactly one new fact, so the lengths
+    with) is replaced by `pre: p` (a fresh symbol). Each side still has exactly one new fact, so the lengths
     look right, but the part both share is no longer the fork's path condition. -/
 private def tailAtFork : ProcBodyShape {} (StmtConfig {}) :=
   { structuredShape {} with
     step := fun fuel c cfg st =>
       let outs := (structuredShape {}).step fuel c cfg st
       if outs.length == 2 then
-        outs.map fun (o, st') => (o, { st' with pc := st'.pc.dropLast ++ [("pre", Core.false)] })
+        outs.map fun (o, st') => (o, { st' with pc := st'.pc.dropLast ++ [("pre", mkSym "$__s" 9 .bool "p")] })
       else outs }
 
 /-- The engine's step, except that after the fork, on the else-branch only, each step replaces
-    the oldest fact by `pre: false`. The fork itself looks right, so the join opens; at the join
+    the oldest fact by `pre: p` (a fresh symbol). The fork itself looks right, so the join opens; at the join
     the two branches no longer share the fork's facts. -/
 private def rewriteBaseOnElse : ProcBodyShape {} (StmtConfig {}) :=
   { structuredShape {} with
@@ -1182,7 +1365,7 @@ private def rewriteBaseOnElse : ProcBodyShape {} (StmtConfig {}) :=
       -- (`forkEffects`, SymExec.lean).
       let onElse := (st.pc.head?.map (·.1.startsWith "<label_ite_cond_false")).getD false
       if onElse then
-        outs.map fun (o, st') => (o, { st' with pc := st'.pc.dropLast ++ [("pre", Core.false)] })
+        outs.map fun (o, st') => (o, { st' with pc := st'.pc.dropLast ++ [("pre", mkSym "$__s" 9 .bool "p")] })
       else outs }
 
 /-- `twoBranches`'s body run by `sh` under the policy `pol` from a store binding `x` and `r` to

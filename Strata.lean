@@ -264,6 +264,7 @@ import Strata.Languages.Core.InterpreterReachProps
 import Strata.Languages.Core.InterpreterObs
 import Strata.Languages.Core.InterpreterObsProps
 import Strata.Languages.Core.InterpreterSound
+import Strata.Languages.Core.JoinValueNames
 import Strata.Languages.Core.SymExec
 import Strata.Languages.Core.PathExplorer
 import Strata.Languages.Core.PathExplorerProps

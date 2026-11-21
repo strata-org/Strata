@@ -259,9 +259,9 @@ post: true
 /--
 info: safeMod_body_calls_Int.SafeMod_0: false
 q_post: false
-post: true
 init_calls_safeMod_0: true
 chk: true
+post: true
 -/
 #guard_msgs in
 #eval carriesMarker markerAfterLoop.program .never
@@ -643,6 +643,32 @@ private def printReparse (phases : List (Core.Program → Core.Transform.CoreTra
 #guard_msgs in
 #eval printReparse [Core.CFGLoopElim.hoistNondetChoicesInLoops, Core.CFGLoopElim.cfgLoopElim]
   entryListedLast.program
+
+/-- The variables block `lbl` of each CFG body of `p` declares nondeterministically (`init x
+    := *`) and havocs (`x := *`), in command order. -/
+private def nondetOf (p : Core.Program) (lbl : String) : List String × List String :=
+  p.decls.foldl (fun acc d => match d with
+    | .proc q _ => match q.body with
+      | .cfg g => match g.blocks.lookup lbl with
+        | some b =>
+          (acc.1 ++ b.cmds.filterMap (fun | .cmd (.init x _ .nondet _) => some x.name | _ => none),
+           acc.2 ++ b.cmds.filterMap (fun | .cmd (.set x .nondet _) => some x.name | _ => none))
+        | none => acc
+      | _ => acc
+    | _ => acc) ([], [])
+
+-- After the hoist and the cut, `nondetInLoop`'s choice is declared once at the entry, the
+-- header still chooses it afresh (`$__nondet_0 := *`), and the pre-header havocs it with the
+-- loop's other writes.
+/--
+info: entry: ([$__nondet_0], []), h: ([], [$__nondet_0]), loopElim_pre_h: ([], [$__nondet_0, y])
+-/
+#guard_msgs (whitespace := lax) in
+#eval match afterPhases [Core.CFGLoopElim.hoistNondetChoicesInLoops, Core.CFGLoopElim.cfgLoopElim]
+    nondetInLoop.program with
+  | .ok q => IO.println (", ".intercalate (["entry", "h", "loopElim_pre_h"].map
+      fun l => s!"{l}: {nondetOf q l}"))
+  | .error e => IO.println s!"error: {e}"
 
 /-! The cut lists its pre-headers after the input's blocks, since a pre-header havocs
 variables declared there: here `x` is declared in `d`, listed after the header `h`. -/

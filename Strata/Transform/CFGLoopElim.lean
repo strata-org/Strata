@@ -184,14 +184,20 @@ private def invariantMd (fallback : MetaData Expression) (inv : Expression.Expr)
   | none => fallback
 
 /-- The variable the translator declares for a nondeterministic `goto a, b` (an
-    `init $__nondet_N : bool := *` in the block that branches on it). -/
-def isNondetChoice (x : Expression.Ident) : Bool := x.name.startsWith "$__nondet_"
+    `init $__nondet_N : bool := *` in the block that branches on it; `nondetChoicePrefix`). -/
+def isNondetChoice (x : Expression.Ident) : Bool := x.name.startsWith nondetChoicePrefix
 
 /-- Declare each nondeterministic choice (`isNondetChoice`) of a reachable block once,
     at the entry (`Transform.declareAtEntry`), and havoc it where it was declared. The
     choice is unconstrained either way, but a declaration inside a loop would run
     again on every iteration, which `init` cannot; a havoc is just another write of
-    the loop. -/
+    the loop.
+
+    Why this keeps every run (argued, not proved): the in-block `init $__nondet_N := *`
+    becomes `$__nondet_N := *` at the same place, so each execution of the block, in
+    every iteration, still chooses a fresh value. The only other change is that the
+    variable exists from the entry on, with an arbitrary value, and nothing observes that
+    value: the choice is read only by its own block's `goto`, after the assignment. -/
 def hoistNondetChoices (cfg : DetCFG) : DetCFG := Id.run do
   let reachable := cfg.reachableLabels
   let mut decls : Array Command := #[]

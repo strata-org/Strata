@@ -1128,6 +1128,9 @@ def toSymExecObligationProgram (options : VerifyOptions) (program : Program)
             "SymExec.steps" r.steps
           let stats := (stats.increment "SymExec.obligations" r.obligations.length).increment
             "SymExec.merges" r.merges
+          let stats := stats.increment "SymExec.joinValuesUnnamed" r.joinValuesUnnamed
+          let stats := stats.increment "SymExec.infeasible"
+            (r.countStatus (· matches .infeasible _))
           -- One tree-shaped block per procedure (each assumption written once, on the tree
           -- edge that introduces it), plus one block per unreached check.
           let axAssumes := axioms.toList.map fun (l, e) => Statement.assume l e #[]
@@ -2161,7 +2164,10 @@ def wpVCGenPhases (options : VerifyOptions := VerifyOptions.default)
 /-- Experimental alternative to `symbolicEvalPipelinePhase` (`--vcgen symexec`): obligations by
     symbolic execution on the monadic interpreter (`toSymExecObligationProgram`). Requires the
     facts `SymExec.symExecRequires` lists (built from that list, so the two cannot drift). A
-    `policy` (any Lean merge policy) replaces the preset `options.symExecMode` names. -/
+    `policy` (any Lean merge policy) replaces the preset `options.symExecMode` names.
+
+    Its output declares each symbol it names a merged value with (`SymExec.newAssumes`), so it
+    establishes `noInits` only when no paths merge: under `never` and no `policy`. -/
 def symExecPipelinePhase
     (options : VerifyOptions := VerifyOptions.default)
     (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default)
@@ -2170,8 +2176,11 @@ def symExecPipelinePhase
   -- establishes `noCFGBodies` for the CFG bodies it accepts.
   modelPreservingPipelinePhase "symExec"
     (requires := ProgramFactSet.ofList SymExec.symExecRequires)
-    (establishes := factSet![.noCFGBodies, .staticSingleAssignment, .hasObligationForm,
-                             .noProcedureContracts, .noInits])
+    (establishes := if policy.isNone && options.symExecMode == .never then
+        factSet![.noCFGBodies, .staticSingleAssignment, .hasObligationForm,
+                 .noProcedureContracts, .noInits]
+      else factSet![.noCFGBodies, .staticSingleAssignment, .hasObligationForm,
+                    .noProcedureContracts])
     (preserves := factSet![.noCalls, .noLoops, .noLoopInvariants, .noLoopMeasures,
                          .noPrecondsFromFuncs,
                          .noPolymorphicProcedures,
@@ -2215,15 +2224,15 @@ def corePipelinePhases
     ++ (match options.vcgen with
         | .symbolic =>
           if options.symExec.isSome then
-            -- CSE runs whenever merging can happen (`always`, `pathsAbove`): each merge builds
-            -- an `ite` holding both branches' values, which later merges copy, and CSE names
-            -- each shared part once. Under `never` it runs only on a program with an
-            -- expression whose tree has more than `symExecPerPathCSETreeSize` nodes (a value
-            -- that copies itself, such as `r := r + r` repeated).
-            [symExecPipelinePhase options moreFns, betaReducePipelinePhase,
-              if options.symExecMode == .never then
-                commonSubexprElimPhase (minTreeSize := some symExecPerPathCSETreeSize)
-              else commonSubexprElimPhase]
+            -- Under `never`, CSE runs only on a program with an expression whose tree has
+            -- more than `symExecPerPathCSETreeSize` nodes (a value that copies itself, such as
+            -- `r := r + r` repeated). When paths can merge (`always`, `pathsAbove`) it does not
+            -- run: the explorer names each merged value at its join, and its output declares
+            -- those names, which CSE's `noInits` excludes.
+            if options.symExecMode == .never then
+              [symExecPipelinePhase options moreFns, betaReducePipelinePhase,
+                commonSubexprElimPhase (minTreeSize := some symExecPerPathCSETreeSize)]
+            else [symExecPipelinePhase options moreFns, betaReducePipelinePhase]
           else [symbolicEvalPipelinePhase options moreFns, betaReducePipelinePhase,
                 commonSubexprElimPhase]
         -- CSE requires `noInits`, which the SSA phase does not establish.
@@ -2659,11 +2668,15 @@ private def dispatchJobsParallel (jobs : List SolverJob) (p : Program)
     results := rmap[idx]? :: results
   return results
 
+/-- Whether `name` is a variable common-subexpression elimination invented
+    (`CSE.isCSEGeneratedName`). -/
+def isCSEDefinitionName (name : String) : Bool := isCSEGeneratedName name
+
 private
-def addCSEReferences (refs : Std.HashSet String) (e : Expression.Expr) :
-    Std.HashSet String :=
+def addCSEReferences (refs : Std.HashSet String) (e : Expression.Expr)
+    (generated : String → Bool := isCSEDefinitionName) : Std.HashSet String :=
   (Lambda.LExpr.freeVars e).foldl (fun refs (id, _) =>
-    if isCSEGeneratedName id.name then refs.insert id.name else refs) refs
+    if generated id.name then refs.insert id.name else refs) refs
 
 /-- The names `roots` reach through `definitions`: the least set that contains `roots` and, for
     every definition whose name it contains, the names `refs` returns for that definition's body.
@@ -2754,35 +2767,39 @@ def collectModelVars
     List (Lambda.IdentT Lambda.LMonoTy Unit) :=
   (collectModelVarsCached obligation varDefinitions varDeclarations).run' ExprFactsCache.empty
 
-/-- The CSE-generated definitions on the path of `obligation`, in order. -/
-def cseDefinitions (obligation : Imperative.ProofObligation Expression) :
-    List (String × Expression.Expr) :=
+/-- The definitions on the path of `obligation` of the variables `generated` names, by
+    default the CSE-generated ones, in order. -/
+def cseDefinitions (obligation : Imperative.ProofObligation Expression)
+    (generated : String → Bool := isCSEDefinitionName) : List (String × Expression.Expr) :=
   obligation.assumptions.flatMap fun pathCondition =>
     pathCondition.filterMap fun
       | .varDecl name _ (.det rhs) =>
-        if isCSEGeneratedName name.name then some (name.name, rhs) else none
+        if generated name.name then some (name.name, rhs) else none
       | _ => none
 
-/-- The names of the definitions of `definitions`, the CSE-generated
-    definitions of `obligation`, that `obligation` uses: those its goal and its
-    other path-condition entries reference, closed over the definitions' bodies
-    (see `pruneUnusedCSEDefinitions`). -/
+/-- The names of the definitions of `definitions`, the definitions of `obligation` of the
+    variables `generated` names (`cseDefinitions`), that `obligation` uses: those its goal and
+    its other path-condition entries reference, closed over the definitions' bodies (see
+    `pruneUnusedCSEDefinitions`). -/
 def neededCSEDefinitions (obligation : Imperative.ProofObligation Expression)
-    (definitions : List (String × Expression.Expr)) : Std.HashSet String :=
+    (definitions : List (String × Expression.Expr))
+    (generated : String → Bool := isCSEDefinitionName) : Std.HashSet String :=
+  let add (refs : Std.HashSet String) (e : Expression.Expr) := addCSEReferences refs e generated
   let rootRefs := obligation.assumptions.foldl (fun refs pathCondition =>
     pathCondition.foldl (fun refs entry =>
       match entry with
-      | .assumption _ e => addCSEReferences refs e
-      | .distinct _ es => es.foldl addCSEReferences refs
+      | .assumption _ e => add refs e
+      | .distinct _ es => es.foldl add refs
       | .varDecl name _ (.det rhs) =>
-        if isCSEGeneratedName name.name then refs
-        else addCSEReferences refs rhs
+        if generated name.name then refs
+        else add refs rhs
       | .varDecl _ _ .nondet => refs) refs)
-    (addCSEReferences {} obligation.obligation)
+    (add {} obligation.obligation)
   defClosure (fun e => (Lambda.LExpr.freeVars e).filterMap fun (id, _) =>
-    if isCSEGeneratedName id.name then some id.name else none) definitions rootRefs
+    if generated id.name then some id.name else none) definitions rootRefs
 
-/-- Remove CSE-generated definitions that cannot affect this obligation.
+/-- Remove the definitions of the variables `generated` names (by default the CSE-generated ones)
+that cannot affect this obligation.
 
 Symbolic evaluation combines every deferred obligation into one synthetic
 procedure before CSE runs. CSE may therefore hoist a repeated expression above
@@ -2796,24 +2813,44 @@ contradictory when the function does not terminate. An unencodable literal in
 such a definition would also prevent unrelated obligations from reaching the
 solver.
 
-Start from CSE variables referenced by the obligation and by non-CSE
-path-condition entries, close transitively over CSE definition bodies, and
-retain only those definitions. The original entry ordering is preserved, so
-every retained dependency is still emitted before its users. -/
+Start from the generated variables referenced by the obligation and by the
+other path-condition entries, close transitively over the generated
+definitions' bodies, and retain only those definitions. The original entry ordering is preserved, so
+every retained dependency is still emitted before its users.
+
+`generated` names the variables whose definitions may be left out, by default
+the CSE-generated ones (`pruneUnusedDefinitions` adds the path explorer's join
+symbols). -/
 def pruneUnusedCSEDefinitions
-    (obligation : Imperative.ProofObligation Expression) :
+    (obligation : Imperative.ProofObligation Expression)
+    (generated : String → Bool := isCSEDefinitionName) :
     Imperative.ProofObligation Expression :=
-  let definitions := cseDefinitions obligation
+  let definitions := cseDefinitions obligation generated
   if definitions.isEmpty then
     obligation
   else
-    let needed := neededCSEDefinitions obligation definitions
+    let needed := neededCSEDefinitions obligation definitions generated
     let assumptions := obligation.assumptions.map fun pathCondition =>
       pathCondition.filter fun
         | .varDecl name _ (.det _) =>
-          !isCSEGeneratedName name.name || needed.contains name.name
+          !generated name.name || needed.contains name.name
         | _ => true
     { obligation with assumptions }
+
+/-- Whether `name` is a variable a phase invented and defined (`init x := e`) rather than one
+    the program declares: a CSE-generated name, or a symbol the path explorer named a merged
+    value with (`SymExec.isJoinValueName`). -/
+def isGeneratedDefinitionName (name : String) : Bool :=
+  isCSEGeneratedName name || SymExec.isJoinValueName name
+
+/-- `pruneUnusedCSEDefinitions` for the definitions of every generated variable
+    (`isGeneratedDefinitionName`): a join symbol's definition is on the path of every
+    obligation after its join, including those that never read the merged variable, and like
+    a shared CSE definition it can bring in the axioms of functions the obligation does not
+    mention (a `Map` update brings `Map`'s). -/
+def pruneUnusedDefinitions (obligation : Imperative.ProofObligation Expression) :
+    Imperative.ProofObligation Expression :=
+  pruneUnusedCSEDefinitions obligation isGeneratedDefinitionName
 
 /-- Discharge `obligations`, in order, against the environment `E` built for the program they
     come from: each is asked of the solver `mkDischarge` gives, after the evaluator and the
@@ -3034,12 +3071,12 @@ def dischargeObligations (E : Env) (obligations : ProofObligations Expression)
     if let some diag := firstError then throw diag
   return (results, stats)
 
-/-- The obligations `extractObligations` reads from a program, each without the CSE
-    definitions it does not use (see `pruneUnusedCSEDefinitions`). -/
+/-- The obligations `extractObligations` reads from a program, each without the generated
+    definitions it does not use (see `pruneUnusedDefinitions`). -/
 def obligationsOf (oblProgram : Program) :
     Except Message (ProofObligations Expression) :=
   match Core.ObligationExtraction.extractObligations oblProgram with
-  | .ok obs => .ok (obs.map pruneUnusedCSEDefinitions)
+  | .ok obs => .ok (obs.map pruneUnusedDefinitions)
   | .error e => .error (Message.fromFormat f!"ObligationExtraction error: {e}")
 
 private

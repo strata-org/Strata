@@ -222,7 +222,10 @@ info: [pos] under [int.gt($__symx_0, 0)]  check: true
 -/
 #guard_msgs in
 #eval obls diamond
-/-- info: [pos] under []  check: int.gt(if int.gt($__symx_0, 0) then 1 else 2, 0) -/
+/--
+info: [pos] under [$__joinr_0 == (if int.gt($__symx_0, 0) then 1 else 2)]  check:
+  int.gt($__joinr_0, 0)
+-/
 #guard_msgs (whitespace := lax) in
 #eval obls diamond .always
 #guard (run diamond).map (·.completeness) == some .complete
@@ -255,8 +258,7 @@ cfg entry {
 #guard_msgs in
 #eval summary nestedDiamond (.pathsAbove 2)
 /--
-info: [pos] under []  check: int.gt(if int.gt($__symx_0, 0) then if int.gt($__symx_0, 5) then 1
-  else 2 else 3, 0)
+info: [pos] under [$__joinr_0 == (if int.gt($__symx_0, 5) then 1 else 2), $__joinr_1 == (if int.gt($__symx_0, 0) then $__joinr_0 else 3)]  check: int.gt($__joinr_1, 0)
 -/
 #guard_msgs (whitespace := lax) in
 #eval obls nestedDiamond .always
@@ -282,8 +284,7 @@ cfg entry {
 #guard_msgs in
 #eval summary sharedJoin .always
 /--
-info: [nonneg] under []  check: int.ge(if int.gt($__symx_0, 0) then if int.gt($__symx_0, 5) then 1
-  else 0 else 0, 0)
+info: [nonneg] under [$__joinr_0 == (if int.gt($__symx_0, 5) then 1 else 0), $__joinr_1 == (if int.gt($__symx_0, 0) then $__joinr_0 else 0)]  check: int.ge($__joinr_1, 0)
 -/
 #guard_msgs (whitespace := lax) in
 #eval obls sharedJoin .always
@@ -318,7 +319,7 @@ cfg entry {
 #eval summary earlyFinish .always
 /--
 info: [two] under [if int.gt($__symx_0, 0) then false else true]  check: true
-[post] under []  check: int.gt(if int.gt($__symx_0, 0) then 1 else 2, 0)
+[post] under [$__joinr_0 == (if int.gt($__symx_0, 0) then 1 else 2)]  check: int.gt($__joinr_0, 0)
 -/
 #guard_msgs (whitespace := lax) in
 #eval obls earlyFinish .always
@@ -361,7 +362,12 @@ cfg entry {
 /-- info: some { finished := 1, stopped := 0, obligations := 1, merges := 1, unreached := 0 } -/
 #guard_msgs in
 #eval summary branchLocal .always
-/-- info: [pos] under []  check: int.gt(if int.gt($__symx_0, 0) then 5 else 2, 0) -/
+-- `r` is named by its declared type; nothing is left unnamed.
+#guard ((run branchLocal .always).map (·.joinValuesUnnamed)) == some 0
+/--
+info: [pos] under [$__joinr_0 == (if int.gt($__symx_0, 0) then 5 else 2)]  check:
+  int.gt($__joinr_0, 0)
+-/
 #guard_msgs (whitespace := lax) in
 #eval obls branchLocal .always
 
@@ -388,7 +394,10 @@ cfg entry {
 /-- info: some { finished := 1, stopped := 0, obligations := 1, merges := 2, unreached := 0 } -/
 #guard_msgs in
 #eval summary twoDecls .always
-/-- info: [tpos] under [int.gt($__symx_0, 0)]  check: true -/
+/--
+info: [tpos] under [int.gt($__symx_0, 0), $__joinr_0 == (if int.gt($__symx_0, 5) then 1 else 2)] 
+  check: true
+-/
 #guard_msgs (whitespace := lax) in
 #eval obls twoDecls .always
 
@@ -543,7 +552,7 @@ info: some (Core.SymExec.Completeness.notAnalyzed ["a path stopped: CFG: missing
 #eval (run (diamondChain 200) .always (fuel := 10000)).map fun r =>
   (r.finished, r.merges, r.completeness)
 
-/-! ## Ending paths at failed checks (`ExploreCfg.endOnFailedChecks`) -/
+/-! ## Failed checks and infeasible paths -/
 
 -- Block `c` is reached only past a failed assert.
 private def failThenCover := procOf <|
@@ -556,14 +565,27 @@ cfg entry {
 };
 #end
 
--- By default the path continues past the failed assert, and the cover gets an obligation.
+-- The path continues past the failed assert, and the cover gets an obligation.
 #guard ((run failThenCover).map fun r =>
   (r.obligations.map (·.label), r.unreached.map (·.label))) == some (["f", "cv"], [])
--- Ending the path at the failed assert, the cover gets no obligation, and is not reported as
--- unreached either, as in a structured body.
-#guard ((run failThenCover (cfg := { endOnFailedChecks := true })).map fun r =>
-  (r.obligations.map (·.label), r.unreached.map (·.label), r.completeness)) ==
-  some (["f"], [], .complete)
+
+-- Block `c` is reached only past an infeasible assume.
+private def deadThenCover := procOf <|
+#strata
+program Core;
+procedure P(x : int, out r : int)
+cfg entry {
+  entry: { assume [no]: false; goto c; }
+  c: { cover [cv]: int.gt(x, 0); r := 1; return; }
+};
+#end
+
+-- The path ends at the assume, so the cover gets no obligation; the run is complete, and the
+-- cover is left for `Result.addUnreached` to report.
+#guard ((run deadThenCover).map fun r =>
+  (r.obligations.map (·.label), r.countStatus (· matches .infeasible _), r.completeness)) ==
+  some ([], 1, .complete)
+#guard ((run deadThenCover).map fun r => r.unreached.map (·.label)) == some ["cv"]
 
 /-! ## Replaying counterexamples on CFG paths -/
 
