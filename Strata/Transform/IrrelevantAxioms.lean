@@ -306,25 +306,11 @@ def run (prog : Program) (functions : List String) : CoreTransformM Program := d
 
 end IrrelevantAxioms
 
-/-- Pipeline phase that removes axiom declarations irrelevant to the named
-    functions. The transform only deletes axioms (no new assumptions are
-    introduced), so it is model-preserving.
-    If the user of this pass removes further axioms because e.g., it is in the
-    'aggressive' mode, it will have to validate the model by itself. -/
-def irrelevantAxiomsPipelinePhase (functions : List String) : PipelinePhase :=
-  -- No statement is read or written, so every fact survives.
-  modelPreservingPipelinePhase "removeIrrelevantAxioms"
-    (requires := factSet![.typeAnnotated])
-    (preserves := factSet![.wellFormedCalls, .noCFGBodies, .noCalls, .noLoops,
-                         .noLoopInvariants, .noLoopMeasures, .staticSingleAssignment,
-                         .noBetaRedexes, .noPrecondsFromFuncs, .noNondetGuards,
-                         .hasObligationForm, .noProcedureContracts,
-                         .noPolymorphicProcedures,
-                         .noPolymorphicFunctions, .typeAnnotated, .noInits, .treeForm,
-                         .exitsCovered, .armsHaveObligations, .noCFGCycles])
-    fun prog => do
-      let pruned ← IrrelevantAxioms.run prog functions
-      return (true, pruned)
+/-- The phase's transform: `IrrelevantAxioms.run`, reporting a change. -/
+def irrelevantAxiomsTransform (functions : List String) (prog : Program) :
+    Transform.CoreTransformM (Bool × Program) := do
+  let pruned ← IrrelevantAxioms.run prog functions
+  return (true, pruned)
 
 end -- public section
 end Core

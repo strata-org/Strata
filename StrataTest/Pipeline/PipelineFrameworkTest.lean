@@ -20,7 +20,7 @@ meta import Strata.Transform.InsertLoopInvariantAsserts
 meta import Strata.Transform.FilterProcedures
 meta import Strata.Transform.PrecondElim
 meta import Strata.Transform.ProcedureInlining
-meta import Strata.Transform.TerminationCheck
+meta import Strata.Transform.TerminationCheckPhase
 meta import Strata.Transform.NondetElim
 meta import Strata.Transform.CommonSubexprElim
 meta import Strata.Transform.FunctionInlining
@@ -32,7 +32,9 @@ import Strata.Transform.InsertLoopInvariantAsserts
 import Strata.Transform.FilterProcedures
 import Strata.Transform.PrecondElim
 import Strata.Transform.ProcedureInlining
-import Strata.Transform.TerminationCheck
+import Strata.Transform.TerminationCheckPhase
+import Strata.Transform.RecursiveFunctionAxiomsPhase
+import Strata.Transform.IrrelevantAxiomsPhase
 import Strata.Transform.NondetElim
 import Strata.Transform.CommonSubexprElim
 import Strata.Transform.FunctionInlining
@@ -458,19 +460,101 @@ example : ProgramFact.noCFGBodies.check?.isSome = true := by decide
 #guard_msgs in
 #eval IO.println (match coreValidatedPipeline with | .ok _ => "delivered" | .error e => e)
 
-/-! ### Proofs, deferred -/
+/-! ### Proofs owed per fact -/
 
-/-- Nothing is owed today: a deferred obligation is satisfiable even for a
-    claim that is false. This is the cost of `proveAllPhaseContracts` being
-    `false`, stated as a test rather than as a comment. -/
-example : PhaseContractObligation false False := PhaseContractObligation.deferred (by decide)
+/-- A phase owes no proof of a fact it lists in `unproved`, which by default lists every
+    fact: this one claims `noLoops` and returns its input, so the claim is false on a
+    program with a loop, and it still elaborates. The cost of the default, stated as a test
+    rather than as a comment. -/
+private def testUnprovedClaim : PipelinePhase where
+  transform := fun p => return (false, p)
+  phase := { name := "testUnprovedClaim" }
+  establishes := factSet![.noLoops]
 
-/-- A phase that claims its contract cannot cheat the same way. -/
-example : PhaseContractObligation true False → False := by
-  simp [PhaseContractObligation, proveAllPhaseContracts]
+-- A phase that does not list a claimed fact in `unproved` owes its proof: the same claim
+-- with nothing unproved does not elaborate.
+/--
+error: could not synthesize default value for field 'establishes_ok' of 'Core.PipelinePhase' using tactics
+---
+error: this phase claims a fact that is not in its `unproved` set, so its contract is owed a proof of it: prove the claim, or, if it is true but not yet proved, add it to `unproved` with the reason.
+⊢ ∀ (p : Program) (s : Transform.CoreTransformState) (b : Bool) (p' : Program) (s' : Transform.CoreTransformState),
+    ProgramFactSet.holds { facts := [], canonical := PipelinePhase._proof_5 } p →
+      ExceptT.run (pure (false, p)) s = (Except.ok (b, p'), s') →
+        ∀ (f : ProgramFact),
+          f ∈ { facts := [ProgramFact.noLoops], canonical := ⋯ } → ¬f ∈ ProgramFactSet.empty → f.holds p'
+-/
+#guard_msgs in
+private def testOwedClaim : PipelinePhase where
+  transform := fun p => return (false, p)
+  phase := { name := "testOwedClaim" }
+  establishes := factSet![.noLoops]
+  unproved := ProgramFactSet.empty
 
-/-- And it can discharge the obligation from a proof of the claim. -/
-example (P : Prop) (h : P) : PhaseContractObligation true P := PhaseContractObligation.intro h
+/-! ### What each shipped phase leaves unproved
+
+For every phase a caller may name, plus `removeIrrelevantAxioms` and `filterProcedures`, which
+are named by options rather than by a phase list: `none` when its whole contract is proved,
+`all` when none of it is, and otherwise the facts its `unproved` lists. A phase that newly
+proves a fact, newly leaves one unproved, or is added without proofs changes this list. -/
+
+/-- The facts of `p`'s contract that `p` leaves unproved: `none`, `all`, or the facts it claims
+    and lists in `unproved`. -/
+private def unprovedSummary (p : PipelinePhase) : String :=
+  let claimed := ProgramFact.all.filter fun f => f ∈ p.establishes || f ∈ p.preserves
+  let open_ := claimed.filter (· ∈ p.unproved)
+  if open_.isEmpty then "none"
+  else if open_.length == claimed.length then "all"
+  else ", ".intercalate (open_.map (·.name))
+
+/--
+info: typeCheck: all
+assertNoCFGBodies: none
+callElim: all
+termCheck: typeAnnotated
+precondElim: all
+insertLoopInvariantAsserts: all
+loopElim: all
+genOpaqueTypeParams: all
+monomorphizeFunctions: all
+simplify: all
+nondetElim: all
+symbolicEval: all
+betaReduce: all
+commonSubexprElim: all
+lambdaLift: all
+inlineProcedures: all
+unrollBoundedQuantifiers: all
+functionInlining: all
+foldAxioms: all
+equalitySimplification: all
+contextualRewrite: all
+declObligations: all
+wp: all
+ssa: all
+guardFwd: all
+defInline: all
+deadDefElim: all
+wpLoop: all
+guardProp: all
+ctorFold: all
+symExec: all
+hoistNondetChoices: all
+cfgLoopElim: all
+passiveVC: all
+lambdaLiftIfNeeded: all
+recursiveAxioms: typeAnnotated
+removeIrrelevantAxioms: none
+filterProcedures: all
+-/
+#guard_msgs in
+#eval do
+  let named : List PipelinePhase := (Strata.Core.nameablePhases .quiet) ++
+    [_root_.Core.recursiveAxiomsPhase, irrelevantAxiomsPipelinePhase [],
+     filterProceduresPipelinePhase []]
+  let names := named.map fun (p : PipelinePhase) => p.phase.name
+  let named := (named.zip (List.range named.length)).filterMap fun ((p : PipelinePhase), i) =>
+    if names.take i |>.contains p.phase.name then none else some p
+  for p in named do IO.println s!"{p.phase.name}: {unprovedSummary p}"
 
 /-! ### Validation and diagnostics -/
 
@@ -500,9 +584,9 @@ private def testEstablisher : PipelinePhase where
   transform := fun _ => return (true, { decls := [] })
   phase := { name := "testEstablisher" }
   establishes := factSet![.noCFGBodies]
-  provesContract := true
-  establishes_ok := PhaseContractObligation.intro (by
-    intro p s b p' s' h f hf
+  unproved := ProgramFactSet.empty
+  establishes_ok := by
+    intro p s b p' s' _ h f hf _
     simp only [ExceptT.run, pure, ExceptT.pure, ExceptT.mk, StateT.pure] at h
     injection h with hok _
     injection hok with hbp
@@ -510,8 +594,8 @@ private def testEstablisher : PipelinePhase where
     subst hp'
     have hf' : f = ProgramFact.noCFGBodies := List.mem_singleton.mp hf
     subst hf'
-    exact (ProgramFact.holds_iff_check (c := Program.allStructured) rfl _).mpr (by decide))
-  preserves_ok := PhaseContractObligation.intro (by intro f hf; cases hf)
+    exact (ProgramFact.holds_iff_check (c := Program.allStructured) rfl _).mpr (by decide)
+  preserves_ok := by intro f hf; cases hf
 
 /-- A phase that carries `noCFGBodies` through, so a fact established
     upstream is still available to a requirer downstream of it. -/
@@ -519,17 +603,17 @@ private def testPreserver : PipelinePhase where
   transform := fun p => return (false, p)
   phase := { name := "testPreserver" }
   preserves := factSet![.noCFGBodies]
-  provesContract := true
-  establishes_ok := PhaseContractObligation.intro (by
-    intro _ _ _ _ _ _ f hf; cases hf)
-  preserves_ok := PhaseContractObligation.intro (by
-    intro f _ p s hp b p' s' hrun
+  unproved := ProgramFactSet.empty
+  establishes_ok := by
+    intro _ _ _ _ _ _ _ f hf; cases hf
+  preserves_ok := by
+    intro f _ _ p s _ hp b p' s' hrun
     simp only [ExceptT.run, pure, ExceptT.pure, ExceptT.mk, StateT.pure] at hrun
     injection hrun with hok _
     injection hok with hbp
     injection hbp with _ hp'
     subst hp'
-    exact hp)
+    exact hp
 
 /-- Render a validation outcome compactly for `#guard_msgs`. -/
 private def describe {σ₀ : ProgramFactSet}
@@ -708,7 +792,7 @@ phase                           CF  Lo  LM  LB  BR  PF  HO  PP  TA  TF  AH
  1 typeCheck                  V : : : : :     : :   : :   : : : V :   V   :
  2 assertNoCFGBodies          | V : : : : : : : : : : : : : : : | : : | : :
  3 callElim                   + | V : : :           : :   : : : +     |   :
- 4 termCheck                  ' | | : : :     :     : :   :   : + :   |   :
+ 4 termCheck                  ' | | : : :     :     : :   :     + :   |   :
  5 precondElim                  | | : : :     :     V :   :   : + :   |   :
  6 insertLoopInvariantAsserts   | | : V V     : :   | :   : : : +     |   :
  7 loopElim                     | | V + +       :   | :   : : : +     |   :
@@ -763,7 +847,7 @@ private def glossaryLabels : List String :=
 #guard_msgs in
 #eval IO.println s!"{(ProgramFact.assertPhase .noCFGBodies).phase.name} establishes \
 {factNames (ProgramFact.assertPhase .noCFGBodies).establishes}, \
-proved: {(ProgramFact.assertPhase .noCFGBodies).provesContract}, \
+proved: {(ProgramFact.assertPhase .noCFGBodies).unproved.facts.isEmpty}, \
 preserves all: {(ProgramFact.assertPhase .noCFGBodies).preserves.facts == ProgramFact.all}"
 
 /--

@@ -38,8 +38,8 @@ import Strata.Transform.GenOpaqueTypeParams
 import Strata.Transform.MonomorphizeFunctions
 import Strata.Transform.NondetElim
 import Strata.Transform.PrecondElim
-public import Strata.Transform.RecursiveFunctionAxioms
-import Strata.Transform.TerminationCheck
+public import Strata.Transform.RecursiveFunctionAxiomsPhase
+import Strata.Transform.TerminationCheckPhase
 import Strata.Languages.Core.ObligationExtraction
 import Strata.DL.SMT.StringLit
 public import Strata.Languages.Core.SMTEmitter

@@ -16,6 +16,10 @@ factories constructed from them.
 
 Key results:
 - `Program.Procedure.find?_eq_go` — procedure lookup is a scan of the declarations.
+- `Program.Procedure.find?_of_procs_eq`, `Program.callSites_of_procs_eq` — procedure lookup
+  and the calls of a program depend only on its procedures, in order.
+- `Program.funcsAll_of_funcs` — a check on functions carries to a program whose functions agree
+  with the original's on it; `noFuncPreconditions` and `noPolymorphicFunctions` are such checks.
 - `Program.Procedure.find?_of_mem_of_getNames_nodup`, `Program.Procedure.find?_of_mem_of_suffix`
   — with distinct declared names, a procedure in the program is found under its own name.
 - `Program.Procedure.find?_of_mem_of_procNames_nodup` — the same with only the procedure names
@@ -363,6 +367,93 @@ theorem Program.find?_mem {p : Program} {k : DeclKind} {x : Expression.Ident} {d
     split at h
     · cases h; exact List.mem_cons_self ..
     · exact List.mem_cons_of_mem _ (ih h)
+
+/-- Dropping declarations of other kinds than `k` does not change a scan for kind `k`. -/
+private theorem Program.find?_go_filter {k : DeclKind} {x : Expression.Ident} {q : Decl → Bool}
+    (decls : Decls) (hq : ∀ d ∈ decls, d.kind = k → q d = true) :
+    Program.find?.go k x (decls.filter q) = Program.find?.go k x decls := by
+  induction decls with
+  | nil => rfl
+  | cons d ds ih =>
+    have ih := ih fun e he => hq e (List.mem_cons_of_mem _ he)
+    rw [Program.find?_go_cons]
+    by_cases hd : q d = true
+    · rw [List.filter_cons_of_pos hd, Program.find?_go_cons, ih]
+    · have hk : d.kind ≠ k := fun hk => hd (hq d List.mem_cons_self hk)
+      rw [List.filter_cons_of_neg hd, ih, ite_eq_right (by simp [hk])]
+
+/-- Procedure lookup reads only the procedures of a program. -/
+private theorem Program.Procedure.find?_eq_procs (P : Program) (x : Expression.Ident) :
+    Program.Procedure.find? P x =
+      Program.Procedure.find? { decls := P.decls.filter Decl.isProc } x := by
+  have hq : ∀ d ∈ P.decls, d.kind = .proc → Decl.isProc d = true := fun d _ hk => by
+    unfold Decl.isProc; rw [hk]; rfl
+  rw [Program.Procedure.find?_eq_go, Program.Procedure.find?_eq_go]
+  exact (congrArg (·.bind Decl.getProc?) (Program.find?_go_filter P.decls hq)).symm
+
+/-- Two programs with the same procedures, in the same order, look procedures up alike. -/
+theorem Program.Procedure.find?_of_procs_eq {P P' : Program}
+    (h : P'.decls.filter Decl.isProc = P.decls.filter Decl.isProc) (x : Expression.Ident) :
+    Program.Procedure.find? P' x = Program.Procedure.find? P x := by
+  rw [Program.Procedure.find?_eq_procs P', Program.Procedure.find?_eq_procs P, h]
+
+/-- Two programs with the same procedures, in the same order, have the same calls. -/
+theorem Program.callSites_of_procs_eq {P P' : Program}
+    (h : P'.decls.filter Decl.isProc = P.decls.filter Decl.isProc) :
+    P'.callSites = P.callSites := by
+  have hprocs : ∀ ds : List Decl, ds.flatMap Decl.callSites =
+      (ds.filter Decl.isProc).flatMap Decl.callSites := by
+    intro ds
+    induction ds with
+    | nil => rfl
+    | cons d ds ih =>
+      by_cases hd : d.isProc = true
+      · simp [List.filter_cons_of_pos hd, ih]
+      · rw [List.filter_cons_of_neg hd, List.flatMap_cons, ← ih]
+        cases d <;> simp_all [Decl.isProc, Decl.kind, Decl.callSites]
+  simp only [Program.callSites]
+  rw [hprocs P'.decls, hprocs P.decls, h]
+
+/-- Dropping declarations that are not procedures keeps the procedures, in order. -/
+theorem Decl.filter_isProc_filter {q : Decl → Bool} {ds : List Decl}
+    (hq : ∀ d ∈ ds, d.kind = .proc → q d = true) :
+    (ds.filter q).filter Decl.isProc = ds.filter Decl.isProc := by
+  rw [List.filter_filter]
+  exact List.filter_congr fun d hd => by
+    by_cases hk : d.kind = .proc
+    · simp [Decl.isProc, hk, hq d hd hk]
+    · simp [Decl.isProc, hk]
+
+/-- A list of declarations none of which is a procedure has no procedures. -/
+theorem Decl.filter_isProc_eq_nil {ds : List Decl} (h : ∀ d ∈ ds, d.isProc = false) :
+    ds.filter Decl.isProc = [] :=
+  List.filter_eq_nil_iff.mpr fun d hd => by simp [h d hd]
+
+/-! ### Checks on the functions a program declares -/
+
+/-- `noPrecondsFromFuncs` asks of each declared function that it has no precondition. -/
+theorem Program.noFuncPreconditions_eq_funcsAll (p : Program) :
+    p.noFuncPreconditions = p.funcsAll (·.preconditions.isEmpty) := by
+  unfold Program.noFuncPreconditions Program.funcsAll
+  congr 1; funext d; cases d <;> simp [Decl.funcs]
+
+/-- `noPolymorphicFunctions` asks of each declared function that it has no type parameter. -/
+theorem Program.noPolymorphicFunctions_eq_funcsAll (p : Program) :
+    p.noPolymorphicFunctions = p.funcsAll (·.typeArgs.isEmpty) := by
+  unfold Program.noPolymorphicFunctions Program.funcsAll
+  congr 1; funext d; cases d <;> simp [Decl.funcs]
+
+/-- A check every function of `p` passes holds of every function of `p'` that passes it itself
+    or agrees with some function of `p` on it. -/
+theorem Program.funcsAll_of_funcs {c : Function → Bool} {p p' : Program}
+    (h : ∀ d' ∈ p'.decls, ∀ f' ∈ d'.funcs,
+      c f' = true ∨ ∃ d ∈ p.decls, ∃ f ∈ d.funcs, c f' = c f)
+    (hp : p.funcsAll c = true) : p'.funcsAll c = true := by
+  simp only [Program.funcsAll, List.all_eq_true] at hp ⊢
+  intro d' hd' f' hf'
+  rcases h d' hd' f' hf' with h | ⟨d, hd, f, hf, hc⟩
+  · exact h
+  · exact hc.trans (hp d hd f hf)
 
 end Core
 

@@ -150,56 +150,28 @@ def spuriousModelsValidation (obligation : ProofObligation Expression) : ModelVa
   if marked then .modelToValidate (fun _ _ => none)
   else .modelPreserving
 
-/-! ## Proof obligations, deferred
+/-! ## Proof obligations
 
 A phase's `establishes` and `preserves` are claims about the program its
 transform produces, and `establishes_ok` and `preserves_ok` state that those
-claims hold. Proving one relates a transform to a `Prop` about its output; no
-production transform has such a proof yet, so contracts are checked for
-*composition* while the facts themselves are declared. -/
+claims hold, for every claimed fact the phase does not list in `unproved`.
+Proving one relates a transform to a `Prop` about its output. Every contract
+is checked for *composition*, proved or not. -/
 
-/-- Require every phase to prove every fact it claims, whatever its own
-    `PipelinePhase.provesContract` says.
-
-    Temporary: it exists only because `true` is not yet reachable. Once
-    every phase discharges its obligations, this switch and the
-    `PhaseContractObligation` guard it feeds go away and the obligations become
-    ordinary fields. -/
-@[expose] def proveAllPhaseContracts : Bool := false
-
-/-- A claim a phase makes about its output program: the claim itself when a
-    proof is owed — `proveAllPhaseContracts` or the phase's own
-    `provesContract` is `true` — and `True` otherwise.
-
-    Guarding the obligation rather than omitting it keeps the statement
-    written down and checked for well-formedness, and makes turning a phase
-    from declared to proved a one-word edit. -/
-@[expose] def PhaseContractObligation (provesContract : Bool) (P : Prop) : Prop :=
-  if proveAllPhaseContracts || provesContract then P else True
-
-/-- When neither the global switch nor the phase's own `provesContract` flag is
-    set, the obligation is trivially satisfied. -/
-theorem PhaseContractObligation.deferred {b : Bool} {P : Prop}
-    (h : (proveAllPhaseContracts || b) = false) : PhaseContractObligation b P := by
-  simp [PhaseContractObligation, h]
-
-/-- An obligation that *is* owed, from a proof of the claim itself. Also
-    accepted where nothing is owed, so a phase that proves its contract need
-    not know which switch turned the obligation on. -/
-theorem PhaseContractObligation.intro {b : Bool} {P : Prop} (h : P) : PhaseContractObligation b P := by
-  unfold PhaseContractObligation; split
-  · exact h
-  · trivial
-
-/-- Close a contract obligation that nobody owes yet. Fails when the phase sets
-    `provesContract := true`, or when `proveAllPhaseContracts` is `true`,
-    which is the point: the proof is then owed here. -/
-macro "deferred_contract" : tactic =>
+/-- Close a contract obligation that owes nothing: every fact the phase claims is
+    in its `unproved` set, which is checked by `decide`. Fails as soon as a claimed
+    fact is not in `unproved`, which is the point: its proof is then owed here. -/
+macro "unproved_contract" : tactic =>
   `(tactic| first
-      | exact PhaseContractObligation.deferred (by decide)
-      | fail "this phase's contract is owed a proof, because it sets \
-              `provesContract := true` or `proveAllPhaseContracts` is `true`. \
-              Prove the claim and wrap it in `PhaseContractObligation.intro`.")
+      | (intro _ _ _ _ _ _ _ f _ hu
+         exact absurd Strata.Pipeline.mem_allFactSet hu)
+      | (intro f _ hu
+         exact absurd Strata.Pipeline.mem_allFactSet hu)
+      | (intro _ _ _ _ _ _ _ f hf hu; exact absurd ((by decide : _ ⊑ _) f hf) hu)
+      | (intro f hf hu; exact absurd ((by decide : _ ⊑ _) f hf) hu)
+      | fail "this phase claims a fact that is not in its `unproved` set, so its \
+              contract is owed a proof of it: prove the claim, or, if it is true \
+              but not yet proved, add it to `unproved` with the reason.")
 
 /-! ## Pipeline phase
 
@@ -239,30 +211,33 @@ structure PipelinePhase where
   establishes : ProgramFactSet := factSet![]
   /-- Facts that, if they held on the input, also hold on the output. -/
   preserves   : ProgramFactSet := factSet![]
-  /-- Whether this phase's `establishes` and `preserves` are backed by
-      proofs rather than declared. Setting it to `true` demands
-      `establishes_ok` and `preserves_ok` from this phase alone, so proofs
-      can arrive one transform at a time. -/
-  provesContract : Bool := false
-  /-- Every fact in `establishes` holds on the output. Vacuously true
-      when `establishes` is `factSet![]`. The shape is "any successful run
-      of the transform produces a program on which every asserted fact
-      holds." `s'` is the final state; `b` is the changed-flag returned
-      by the transform. -/
-  establishes_ok : PhaseContractObligation provesContract
-      (∀ (p : Program) (s : Transform.CoreTransformState)
+  /-- The facts of `establishes` and `preserves` whose proof this phase does not
+      give. Each must be a claim believed true, with a comment saying why it is not
+      proved yet: a claim found false is fixed or dropped, never listed here. By
+      default every fact, so a phase owes no proof until it lists less. A test pins what
+      each shipped phase leaves unproved, so proving a fact means updating that test too. -/
+  unproved : ProgramFactSet := ProgramFactSet.all
+  /-- Every fact in `establishes` that is not `unproved` holds on the output.
+      The shape is "any successful run of the transform on a program meeting
+      `requires` produces a program on which every such fact holds." `s'` is the
+      final state; `b` is the changed-flag returned by the transform. The proof is
+      relative to `requires`: the facts it assumes are those the pipeline's
+      bookkeeping says hold, so it is as good as the claims of the phases before it. -/
+  establishes_ok :
+      ∀ (p : Program) (s : Transform.CoreTransformState)
         (b : Bool) (p' : Program) (s' : Transform.CoreTransformState),
+        requires.holds p →
         (transform p).run s = (.ok (b, p'), s') →
-        establishes.holds p') := by deferred_contract
-  /-- Every preserved fact really is preserved when it held on the
-      input. Vacuously true when `preserves` is `factSet![]`. -/
-  preserves_ok : PhaseContractObligation provesContract
-      (∀ (f : ProgramFact), f ∈ preserves →
+        ∀ f ∈ establishes, f ∉ unproved → f.holds p' := by unproved_contract
+  /-- Every fact in `preserves` that is not `unproved`, holding on an input meeting
+      `requires`, holds on the output. -/
+  preserves_ok :
+      ∀ (f : ProgramFact), f ∈ preserves → f ∉ unproved →
       ∀ (p : Program) (s : Transform.CoreTransformState),
-        f.holds p →
+        requires.holds p → f.holds p →
       ∀ (b : Bool) (p' : Program) (s' : Transform.CoreTransformState),
         (transform p).run s = (.ok (b, p'), s') →
-        f.holds p') := by deferred_contract
+        f.holds p' := by unproved_contract
 
 /-- A model-preserving pipeline phase: the transform is applied but it
     cannot introduce spurious models (e.g. it only removes information). -/
@@ -360,18 +335,18 @@ def assertFactPhase (f : ProgramFact) (hc : f.check?.isSome = true := by decide)
   phase.name := f.assertPhaseName
   establishes := ProgramFactSet.ofList [f]
   preserves := ProgramFactSet.all
-  provesContract := true
-  establishes_ok := PhaseContractObligation.intro (by
-    intro p s b p' s' hrun g hg
+  unproved := ProgramFactSet.empty
+  establishes_ok := by
+    intro p s b p' s' _ hrun g hg _
     obtain ⟨rfl, hf⟩ := assertFact_run hrun
     have hg' : g = f := by
       simpa [ProgramFactSet.ofList] using ProgramFactSet.mem_ofList.mp hg
     subst hg'
-    exact (ProgramFact.holds_iff_check_get hc _).mpr hf)
-  preserves_ok := PhaseContractObligation.intro (by
-    intro _ _ p s hp b p' s' hrun
+    exact (ProgramFact.holds_iff_check_get hc _).mpr hf
+  preserves_ok := by
+    intro _ _ _ p s _ hp b p' s' hrun
     obtain ⟨rfl, _⟩ := assertFact_run hrun
-    exact hp)
+    exact hp
 
 /-- The phase that checks `f` on the program and passes it through. A fact with no
     executable check has no such phase, and `by decide` refuses it where it is written:

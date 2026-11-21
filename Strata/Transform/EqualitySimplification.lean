@@ -496,7 +496,13 @@ public section
     it does not use a guard as a fact. In deductive mode the solver still sees
     those paths and finds the goal valid. Under
     `deductiveAssumingSatisfiablePaths`, whose premise is that every path can
-    be taken, the goal is reported failing. -/
+    be taken, the goal is reported failing.
+
+    Its contract is declared, not proved. The phase rewrites the expressions of procedure
+    bodies, so even the statement-shape facts need a proof that the rewrite keeps a
+    statement's form, and `noBetaRedexes` and `typeAnnotated` need the evaluator's
+    properties, which the deductive verification proofs establish only for the programs
+    their own restrictions admit. -/
 def Core.equalitySimplificationPhase : Core.PipelinePhase :=
   Core.modelPreservingPipelinePhase "equalitySimplification"
     Core.EqualitySimplification.runEqualitySimplification

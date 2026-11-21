@@ -214,12 +214,12 @@ private def isRankZeroConstr (tf : @TypeFactory Unit) (dtName : String) (e : Exp
   | _, _ => false
 
 /-- Compute the call-site measure expression at the call's type instance
-    `inst`. For structural, wraps the decreasing arg with adtRank, unannotated
-    when `inst` is unknown, or is `0` when the arg is a constructor without
-    recursive fields (see `isRankZeroConstr`). For int-valued, substitutes
-    formals with actuals. On a type-checked program the instance is known; the
-    fallback for `none` serves callers that pass a program that was not
-    type-checked. -/
+    `inst`. For structural, wraps the decreasing arg with adtRank, or is `0`
+    when the arg is a constructor without recursive fields (see
+    `isRankZeroConstr`). For int-valued, substitutes formals with actuals. The
+    instance is `none` only for an unannotated call, and the rank is then left
+    unannotated; `mkTermCheckLemmas` rejects an annotated call whose annotation
+    does not instantiate the callee's signature. -/
 private def computeCallMeasure
     (tf : @TypeFactory Unit)
     (calleeName : String)
@@ -286,8 +286,7 @@ private def mkTermCheckLemmas
     (funcKindMap : List (String × DecreasesKind × Function))
     (adtRankAxioms : List (String × Expression.Expr))
     (tf : @TypeFactory Unit)
-    (md : Imperative.MetaData Expression)
-    : Except String (List Decl) := do
+    : Except String (List Lemma) := do
   let some body := func.body | return []
   let recFuncNames := block.map (·.name.name)
   let callerMeasure ← computeCallerMeasure func callerKind
@@ -299,10 +298,15 @@ private def mkTermCheckLemmas
       (callArgs : List Expression.Expr) : Except String (List Expression.Expr) := do
     match funcKindMap.find? (fun (n, _, _) => n == calleeName) with
     | some (_, calleeKind, callee) =>
+      let inst := (LFuncDefined.opInstance? callee opTy).map
+        (SubstOne.completeParams callee.typeArgs termTyVarPrefix)
+      -- A type-checked call's annotation always instantiates the callee's signature. One that
+      -- does not would give the call's measure a type the lemma does not bind.
+      if opTy.isSome && inst.isNone then
+        throw s!"termination checking '{func.name.name}': the type annotation of its call to \
+          '{calleeName}' does not instantiate the signature of '{calleeName}'"
       match computeCallMeasure tf calleeName calleeKind callee.inputs.keys
-          callee.inputs.values
-          ((LFuncDefined.opInstance? callee opTy).map
-            (SubstOne.completeParams callee.typeArgs termTyVarPrefix)) callArgs with
+          callee.inputs.values inst callArgs with
       | .ok callMeasure =>
         if callMeasure.hasBVar then
           .error s!"termination checking '{func.name.name}': decreasing argument contains a bound variable"
@@ -338,8 +342,8 @@ private def mkTermCheckLemmas
   let hyps := rankHyps ++ func.preconditions.map (·.expr)
   return obligations.mapIdx fun i ob =>
     let e := hyps.foldr (init := ob) fun p body => LExpr.mkApp coreLoc boolImpliesOp [p, body]
-    .lemma { name := s!"{func.name.name}_terminates_{i}", typeArgs := func.typeArgs,
-             e := Lemma.forallAbstractingCalls block func.inputs.toList e } md
+    { name := s!"{func.name.name}_terminates_{i}", typeArgs := func.typeArgs,
+      e := Lemma.forallAbstractingCalls block func.inputs.toList e }
 
 /-- Result of generating adtRank declarations for a mutual datatype block. -/
 private structure AdtRankDecls where
@@ -362,137 +366,118 @@ private def mkAdtRankDecls
         axioms.mapIdx fun i ax =>
           (s!"{adtRankFuncName dt.name}_{i}", ax) }
 
+/-- The declaration loop of `termCheck`: generates the rank functions and the termination
+    lemmas of each recursive block, and passes every other declaration through. -/
+def termCheckDecls (taken : Std.HashSet String) (decls : List Decl) (tf : @TypeFactory Unit)
+    (emittedAdtRank : Std.HashSet String)
+    : CoreTransformM (Bool × List Decl) := do
+  let mut acc : Array Decl := #[]
+  let mut changed := false
+  let mut remaining := decls
+  let mut tf := tf
+  let mut emittedAdtRank := emittedAdtRank
+  let mut taken := taken
+  while h : remaining ≠ [] do
+    let d := remaining.head h
+    let rest := remaining.tail
+    match d with
+    | .recFuncBlock funcs md => do
+      let fileRange := Imperative.getFileRange md |>.getD FileRange.unknown
+      let throwErr (msg : String) : CoreTransformM Unit :=
+        throw (Message.withRange fileRange msg)
+      -- Step 1: Validate measures and determine DecreasesKind for every
+      -- function in the block, polymorphic ones included; downstream passes
+      -- specialize and check them at their ground instantiations.  Including
+      -- poly members here also keeps `funcKindMap` complete, so a monomorphic
+      -- member's recursive call to a polymorphic sibling still gets its
+      -- decrease obligation.
+      let mut funcKindList : List (String × DecreasesKind × Function) := []
+      for func in funcs do
+        match getDecreasesKind func tf with
+        | .error msg => throwErr msg
+        | .ok kind =>
+          funcKindList := (func.name.name, kind, func) :: funcKindList
+      let funcKindMap := funcKindList.reverse
+      -- Reject mutual blocks that mix structural and int-valued measures.
+      let hasStructural := funcKindMap.any fun (_, k, _) => match k with
+        | .structural _ _ => true | .intValued _ => false
+      let hasIntValued := funcKindMap.any fun (_, k, _) => match k with
+        | .intValued _ => true | .structural _ _ => false
+      if hasStructural && hasIntValued then
+        throwErr "mutual recursive block mixes structural and int-valued termination measures; all functions in a mutual block must use the same kind of measure"
+      -- Step 2: Generate adtRank function declarations and per-constructor axioms
+      -- for structural functions only.
+      let allAdtNames := funcKindMap.filterMap fun (_, kind, _) =>
+        match kind with
+        | .structural _ dtName => some dtName
+        | .intValued _ => none
+      let allAdtNames := allAdtNames.eraseDups
+      let allAdtRank : AdtRankDecls :=
+        let (_, revResults) : Std.HashSet String × List AdtRankDecls :=
+          allAdtNames.foldl (init := ({}, [])) fun (seen, acc') adtName =>
+            if seen.contains adtName then (seen, acc')
+            else
+              let r := mkAdtRankDecls adtName tf md
+              (r.namedDecls.foldl (fun s (n, _) => s.insert n) seen, r :: acc')
+        let results := revResults.reverse
+        { namedDecls := results.flatMap (·.namedDecls)
+          axioms := results.flatMap (·.axioms) }
+      let newRankDecls := allAdtRank.namedDecls.filterMap
+        fun (n, d') => if emittedAdtRank.contains n then none else some d'
+      emittedAdtRank := allAdtRank.namedDecls.foldl (fun s (n, _) => s.insert n) emittedAdtRank
+      incrementStat s!"{Stats.adtRankAxiomsGenerated}" allAdtRank.axioms.length
+      -- Step 3: Generate one lemma per recursive call site, stating that the
+      -- measure decreases there. Each function lists its lemmas.
+      -- A lemma whose name is already declared, or chosen for an earlier
+      -- lemma, gets a `_k` suffix; each chosen name is reserved at once.
+      let mut revTermLemmass : List (List Lemma) := []
+      for func in funcs do
+        let callerKind := funcKindMap.find? (fun (n, _, _) => n == func.name.name)
+        let lemmas ← match callerKind with
+          | none => pure []
+          | some (_, kind, _) =>
+            match mkTermCheckLemmas func funcs kind funcKindMap allAdtRank.axioms tf with
+            | .error msg => do throwErr msg; pure []
+            | .ok r => pure r
+        let mut revNamed : List Lemma := []
+        for l in lemmas do
+          let name := Strata.Name.freshName taken l.name
+          taken := taken.insert name
+          revNamed := { l with name } :: revNamed
+        revTermLemmass := revNamed.reverse :: revTermLemmass
+      let termLemmass := revTermLemmass.reverse
+      let termDecls := termLemmass.flatten.map (Decl.lemma · md)
+      incrementStat s!"{Stats.termCheckLemmasGenerated}" termDecls.length
+      let funcs' := (funcs.zip termLemmass).map fun (func, lemmas) =>
+        { func with lemmas := func.lemmas ++ lemmas.map (·.name) }
+      -- Step 4: Splice the adtRank decls and then the lemmas before the rec
+      -- block. The lemmas do not mention the block's functions, so their
+      -- definitions are not in scope when the lemmas are checked.
+      if newRankDecls.isEmpty && termDecls.isEmpty then
+        acc := acc.push d
+      else
+        changed := true
+        acc := acc ++ newRankDecls.toArray
+        acc := acc ++ termDecls.toArray
+        acc := acc.push (.recFuncBlock funcs' md)
+    | .type (.data block) _md => do
+      tf := tf.push block
+      acc := acc.push d
+    | .proc _ _ | .func _ _ | .ax _ _ | .lemma _ _ | .distinct _ _ _
+    | .type (.con _) _ | .type (.syn _) _ => do
+      acc := acc.push d
+    remaining := rest
+  return (changed, acc.toList)
+
 /-- Main transformation: iterate over declarations, generating adtRank axioms
     and termination-checking lemmas for each `recFuncBlock`. -/
 def termCheck (p : Program) : CoreTransformM (Bool × Program) := do
   -- Generated lemmas are named away from every name of the program.
   let taken := Std.HashSet.ofList p.takenNames
-  let (changed, newDecls) ← transformDecls taken p.decls TypeFactory.default {}
+  let (changed, newDecls) ← termCheckDecls taken p.decls TypeFactory.default {}
   return (changed, { decls := newDecls })
-where
-  transformDecls (taken : Std.HashSet String) (decls : List Decl) (tf : @TypeFactory Unit)
-      (emittedAdtRank : Std.HashSet String)
-      : CoreTransformM (Bool × List Decl) := do
-    let mut acc : Array Decl := #[]
-    let mut changed := false
-    let mut remaining := decls
-    let mut tf := tf
-    let mut emittedAdtRank := emittedAdtRank
-    let mut taken := taken
-    while h : remaining ≠ [] do
-      let d := remaining.head h
-      let rest := remaining.tail
-      match d with
-      | .recFuncBlock funcs md => do
-        let fileRange := Imperative.getFileRange md |>.getD FileRange.unknown
-        let throwErr (msg : String) : CoreTransformM Unit :=
-          throw (Message.withRange fileRange msg)
-        -- Step 1: Validate measures and determine DecreasesKind for every
-        -- function in the block, polymorphic ones included; downstream passes
-        -- specialize and check them at their ground instantiations.  Including
-        -- poly members here also keeps `funcKindMap` complete, so a monomorphic
-        -- member's recursive call to a polymorphic sibling still gets its
-        -- decrease obligation.
-        let mut funcKindList : List (String × DecreasesKind × Function) := []
-        for func in funcs do
-          match getDecreasesKind func tf with
-          | .error msg => throwErr msg
-          | .ok kind =>
-            funcKindList := (func.name.name, kind, func) :: funcKindList
-        let funcKindMap := funcKindList.reverse
-        -- Reject mutual blocks that mix structural and int-valued measures.
-        let hasStructural := funcKindMap.any fun (_, k, _) => match k with
-          | .structural _ _ => true | .intValued _ => false
-        let hasIntValued := funcKindMap.any fun (_, k, _) => match k with
-          | .intValued _ => true | .structural _ _ => false
-        if hasStructural && hasIntValued then
-          throwErr "mutual recursive block mixes structural and int-valued termination measures; all functions in a mutual block must use the same kind of measure"
-        -- Step 2: Generate adtRank function declarations and per-constructor axioms
-        -- for structural functions only.
-        let allAdtNames := funcKindMap.filterMap fun (_, kind, _) =>
-          match kind with
-          | .structural _ dtName => some dtName
-          | .intValued _ => none
-        let allAdtNames := allAdtNames.eraseDups
-        let allAdtRank : AdtRankDecls :=
-          let (_, revResults) : Std.HashSet String × List AdtRankDecls :=
-            allAdtNames.foldl (init := ({}, [])) fun (seen, acc') adtName =>
-              if seen.contains adtName then (seen, acc')
-              else
-                let r := mkAdtRankDecls adtName tf md
-                (r.namedDecls.foldl (fun s (n, _) => s.insert n) seen, r :: acc')
-          let results := revResults.reverse
-          { namedDecls := results.flatMap (·.namedDecls)
-            axioms := results.flatMap (·.axioms) }
-        let newRankDecls := allAdtRank.namedDecls.filterMap
-          fun (n, d') => if emittedAdtRank.contains n then none else some d'
-        emittedAdtRank := allAdtRank.namedDecls.foldl (fun s (n, _) => s.insert n) emittedAdtRank
-        incrementStat s!"{Stats.adtRankAxiomsGenerated}" allAdtRank.axioms.length
-        -- Step 3: Generate one lemma per recursive call site, stating that the
-        -- measure decreases there. Each function lists its lemmas.
-        -- A lemma whose name is already declared, or chosen for an earlier
-        -- lemma, gets a `_k` suffix; each chosen name is reserved at once.
-        let mut revTermDeclss : List (List Decl) := []
-        for func in funcs do
-          let callerKind := funcKindMap.find? (fun (n, _, _) => n == func.name.name)
-          let decls ← match callerKind with
-            | none => pure []
-            | some (_, kind, _) =>
-              match mkTermCheckLemmas func funcs kind funcKindMap allAdtRank.axioms tf md with
-              | .error msg => do throwErr msg; pure []
-              | .ok r => pure r
-          let mut revNamed : List Decl := []
-          for d in decls do
-            match d with
-            | .lemma l md' =>
-              let name := Strata.Name.freshName taken l.name
-              taken := taken.insert name
-              revNamed := .lemma { l with name } md' :: revNamed
-            | _ => revNamed := d :: revNamed
-          revTermDeclss := revNamed.reverse :: revTermDeclss
-        let termDeclss := revTermDeclss.reverse
-        let termDecls := termDeclss.flatten
-        incrementStat s!"{Stats.termCheckLemmasGenerated}" termDecls.length
-        let funcs' := (funcs.zip termDeclss).map fun (func, decls) =>
-          { func with lemmas := func.lemmas ++ decls.map (·.name.name) }
-        -- Step 4: Splice the adtRank decls and then the lemmas before the rec
-        -- block. The lemmas do not mention the block's functions, so their
-        -- definitions are not in scope when the lemmas are checked.
-        if newRankDecls.isEmpty && termDecls.isEmpty then
-          acc := acc.push d
-        else
-          changed := true
-          acc := acc ++ newRankDecls.toArray
-          acc := acc ++ termDecls.toArray
-          acc := acc.push (.recFuncBlock funcs' md)
-      | .type (.data block) _md => do
-        tf := tf.push block
-        acc := acc.push d
-      | .proc _ _ | .func _ _ | .ax _ _ | .lemma _ _ | .distinct _ _ _
-      | .type (.con _) _ | .type (.syn _) _ => do
-        acc := acc.push d
-      remaining := rest
-    return (changed, acc.toList)
 
 end TermCheck
-
-/-- TermCheck pipeline phase: generates termination-checking lemmas for
-    recursive functions. Model-preserving because it only adds new lemmas,
-    adtRank functions and their axioms. It keeps every procedure as it is, whatever its
-    body. -/
-def termCheckPipelinePhase : PipelinePhase :=
-  -- `noBetaRedexes` is not claimed because a call's measure is instantiated by
-  -- substituting the call's arguments, and a function-typed parameter applied to
-  -- an abstraction argument leaves a redex behind.
-  modelPreservingPipelinePhase "termCheck"
-    (requires := factSet![.typeAnnotated])
-    (preserves := factSet![.noCFGBodies, .noCalls, .noLoops, .noLoopInvariants,
-                         .noLoopMeasures, .staticSingleAssignment,
-                         .noPrecondsFromFuncs, .noNondetGuards, .noProcedureContracts,
-                         .noPolymorphicFunctions, .typeAnnotated, .noInits, .exitsCovered,
-                         .noCFGCycles])
-    fun prog => do
-      TermCheck.termCheck prog
 
 end Core
 

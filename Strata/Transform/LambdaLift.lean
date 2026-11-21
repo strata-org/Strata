@@ -682,6 +682,8 @@ def Core.lambdaLiftPipelinePhase : Core.PipelinePhase where
 def Core.lambdaLiftIfNeededPipelinePhase : Core.PipelinePhase :=
   { Core.lambdaLiftPipelinePhase with
     transform := Core.LambdaLift.runIfNeeded
-    phase := { Core.lambdaLiftPipelinePhase.phase with name := "lambdaLiftIfNeeded" } }
+    phase := { Core.lambdaLiftPipelinePhase.phase with name := "lambdaLiftIfNeeded" }
+    establishes_ok := by unproved_contract
+    preserves_ok := by unproved_contract }
 
 end -- public section
