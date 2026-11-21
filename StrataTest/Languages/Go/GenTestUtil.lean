@@ -167,13 +167,4 @@ public def checkGoClean (dir : System.FilePath) : IO (Option String) := do
     return some s!"generated Go is not gofmt-clean; gofmt -l listed:\n{fmt.stdout}"
   runTool "go" #["vet", "./..."] dir
 
-/-- Remove any previous test directory and recreate it empty. -/
-public def prepareTempDir (dir : System.FilePath) : IO Unit := do
-  if ← dir.pathExists then IO.FS.removeDirAll dir
-  IO.FS.createDirAll dir
-
-/-- Remove a test directory when it exists. -/
-public def cleanupTempDir (dir : System.FilePath) : IO Unit := do
-  if ← dir.pathExists then IO.FS.removeDirAll dir
-
 end Strata.Go.TestUtil
