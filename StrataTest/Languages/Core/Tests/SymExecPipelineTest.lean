@@ -828,6 +828,7 @@ info: typeCheck: all claims hold
 callElim: all claims hold
 termCheck: all claims hold
 precondElim: all claims hold
+seqTotalize: all claims hold
 insertLoopInvariantAsserts: all claims hold
 loopElim: all claims hold
 genOpaqueTypeParams: all claims hold
@@ -846,6 +847,7 @@ info: typeCheck: all claims hold
 callElim: all claims hold
 termCheck: all claims hold
 precondElim: all claims hold
+seqTotalize: all claims hold
 insertLoopInvariantAsserts: all claims hold
 loopElim: all claims hold
 genOpaqueTypeParams: all claims hold
@@ -864,6 +866,7 @@ info: typeCheck: all claims hold
 callElim: all claims hold
 termCheck: all claims hold
 precondElim: all claims hold
+seqTotalize: all claims hold
 insertLoopInvariantAsserts: all claims hold
 loopElim: all claims hold
 genOpaqueTypeParams: all claims hold

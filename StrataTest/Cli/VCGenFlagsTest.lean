@@ -28,7 +28,7 @@ open Strata.Cli
 /--
 info: To run the phases in the default order:
 
-  --phases typeCheck,assertNoCFGBodies,callElim,termCheck,precondElim,insertLoopInvariantAsserts,loopElim,genOpaqueTypeParams,monomorphizeFunctions,simplify,nondetElim,declObligations,wp,ssa,deadDefElim,betaReduce
+  --phases typeCheck,assertNoCFGBodies,callElim,termCheck,precondElim,seqTotalize,insertLoopInvariantAsserts,loopElim,genOpaqueTypeParams,monomorphizeFunctions,simplify,nondetElim,declObligations,wp,ssa,deadDefElim,betaReduce
 
 You can change this order. Give it back to --phases with no input file and
 Strata reports whether it composes without verifying anything.
@@ -310,7 +310,7 @@ private def reportOf (flags : List (String × String)) : IO Unit := do
 #eval reportOf [("path-cap", "3"), ("phases", wpOrder)]
 
 /--
-info: This order composes: typeCheck, assertNoCFGBodies, callElim, termCheck, precondElim, insertLoopInvariantAsserts, loopElim, genOpaqueTypeParams, monomorphizeFunctions, simplify, nondetElim, declObligations, wp, ssa, deadDefElim, betaReduce
+info: This order composes: typeCheck, assertNoCFGBodies, callElim, termCheck, precondElim, seqTotalize, insertLoopInvariantAsserts, loopElim, genOpaqueTypeParams, monomorphizeFunctions, simplify, nondetElim, declObligations, wp, ssa, deadDefElim, betaReduce
 -/
 #guard_msgs in
 #eval reportOf [("vcgen", "wp"), ("phases", wpOrder)]

@@ -581,15 +581,16 @@ phase                           CF  Lo  LM  LB  BR  NG  PC  Po  In  EC
  3 callElim                   + | V : : :         : :   : : : +     |
  4 termCheck                  ' | | : : :     :   : :   :   : + :   |
  5 precondElim                  | | : : :     :   V :   :   : + :   |
- 6 insertLoopInvariantAsserts   | | : V V     : : | :   : : : +     |
- 7 loopElim                     | | V + +       : | :   : : : +     |
- 8 genOpaqueTypeParams          | + | | |     : : | :   : V : + :   |
- 9 monomorphizeFunctions        | | | | |     : : | :   : + V + :   |
-10 simplify                     | + | | |     :   + : : : | | + : : |
-11 nondetElim                   | + | | |       : | V   : | | +     |
-12 symbolicEval                 + V + | |     V   | - V V | | + V   |
-13 betaReduce                   | | | | |     | V | : | | | | + | : | :
-14 commonSubexprElim            + | | | |     + | | : | | | | + -   |
+ 6 seqTotalize                : | | : : : : : : : + : : : : : | : : | :
+ 7 insertLoopInvariantAsserts   | | : V V     : : | :   : : : +     |
+ 8 loopElim                     | | V + +       : | :   : : : +     |
+ 9 genOpaqueTypeParams          | + | | |     : : | :   : V : + :   |
+10 monomorphizeFunctions        | | | | |     : : | :   : + V + :   |
+11 simplify                     | + | | |     :   + : : : | | + : : |
+12 nondetElim                   | + | | |       : | V   : | | +     |
+13 symbolicEval                 + V + | |     V   | - V V | | + V   |
+14 betaReduce                   | | | | |     | V | : | | | | + | : | :
+15 commonSubexprElim            + | | | |     + | | : | | | | + -   |
    the backend                  + + +         + + +   + + + + +
 
 established and preserved, name it once: none
@@ -644,6 +645,7 @@ phases:
   callElim
   termCheck
   precondElim
+  seqTotalize
   insertLoopInvariantAsserts
   loopElim
   genOpaqueTypeParams
@@ -667,6 +669,7 @@ phases:
   callElim
   termCheck
   precondElim
+  seqTotalize
   filterProcedures
   insertLoopInvariantAsserts
   loopElim
@@ -696,6 +699,7 @@ phases:
   callElim
   termCheck
   precondElim
+  seqTotalize
   insertLoopInvariantAsserts
   loopElim
   genOpaqueTypeParams
@@ -726,7 +730,7 @@ somewhere the caller did not ask for. -/
 /-! Anchoring on the last phase is the boundary where nothing follows it, so the
 spliced phases end the list. -/
 
-/-- info: [typeCheck, assertNoCFGBodies, callElim, termCheck, precondElim, insertLoopInvariantAsserts, loopElim, genOpaqueTypeParams, monomorphizeFunctions, simplify, nondetElim, symbolicEval, betaReduce, commonSubexprElim, inlineProcedures] -/
+/-- info: [typeCheck, assertNoCFGBodies, callElim, termCheck, precondElim, seqTotalize, insertLoopInvariantAsserts, loopElim, genOpaqueTypeParams, monomorphizeFunctions, simplify, nondetElim, symbolicEval, betaReduce, commonSubexprElim, inlineProcedures] -/
 #guard_msgs in
 #eval IO.println (match Strata.Core.splicePhasesAfter "commonSubexprElim"
     [procedureInliningPipelinePhase] corePipelinePhases with
@@ -760,6 +764,7 @@ phases:
   callElim
   termCheck
   precondElim
+  seqTotalize
   insertLoopInvariantAsserts
   loopElim
   genOpaqueTypeParams
@@ -783,6 +788,7 @@ phases:
   callElim
   termCheck
   precondElim
+  seqTotalize
   insertLoopInvariantAsserts
   loopElim
   genOpaqueTypeParams
@@ -815,6 +821,7 @@ phases:
   callElim
   termCheck
   precondElim
+  seqTotalize
   insertLoopInvariantAsserts
   loopElim
   genOpaqueTypeParams
@@ -838,7 +845,7 @@ the functions it calls. -/
 /--
 info: rejected: phase #1 `deadDefElim` requires:
   • `noCalls`: no preceding phase guarantees it — phase #4 `callElim` later in this pipeline establishes it, so it may be ordered too late
-  • `noLoops`: no preceding phase guarantees it — phase #8 `loopElim` later in this pipeline establishes it, so it may be ordered too late
+  • `noLoops`: no preceding phase guarantees it — phase #9 `loopElim` later in this pipeline establishes it, so it may be ordered too late
   • `noPrecondsFromFuncs`: no preceding phase guarantees it — phase #6 `precondElim` later in this pipeline establishes it, so it may be ordered too late
   • `typeAnnotated`: no preceding phase guarantees it — phase #2 `typeCheck` later in this pipeline establishes it, so it may be ordered too late
 -/
@@ -859,7 +866,7 @@ info: rejected: phase #1 `filterProcedures` requires `typeAnnotated` but no prec
 
 /--
 info: rejected: phase #4 `deadDefElim` requires:
-  • `noLoops`: preceding phases only guarantee `wellFormedCalls, noCFGBodies, noCalls, typeAnnotated, exitsCovered` — phase #8 `loopElim` later in this pipeline establishes it, so it may be ordered too late
+  • `noLoops`: preceding phases only guarantee `wellFormedCalls, noCFGBodies, noCalls, typeAnnotated, exitsCovered` — phase #9 `loopElim` later in this pipeline establishes it, so it may be ordered too late
   • `noPrecondsFromFuncs`: preceding phases only guarantee `wellFormedCalls, noCFGBodies, noCalls, typeAnnotated, exitsCovered` — phase #6 `precondElim` later in this pipeline establishes it, so it may be ordered too late
 -/
 #guard_msgs in
@@ -878,6 +885,7 @@ phases:
   callElim
   termCheck
   precondElim
+  seqTotalize
   insertLoopInvariantAsserts
   loopElim
   deadDefElim
@@ -904,6 +912,7 @@ phases:
   callElim
   termCheck
   precondElim
+  seqTotalize
   insertLoopInvariantAsserts
   loopElim
   genOpaqueTypeParams
@@ -930,6 +939,7 @@ phases:
   callElim
   termCheck
   precondElim
+  seqTotalize
   insertLoopInvariantAsserts
   loopElim
   genOpaqueTypeParams
@@ -965,7 +975,7 @@ supplies `staticSingleAssignment`: only symbolic evaluation establishes
 `hasObligationForm`. -/
 
 /--
-info: rejected: phase #14 `unrollBoundedQuantifiers` requires `hasObligationForm` but preceding phases only guarantee `noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noBetaRedexes, noPrecondsFromFuncs, noNondetGuards, noPolymorphicProcedures, noPolymorphicFunctions, typeAnnotated, exitsCovered` — phase #15 `symbolicEval` later in this pipeline establishes it, so it may be ordered too late
+info: rejected: phase #15 `unrollBoundedQuantifiers` requires `hasObligationForm` but preceding phases only guarantee `noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noBetaRedexes, noPrecondsFromFuncs, noNondetGuards, noPolymorphicProcedures, noPolymorphicFunctions, typeAnnotated, exitsCovered` — phase #16 `symbolicEval` later in this pipeline establishes it, so it may be ordered too late
 -/
 #guard_msgs in
 #eval report (match Strata.Core.resolvePhases
@@ -1197,6 +1207,7 @@ phases:
   callElim
   termCheck
   precondElim
+  seqTotalize
   genOpaqueTypeParams
   monomorphizeFunctions
   simplify
@@ -1215,7 +1226,7 @@ exit: noCFGBodies, noCalls, noLoops, staticSingleAssignment, noBetaRedexes, noPr
 phase that needed it. -/
 
 /--
-info: rejected: phase #10 `symbolicEval` requires `noLoops` but preceding phases only guarantee `noCFGBodies, noCalls, noPrecondsFromFuncs, noNondetGuards, noPolymorphicProcedures, noPolymorphicFunctions, typeAnnotated, exitsCovered`
+info: rejected: phase #11 `symbolicEval` requires `noLoops` but preceding phases only guarantee `noCFGBodies, noCalls, noPrecondsFromFuncs, noNondetGuards, noPolymorphicProcedures, noPolymorphicFunctions, typeAnnotated, exitsCovered`
 -/
 #guard_msgs in
 #eval report (Strata.Core.validatePipeline
@@ -1228,7 +1239,7 @@ the phases that exist but are not in it. -/
 /--
 info: To run the phases in the default order:
 
-  --phases typeCheck,assertNoCFGBodies,callElim,termCheck,precondElim,insertLoopInvariantAsserts,loopElim,genOpaqueTypeParams,monomorphizeFunctions,simplify,nondetElim,symbolicEval,betaReduce,commonSubexprElim
+  --phases typeCheck,assertNoCFGBodies,callElim,termCheck,precondElim,seqTotalize,insertLoopInvariantAsserts,loopElim,genOpaqueTypeParams,monomorphizeFunctions,simplify,nondetElim,symbolicEval,betaReduce,commonSubexprElim
 
 You can change this order. Give it back to --phases with no input file and
 Strata reports whether it composes without verifying anything.
