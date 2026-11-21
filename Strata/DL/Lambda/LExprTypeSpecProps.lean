@@ -51,6 +51,8 @@ Key theorems, by group: `TContext.FindEq_subst_of_closed` and `WellScoped_of_fre
 `HasType_of_AnnotInstRewrite` and `HasType_openAll` (typing under re-annotation and under opening
 a quantifier prefix); `TContext.dealias_find?` (lookup after alias resolution);
 `resolveAux_context_equiv` (the resolver keeps its context up to `Equiv`);
+`resolveAux_getVars_mem_knownVars` and `resolve_getVars_mem_knownVars` (every free variable of a
+resolved expression is a known variable of the input context);
 `resolve_resolveAux_init` (what `resolve` runs `resolveAux` from);
 `resolveAux_RangeKnown`, `resolveAux_varsAvoid` and `resolveAux_tailClear` (the
 substitution and annotations stay registered, avoid given names, and keep older
@@ -2679,6 +2681,214 @@ theorem resolve_resolveAux_init
     · subst h_init
       split <;> rfl
 
+namespace Proofs
+
+omit [ToString T.IDMeta] [Std.ToFormat T.IDMeta] [HasGen T.IDMeta] [Std.ToFormat (LFunc T)]
+  [Std.ToFormat T.Metadata] in
+/-- The context `resolve` starts from has the known variables of the input context: a missing
+    scope stack is replaced by one empty scope, which binds nothing. -/
+theorem resolve_init_knownVars (Env Env0 : TEnv T.IDMeta)
+    (h0 : Env0 = (if Env.context.types.isEmpty = true then
+        Env.updateContext { Env.context with types := [.empty] } else Env)) :
+    ∀ id, id ∈ TContext.knownVars Env0.context ↔ id ∈ TContext.knownVars Env.context := by
+  intro id
+  by_cases hE : Env.context.types.isEmpty = true
+  · have hnil : Env.context.types = [] := HMaps.isEmpty_iff_eq_nil.mp hE
+    have hk : TContext.knownVars Env.context = [] := by
+      simp only [TContext.knownVars, hnil, HMaps.keys]
+    simp only [hE, ite_true] at h0
+    subst h0
+    constructor
+    · intro hid
+      simp only [TContext.knownVars, TEnv.updateContext, TEnv.context, HMaps.keys,
+        HMap.keys_empty, List.append_nil, List.not_mem_nil] at hid
+    · intro hid
+      rw [hk] at hid
+      exact absurd hid List.not_mem_nil
+  · simp only [hE, Bool.false_eq_true, ite_false] at h0
+    subst h0
+    exact Iff.rfl
+
+omit [ToString T.IDMeta] [Std.ToFormat (LFunc T)] [Std.ToFormat T.Metadata] in
+/-- Every free variable of the output of `resolveAux` is a known variable of the input
+    context, when the context has at least one scope. Stated for an expression of a given size,
+    by strong induction on that size. -/
+private theorem resolveAux_getVars_mem_knownVars_aux (C : LContext T) :
+    ∀ (n : Nat) (e : LExpr T.mono), e.sizeOf = n →
+      ∀ (Env Env' : TEnv T.IDMeta) (et : LExprT T.mono),
+        resolveAux C Env e = .ok (et, Env') → Env.context.types ≠ [] →
+        ∀ id ∈ LExpr.getVars et, id ∈ TContext.knownVars Env.context := by
+  intro n
+  induction n using Nat.strongRecOn with
+  | _ n ih =>
+  intro e hn Env Env' et h hne id hid
+  cases e with
+  | const m c =>
+    simp only [resolveAux, Bind.bind, Except.bind] at h
+    split at h
+    · simp only [reduceCtorEq] at h
+    · simp only [Except.ok.injEq, Prod.mk.injEq] at h
+      obtain ⟨h_et, _⟩ := h
+      subst h_et
+      simp only [LExpr.getVars, List.not_mem_nil] at hid
+  | op m o oty =>
+    simp only [resolveAux, Bind.bind, Except.bind] at h
+    revert h; repeat' split
+    all_goals (
+      intro h
+      simp only [Except.ok.injEq, Prod.mk.injEq, reduceCtorEq] at h
+      try (obtain ⟨h_et, _⟩ := h; subst h_et
+           simp only [LExpr.getVars, List.not_mem_nil] at hid))
+  | bvar m i =>
+    simp only [resolveAux] at h
+    simp only [reduceCtorEq] at h
+  | fvar m x fty =>
+    simp only [resolveAux, Bind.bind, Except.bind] at h
+    split at h
+    · simp only [reduceCtorEq] at h
+    · rename_i r hinf
+      obtain ⟨ty, Env_r⟩ := r
+      simp only [Except.ok.injEq, Prod.mk.injEq] at h
+      obtain ⟨h_et, _⟩ := h
+      subst h_et
+      simp only [LExpr.getVars, List.mem_singleton] at hid
+      rw [hid]
+      exact Proofs.inferFVar_mem_knownVars C Env x fty ty Env_r hinf
+  | app m e1 e2 =>
+    simp only [resolveAux, Bind.bind, Except.bind] at h
+    elim_errs h
+    rename_i x1 r1 h1 x2 r2 h2 x3 r3 h3 x4 r4 h4
+    obtain ⟨e1t, Env1⟩ := r1
+    obtain ⟨e2t, Env2⟩ := r2
+    simp only [Except.ok.injEq, Prod.mk.injEq] at h
+    obtain ⟨h_et, _⟩ := h
+    subst h_et
+    have hsz1 : e1.sizeOf < n := by subst hn; simp only [LExpr.sizeOf]; omega
+    have hsz2 : e2.sizeOf < n := by
+      subst hn; simp only [LExpr.sizeOf, Nat.lt_add_left_iff_pos]; omega
+    have hctx := resolveAux_context_types_ne_equiv C e1 Env Env1 e1t h1 hne
+    simp only [LExpr.getVars, List.mem_append] at hid
+    rcases hid with hid | hid
+    · exact ih e1.sizeOf hsz1 e1 rfl Env Env1 e1t h1 hne id hid
+    · exact Proofs.mem_knownVars_of_Equiv hctx.2
+        (ih e2.sizeOf hsz2 e2 rfl Env1 Env2 e2t h2 hctx.1 id hid)
+  | eq m e1 e2 =>
+    simp only [resolveAux, Bind.bind, Except.bind] at h
+    elim_errs h
+    rename_i x1 r1 h1 x2 r2 h2 x3 r3 h3
+    obtain ⟨e1t, Env1⟩ := r1
+    obtain ⟨e2t, Env2⟩ := r2
+    simp only [Except.ok.injEq, Prod.mk.injEq] at h
+    obtain ⟨h_et, _⟩ := h
+    subst h_et
+    have hsz1 : e1.sizeOf < n := by subst hn; simp only [LExpr.sizeOf]; omega
+    have hsz2 : e2.sizeOf < n := by
+      subst hn; simp only [LExpr.sizeOf, Nat.lt_add_left_iff_pos]; omega
+    have hctx := resolveAux_context_types_ne_equiv C e1 Env Env1 e1t h1 hne
+    simp only [LExpr.getVars, List.mem_append] at hid
+    rcases hid with hid | hid
+    · exact ih e1.sizeOf hsz1 e1 rfl Env Env1 e1t h1 hne id hid
+    · exact Proofs.mem_knownVars_of_Equiv hctx.2
+        (ih e2.sizeOf hsz2 e2 rfl Env1 Env2 e2t h2 hctx.1 id hid)
+  | ite m c th el =>
+    simp only [resolveAux, Bind.bind, Except.bind] at h
+    elim_errs h
+    rename_i x1 r1 h1 x2 r2 h2 x3 r3 h3 x4 r4 h4
+    obtain ⟨ct, Env1⟩ := r1
+    obtain ⟨tt, Env2⟩ := r2
+    obtain ⟨et', Env3⟩ := r3
+    simp only [Except.ok.injEq, Prod.mk.injEq] at h
+    obtain ⟨h_et, _⟩ := h
+    subst h_et
+    have hsz1 : c.sizeOf < n := by subst hn; simp only [LExpr.sizeOf]; omega
+    have hsz2 : th.sizeOf < n := by subst hn; simp only [LExpr.sizeOf]; omega
+    have hsz3 : el.sizeOf < n := by
+      subst hn; simp only [LExpr.sizeOf, Nat.lt_add_left_iff_pos]; omega
+    have hctx1 := resolveAux_context_types_ne_equiv C c Env Env1 ct h1 hne
+    have hctx2 := resolveAux_context_types_ne_equiv C th Env1 Env2 tt h2 hctx1.1
+    simp only [LExpr.getVars, List.mem_append] at hid
+    rcases hid with (hid | hid) | hid
+    · exact ih c.sizeOf hsz1 c rfl Env Env1 ct h1 hne id hid
+    · exact Proofs.mem_knownVars_of_Equiv hctx1.2
+        (ih th.sizeOf hsz2 th rfl Env1 Env2 tt h2 hctx1.1 id hid)
+    · exact Proofs.mem_knownVars_of_Equiv hctx1.2 (Proofs.mem_knownVars_of_Equiv hctx2.2
+        (ih el.sizeOf hsz3 el rfl Env2 Env3 et' h3 hctx2.1 id hid))
+  | abs m name bty body =>
+    simp only [resolveAux, Bind.bind, Except.bind] at h
+    elim_errs h
+    rename_i x1 r1 h1 x2 r2 h2
+    obtain ⟨xv, xty, Env1⟩ := r1
+    obtain ⟨bt, Env2⟩ := r2
+    dsimp only at h1 h2
+    simp only [Except.ok.injEq, Prod.mk.injEq] at h
+    obtain ⟨h_et, _⟩ := h
+    subst h_et
+    have hne1 := typeBoundVar_context_types_ne_nil C Env bty xv xty Env1 h1
+    have hsz : (LExpr.varOpen 0 (xv, some xty) body).sizeOf < n := by
+      subst hn; rw [varOpen_sizeOf]
+      simp only [LExpr.sizeOf, Nat.lt_add_left_iff_pos, Nat.zero_lt_succ]
+    simp only [LExpr.getVars] at hid
+    obtain ⟨hid_body, hid_ne⟩ := Proofs.getVars_varCloseT_subset 0 xv bt id hid
+    have hknown := ih _ hsz _ rfl Env1 Env2 bt h2 hne1 id hid_body
+    rcases Proofs.typeBoundVar_knownVars_reverse C Env bty xv xty Env1 h1 id hknown with heq | hok
+    · exact absurd heq hid_ne
+    · exact hok
+  | quant m qk name bty trig body =>
+    simp only [resolveAux, Bind.bind, Except.bind] at h
+    elim_errs h
+    rename_i x1 r1 h1 x2 r2 h2 x3 r3 h3 x4 r4 h4
+    obtain ⟨xv, xty, Env1⟩ := r1
+    obtain ⟨bt, Env2⟩ := r2
+    obtain ⟨tt, Env3⟩ := r3
+    dsimp only at h1 h2 h3
+    simp only [Except.ok.injEq, Prod.mk.injEq] at h
+    obtain ⟨h_et, _⟩ := h
+    subst h_et
+    have hne1 := typeBoundVar_context_types_ne_nil C Env bty xv xty Env1 h1
+    have hsz_body : (LExpr.varOpen 0 (xv, some xty) body).sizeOf < n := by
+      subst hn; rw [varOpen_sizeOf]; simp only [LExpr.sizeOf]; omega
+    have hsz_trig : (LExpr.varOpen 0 (xv, some xty) trig).sizeOf < n := by
+      subst hn; rw [varOpen_sizeOf]; simp only [LExpr.sizeOf, Nat.lt_add_left_iff_pos]; omega
+    have hctx := resolveAux_context_types_ne_equiv C _ Env1 Env2 bt h2 hne1
+    simp only [LExpr.getVars, List.mem_append] at hid
+    rcases hid with hid | hid
+    · obtain ⟨hid_t, hid_ne⟩ := Proofs.getVars_varCloseT_subset 0 xv tt id hid
+      have hknown := Proofs.mem_knownVars_of_Equiv hctx.2
+        (ih _ hsz_trig _ rfl Env2 Env3 tt h3 hctx.1 id hid_t)
+      rcases Proofs.typeBoundVar_knownVars_reverse C Env bty xv xty Env1 h1 id hknown with heq | hok
+      · exact absurd heq hid_ne
+      · exact hok
+    · obtain ⟨hid_b, hid_ne⟩ := Proofs.getVars_varCloseT_subset 0 xv bt id hid
+      have hknown := ih _ hsz_body _ rfl Env1 Env2 bt h2 hne1 id hid_b
+      rcases Proofs.typeBoundVar_knownVars_reverse C Env bty xv xty Env1 h1 id hknown with heq | hok
+      · exact absurd heq hid_ne
+      · exact hok
+
+omit [ToString T.IDMeta] [Std.ToFormat (LFunc T)] [Std.ToFormat T.Metadata] in
+/-- Every free variable of the output of `resolveAux` is a known variable of the input
+    context, when the context has at least one scope. -/
+theorem resolveAux_getVars_mem_knownVars (e : LExpr T.mono) (et : LExprT T.mono)
+    (C : LContext T) (Env Env' : TEnv T.IDMeta)
+    (h : resolveAux C Env e = .ok (et, Env')) (h_ne : Env.context.types ≠ []) :
+    ∀ id ∈ LExpr.getVars et, id ∈ TContext.knownVars Env.context :=
+  resolveAux_getVars_mem_knownVars_aux C e.sizeOf e rfl Env Env' et h h_ne
+
+omit [ToString T.IDMeta] [Std.ToFormat (LFunc T)] [Std.ToFormat T.Metadata] in
+/-- Every free variable of the output of `resolve` is a known variable of the input
+    context. -/
+theorem resolve_getVars_mem_knownVars (C : LContext T) (Env Env' : TEnv T.IDMeta)
+    (e : LExpr T.mono) (et : LExprT T.mono)
+    (h : LExpr.resolve C Env e = .ok (et, Env')) :
+    ∀ id ∈ LExpr.getVars et, id ∈ TContext.knownVars Env.context := by
+  obtain ⟨Env0, etAux, haux, hsub, _, hne0, _, h0⟩ := resolve_resolveAux_init e et C Env Env' h
+  intro id hid
+  subst hsub
+  rw [Proofs.getVars_applySubstT] at hid
+  exact (resolve_init_knownVars Env Env0 h0 id).mp
+    (resolveAux_getVars_mem_knownVars e etAux C Env0 Env' haux hne0 id hid)
+
+end Proofs
+
 omit [ToString T.IDMeta] [Std.ToFormat (LFunc T)] [Std.ToFormat T.Metadata] in
 /-- `resolve` returns at least one type scope, even from an empty stack. -/
 theorem resolve_context_types_ne
@@ -3387,13 +3597,11 @@ theorem resolve_fvar_declared [ToString T.IDMeta] [DecidableEq T.IDMeta] [Hashab
     [HasGen T.IDMeta] [Std.ToFormat (LFunc T)] [Std.ToFormat T.Metadata]
     (C : LContext T) (Env Env' : TEnv T.IDMeta) (e : LExpr T.mono) (et : LExprT T.mono)
     (h : LExpr.resolve C Env e = .ok (et, Env'))
-    (h_envwf : TEnvWF Env) (h_fwf : FactorySigWF C.functions) (S : Subst)
-    {x : T.Identifier} {ann : Option LMonoTy}
+    (S : Subst) {x : T.Identifier} {ann : Option LMonoTy}
     (h_mem : (x, ann) ∈ LExpr.freeVars (LExpr.unresolved (LExpr.applySubstT et S))) :
     ∃ sch, Env.context.types.find? x = some sch := by
-  obtain ⟨Env0, et_aux, h_res, h_et, h_wf_init, h_ne0, -, h_Env0⟩ :=
+  obtain ⟨Env0, et_aux, h_res, h_et, -, h_ne0, -, h_Env0⟩ :=
     resolve_resolveAux_init e et C Env Env' h
-  have h_envwf0 := h_wf_init h_envwf
   have h_vars : x ∈ LExpr.getVars et_aux := by
     have h_x : x ∈ LExpr.getVars (LExpr.unresolved (LExpr.applySubstT et S)) := by
       rw [getVars_eq_freeVars_idents]
@@ -3401,8 +3609,8 @@ theorem resolve_fvar_declared [ToString T.IDMeta] [DecidableEq T.IDMeta] [Hashab
     rw [Proofs.getVars_unresolved, ← h_et, Proofs.getVars_applySubstT,
       Proofs.getVars_applySubstT] at h_x
     exact h_x
-  have h_known := Proofs.resolveAux_getVars_mem_knownVars e et_aux C Env0 Env' h_res h_envwf0
-    h_ne0 h_fwf x h_vars
+  have h_known := Proofs.resolveAux_getVars_mem_knownVars e et_aux C Env0 Env' h_res h_ne0
+    x h_vars
   obtain ⟨sch, h_sch⟩ := (HMaps.mem_keys_iff_find? Env0.context.types x).mp h_known
   subst h_Env0
   split at h_sch

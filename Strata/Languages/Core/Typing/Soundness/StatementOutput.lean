@@ -256,8 +256,7 @@ private theorem imperativeCmd_initDet_output
     rw [LExpr.applyTypeSubst_eq_replaceUserProvidedType, Lambda.getVars_replaceUserProvidedType,
       Lambda.LExpr.Proofs.getVars_unresolved]
     intro hmem
-    exact hnotkey (resolveSource_getVars_mem_knownVars expr ea C Env E2
-      hres he h_ne hf x hmem)
+    exact hnotkey (resolveSource_getVars_mem_knownVars expr ea C Env E2 hres x hmem)
   refine ⟨⟨(TContext.subst Env.context.dealias S).types.insert x
         (LTy.subst S (.forAll []
           (LMonoTy.subst (E2.updateSubst Sx).stateSubstInfo.subst mtyP))), ?_, ?_⟩,

@@ -139,7 +139,10 @@ theorem varOpen_sizeOf {T}:
     simp only [sizeOf]
     grind
 
-theorem varClose_of_varOpen [LawfulBEq T.IDMeta] [BEq T.Metadata] [ReflBEq T.Metadata] [BEq GenericTy] [ReflBEq GenericTy] [LawfulBEq GenericTy]  (h : fresh x e) :
+/-- Closing a variable at the index it was opened at gives back the expression, when the
+    variable is not free in it. -/
+theorem varClose_of_varOpen [LawfulBEq T.IDMeta] [BEq GenericTy] [ReflBEq GenericTy]
+    [LawfulBEq GenericTy] (h : fresh x e) :
   varClose (T := T) (GenericTy := GenericTy) i x (varOpen i x e) = e := by
   induction e generalizing i x
   all_goals try simp_all [fresh, varOpen, LExpr.substK, varClose, freeVars]

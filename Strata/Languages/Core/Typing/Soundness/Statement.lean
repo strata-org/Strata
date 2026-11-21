@@ -24,6 +24,8 @@ public import Strata.Util.HMapsProps
 public import Strata.Util.ListMapProps
 public import Strata.Util.ListUtilsProps
 import Strata.Languages.Core.StatementProps
+import Strata.Languages.Core.Typing.Props.StatementEraseProps
+import Strata.Languages.Core.Typing.Props.ExprEraseProps
 import all Strata.Languages.Core.WrittenTyVarScope
 import Strata.Languages.Core.Typing.Soundness.TypeDecl
 import all Strata.Languages.Core.Typing.Props.StatementTypeProps
@@ -1035,7 +1037,7 @@ private theorem resolve_ground_HasType_source
     SourceExpr.resolve_link_absorbs Cx Env Env' e et hsource
   have hcore :=
     LExpr.resolve_HasType_core (T := CoreLParams) e et Cx Env EnvR hdirect he hf
-      (SourceExpr.resolve_WellScoped Cx Env Env' e et hsource he hf)
+      (SourceExpr.resolve_WellScoped Cx Env Env' e et hsource)
   have habsR : Subst.absorbs S EnvR.stateSubstInfo.subst :=
     Subst.absorbs_trans _ _ _ hlinkAbs habs
   have htyped := hcore.1 S habsR hSwf
@@ -1297,7 +1299,7 @@ private theorem resolved_input_read {C : LContext CoreLParams} {Env E E' Efin : 
     rw [heq.2] at hal
     exact hAN al hal
   have ht := SourceExpr.resolve_HasType_instAnnots C E E' e ea hrs
-    (SourceExpr.resolve_WellScoped C E E' e ea hrs hwf hf) hwf hf
+    (SourceExpr.resolve_WellScoped C E E' e ea hrs) hwf hf
     (MonoScope_of_findEq heq.toFindEq hmono) hANE S habsE' hSwf hknown
   rw [hty, LMonoTy.subst_ground S ty hground] at ht
   exact HasType_FindEq C (TContext.subst E.context S) (TContext.subst Env.context S) _ _
@@ -1968,6 +1970,156 @@ private theorem go_litTyNames_eq
   case blockFlat => exact fun _ _ _ _ _ _ _ _ _ _ _ _ _ _ ih => ih
   case blockScope => exact fun _ _ _ _ _ _ _ _ _ _ _ _ ih => ih
 
+/-! ## Erasure survives statement elaboration -/
+
+/-- Applying `F` to the output of a walk gives `F` of the statements emitted so far, in order,
+    followed by `F` of the statements still to check. -/
+private def GoAdd {α : Type} (F : List Statement → List α) (out acc inp : List Statement) :
+    Prop :=
+  F out = F acc.reverse ++ F inp
+
+/-- With an empty accumulator, `GoAdd` gives `F` of the output equal to `F` of the input. -/
+private theorem GoAdd.of_nil_acc {α : Type} {F : List Statement → List α} (hnil : F [] = [])
+    {out inp : List Statement} (h : GoAdd F out [] inp) : F out = F inp := by
+  simpa only [GoAdd, List.reverse_nil, hnil, List.nil_append] using h
+
+/-- Equal `F` for one emitted statement extends the `GoAdd` walk invariant, when `F` distributes
+    over concatenation. -/
+private theorem GoAdd.cons {α : Type} {F : List Statement → List α}
+    (hF : ∀ a b, F (a ++ b) = F a ++ F b) {acc srest out : List Statement} {s s' : Statement}
+    (hn : F [s'] = F [s]) (hih : GoAdd F out (s' :: acc) srest) : GoAdd F out acc (s :: srest) := by
+  unfold GoAdd at hih ⊢
+  have hcons : F (s :: srest) = F [s] ++ F srest := hF [s] srest
+  rw [hih, List.reverse_cons, hF acc.reverse [s'], hn, hcons, List.append_assoc]
+
+/-- A checked guard keeps the erasure of its source. -/
+private theorem condChecked_eraseTypes {C : LContext CoreLParams} {Env Ec : TEnv Unit}
+    {m : ScopeMap} {cond condElab : ExprOrNondet Expression}
+    (h : CondChecked C Env (renameExprOrNondet m cond) condElab Ec) :
+    (condElab.map LExpr.eraseTypes : ExprOrNondet Expression) =
+      cond.map LExpr.eraseTypes := by
+  cases cond with
+  | nondet =>
+    simp only [renameExprOrNondet, ExprOrNondet.map, CondChecked] at h
+    obtain ⟨rfl, -⟩ := h
+    rfl
+  | det c =>
+    simp only [renameExprOrNondet, ExprOrNondet.map, CondChecked] at h
+    obtain ⟨conda, hres, -, rfl⟩ := h
+    simp only [ExprOrNondet.map]
+    rw [SourceExpr.resolve_unresolved_eraseTypes _ _ _ _ _ hres,
+      WrittenTyVarScope.eraseTypes_renameExpr]
+
+/-- A checked measure keeps the erasure of its source. -/
+private theorem measureChecked_eraseTypes {C : LContext CoreLParams} {Env Em : TEnv Unit}
+    {m : ScopeMap} {measure measureElab : Option Expression.Expr}
+    (h : MeasureChecked C Env (measure.map (renameExpr m)) measureElab Em) :
+    measureElab.map LExpr.eraseTypes = measure.map LExpr.eraseTypes := by
+  cases measure with
+  | none =>
+    simp only [Option.map, MeasureChecked] at h
+    obtain ⟨rfl, -⟩ := h
+    rfl
+  | some mm =>
+    simp only [Option.map, MeasureChecked] at h
+    obtain ⟨ma, hres, -, rfl⟩ := h
+    simp only [Option.map]
+    rw [SourceExpr.resolve_unresolved_eraseTypes _ _ _ _ _ hres,
+      WrittenTyVarScope.eraseTypes_renameExpr]
+
+/-- Checked invariants keep the erasure of their sources. -/
+private theorem invariantsChecked_eraseTypes {C : LContext CoreLParams} {Env Efold : TEnv Unit}
+    {m : ScopeMap} {invariant invElab : List (String × Expression.Expr)}
+    (h : InvariantsChecked C Env (invariant.map (fun (l, i) => (l, renameExpr m i))) invElab
+      Efold) :
+    invElab.map (fun p => (p.1, p.2.eraseTypes)) =
+      invariant.map (fun p => (p.1, p.2.eraseTypes)) := by
+  obtain ⟨step, it, hstep, hfold, rfl⟩ := h
+  have hgen : ∀ (inv : List (String × Expression.Expr))
+      (acc : List (String × LExprT CoreLParams.mono)) (E : TEnv Unit)
+      (it' : List (String × LExprT CoreLParams.mono)) (Ef : TEnv Unit),
+      inv.foldlM step (acc, E) = .ok (it', Ef) →
+      (it'.map (fun x => (x.1, x.2.unresolved))).map (fun p => (p.1, p.2.eraseTypes)) =
+        (acc.map (fun x => (x.1, x.2.unresolved))).map (fun p => (p.1, p.2.eraseTypes)) ++
+          inv.map (fun p => (p.1, p.2.eraseTypes)) := by
+    intro inv
+    induction inv with
+    | nil =>
+      intro acc E it' Ef h'
+      simp only [List.foldlM, pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at h'
+      obtain ⟨rfl, -⟩ := h'
+      simp only [List.map_nil, List.append_nil]
+    | cons q rest ih =>
+      intro acc E it' Ef h'
+      simp only [List.foldlM, bind, Except.bind] at h'
+      elim_err h' with r hr
+      obtain ⟨ia, E', hrdef, hres, -⟩ := hstep acc E q.1 q.2 r hr
+      have h2 := ih _ _ _ _ h'
+      subst hrdef
+      simp only [List.map_append, List.map_cons, List.map_nil, List.append_assoc,
+        List.cons_append, List.nil_append] at h2 ⊢
+      rw [h2, SourceExpr.resolve_unresolved_eraseTypes _ _ _ _ _ hres]
+  have h := hgen _ _ _ _ _ hfold
+  simp only [List.map_nil, List.nil_append] at h
+  rw [h]
+  simp only [List.map_map]
+  refine List.map_congr_left fun q _ => ?_
+  simp only [Function.comp, WrittenTyVarScope.eraseTypes_renameExpr]
+
+/-- A successful walk keeps the erasure of its input, after the reversed accumulator. -/
+private theorem go_eraseAnnots_eq
+    (C C' : LContext CoreLParams) (Env Env' : TEnv Unit) (P : Program)
+    (op : Option Procedure) (ss acc ss' : List Statement) (labels : List String)
+    {m : ScopeMap} {st st' : ScopeState}
+    (h : @Core.Statement.typeCheckAux.go P op C Env ss acc labels m st
+      = .ok (ss', Env', C', st')) :
+    GoAdd Statements.eraseAnnots ss' acc ss := by
+  have hF : ∀ a b, Statements.eraseAnnots (a ++ b) =
+      Statements.eraseAnnots a ++ Statements.eraseAnnots b := Statements.eraseAnnots_append
+  have hnil : Statements.eraseAnnots [] = [] := Statements.eraseAnnots_nil
+  have hone : ∀ s, Statements.eraseAnnots [s] = [Statement.eraseAnnots s] := fun s => by
+    rw [Statements.eraseAnnots_cons, hnil]
+  refine go_ok_induct
+    (motive := fun _ _ ss acc _ _ _ ss' _ _ _ => GoAdd Statements.eraseAnnots ss' acc ss)
+    (motiveB := fun _ _ ss acc _ _ _ ss' _ _ _ => GoAdd Statements.eraseAnnots ss' acc ss)
+    ?nil ?cmd ?block ?ite ?loop ?exit ?typeDecl ?blockScope ?blockFlat C Env ss acc labels ss'
+    Env' C' h
+  case nil =>
+    intro _ _ _ _ _ _
+    simp only [GoAdd, hnil, List.append_nil]
+  case cmd =>
+    intro C Env acc labels m st srest cmd c' Env1 ss' Env' C' st' htc _ _ ih
+    refine GoAdd.cons hF ?_ ih
+    rw [hone, hone, Statement.eraseAnnots_cmd, Statement.eraseAnnots_cmd,
+      (Statement.typeCheckCmd_eraseAnnots_eq C Env Env1 P _ c' htc).trans
+        (Command.eraseAnnots_renameCmd _ _ _ cmd)]
+  case block =>
+    intro _ _ _ _ _ _ _ label bss md bss' Egb stb ss' Env' C' st' _ _ ihb _ ih
+    refine GoAdd.cons hF ?_ ih
+    rw [hone, hone, Statement.eraseAnnots_block, Statement.eraseAnnots_block,
+      GoAdd.of_nil_acc hnil ihb]
+  case ite =>
+    intro _ _ _ _ _ _ _ cond tss ess md condElab Ec tss' Et stt ess' Ee ste ss' Env' C' st'
+      hcond _ _ iht _ ihe _ ih
+    refine GoAdd.cons hF ?_ ih
+    rw [hone, hone, Statement.eraseAnnots_ite, Statement.eraseAnnots_ite,
+      condChecked_eraseTypes hcond, GoAdd.of_nil_acc hnil iht, GoAdd.of_nil_acc hnil ihe]
+  case loop =>
+    intro _ _ _ _ _ _ _ guard measure invariant bss md guardElab Eg measureElab Em invElab Efold
+      bss' Eb stb ss' Env' C' st' hgc hmc hic _ _ ihb _ ih
+    refine GoAdd.cons hF ?_ ih
+    rw [hone, hone, Statement.eraseAnnots_loop, Statement.eraseAnnots_loop,
+      condChecked_eraseTypes hgc, measureChecked_eraseTypes hmc,
+      invariantsChecked_eraseTypes hic, GoAdd.of_nil_acc hnil ihb]
+  case exit =>
+    intro _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ih
+    exact GoAdd.cons hF rfl ih
+  case typeDecl =>
+    intro _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ih
+    exact GoAdd.cons hF rfl ih
+  case blockFlat => exact fun _ _ _ _ _ _ _ _ _ _ _ _ _ _ ih => ih
+  case blockScope => exact fun _ _ _ _ _ _ _ _ _ _ _ _ ih => ih
+
 /-! ## The public statement checker -/
 
 /-- The final substitution of a statement check absorbs the substitution its walk solved. -/
@@ -2409,6 +2561,22 @@ theorem Statement.typeCheck_vars_eq
   · rw [Statement_subst_go_modifiedVars, hm]
   · intro b
     rw [Statement_subst_go_definedVars, hd b]
+
+/-- `Statement.typeCheck` keeps the erasure of the statement list: it adds type annotations to
+    expressions, replaces the declared types of variable declarations, and applies the final
+    type substitution, and changes nothing else. -/
+theorem Statement.typeCheck_eraseAnnots_eq
+    (C : Expression.TyContext) (Env Env' : Expression.TyEnv) (P : Program)
+    (op : Option Procedure) (ss ss' : List Statement)
+    (h : Statement.typeCheck C Env P op ss = .ok (ss', Env')) :
+    Statements.eraseAnnots ss' = Statements.eraseAnnots ss := by
+  obtain ⟨ssA, E1, C1, hr, rfl, -, -⟩ :=
+    Statement.typeCheck_ok_inv C Env Env' P op ss ss' h
+  obtain ⟨_, hr⟩ := typeCheckAux_ok_inv hr
+  have hn := GoAdd.of_nil_acc Statements.eraseAnnots_nil
+    (go_eraseAnnots_eq C C1 Env E1 P op ss [] ssA [] hr)
+  rw [Statement_subst_go_eq, List.reverse_nil, List.nil_append,
+    Statements.eraseAnnots_map_subst, hn]
 
 /-! ## Statement derivations carry `DeskolAmbientScope` -/
 

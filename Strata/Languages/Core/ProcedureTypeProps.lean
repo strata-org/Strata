@@ -14,13 +14,16 @@ import all Strata.DL.Imperative.CFG
 import all Strata.Languages.Core.ProcedureType
 import Strata.Languages.Core.IdentifiersProps
 import Strata.Util.Tactics
+public import Strata.Languages.Core.CmdType
 public import Strata.Languages.Core.StatementType
+import Strata.Languages.Core.Typing.Props.CmdTypeProps
 import all Strata.Languages.Core.StatementType
 import all Strata.Languages.Core.TypeSkolem
 import Strata.Languages.Core.Typing.Props.TypeSkolemProps
 public import Strata.Languages.Core.ProcedureProps
 import all Strata.Languages.Core.ProcedureProps
 import all Strata.Languages.Core.Procedure
+import all Strata.DL.Lambda.LExprTypeEnv
 
 /-! # Well-formedness established by the CFG type checker
 
@@ -37,9 +40,12 @@ holds whatever those analyses return. That they agree with path-based dominance,
 cycles and reachability is not proved here (see the
 `Strata.DL.Imperative.CFGDominators` module header).
 
-`CFG.typeCheck_cmdsRel`: the CFG that `CFG.typeCheck` returns has the input's blocks in order,
-and each of its commands is a checked input command with a type substitution applied, so it
-keeps any property such commands keep.
+`CFG.typeCheck_blocksRel_aliases`: the CFG that `CFG.typeCheck` returns has the input's entry
+and blocks in order with the same labels and targets; each block's metadata has the input's keys,
+with each expression value related to the input's; each of its commands is a checked
+input command with a type substitution applied, and each of its branch guards is a resolved
+input guard with a type substitution applied. `CFG.typeCheck_cmdsRel` is its commands-only
+form: any property that checked commands keep carries over to the returned CFG.
 
 `Procedure.typeCheck_ioNotOld`: no parameter of a procedure that passes `Procedure.typeCheck`
 is named `old x` (the proposition of `WF.WFProcedureProp.ioNotOld`);
@@ -499,51 +505,253 @@ private theorem filterMap_get_rel₂ {β γ} (m : Std.HashMap String γ) (R : β
     simp only [Std.HashMap.get?_eq_getElem?, hg, Option.map_some]
     exact List.Rel₂.cons ⟨rfl, hR⟩ (ih fun x hx => h x (List.mem_cons_of_mem _ hx))
 
-/-- A successful loop whose body checks one command and prepends the result to the second
+/-- A successful loop whose body maps one element to a result and prepends it to the second
     component of the state ends with that component extended by results related by `Q` to the
-    commands, in reverse order. -/
-private theorem forIn_cmds_spec {σ ε} (Q : Command → Command → Prop)
-    (f : Command → σ × List Command → Except ε (ForInStep (σ × List Command)))
-    (hf : ∀ x s r, f x s = .ok r → ∃ y s', r = .yield (s', y :: s.2) ∧ Q x y) :
-    ∀ (xs : List Command) (init res : σ × List Command), forIn xs init f = .ok res →
-      ∃ ys, res.2 = ys.reverse ++ init.2 ∧ List.Rel₂ Q xs ys := by
+    elements, in reverse order, when each step preserves an invariant `I` of the first component
+    that holds initially. The final first component satisfies `I`. -/
+private theorem forIn_collect_spec {σ ε α β} (I : σ → Prop) (Q : α → β → Prop)
+    (f : α → σ × List β → Except ε (ForInStep (σ × List β)))
+    (hf : ∀ x s r, I s.1 → f x s = .ok r →
+      ∃ y s', r = .yield (s', y :: s.2) ∧ I s' ∧ Q x y) :
+    ∀ (xs : List α) (init res : σ × List β), I init.1 → forIn xs init f = .ok res →
+      I res.1 ∧ ∃ ys, res.2 = ys.reverse ++ init.2 ∧ List.Rel₂ Q xs ys := by
   intro xs
   induction xs with
   | nil =>
-    intro init res h
+    intro init res hI h
     rw [List.forIn_nil] at h
     cases h
-    exact ⟨[], rfl, List.Rel₂.nil⟩
+    exact ⟨hI, [], rfl, List.Rel₂.nil⟩
   | cons a as ih =>
-    intro init res h
+    intro init res hI h
     obtain ⟨r, hr, hcase⟩ := forIn_cons_ok_inv h
-    obtain ⟨y, s', rfl, hQ⟩ := hf a init r hr
+    obtain ⟨y, s', rfl, hI', hQ⟩ := hf a init r hI hr
     rcases hcase with ⟨b, hb, -⟩ | ⟨b, hb, hrest⟩
     · cases hb
     · cases hb
-      obtain ⟨ys, hys, hrel⟩ := ih _ res hrest
-      refine ⟨y :: ys, ?_, List.Rel₂.cons hQ hrel⟩
+      obtain ⟨hIres, ys, hys, hrel⟩ := ih _ res hI' hrest
+      refine ⟨hIres, y :: ys, ?_, List.Rel₂.cons hQ hrel⟩
       rw [hys, List.reverse_cons, List.append_assoc]
       rfl
 
 /-- The command loop of the CFG checker: each result it collects is the command checker's result
     on the command at the same position, so it is related to that command by any `Q` that holds
-    between a command and its checked form. -/
+    between a command and its checked form in an environment with the alias list `A`. The loop
+    starts in such an environment, and the command checker keeps the alias list. -/
 private theorem forIn_typeCheckCmd_spec {C : Core.Expression.TyContext} {P : Program}
-    (Q : Command → Command → Prop)
-    (hQ : ∀ E E' x y, Statement.typeCheckCmd C E P x = .ok (y, E') → Q x y) :
+    (A : List Lambda.TypeAlias) (Q : Command → Command → Prop)
+    (hQ : ∀ E E' x y, E.context.aliases = A → Statement.typeCheckCmd C E P x = .ok (y, E') →
+      Q x y) :
     ∀ (xs : List Command) (init res : Lambda.TEnv Unit × List Command),
+      init.1.context.aliases = A →
       forIn xs init (fun cmd (s : Lambda.TEnv Unit × List Command) => do
           let r ← Statement.typeCheckCmd C s.fst P cmd
           pure (ForInStep.yield (r.snd, r.fst :: s.snd))) = .ok res →
       ∃ ys, res.2 = ys.reverse ++ init.2 ∧ List.Rel₂ Q xs ys := by
-  refine forIn_cmds_spec Q _ ?_
-  intro c st r h
+  intro xs init res hA hloop
+  refine (forIn_collect_spec (fun (E : Lambda.TEnv Unit) => E.context.aliases = A) Q _ ?_ xs init
+    res hA hloop).2
+  intro c st r hI h
   rw [Except.bind_is_ok] at h
   obtain ⟨⟨y, E'⟩, hy, h⟩ := h
   simp only [pure, Except.pure, Except.ok.injEq] at h
   subst h
-  exact ⟨y, E', rfl, hQ _ _ _ _ hy⟩
+  exact ⟨y, E', rfl, (Statement.typeCheckCmd_preserves_context _ _ _ _ _ _ hy).2.trans hI,
+    hQ _ _ _ _ hI hy⟩
+
+/-- Every state of a pure yielding loop satisfies an invariant that the initial state satisfies
+    and each step preserves. -/
+private theorem forIn_yield_inv {α σ ε : Type} (I : σ → Prop) (g : α → σ → σ)
+    (hg : ∀ a s, I s → I (g a s)) :
+    ∀ (xs : List α) (init res : σ), I init →
+      forIn xs init (fun a s => (pure (ForInStep.yield (g a s)) : Except ε (ForInStep σ)))
+        = .ok res → I res := by
+  intro xs
+  induction xs with
+  | nil =>
+    intro init res hI h
+    rw [List.forIn_nil] at h
+    cases h
+    exact hI
+  | cons a as ih =>
+    intro init res hI h
+    obtain ⟨r, hr, hcase⟩ := forIn_cons_ok_inv h
+    simp only [pure, Except.pure, Except.ok.injEq] at hr
+    subst hr
+    rcases hcase with ⟨b, hb, -⟩ | ⟨b, hb, hrest⟩
+    · cases hb
+    · cases hb
+      exact ih _ res (hg a init hI) hrest
+
+/-- The CFG returned by a successful `CFG.typeCheck` run has the input's entry and blocks, with
+    the same labels in the same order. Each of its commands is related by `Q` to the input command
+    at the same position, and each branch guard by `G` to the input guard, with the same targets.
+    Each block's metadata has the same keys, with expression values related by `G`
+    to the input's. This holds for any `Q` that holds between a command and the command checker's
+    result on it in an environment with the alias list of `Env`, and any `G` that holds between a
+    guard or metadata expression and its resolution; both must survive applying a type
+    substitution to the result. -/
+theorem typeCheck_blocksRel_aliases {C : Core.Expression.TyContext} {Env : Core.Expression.TyEnv}
+    {P : Program} {proc : Procedure} {cfg : DetCFG} {sourceLoc : Strata.FileRange}
+    {res : DetCFG × Core.Expression.TyEnv} (Q : Command → Command → Prop)
+    (G : Core.Expression.Expr → Core.Expression.Expr → Prop)
+    (hQ : ∀ E E' x y, E.context.aliases = Env.context.aliases →
+      Statement.typeCheckCmd C E P x = .ok (y, E') → Q x y)
+    (hsubst : ∀ x y S, Q x y → Q x (Statement.Command.subst S y))
+    (hG : ∀ E p pa E', SourceExpr.resolve C E p = .ok (pa, E') → G p pa.unresolved)
+    (hGsubst : ∀ p q S, G p q → G p (Lambda.LExpr.applyTypeSubst q S))
+    (hrun : CFG.typeCheck C Env P proc cfg sourceLoc = .ok res) :
+    DetCFG.BlocksRel Q G cfg res.1 := by
+  unfold CFG.typeCheck at hrun
+  obtain ⟨hu, hrun⟩ := Except.seq_guard_ok_iff.mp hrun
+  have huniq : (cfg.blocks.map Prod.fst).Nodup := checkUniqueLabels_sound hu
+  iterate 9 (obtain ⟨-, hrun⟩ := Except.seq_guard_ok_iff.mp hrun)
+  rw [Except.bind_is_ok] at hrun
+  obtain ⟨r1, -, hrun⟩ := hrun
+  obtain ⟨-, hrun⟩ := Except.seq_guard_ok_iff.mp hrun
+  dsimp only at hrun
+  rw [Except.bind_is_ok] at hrun
+  obtain ⟨r2, -, hrun⟩ := hrun
+  rw [Except.bind_is_ok] at hrun
+  obtain ⟨r3, hr3, hrun⟩ := hrun
+  have hscope : ∀ lbl, (r3.getD lbl Env.context).aliases = Env.context.aliases := by
+    refine forIn_yield_inv (I := fun (m : Std.HashMap String (Lambda.TContext Unit)) =>
+      ∀ lbl, (m.getD lbl Env.context).aliases = Env.context.aliases) _ ?_ _ _ _ ?_ hr3
+    · intro lbl m hm k
+      rw [Std.HashMap.getD_insert]
+      split
+      · split
+        · rfl
+        · split
+          · exact hm _
+          · exact hm _
+      · exact hm k
+    · intro lbl
+      simp only [Std.HashMap.getD_empty]
+  rw [Except.bind_is_ok] at hrun
+  obtain ⟨r4, hloop, hrun⟩ := hrun
+  simp only [pure, Except.pure, Except.ok.injEq] at hrun
+  subst hrun
+  have hsubstRel : ∀ (S : Lambda.Subst) {xs ys : List Command}, List.Rel₂ Q xs ys →
+      List.Rel₂ Q xs (ys.map (Statement.Command.subst S)) :=
+    fun S => List.Rel₂.map_right _ (fun x y hxy => hsubst x y S hxy)
+  have hmain := forIn_insert_spec (fun (blk g : Imperative.DetBlock String Command Expression) =>
+      List.Rel₂ Q blk.cmds g.cmds ∧ DetTransferRel G blk.transfer g.transfer ∧
+        Imperative.MetaData.Rel G blk.md g.md) _ ?hbody
+    cfg.blocks _ r4 huniq hloop
+  case hbody =>
+    intro x s r h
+    -- The block's metadata is checked first, in the block's scope, before its commands.
+    rw [Except.bind_is_ok] at h
+    obtain ⟨s0, hmdloop, h⟩ := h
+    rw [← Array.forIn_toList] at hmdloop
+    have hmdSpec := forIn_collect_spec (fun (E : Lambda.TEnv Unit) =>
+        E.context.aliases = Env.context.aliases)
+      (fun (e y : Imperative.MetaDataElem Expression) =>
+        e.fld = y.fld ∧ Imperative.MetaDataElem.Value.Rel G e.value y.value) _ ?hmdbody
+      x.2.md.toList _ s0 ?hmdstart hmdloop
+    case hmdstart =>
+      dsimp only
+      split
+      · exact hscope x.1
+      · rfl
+    case hmdbody =>
+      intro elem st r hI hr
+      rcases elem with ⟨fld, value⟩
+      cases value with
+      | expr e =>
+        rw [Except.bind_is_ok] at hr
+        obtain ⟨v, hv, hr⟩ := hr
+        have hres : SourceExpr.resolve C st.fst e = .ok v :=
+          Except.mapError_ok_h' (SourceExpr.orFreeVarError_eq_ok.mp (Except.mapError_ok_h' hv))
+        have hctx := (SourceExpr.resolve_context_pop_equiv C st.fst v.snd e v.fst hres).2
+        have hrel : Imperative.MetaDataElem.Value.Rel G (.expr e)
+            (.expr (Lambda.LExpr.unresolved v.fst)) :=
+          hG _ _ _ _ hres
+        split at hr <;> split at hr <;> first
+          | (rw [Except.bind_is_ok] at hr
+             obtain ⟨b, -, hr⟩ := hr
+             cases hr
+             exact ⟨_, _, rfl, hctx.trans hI, rfl, hrel⟩)
+          | (cases hr
+             exact ⟨_, _, rfl, hctx.trans hI, rfl, hrel⟩)
+      | _ =>
+        simp only [pure, Except.pure, Except.ok.injEq] at hr
+        subst hr
+        refine ⟨_, _, rfl, hI, rfl, ?_⟩
+        apply Imperative.MetaDataElem.Value.Rel.refl_of_ne_expr
+        intro e hne
+        cases hne
+    obtain ⟨hs0aliases, zs, hzs, hmdrel⟩ := hmdSpec
+    rw [List.append_nil] at hzs
+    have hmdRel : Imperative.MetaData.Rel G x.2.md s0.2.reverse.toArray := by
+      show List.Rel₂ _ x.2.md.toList s0.2.reverse.toArray.toList
+      rw [List.toList_toArray, hzs, List.reverse_reverse]
+      exact hmdrel
+    rw [Except.bind_is_ok] at h
+    obtain ⟨s1, hinner, h⟩ := h
+    have hloopSpec := forIn_typeCheckCmd_spec Env.context.aliases Q hQ x.2.cmds _ s1 hs0aliases
+      hinner
+    obtain ⟨ys, hys, hrel⟩ := hloopSpec
+    rw [List.append_nil] at hys
+    have hrev : s1.2.reverse = ys := by rw [hys, List.reverse_reverse]
+    simp only [bind, Except.bind, pure, Except.pure] at h
+    cases htr : x.2.transfer with
+    | condGoto p lt lf md =>
+      rw [htr] at h
+      dsimp only at h
+      split at h
+      · contradiction
+      · rename_i v hv
+        split at h
+        · contradiction
+        · rename_i v1 hv1
+          have hres : SourceExpr.resolve C s1.fst p = .ok v :=
+            SourceExpr.orFreeVarError_eq_ok.mp (Except.mapError_ok_h' hv)
+          have hguard : G p v.fst.unresolved := hG _ _ _ _ hres
+          split at h
+          · cases h
+            exact ⟨_, _, rfl, hrev ▸ hrel, ⟨hguard, rfl, rfl, rfl⟩, hmdRel⟩
+          · cases h
+            refine ⟨_, _, rfl, hrev ▸ hsubstRel _ hrel, ?_, ?_⟩
+            · exact ⟨hGsubst _ _ _ hguard, rfl, rfl, rfl⟩
+            · exact Imperative.MetaData.Rel.mapExprs_right _ (fun p q hpq => hGsubst p q _ hpq)
+                hmdRel
+    | finish md =>
+      rw [htr] at h
+      dsimp only at h
+      split at h
+      · cases h
+        exact ⟨_, _, rfl, hrev ▸ hrel, rfl, hmdRel⟩
+      · cases h
+        exact ⟨_, _, rfl, hrev ▸ hsubstRel _ hrel, rfl,
+          Imperative.MetaData.Rel.mapExprs_right _ (fun p q hpq => hGsubst p q _ hpq) hmdRel⟩
+  refine ⟨rfl, filterMap_get_rel₂ _ (fun (blk g : Imperative.DetBlock String Command Expression) =>
+      List.Rel₂ Q blk.cmds g.cmds ∧ DetTransferRel G blk.transfer g.transfer ∧
+        Imperative.MetaData.Rel G blk.md g.md) cfg.blocks ?_⟩
+  intro x hx
+  obtain ⟨g0, hg0, hrel0⟩ := hmain x hx
+  refine ⟨_, fold_insert_get _ _ x.1 g0 hg0, ?_⟩
+  cases hr : (Imperative.CFG.reachableLabels cfg).contains x.fst
+  · simp only [Bool.false_eq_true, ↓reduceIte]
+    exact hrel0
+  · simp only [↓reduceIte]
+    obtain ⟨hc, ht, hm⟩ := hrel0
+    refine ⟨hsubstRel _ hc, ?_,
+      Imperative.MetaData.Rel.mapExprs_right _ (fun p q hpq => hGsubst p q _ hpq) hm⟩
+    simp only [Statement.DetBlock.subst]
+    cases htr : g0.transfer with
+    | condGoto p' lt' lf' md' =>
+      cases htx : x.2.transfer with
+      | condGoto p lt lf md =>
+        rw [htx, htr] at ht
+        obtain ⟨hg, hlt, hlf, hmd⟩ := ht
+        exact ⟨hGsubst _ _ _ hg, hlt, hlf, hmd⟩
+      | finish md => rw [htx, htr] at ht; exact ht.elim
+    | finish md' =>
+      cases htx : x.2.transfer with
+      | condGoto p lt lf md => rw [htx, htr] at ht; exact ht.elim
+      | finish md => rw [htx, htr] at ht; exact ht
 
 /-- The CFG returned by a successful `CFG.typeCheck` run has the input's blocks, with the same
     labels in the same order, and each of its commands is related by `Q` to the input command at
@@ -556,63 +764,10 @@ theorem typeCheck_cmdsRel {C : Core.Expression.TyContext} {Env : Core.Expression
     (hsubst : ∀ x y S, Q x y → Q x (Statement.Command.subst S y))
     (hrun : CFG.typeCheck C Env P proc cfg sourceLoc = .ok res) :
     DetCFG.CmdsRel Q cfg res.1 := by
-  unfold CFG.typeCheck at hrun
-  obtain ⟨hu, hrun⟩ := Except.seq_guard_ok_iff.mp hrun
-  have huniq : (cfg.blocks.map Prod.fst).Nodup := checkUniqueLabels_sound hu
-  iterate 9 (obtain ⟨-, hrun⟩ := Except.seq_guard_ok_iff.mp hrun)
-  rw [Except.bind_is_ok] at hrun
-  obtain ⟨r1, -, hrun⟩ := hrun
-  obtain ⟨-, hrun⟩ := Except.seq_guard_ok_iff.mp hrun
-  dsimp only at hrun
-  rw [Except.bind_is_ok] at hrun
-  obtain ⟨r2, -, hrun⟩ := hrun
-  rw [Except.bind_is_ok] at hrun
-  obtain ⟨r3, -, hrun⟩ := hrun
-  rw [Except.bind_is_ok] at hrun
-  obtain ⟨r4, hloop, hrun⟩ := hrun
-  simp only [pure, Except.pure, Except.ok.injEq] at hrun
-  subst hrun
-  have hsubstRel : ∀ (S : Lambda.Subst) {xs ys : List Command}, List.Rel₂ Q xs ys →
-      List.Rel₂ Q xs (ys.map (Statement.Command.subst S)) :=
-    fun S => List.Rel₂.map_right _ (fun x y hxy => hsubst x y S hxy)
-  have hmain := forIn_insert_spec (fun (blk g : Imperative.DetBlock String Command Expression) =>
-      List.Rel₂ Q blk.cmds g.cmds) _ ?hbody cfg.blocks _ r4 huniq hloop
-  case hbody =>
-    intro x s r h
-    -- The block's metadata is checked first; its loop does not touch the commands.
-    rw [Except.bind_is_ok] at h
-    obtain ⟨s0, -, h⟩ := h
-    rw [Except.bind_is_ok] at h
-    obtain ⟨s1, hinner, h⟩ := h
-    obtain ⟨ys, hys, hrel⟩ := forIn_typeCheckCmd_spec Q hQ x.2.cmds _ s1 hinner
-    rw [List.append_nil] at hys
-    have hrev : s1.2.reverse = ys := by rw [hys, List.reverse_reverse]
-    simp only [bind, Except.bind, pure, Except.pure] at h
-    split at h
-    · split at h
-      · contradiction
-      · split at h
-        · contradiction
-        · split at h
-          · cases h
-            exact ⟨_, _, rfl, hrev ▸ hrel⟩
-          · cases h
-            exact ⟨_, _, rfl, hrev ▸ hsubstRel _ hrel⟩
-    · split at h
-      · cases h
-        exact ⟨_, _, rfl, hrev ▸ hrel⟩
-      · cases h
-        exact ⟨_, _, rfl, hrev ▸ hsubstRel _ hrel⟩
-  refine filterMap_get_rel₂ _ (fun (blk g : Imperative.DetBlock String Command Expression) =>
-      List.Rel₂ Q blk.cmds g.cmds) cfg.blocks ?_
-  intro x hx
-  obtain ⟨g0, hg0, hrel0⟩ := hmain x hx
-  refine ⟨_, fold_insert_get _ _ x.1 g0 hg0, ?_⟩
-  cases hr : (Imperative.CFG.reachableLabels cfg).contains x.fst
-  · simp only [Bool.false_eq_true, ↓reduceIte]
-    exact hrel0
-  · simp only [↓reduceIte]
-    exact hsubstRel _ hrel0
+  have hb := typeCheck_blocksRel_aliases Q (fun _ _ => True) (fun E E' x y _ h => hQ E E' x y h)
+    hsubst (fun _ _ _ _ _ => trivial)
+    (fun _ _ _ _ => trivial) hrun
+  exact List.Rel₂.imp (fun _ _ h => ⟨h.1, h.2.1⟩) hb.2
 
 end CFG
 end Core

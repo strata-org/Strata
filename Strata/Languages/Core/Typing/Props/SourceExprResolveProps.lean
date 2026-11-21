@@ -496,7 +496,7 @@ theorem orFreeVarError_eq_ok {ε α : Type} {freeVarErr : Unit → Except ε Uni
 
 /-- Linking succeeds only on a source and a typed expression of the same shape with the same
     free-variable names, so every free variable of the source is one of the typed expression. -/
-private theorem linkFVarAnnotations_getVars (C : Expression.TyContext) :
+theorem linkFVarAnnotations_getVars (C : Expression.TyContext) :
     ∀ (source : Expression.Expr) (typed : LExprT CoreLParams.mono)
       (Env Env' : Expression.TyEnv),
       linkFVarAnnotations C source typed Env = .ok Env' →
@@ -576,15 +576,13 @@ private theorem linkFVarAnnotations_getVars (C : Expression.TyContext) :
       · exact Or.inl (ihLhs typedLhs Env EnvI hlhs x hx)
       · exact Or.inr (ihRhs typedRhs EnvI Env' h x hx)
 
-/-- Core source resolution from a well-formed environment, with well-formed factory
-    signatures, accepts only expressions whose free variables are all declared in the input
-    context. A free variable named like a generated binder is captured by that binder during
+/-- Core source resolution accepts only expressions whose free variables are all declared in the
+    input context. A free variable named like a generated binder is captured by that binder during
     elaboration, and annotation linking then rejects the mismatch. -/
 theorem resolve_WellScoped
     (C : Expression.TyContext) (Env Env' : Expression.TyEnv)
     (source : Expression.Expr) (typed : LExprT CoreLParams.mono)
-    (h : resolve C Env source = .ok (typed, Env'))
-    (h_env : LExpr.TEnvWF (T := CoreLParams) Env) (h_fac : FactorySigWF C.functions) :
+    (h : resolve C Env source = .ok (typed, Env')) :
     LExpr.WellScoped source Env.context := by
   obtain ⟨EnvR, hresolve, hlink⟩ := resolve_decompose C Env Env' source typed h
   intro x hx
@@ -598,8 +596,8 @@ theorem resolve_WellScoped
     exact htyped
   rw [getVars_eq_freeVars_idents] at hout
   obtain ⟨⟨y, ann⟩, hmem, hy⟩ := List.mem_map.mp hout
-  obtain ⟨sch, hfind⟩ := Lambda.resolve_fvar_declared C Env EnvR source typed hresolve h_env
-    h_fac EnvR.stateSubstInfo.subst hmem
+  obtain ⟨sch, hfind⟩ := Lambda.resolve_fvar_declared C Env EnvR source typed hresolve
+    EnvR.stateSubstInfo.subst hmem
   simp only at hy
   rw [hy] at hfind
   unfold TContext.knownVars
@@ -1507,17 +1505,15 @@ theorem resolveWithType_binderAnnotTyVarsAdmissible
   obtain ⟨EnvR, S, hsource, -, -⟩ := resolveWithType_decompose C Env Env' e et mty h
   exact SourceExpr.resolve_binderAnnotTyVarsAdmissible C Env EnvR e et hsource
 
-/-- Resolution against an expected type from a well-formed environment, with well-formed factory
-    signatures, accepts only expressions whose free variables are all declared in the input
-    context. -/
+/-- Resolution against an expected type accepts only expressions whose free variables are all
+    declared in the input context. -/
 theorem resolveWithType_WellScoped
     (C : Core.Expression.TyContext) (Env Env' : Core.Expression.TyEnv)
     (e : Core.Expression.Expr) (et : LExprT CoreLParams.mono) (mty : LMonoTy)
-    (h : resolveWithType C Env e mty = .ok (et, Env'))
-    (h_env : LExpr.TEnvWF (T := CoreLParams) Env) (h_fac : FactorySigWF C.functions) :
+    (h : resolveWithType C Env e mty = .ok (et, Env')) :
     LExpr.WellScoped e Env.context := by
   obtain ⟨EnvR, S, hsource, -, -⟩ := resolveWithType_decompose C Env Env' e et mty h
-  exact SourceExpr.resolve_WellScoped C Env EnvR e et hsource h_env h_fac
+  exact SourceExpr.resolve_WellScoped C Env EnvR e et hsource
 
 /-! ### Resolving against an expected type -/
 

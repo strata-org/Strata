@@ -180,6 +180,20 @@ def Decl.eraseTypes (d : Decl) : Decl :=
   | .recFuncBlock fs md => .recFuncBlock (fs.map (·.eraseTypes)) md
   | .type _ _ | .distinct _ _ _ => d
 
+/-- Erase every annotation of a declaration: expression types, declared and signature types, and
+    the type parameters of functions, procedures and lemmas, which the checker renames. Datatype
+    and synonym type parameters are kept, since the checker never renames them. The expressions
+    of a `distinct` declaration are erased, since the checker elaborates them. -/
+def Decl.eraseAnnots (d : Decl) : Decl :=
+  match d with
+  | .type t md => .type t.eraseAnnots md
+  | .ax a md => .ax a.eraseTypes md
+  | .lemma l md => .lemma l.eraseAnnots md
+  | .distinct n es md => .distinct n (es.map Lambda.LExpr.eraseTypes) md
+  | .proc p md => .proc p.eraseAnnots md
+  | .func f md => .func f.eraseAnnots md
+  | .recFuncBlock fs md => .recFuncBlock (fs.map Function.eraseAnnots) md
+
 /-- Remove all metadata from a declaration. -/
 def Decl.stripMetaData (d : Decl) : Decl :=
   match d with
@@ -291,6 +305,11 @@ def Program.typeNamesWithPrefix (p : Program) (pfx : String) : Std.HashSet Strin
 
 def Program.eraseTypes (p : Program) : Program :=
   { p with decls := p.decls.map Decl.eraseTypes }
+
+/-- Erase every annotation of a program: expression types, declared types, and the type
+    parameters of functions, procedures and lemmas. -/
+def Program.eraseAnnots (p : Program) : Program :=
+  { p with decls := p.decls.map Decl.eraseAnnots }
 
 /-- Remove all metadata from a program. -/
 def Program.stripMetaData (p : Program) : Program :=

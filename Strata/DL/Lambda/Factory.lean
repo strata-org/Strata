@@ -214,7 +214,8 @@ def LFuncDefined.eraseTypes (f : LFuncDefined T) : LFuncDefined T :=
   { f with
     body := f.body.map LExpr.eraseTypes,
     axioms := f.axioms.map LExpr.eraseTypes,
-    preconditions := f.preconditions.map fun p => { p with expr := p.expr.eraseTypes } }
+    preconditions := f.preconditions.map fun p => { p with expr := p.expr.eraseTypes },
+    measure := f.measure.map LExpr.eraseTypes }
 
 /-- Every expression `f` carries: its body, its axioms, its preconditions and
     its measure. The `LFunc` fields it reads are `Func`'s, so this is that

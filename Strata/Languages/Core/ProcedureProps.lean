@@ -31,6 +31,9 @@ Key results:
   procedure's name and parameter names.
 - `DetCFG.CmdsRel.flatMap_eq` — control-flow graphs whose commands correspond one to one agree
   on every per-command list, such as the variables the commands modify or define.
+- `DetCFG.mapCmdsGuards_eq_of_blocksRel` — control-flow graphs with related blocks agree after
+  mapping their commands, guards and block metadata expressions by functions that identify
+  related ones.
 - `Procedure.oldAliases_mem` — every alias `(old x, x)` has `x` among the parameters.
 - `Procedure.instantiateTypes_of_typeArgs_nil` — a monomorphic procedure's only instance is
   itself, at `[]`, and `Procedure.instantiateTypes_of_typeArgs_singleton` (with
@@ -117,6 +120,63 @@ theorem Procedure.mapExprs_id (p : Procedure) : Procedure.mapExprs id p = p := b
     is related by `R` to the command of `c` at the same position. -/
 def DetCFG.CmdsRel (R : Command → Command → Prop) (c c' : DetCFG) : Prop :=
   List.Rel₂ (fun lb lb' => lb.1 = lb'.1 ∧ List.Rel₂ R lb.2.cmds lb'.2.cmds) c.blocks c'.blocks
+
+/-- Two block transfers branch or finish alike: the same targets and metadata, and guards related
+    by `G`. -/
+def DetTransferRel (G : Expression.Expr → Expression.Expr → Prop) :
+    Imperative.DetTransferCmd String Expression → Imperative.DetTransferCmd String Expression →
+    Prop
+  | .condGoto p lt lf md, .condGoto p' lt' lf' md' => G p p' ∧ lt = lt' ∧ lf = lf' ∧ md = md'
+  | .finish md, .finish md' => md = md'
+  | _, _ => False
+
+/-- `c'` has the blocks of `c` with the same labels in the same order and the same entry; each
+    command of `c'` is related by `R` to the command of `c` at the same position, each transfer
+    by `G` on its guard, and each block's metadata by `G` on its expressions. -/
+def DetCFG.BlocksRel (R : Command → Command → Prop)
+    (G : Expression.Expr → Expression.Expr → Prop) (c c' : DetCFG) : Prop :=
+  c'.entry = c.entry ∧
+  List.Rel₂ (fun lb lb' => lb.1 = lb'.1 ∧ List.Rel₂ R lb.2.cmds lb'.2.cmds ∧
+    DetTransferRel G lb.2.transfer lb'.2.transfer ∧ Imperative.MetaData.Rel G lb.2.md lb'.2.md)
+    c.blocks c'.blocks
+
+/-- Control-flow graphs whose blocks are related by `BlocksRel` agree after mapping their
+    commands by `fc` and their guards and block metadata expressions by `fe`, when `fc`
+    identifies related commands and `fe` identifies related expressions. -/
+theorem DetCFG.mapCmdsGuards_eq_of_blocksRel {R : Command → Command → Prop}
+    {G : Expression.Expr → Expression.Expr → Prop} {c c' : DetCFG}
+    (fc : Command → Command) (fe : Expression.Expr → Expression.Expr)
+    (hR : ∀ x y, R x y → fc y = fc x) (hG : ∀ p q, G p q → fe q = fe p)
+    (h : DetCFG.BlocksRel R G c c') :
+    DetCFG.mapCmdsGuards c' fc fe = DetCFG.mapCmdsGuards c fc fe := by
+  obtain ⟨hentry, hblocks⟩ := h
+  simp only [DetCFG.mapCmdsGuards, hentry]
+  congr 1
+  refine (List.Rel₂.map_eq ?_ hblocks).symm
+  intro lb lb' hq
+  rcases lb with ⟨l, ⟨cs, tr, bmd⟩⟩
+  rcases lb' with ⟨l', ⟨cs', tr', bmd'⟩⟩
+  obtain ⟨hl, hcs, htr, hmd⟩ := hq
+  simp only at hl hcs htr hmd
+  have hmdEq : bmd'.mapExprs fe = bmd.mapExprs fe :=
+    Imperative.MetaData.mapExprs_eq_of_rel fe hG hmd
+  have hcmds : cs.map fc = cs'.map fc :=
+    List.Rel₂.map_eq (fun _ _ hxy => (hR _ _ hxy).symm) hcs
+  subst hl
+  cases tr with
+  | condGoto p lt lf md =>
+    cases tr' with
+    | condGoto p' lt' lf' md' =>
+      obtain ⟨hguard, rfl, rfl, rfl⟩ := htr
+      simp only [hcmds, hG p p' hguard, hmdEq]
+    | finish md' => exact htr.elim
+  | finish md =>
+    cases tr' with
+    | condGoto p' lt' lf' md' => exact htr.elim
+    | finish md' =>
+      simp only [DetTransferRel] at htr
+      subst htr
+      simp only [hcmds, hmdEq]
 
 /-- Mapping the commands and branch guards of a control-flow graph relates each command to its
     image. -/

@@ -904,6 +904,27 @@ theorem FactorySigDeskolSafe.of_fixed (σ : RigidNames) (F : Lambda.Factory Core
     FactorySigDeskolSafe σ F :=
   fun nm f ty hf hty => Or.inl (hfix nm f ty hf hty)
 
+/-- Deskolemizing an instance of a monotype in which no rigid parameter name is free gives an
+    instance of its deskolemization by a substitution that changes only type variables free in
+    the monotype. -/
+theorem deskolemizeTy_subst_instance_fixing (σ : RigidNames) (τ : Subst) (mty : LMonoTy)
+    (hfree : ∀ v ∈ LMonoTy.freeVars mty, v ∉ σ.map Prod.fst) :
+    ∃ τ' : Subst,
+      (∀ v, v ∉ LMonoTy.freeVars mty → LMonoTy.subst τ' (.ftvar v) = .ftvar v) ∧
+      deskolemizeTy σ (LMonoTy.subst τ mty) = LMonoTy.subst τ' (deskolemizeTy σ mty) := by
+  have hgen := subst_buildSubstFromFunction_deskolemizeTy_gen σ τ HMap.empty
+    (LMonoTy.freeVars mty) mty (annotNoRigidClash_of_freeVars_not_mem σ mty hfree)
+    (fun _ hv => hv)
+  have hemp : Subst.hasEmptyScopes [(HMap.empty : SubstOne)] = true := by
+    simp [Subst.hasEmptyScopes, HMap.isEmpty, HMap.empty]
+  have hρ : ∀ t, LMonoTy.subst [(HMap.empty : SubstOne)] t = t :=
+    LMonoTy.subst_of_hasEmptyScopes hemp
+  simp only [hρ] at hgen
+  refine ⟨_, fun v hv => ?_, hgen.symm⟩
+  apply LMonoTy.subst_ftvar_of_none
+  rw [Strata.Util.HMaps.find?_single_scope]
+  exact LExpr.find?_buildSubstFromFunction_of_not_mem _ _ v hv
+
 /-- Deskolemizing an instance of a monotype gives an instance of its deskolemization, when
     deskolemization fixes the monotype or no rigid parameter name is free in it. -/
 theorem deskolemizeTy_subst_instance (σ : RigidNames) (τ : Subst) (mty : LMonoTy)
@@ -919,15 +940,8 @@ theorem deskolemizeTy_subst_instance (σ : RigidNames) (τ : Subst) (mty : LMono
     apply LMonoTy.subst_ftvar_of_some
     rw [HMaps.find?_single_scope]
     exact LExpr.find?_buildSubstFromFunction _ _ x hx
-  · have hgen := subst_buildSubstFromFunction_deskolemizeTy_gen σ τ HMap.empty
-      (LMonoTy.freeVars mty) mty (annotNoRigidClash_of_freeVars_not_mem σ mty hfree)
-      (fun _ hv => hv)
-    have hemp : Subst.hasEmptyScopes [(HMap.empty : SubstOne)] = true := by
-      simp [Subst.hasEmptyScopes, HMap.isEmpty, HMap.empty]
-    have hρ : ∀ t, LMonoTy.subst [(HMap.empty : SubstOne)] t = t :=
-      LMonoTy.subst_of_hasEmptyScopes hemp
-    simp only [hρ] at hgen
-    exact ⟨_, hgen.symm⟩
+  · obtain ⟨τ', -, h⟩ := deskolemizeTy_subst_instance_fixing σ τ mty hfree
+    exact ⟨τ', h⟩
 
 /-- Deskolemization commutes with simultaneous instantiation of binders that include no rigid
     parameter name. -/

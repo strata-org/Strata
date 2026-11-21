@@ -364,6 +364,11 @@ def DetCFG.mapCmdsGuards (cfg : DetCFG) (fc : Command → Command)
 def DetCFG.eraseTypes (cfg : DetCFG) : DetCFG :=
   DetCFG.mapCmdsGuards cfg Command.eraseTypes (·.eraseTypes)
 
+/-- Erase every annotation of a control-flow graph: its commands, branch guards and the loop
+    invariants in its block metadata. -/
+def DetCFG.eraseAnnots (cfg : DetCFG) : DetCFG :=
+  DetCFG.mapCmdsGuards cfg Command.eraseAnnots Lambda.LExpr.eraseTypes
+
 /-- `proc` with `f` applied to every type it mentions (its formals' types, the type annotations
     of its contract and its body) and its type parameters replaced by `typeArgs`. -/
 def Procedure.mapTys (proc : Procedure) (f : LMonoTy → LMonoTy)
@@ -431,6 +436,19 @@ def Procedure.eraseTypes (p : Procedure) : Procedure :=
     | .structured ss => .structured (Statements.eraseTypes ss)
     | .cfg c => .cfg (DetCFG.eraseTypes c)
   { p with body := body', spec := p.spec }
+
+/-- Erase every annotation of a procedure: type parameters become placeholders (count and
+    order kept), signature types are erased, and so are the specification and the body. -/
+def Procedure.eraseAnnots (p : Procedure) : Procedure :=
+  { p with
+    header := { p.header with
+      typeArgs := p.header.typeArgs.map fun _ => "",
+      inputs := p.header.inputs.map fun (x, _) => (x, LMonoTy.erased),
+      outputs := p.header.outputs.map fun (x, _) => (x, LMonoTy.erased) },
+    spec := Procedure.Spec.eraseTypes p.spec,
+    body := match p.body with
+      | .structured ss => .structured (Statements.eraseAnnots ss)
+      | .cfg c => .cfg (DetCFG.eraseAnnots c) }
 
 def Procedure.stripMetaData (p : Procedure) : Procedure :=
   let body' := match p.body with

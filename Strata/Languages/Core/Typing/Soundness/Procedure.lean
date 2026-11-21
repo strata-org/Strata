@@ -29,8 +29,9 @@ public import Strata.Languages.Core.Typing.Props.FunctionTypeProps
 import all Strata.Languages.Core.ProcedureType
 import Strata.Languages.Core.StatementType
 import Strata.Languages.Core.Typing.Props.ProcedureTypeProps
-import Strata.Languages.Core.ProcedureProps
+public import Strata.Languages.Core.ProcedureProps
 import Strata.Languages.Core.ProcedureTypeProps
+import Strata.Languages.Core.Typing.Props.StatementEraseProps
 import Strata.Languages.Core.CallWFProps
 import Strata.Languages.Core.FunctionType
 import all Strata.Languages.Core.Typing.Props.FunctionTypeProps
@@ -163,6 +164,22 @@ private structure Procedure.CheckRun (sc ps : Thunk (Std.HashSet String))
     Procedure.checkCondition (addSkolemTypes C (Procedure.rigidNames sc ps C proc tn))
       (Function.formalsEnv Env (Procedure.rigidNames sc ps C proc tn) (bodySig proc'.header))
       proc.header.name (Procedure.rigidNames sc ps C proc tn) lbl c₀ = .ok c
+  /-- The returned preconditions are the checked source ones, with the same labels in the same
+      order. -/
+  preconditionsRel : List.Rel₂ (fun (a b : CoreLabel × Procedure.Check) =>
+    b.1 = a.1 ∧
+    Procedure.checkCondition (addSkolemTypes C (Procedure.rigidNames sc ps C proc tn))
+      (Function.formalsEnv Env (Procedure.rigidNames sc ps C proc tn) proc'.header.inputs)
+      proc.header.name (Procedure.rigidNames sc ps C proc tn) a.1 a.2 = .ok b.2)
+    proc.spec.preconditions proc'.spec.preconditions
+  /-- The returned postconditions are the checked source ones, with the same labels in the same
+      order. -/
+  postconditionsRel : List.Rel₂ (fun (a b : CoreLabel × Procedure.Check) =>
+    b.1 = a.1 ∧
+    Procedure.checkCondition (addSkolemTypes C (Procedure.rigidNames sc ps C proc tn))
+      (Function.formalsEnv Env (Procedure.rigidNames sc ps C proc tn) (bodySig proc'.header))
+      proc.header.name (Procedure.rigidNames sc ps C proc tn) a.1 a.2 = .ok b.2)
+    proc.spec.postconditions proc'.spec.postconditions
   /-- A CFG body, skolemized, passes the CFG checker in the body scope, and the returned body is
       the deskolemized result. -/
   bodyCfg : ∀ c, proc.body = .cfg c → ∃ loc cOut EnvX,
@@ -341,8 +358,20 @@ private theorem Procedure.typeCheckCore_ok_inv
       preconditionsStored := hpreStored
       postconditionsChecked := hpostChecked
       postconditionsStored := hpostStored
+      preconditionsRel := (mapM_except_rel₂ _ _ _ hPre).imp ?preRel
+      postconditionsRel := (mapM_except_rel₂ _ _ _ hPost).imp ?postRel
       bodyCfg := hbodyCfg
       bodyStructured := hbodyStructured }⟩
+  case preRel =>
+    intro a b hab
+    elim_err hab with chk' hcc
+    obtain rfl := (Except.ok.inj hab).symm
+    exact ⟨rfl, hcc⟩
+  case postRel =>
+    intro a b hab
+    elim_err hab with chk' hcc
+    obtain rfl := (Except.ok.inj hab).symm
+    exact ⟨rfl, hcc⟩
   · intro v hv
     have hc := forIn_guard_all _ _ (HasVarsImp.modifiedVars proc.body) PUnit.unit _ hmod v hv
     rw [List.contains_eq_mem, decide_eq_true_eq, List.mem_append] at hc
@@ -353,6 +382,24 @@ private theorem Procedure.typeCheckCore_ok_inv
       obtain ⟨pp, hpp, hpp2⟩ := hc
       exact hpp2 ▸ (List.of_mem_zip hpp).1
     · exact Or.inr hc
+
+/-- The CFG that `CFG.typeCheck` returns erases to the erasure of its source: the checker only
+    adds type annotations to the commands and branch guards, and keeps the entry, the labels, the
+    targets and the metadata. -/
+theorem CFG.typeCheck_eraseAnnots_eq {C : Expression.TyContext} {Env : Expression.TyEnv}
+    {P : Program} {proc : Procedure} {cfg : DetCFG} {sourceLoc : Strata.FileRange}
+    {res : DetCFG × Expression.TyEnv}
+    (hrun : CFG.typeCheck C Env P proc cfg sourceLoc = .ok res) :
+    DetCFG.eraseAnnots res.1 = DetCFG.eraseAnnots cfg := by
+  have hrel : DetCFG.BlocksRel (fun x y => Command.eraseAnnots y = Command.eraseAnnots x)
+      (fun p q => q.eraseTypes = p.eraseTypes) cfg res.1 :=
+    CFG.typeCheck_blocksRel_aliases _ _
+      (fun _ _ _ _ _ hc => Statement.typeCheckCmd_eraseAnnots_eq _ _ _ _ _ _ hc)
+      (fun _ y S hq => (Command.eraseAnnots_subst S y).trans hq)
+      (fun _ _ _ _ hr => SourceExpr.resolve_unresolved_eraseTypes _ _ _ _ _ hr)
+      (fun _ q S hq => (LExpr.eraseTypes_applyTypeSubst q S).trans hq) hrun
+  unfold DetCFG.eraseAnnots
+  exact DetCFG.mapCmdsGuards_eq_of_blocksRel _ _ (fun _ _ hxy => hxy) (fun _ _ hxy => hxy) hrel
 
 /-- A CFG body that `Procedure.typeCheckCore` accepts comes back as a CFG whose blocks match the
     source's one to one: each returned command modifies and defines the variables of the source
@@ -817,9 +864,7 @@ private theorem Procedure.checkCondition_HasType_bool
       { Env.context with types := Env.context.types.push (formalsScope sig) }
       chk.expr (.forAll [] LMonoTy.bool) := by
   obtain ⟨et, EnvR, hres, -, -, -⟩ := Procedure.checkCondition_ok_inv h
-  have h_facSk := FactorySigWF.addSkolemTypes C σ h_fac
   have h_ws := resolveWithType_WellScoped _ _ _ _ _ _ hres
-    (formalsEnv_TEnvWF Env σ sigR h_env h_sigR_nud) h_facSk
   have hrtv : ∀ mty ∈ sigR.values, deskolemizeTy σ (skolemizeTy σ mty) = mty := by
     intro mty hm
     obtain ⟨k, hk⟩ := ListMap.mem_values _ mty hm

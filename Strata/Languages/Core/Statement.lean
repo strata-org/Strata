@@ -262,6 +262,23 @@ def Command.mapExpr (f : Expression.Expr → Expression.Expr) : Command → Comm
   | .call pname tyArgs args md => .call pname tyArgs (args.map (CallArg.mapInput f)) md
   | c => c
 
+/-- Erase every annotation of a command: expression types, the declared type of `init` and the
+    type arguments of a `call`. -/
+def Command.eraseAnnots (c : Command) : Command :=
+  Command.mapExpr Lambda.LExpr.eraseTypes
+    (match c with
+      | .cmd (.init name _ e md) => .cmd (.init name Lambda.LTy.erased e md)
+      | .call pname _ args md => .call pname none args md
+      | c => c)
+
+/-- Erase every annotation of a statement, including guards, measures and invariants. -/
+def Statement.eraseAnnots (s : Statement) : Statement :=
+  Imperative.Stmt.mapExpr Lambda.LExpr.eraseTypes Command.eraseAnnots s
+
+/-- Erase every annotation of a list of statements. -/
+def Statements.eraseAnnots (ss : Statements) : Statements :=
+  Imperative.Block.mapExpr Lambda.LExpr.eraseTypes Command.eraseAnnots ss
+
 /-- Apply a function to all user-facing expressions in a statement. -/
 def Statement.mapExprs (f : Expression.Expr → Expression.Expr) (s : Statement) : Statement :=
   Imperative.Stmt.mapExpr f (Command.mapExpr f) s

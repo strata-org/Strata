@@ -91,15 +91,13 @@ theorem env_no_pred_precond_no_pred
     (e : Core.Expression.Expr) (et : Lambda.LExprT Core.CoreLParams.mono)
     (P : CoreIdent → Prop)
     (h_env_no : ∀ v ∈ Lambda.TContext.knownVars Env.context, ¬ P v)
-    (h : Lambda.LExpr.resolve C Env e = .ok (et, Env'))
-    (h_envwf : Lambda.LExpr.TEnvWF (T := Core.CoreLParams) Env) (h_ne : Env.context.types ≠ [])
-    (h_fwf : Lambda.FactorySigWF C.functions) :
+    (h : Lambda.LExpr.resolve C Env e = .ok (et, Env')) :
     ∀ id ∈ HasFvars.getFvars (P := Core.Expression) et.unresolved, ¬ P id := by
   intro id hid
   simp only [HasFvars.getFvars] at hid
   rw [getVars_unresolved] at hid
   exact h_env_no id
-    (resolve_getVars_mem_knownVars C Env Env' e et h h_envwf h_ne h_fwf id hid)
+    (resolve_getVars_mem_knownVars C Env Env' e et h id hid)
 
 /-- The abstract "no known var satisfies `P`" invariant survives a successful
     `resolve` call: `resolve` never adds a new known var (`resolve_knownVars_subset`),
@@ -144,9 +142,6 @@ theorem noOldFvars_of_resolve_in_inputEnv
     (C : Core.Expression.TyContext) (envWithInputs Env' : Core.Expression.TyEnv)
     (precond : Core.Expression.Expr) (et : Lambda.LExprT Core.CoreLParams.mono)
     (h_resolve : Lambda.LExpr.resolve C envWithInputs precond = .ok (et, Env'))
-    (h_envwf : Lambda.LExpr.TEnvWF (T := Core.CoreLParams) envWithInputs)
-    (h_ne : envWithInputs.context.types ≠ [])
-    (h_fwf : Lambda.FactorySigWF C.functions)
     (inputNames outer : List CoreIdent)
     (h_split : ∀ v ∈ Lambda.TContext.knownVars envWithInputs.context,
                  v ∈ inputNames ∨ v ∈ outer)
@@ -159,7 +154,7 @@ theorem noOldFvars_of_resolve_in_inputEnv
     env_no_pred_of_split envWithInputs inputNames outer (fun id => CoreIdent.isOldIdent id) h_split
       (fun v hv => not_isOldIdent_of_ne_mkOld v (h_io v hv)) h_outer_no_old
   exact env_no_pred_precond_no_pred C envWithInputs Env' precond et
-    (fun id => CoreIdent.isOldIdent id) h_env_no_old h_resolve h_envwf h_ne h_fwf
+    (fun id => CoreIdent.isOldIdent id) h_env_no_old h_resolve
 
 /-- A list of expressions resolves in sequence, each against the previous one's output env. -/
 inductive ResolvesInOrder (C : Core.Expression.TyContext) :
@@ -202,7 +197,7 @@ theorem noOldFvars_of_resolvesInOrder
     rcases h_et' with h_eq | h_tail
     · subst h_eq
       exact env_no_pred_precond_no_pred C Env Envₘ e et' (fun id => CoreIdent.isOldIdent id)
-        h_env_no_old h_head h_envwf h_ne h_fwf id h_id
+        h_env_no_old h_head id h_id
     · have h_env_no_old' : ∀ v ∈ Lambda.TContext.knownVars Envₘ.context,
           ¬ CoreIdent.isOldIdent v :=
         env_no_pred_preserved_by_resolve C Env Envₘ e et (fun id => CoreIdent.isOldIdent id)

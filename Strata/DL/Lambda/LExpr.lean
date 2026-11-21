@@ -1033,8 +1033,8 @@ def sizeCached {T : LExprParamsT} (e : LExpr T) : Nat :=
 end
 
 /--
-Erase all type annotations from `e` except the bound variables of abstractions
-and quantified expressions.
+Erase all type annotations from `e`: the types of operators, free variables,
+and the binders of abstractions and quantified expressions.
 -/
 @[expose]
 def eraseTypes {T : LExprParamsT} (e : LExpr T) : LExpr T :=
@@ -1043,7 +1043,7 @@ def eraseTypes {T : LExprParamsT} (e : LExpr T) : LExpr T :=
   | .op m o _ => .op m o none
   | .fvar m x _ => .fvar m x none
   | .bvar _ _ => e
-  | .abs m name ty e => .abs m name ty (eraseTypes e)
+  | .abs m name _ e => .abs m name .none (eraseTypes e)
   | .quant m qk name _ tr e => .quant m qk name .none (eraseTypes tr) (eraseTypes e)
   | .app m e1 e2 => .app m (eraseTypes e1) (eraseTypes e2)
   | .ite m c t f => .ite m (eraseTypes c) (eraseTypes t) (eraseTypes f)

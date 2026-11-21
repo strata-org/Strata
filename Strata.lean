@@ -291,6 +291,7 @@ import Strata.DL.Lambda.Denote.LExprDenoteProps
 import Strata.DL.Lambda.Denote.LExprDenoteSubst
 import Strata.DL.Lambda.Denote.LExprDenoteTySubst
 import Strata.DL.Lambda.Denote.LExprSemanticsConsistent
+import Strata.DL.Lambda.LExprTEraseProps
 import Strata.DL.Lambda.LExprTProps
 import Strata.DL.Lambda.LExprTypeSpec
 import Strata.DL.Lambda.LExprTraversal
@@ -320,7 +321,9 @@ import Strata.Languages.Core.Typing.Spec.NamesWF
 import Strata.Languages.Core.Typing.Spec.TypeSpecShared
 import Strata.Languages.Core.Typing.Spec.TypingSpec
 import Strata.Languages.Core.FactoryProps
+import Strata.Languages.Core.Typing.Props.CmdTypeProps
 import Strata.Languages.Core.Typing.Props.DatatypeTypeProps
+import Strata.Languages.Core.Typing.Props.ExprEraseProps
 import Strata.Languages.Core.Typing.Props.FactoryRegistrationProps
 import Strata.Languages.Core.Typing.Props.FunctionTypeProps
 import Strata.Languages.Core.Typing.Props.NamesWFProps
@@ -330,6 +333,7 @@ import Strata.Languages.Core.Typing.Props.ProgramTypeProps
 import Strata.Languages.Core.Typing.Props.SkolemScopeProps
 import Strata.Languages.Core.Typing.Props.SkolemizerProps
 import Strata.Languages.Core.Typing.Props.SourceExprResolveProps
+import Strata.Languages.Core.Typing.Props.StatementEraseProps
 import Strata.Languages.Core.Typing.Props.StatementTypeProps
 import Strata.Languages.Core.Typing.Props.TypeSkolemProps
 import Strata.Languages.Core.Typing.Props.TypingSpecProps

@@ -55,38 +55,6 @@ theorem Procedure.ambientRigidVarsFixed_iff (rigidVars : List TyIdentifier) (S :
       ∀ v ∈ rigidVars, LMonoTy.subst S (.ftvar v) = .ftvar v := by
   simp only [Procedure.ambientRigidVarsFixed, List.all_eq_true, beq_iff_eq]
 
-/-! ### Instantiating a procedure header -/
-
-/-- A successful header instantiation instantiates the joint input-output signature once and
-    returns its input and output parts; substituting either part takes or drops the corresponding
-    prefix of the substituted joint signature. The returned type arguments are the instantiation
-    of the type parameters themselves. -/
-theorem Procedure.Header.instantiate_ok_inv {C : LContext CoreLParams}
-    {Env Env' : TEnv Unit} {h : Procedure.Header}
-    {inp out : @LMonoTySignature Unit} {instTys : LMonoTys}
-    (hinst : h.instantiate C Env = .ok (inp, out, instTys, Env')) :
-    ∃ io_sig EnvA, LMonoTySignature.instantiate C Env h.typeArgs
-        (h.inputs ++ h.outputs) = .ok (io_sig, Env') ∧
-      LMonoTys.instantiateEnv h.typeArgs (h.typeArgs.map LMonoTy.ftvar) Env
-        = .ok (instTys, EnvA) ∧
-      ∀ S : Subst, LMonoTys.subst S inp.values
-          = (LMonoTys.subst S io_sig.values).take h.inputs.length ∧
-        LMonoTys.subst S out.values
-          = (LMonoTys.subst S io_sig.values).drop h.inputs.length := by
-  unfold Procedure.Header.instantiate at hinst
-  simp only [bind, Except.bind] at hinst
-  elim_err hinst with sigPair hsig
-  obtain ⟨io_sig, E⟩ := sigPair
-  elim_err hinst with argsPair hargs
-  obtain ⟨tys, EnvA⟩ := argsPair
-  simp only [pure, Except.pure, Except.ok.injEq] at hinst
-  obtain ⟨rfl, rfl, rfl, rfl⟩ := hinst
-  refine ⟨io_sig, EnvA, hsig, hargs, fun S => ⟨?_, ?_⟩⟩
-  all_goals
-    erw [List.splitAt_eq, ListMap.values_eq_map_snd]
-    simp only [LMonoTys.subst_eq_map, ListMap.values_eq_map_snd]
-    grind [List.map_take, List.map_drop]
-
 /-! ### Properties of a procedure's rigid renaming -/
 
 /-- A procedure's rigid renaming pairs its type parameters, in order, with distinct

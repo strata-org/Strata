@@ -1505,7 +1505,7 @@ private theorem prop_declHasType
     simpa only [TEnv.pushEmptySubstScope, LExpr.checkContextTypesClosed, TEnv.context] using
       hinv.ctxClosed
   have h_ws : LExpr.WellScoped (skolemizeBody none σ e) Env.pushEmptySubstScope.context :=
-    resolveWithType_WellScoped _ _ _ _ _ _ hresolveWith h_push (hQ.sigWF _ hinv.factory)
+    resolveWithType_WellScoped _ _ _ _ _ _ hresolveWith
   have h_type_subst := resolveWithType_HasType_bool { addSkolemTypes C σ with idents := i }
     Env.pushEmptySubstScope (EnvR.updateSubst TS) _ et hresolveWith h_push (hQ.sigWF _ hinv.factory)
     h_ws (MonoScope_of_invariant C Env hinv)
@@ -1744,7 +1744,7 @@ private theorem distinct_declHasType
         ⟨SourceExpr.resolve_fvarAnnotsWF _ _ _ _ _ hsourcei,
           SourceExpr.resolve_binderAnnotTyVarsAdmissible _ _ _ _ _ hsourcei⟩
       have hwsi : LExpr.WellScoped ei Ei.context :=
-        SourceExpr.resolve_WellScoped _ Ei Ei' ei ets[idx] hsourcei hwfi (hQ.sigWF _ hinv.factory)
+        SourceExpr.resolve_WellScoped _ Ei Ei' ei ets[idx] hsourcei
       have hclosedi : LExpr.checkContextTypesClosed (T := CoreLParams) Ei :=
         LExpr.checkContextTypesClosed_of_ctx_eq hclosed0 heqi
       obtain ⟨EiDirect, hriDirect, -⟩ := SourceExpr.resolve_decompose

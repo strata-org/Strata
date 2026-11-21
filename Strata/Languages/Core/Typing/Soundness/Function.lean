@@ -1642,9 +1642,7 @@ private theorem Function.Checked.inputTyped
         (.forAll [] (deskolemizeTy (Function.rigidNames sc C func tn) mty)) := by
     intro e mty eT hmem hground hthread
     obtain ⟨Estart, Enext, hctx, hwf, ⟨eE, hres, -⟩, -⟩ := hthread
-    have hfacSk := FactorySigWF.addSkolemTypes C (Function.rigidNames sc C func tn) h_fac
     have hws := resolveWithType_WellScoped _ _ _ _ _ _ hres
-      (formalsEnv_TEnvWF Estart _ _ hwf hnudSig) hfacSk
     have hclosedStart : LExpr.checkContextTypesClosed (T := CoreLParams) Estart := by
       rw [LExpr.checkContextTypesClosed_of_context_eq (T := CoreLParams) Estart Env hctx]
       exact h_closed

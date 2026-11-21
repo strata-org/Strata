@@ -1737,6 +1737,21 @@ theorem List.Rel₂.map_right {α β γ : Type _} {R : α → β → Prop} {S : 
   | nil => exact .nil
   | cons hab _ ih => exact .cons (hg _ _ hab) ih
 
+/-- A relation between the mapped left list and the right list is a relation between the left
+    list and the right list through the map. -/
+theorem List.Rel₂.of_map_left {α β γ : Type _} {R : β → γ → Prop} (f : α → β) :
+    ∀ (l1 : List α) (l2 : List γ), Rel₂ R (l1.map f) l2 → Rel₂ (fun a c => R (f a) c) l1 l2
+  | [], l2, h => by
+    cases l2 with
+    | nil => exact .nil
+    | cons c l2 => cases h
+  | a :: l1, l2, h => by
+    cases l2 with
+    | nil => cases h
+    | cons c l2 =>
+      cases h with
+      | cons hac hrest => exact .cons hac (List.Rel₂.of_map_left f l1 l2 hrest)
+
 /-- Two pointwise relations compose: the left list is related to the right one by the composite
     relation. -/
 theorem List.Rel₂.comp {α β γ : Type _} {R : α → β → Prop} {S : β → γ → Prop}

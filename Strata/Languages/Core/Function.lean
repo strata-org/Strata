@@ -72,6 +72,14 @@ def Function.ofPureFunc (decl : Imperative.PureFunc Expression) : Except Format 
     measure := decl.measure
   }
 
+/-- Erase every annotation of a function: expression types, signature types, and type
+    parameters (placeholders, count and order kept). -/
+def Function.eraseAnnots (f : Function) : Function :=
+  { f.eraseTypes with
+    typeArgs := f.typeArgs.map fun _ => "",
+    inputs := f.inputs.map fun (x, _) => (x, LMonoTy.erased),
+    output := LMonoTy.erased }
+
 ---------------------------------------------------------------------
 
 end

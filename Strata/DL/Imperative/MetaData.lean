@@ -8,6 +8,7 @@ public import Strata.Pipeline.Messages
 
 public import Strata.DL.Imperative.PureExpr
 public import Strata.Util.DecidableEq
+public import Strata.Util.ListUtils
 public import Strata.Util.Provenance
 
 namespace Imperative
@@ -161,6 +162,21 @@ def MetaData.mapExprsM {P : PureExpr} {m : Type → Type} [Monad m]
 /-- Apply `g` to every expression value of `md`. -/
 def MetaData.mapExprs {P : PureExpr} (g : P.Expr → P.Expr) (md : MetaData P) : MetaData P :=
   Id.run (md.mapExprsM (m := Id) fun x => pure (g x))
+
+/-- Two metadata values agree: expression values are related by `G` and every other value is
+    equal. -/
+@[expose]
+def MetaDataElem.Value.Rel {P : PureExpr} (G : P.Expr → P.Expr → Prop) :
+    MetaDataElem.Value P → MetaDataElem.Value P → Prop
+  | .expr x, .expr x' => G x x'
+  | v, v' => v = v'
+
+/-- Two metadata arrays have the same keys in the same order, with values related by
+    `MetaDataElem.Value.Rel G`. -/
+@[expose]
+def MetaData.Rel {P : PureExpr} (G : P.Expr → P.Expr → Prop) (md md' : MetaData P) : Prop :=
+  List.Rel₂ (fun e e' => e.fld = e'.fld ∧ MetaDataElem.Value.Rel G e.value e'.value)
+    md.toList md'.toList
 
 /-- Remove the first metadata element with tag `fld`. -/
 def MetaData.eraseElem {P : PureExpr} [BEq P.Ident]

@@ -1158,7 +1158,7 @@ theorem resolve_fvarAnnots_agree [ToString T.IDMeta] [DecidableEq T.IDMeta] [Has
       ∃ ty, Env.context.resolveTypes.types.find? x = some (.forAll [] ty) ∧
         ann = LMonoTy.subst S ty := by
   intro x ann h_mem
-  obtain ⟨sch, h_sch⟩ := resolve_fvar_declared C Env Env' e et h h_envwf h_fwf S h_mem
+  obtain ⟨sch, h_sch⟩ := resolve_fvar_declared C Env Env' e et h S h_mem
   obtain ⟨ty, rfl⟩ := MonoScope.find?_forAll h_mono h_sch
   exact ⟨Env.context.resolveTy ty, TContext.resolveTypes_find? h_sch,
     resolve_fvarAnnot_eq C Env Env' e et h h_envwf h_fwf S h_abs h_sch
