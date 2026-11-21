@@ -187,9 +187,11 @@ def genCoreVCs (program : Program)
 /--
 Remove solver-side caches that destabilize definitional equality in metaprograms.
 
-At the moment this is semantically harmless for denotation because
-`Strata.DL.SMT.Denote.denoteQuery` rejects contexts with datatype machinery
-(`datatypes`, `seenDatatypes`, `datatypeFuns`) populated anyway.
+The sanitized context carries no datatypes, so `Strata.DL.SMT.Denote.denoteQuery`
+sees none through this path and a verification condition that mentions a
+datatype has no denotation; `createGoal` refuses such conditions before this
+matters. Passing the datatypes through, as the plain list `denoteQuery` accepts,
+is what lifts that refusal.
 -/
 private def sanitizeSMTContext (ctx : Core.SMT.Context) : SMT.SanitizedContext :=
   SMT.SanitizedContext.ofCore ctx
@@ -327,8 +329,6 @@ theorem denoteQuery_toCore_of (sc : SMT.SanitizedContext) (assums : List SMT.Ter
             (assums.foldr (.app .implies [·, ·] (.prim .bool)) conc)) = some (PLift.up P)) :
     denoteQuery sc.toCore assums conc = some P := by
   apply SMT.DenoteProps.denoteQuery_of
-  · rfl
-  · simp [SMT.SanitizedContext.toCore]
   · simp [SMT.SanitizedContext.toCore]
   · exact h
 
@@ -1102,12 +1102,15 @@ private partial def bindIFsChain (ufs : List UF) (ifs : List IF) (lhs : Lean.Exp
 /-- Close the sort context: eliminate uninterpreted-sort binders one at a time.
 Proves `bindUSs ... = some ft'`. -/
 private partial def bindUSsChain (lhs : Lean.Expr) : MetaM SomeEqProof := do
-  -- lhs = bindUSs uss iss ft
-  let #[uss, iss, ft] := lhs.getAppArgs | throwError "proveQuery: unexpected bindUSs"
+  -- lhs = bindUSs uss iss (dts := dts) ft; the datatype list is implicit
+  let #[uss, iss, dts, ft] := lhs.getAppArgs | throwError "proveQuery: unexpected bindUSs"
+  -- The closing lemma `denoteQuery_toCore_of` is for queries without datatypes.
+  unless (← whnfR dts).isAppOf ``List.nil do
+    throwError "proveQuery: queries over datatypes are not supported"
   match_expr ← whnfR uss with
-  | List.nil _ => return { rhs := ft, proof := mkAppN (lem `bindUSs_nil) #[iss, ft] }
+  | List.nil _ => return { rhs := ft, proof := mkAppN (lem `bindUSs_nil) #[iss, dts, ft] }
   | List.cons _ us uss' =>
-    let f := mkAppN (lem `bindUSs_cons) #[us, uss', iss, ft]
+    let f := mkAppN (lem `bindUSs_cons) #[us, uss', iss, dts, ft]
     let rest ← bindUSsChain (← hypLHS f 1)
     return { rhs := rest.rhs, proof := mkAppN f #[rest.rhs, rest.proof] }
   | _ => throwError "proveQuery: expected a literal list of sorts"
@@ -1141,8 +1144,12 @@ def proveQuery (sc : SanitizedContext) (scE : Lean.Expr) (ts : List Term) (tsE :
       pure (body', toExpr body, ShareCommon.shareCommon' (toExpr body'))
   let ufsE' := toExpr ufs'
   let ifsE' := toExpr ifs'
+  -- no datatypes: the sanitized context carries none
+  let noDts := mkApp (.const ``List.nil [0]) (mkApp2 (.const ``Prod [0, 0]) (.const ``String [])
+    (mkApp (.const ``List [0]) (.const ``Strata.SMT.SMTConstructor [])))
   let f := mkAppN (lem `denoteBoolTermFromContext_of)
-    #[toExpr sc.sorts.toList.reverse, toExpr iss, toExpr ufs, toExpr ifs, bodyE, ufsE', ifsE', bodyE']
+    #[toExpr sc.sorts.toList.reverse, toExpr iss, toExpr ufs, toExpr ifs, bodyE, ufsE', ifsE', bodyE',
+      noDts]
   -- binders: h ft ft₁ ft₂ ft₃ hufs hifs htt ht hif huf hus
   let ctx := (← hypLHS f 8).getArg! 0
   let (r, _) ← (proveTerm { vs := [], ufs := ifs'.map IF.toUF ++ ufs' } ctx body' bodyE').run {}

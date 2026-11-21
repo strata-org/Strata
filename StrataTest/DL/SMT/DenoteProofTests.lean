@@ -16,7 +16,7 @@ translation is the query's denotation, and kernel-check the resulting theorem
 each VC.
 -/
 
-open Lean (Expr mkApp mkApp2 mkApp3 addDecl Declaration logInfo toExpr getEnv)
+open Lean (Expr mkApp mkApp2 mkApp3 mkApp4 addDecl Declaration logInfo toExpr getEnv)
 open Lean.Meta
 open Strata Strata.SMT
 
@@ -172,7 +172,9 @@ run_meta do
             | none => pure none
           | throwError "denotation does not match translation"
         let ty := mkApp3 (.const ``Eq [1]) (mkApp (.const ``Option [0]) (.sort 0))
-          (mkApp3 (.const ``denoteQuery []) (mkApp (.const ``Strata.SMT.SanitizedContext.toCore []) (toExpr sc)) (toExpr ts) (toExpr t))
+          (mkApp4 (.const ``denoteQuery []) (mkApp (.const ``Strata.SMT.SanitizedContext.toCore []) (toExpr sc)) (toExpr ts) (toExpr t)
+            -- `dts?`, left to its default: the datatypes come from the context
+            (mkApp (.const ``Option.none [Lean.Level.zero]) (.const ``Strata.SMT.DT.Decls [])))
           (mkApp2 (.const ``Option.some [0]) (.sort 0) den.rhs)
         addDecl (.thmDecl { name := `Strata.DenoteProofTests.thm ++ label.toName, levelParams := [], type := ty, value := den.proof })
         let ofGoalTy := Lean.mkForall `h .default P den.rhs
