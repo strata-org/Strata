@@ -27,6 +27,9 @@ import all Strata.Util.ListMap
   `ProcedureAssertsValidOnTraces` backwards.
 - `axiomsBeforeProcedureDecl_of_noAxioms`: a procedure preceded by no axiom or
   `distinct` declaration has no axiom assumption at its entry.
+- `AxiomsBeforeProcedureDecl.callee`: at a call, the axioms of a callee declared no
+  later than the caller follow from the caller's entry, when they read no variable
+  (`AxiomsBeforeProcedureDecl.of_declaredBefore`, `AxiomsBeforeProcedureDecl.of_closed`).
 - `AxiomsBeforeProcedureDecl.eval_of_mem`, `AxiomsBeforeProcedureDecl.pairwise_of_mem`:
   at an entry satisfying `AxiomsBeforeProcedureDecl`, each axiom declared before the
   procedure evaluates to `true`, and the expressions of each `distinct` declared
@@ -97,6 +100,85 @@ theorem AxiomsBeforeProcedureDecl.pairwise_of_mem {entryProcName : String} {p : 
     rcases List.mem_cons.mp hd with rfl | hm
     · exact h.1
     · cases d <;> simp only [List.foldr_cons] at h <;> first | exact ih h.2 hm | exact ih h hm
+
+/-! ### Axioms at a call
+
+A call needs the callee's axioms at the callee's entry store
+(`Hoare.Procedure.call_of_contract`). The caller has its own axioms at its entry. When the
+callee is declared no later than the caller, its axioms are among the caller's, and when
+they read no variable they hold in every store over the same factory. A run keeps the
+factory, so the caller's entry assumption gives the callee's at every call. -/
+
+/-- **Closed axioms hold by the factory alone.** If the axioms and `distinct` declarations
+    before `entryProcName` read no variable, they hold in an environment once they hold in
+    one with the same factory. -/
+theorem AxiomsBeforeProcedureDecl.of_closed {entryProcName : String} {p : Program}
+    {ρ ρ' : Imperative.Env Expression}
+    (hclosed : p.axiomsClosedBeforeProcedure entryProcName = Bool.true)
+    (hfac : ρ.factory = ρ'.factory)
+    (h : AxiomsBeforeProcedureDecl entryProcName p ρ) :
+    AxiomsBeforeProcedureDecl entryProcName p ρ' := by
+  obtain ⟨σ, f⟩ := ρ
+  obtain ⟨σ', f'⟩ := ρ'
+  obtain rfl : f = f' := hfac
+  -- a closed expression evaluates alike in every store
+  have heval : ∀ {e : Expression.Expr} (σ₁ σ₂ : CoreStore), e.freeVars.isEmpty = Bool.true →
+      Expression.eval f σ₁ e = Expression.eval f σ₂ e := fun {e} _ _ he =>
+    Lambda.LExpr.denoteEval_congr e fun _ _ hx => by
+      rw [List.isEmpty_iff.mp he] at hx; cases hx
+  unfold AxiomsBeforeProcedureDecl at h ⊢
+  unfold Program.axiomsClosedBeforeProcedure at hclosed
+  rw [List.all_eq_true] at hclosed
+  generalize p.declsBeforeProcedure entryProcName = decls at h hclosed
+  induction decls with
+  | nil => trivial
+  | cons d ds ih =>
+    have hd := hclosed d List.mem_cons_self
+    have hds := fun h' => ih h' fun d hdm => hclosed d (List.mem_cons_of_mem _ hdm)
+    cases d with
+    | ax a md =>
+      simp only [List.foldr_cons] at h ⊢
+      exact ⟨(heval σ' σ hd).trans h.1, hds h.2⟩
+    | distinct name es md =>
+      simp only [List.foldr_cons] at h ⊢
+      have hes := List.all_eq_true.mp hd
+      exact ⟨h.1.imp_of_mem fun {e₁ e₂} h₁ h₂ hne heq => hne <|
+        (heval σ σ' (hes e₁ h₁)).trans <| heq.trans (heval σ' σ (hes e₂ h₂)), hds h.2⟩
+    | _ => simpa only [List.foldr_cons] using hds (by simpa only [List.foldr_cons] using h)
+
+/-- **A procedure declared no later sees no more axioms.** If the declarations before
+    `callee` are at most as many as those before `caller`, an environment that satisfies
+    the axioms before `caller` satisfies those before `callee`. -/
+theorem AxiomsBeforeProcedureDecl.of_declaredBefore {caller callee : String} {p : Program}
+    {ρ : Imperative.Env Expression}
+    (hbefore : (p.declsBeforeProcedure callee).length ≤ (p.declsBeforeProcedure caller).length)
+    (h : AxiomsBeforeProcedureDecl caller p ρ) :
+    AxiomsBeforeProcedureDecl callee p ρ := by
+  obtain ⟨rest, hrest⟩ : p.declsBeforeProcedure callee <+: p.declsBeforeProcedure caller :=
+    List.prefix_of_prefix_length_le (List.takeWhile_prefix _) (List.takeWhile_prefix _) hbefore
+  unfold AxiomsBeforeProcedureDecl at h ⊢
+  rw [← hrest] at h
+  generalize p.declsBeforeProcedure callee = decls at h
+  induction decls with
+  | nil => trivial
+  | cons d ds ih =>
+    cases d <;> simp only [List.cons_append, List.foldr_cons] at h ⊢ <;>
+      first | exact ⟨h.1, ih h.2⟩ | exact ih h
+
+/-- **The callee's axioms at a call, from the caller's entry.** Let `callee` be declared no
+    later than `caller`, with axioms and `distinct` declarations that read no variable. An
+    environment that satisfies the axioms before `caller` gives, for every store over its
+    factory, an environment that satisfies the axioms before `callee`. This is the premise
+    `haxioms` of `Hoare.Procedure.call_of_contract`, since a run keeps the factory. -/
+theorem AxiomsBeforeProcedureDecl.callee {caller callee : String} {p : Program}
+    {ρ ρ' : Imperative.Env Expression}
+    (hbefore : (p.declsBeforeProcedure callee).length ≤ (p.declsBeforeProcedure caller).length)
+    (hclosed : p.axiomsClosedBeforeProcedure callee = Bool.true)
+    (hfac : ρ.factory = ρ'.factory)
+    (h : AxiomsBeforeProcedureDecl caller p ρ) :
+    AxiomsBeforeProcedureDecl callee p ρ' :=
+  (h.of_declaredBefore hbefore).of_closed hclosed hfac
+
 
 /-! ## Postconditions checked on the trace
 

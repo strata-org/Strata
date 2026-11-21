@@ -614,6 +614,8 @@ the procedure, as the entry environments of `ProcedureAssertsValidOnTraces` do, 
 a proved `Procedure.contractTriple` gives the contract part of that property
 (`contract_of_contractTriple`); for a polymorphic procedure, through its instance at its own
 type parameters.
+At a call, the axioms of a callee declared no later than the caller follow from the
+caller's entry when they read no variable (`AxiomsBeforeProcedureDecl.callee`).
 `StrataTest/Languages/Core/Tests/Logic/Hoare.lean` has examples of Hoare triples
 derived from procedure contracts and their proofs,
 `StrataTest/Languages/Core/Tests/Logic/HoareAxioms.lean` has contracts that rest on
