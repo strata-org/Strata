@@ -73,17 +73,17 @@ variable {P : PureExpr} [HasBoolOps P] [HasFvar P] [HasFvars P]
   {m : Type → Type} [Monad m] [LawfulMonad m] [InterpEffects P m] [MonadExcept StopReason m]
 
 omit [HasFvars P] [LawfulMonad m] in
-/-- A command step of an oracle-reading call-aware run that `stepCmd π i j` performs from the
-    environment with store `σ` at the runtime factory of `F`, reaching the store `σi`, is a run of
-    the store-stepper `StepCmdM.toStore (stepCmd π i)` (`cfgStepCmd π i`, `stepKleeneCmd π i`)
-    reaching `σi`. -/
+/-- A command step of an oracle-reading call-aware run that `stepCmd π .contract i j` performs from
+    the environment with store `σ` at the runtime factory of `F`, reaching the store `σi`, is a run
+    of the store-stepper `StepCmdM.toStore (stepCmd π .contract i)` (`cfgStepCmd π i`,
+    `stepKleeneCmd π i`) reaching `σi`. -/
 private theorem storeStep_of_stepInterp (obs : InterpObs P m) (cfgr : obs.Cfg) {F : P.Factory}
     (π : String → Option (Procedure P (CmdExt P) Hdr)) {i j : Nat} {σ σi : IStore P}
     {c : CmdExt P} {st st' : obs.St}
     (h : obs.run (stepInterp (callStepOf (m := m) π i j) j (.stmt (.cmd c)
       ⟨σ, InterpLang.rfactory F⟩)) cfgr st
         = (.ok (.terminal { (⟨σ, InterpLang.rfactory F⟩ : IEnv P) with store := σi }), st')) :
-    obs.run (StepCmdM.toStore (stepCmd π i) j (InterpLang.rfactory F) σ c) cfgr st
+    obs.run (StepCmdM.toStore (stepCmd π .contract i) j (InterpLang.rfactory F) σ c) cfgr st
       = (.ok σi, st') := by
   simp only [stepInterp_stmt_cmd, callStepOf] at h
   simp [obs.run_bind, h, IConfig.getEnv, obs.run_pure, -bind_pure_comp]

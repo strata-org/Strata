@@ -191,8 +191,8 @@ theorem ctorFoldProgram_over {fac : Lambda.Factory CoreLParams} {prog out : Prog
     {s s' : Transform.CoreTransformState} {b : Bool}
     (h : (ctorFoldProgram fac prog).run s = (.ok (b, out), s')) {q : Procedure}
     {md : Imperative.MetaData Expression} {ss : Statements} (hq : Decl.proc q md ∈ prog.decls)
-    (hb : q.body = .structured ss) :
-    Decl.proc { q with body := .structured (ctorFold fac ss) } md ∈ out.decls := by
+    {opq : Bool} (hb : q.body = .structured ss opq) :
+    Decl.proc { q with body := .structured (ctorFold fac ss) opq } md ∈ out.decls := by
   cases h
   exact Program.mapStructuredBodies_mem hq hb
 
@@ -208,7 +208,7 @@ theorem ctorFoldProgram_proc_kept {fac : Lambda.Factory CoreLParams} {p out : Pr
     (h : (ctorFoldProgram fac p).run s = (.ok (b, out), s')) {q' : Procedure}
     {md : Imperative.MetaData Expression} (hq : Decl.proc q' md ∈ out.decls) :
     ∃ q, Decl.proc q md ∈ p.decls ∧ q'.header = q.header ∧
-      ∀ ss', q'.body = .structured ss' → ∃ ss, q.body = .structured ss ∧
+      ∀ ss' o, q'.body = .structured ss' o → ∃ ss, q.body = .structured ss o ∧
         (Block.passiveForm ss = true →
           Block.passiveForm ss' = true ∧
           (∀ D df Γ, Block.defUseWellFormed D df ss = true → Block.fvarTypesWellAnnotated Γ ss →
@@ -217,8 +217,8 @@ theorem ctorFoldProgram_proc_kept {fac : Lambda.Factory CoreLParams} {p out : Pr
             Block.initsTyped Core.Expression.Typed ss')) := by
   cases h
   obtain ⟨q, hd, hh, hk⟩ := Program.mapStructuredBodies_proc hq
-  refine ⟨q, hd, hh, fun ss' hb' => ?_⟩
-  obtain ⟨ss, hb, rfl⟩ := hk ss' hb'
+  refine ⟨q, hd, hh, fun ss' o hb' => ?_⟩
+  obtain ⟨ss, hb, rfl⟩ := hk ss' o hb'
   refine ⟨ss, hb, fun hp => ?_⟩
   have hw3 := defInlineWith_passive (norm := ctorNorm fac) (sel := ctorFoldSel fac ss) hp
   have hdd : ctorFold fac ss = Imperative.DeadDefElim.deadDefElim [] (defInlineWith

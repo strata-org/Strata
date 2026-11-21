@@ -32,7 +32,7 @@ private def intTy : Expression.Ty := Imperative.HasInt.intTy
 
 /-- Wrap `body` as the single procedure of a program. -/
 private def progOf (body : List Statement) : Program :=
-  { decls := [.proc { (default : Procedure) with body := .structured body } default] }
+  { decls := [.proc { (default : Procedure) with body := .structured body false } default] }
 
 /-- Whether the executable check of `f` accepts `p`; facts without a check are
     treated as accepted, since nothing can refute them here. -/
@@ -62,7 +62,7 @@ private def runPhase (phase : PipelinePhase) (p : Program) : String :=
 private def cfgProgram : Program :=
   let cfg : Imperative.CFG String (Imperative.DetBlock String Command Expression) :=
     { entry := "entry", blocks := [("entry", { cmds := [], transfer := .finish {} })] }
-  { decls := [.proc { (default : Procedure) with body := .cfg cfg } default] }
+  { decls := [.proc { (default : Procedure) with body := .cfg cfg false } default] }
 
 /-- A loop whose body declares `x`, so the hoist moves the declaration out. -/
 private def loopWithInit : Program :=

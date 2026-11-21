@@ -221,10 +221,11 @@ end
 inductive ProcBodyWellTyped (P : Program) (C : LContext CoreLParams) (ts : TypeScopes) :
     Procedure.Body → Prop where
   /-- A structured body is a statement list typed with no enclosing block. -/
-  | structured : ∀ ss C' ts',
+  | structured : ∀ ss C' ts' opq,
       StatementsWellTyped P C ts [] ss C' ts' →
-      ProcBodyWellTyped P C ts (.structured ss)
-  | cfg : ∀ c, ProcBodyWellTyped P C ts (.cfg c)
+      ProcBodyWellTyped P C ts (.structured ss opq)
+  | cfg : ∀ c opq, ProcBodyWellTyped P C ts (.cfg c opq)
+  | abstract : ProcBodyWellTyped P C ts .abstract
 
 /-- Well-typedness of a procedure under program `P`, in context `C` and variable scopes
     `ts`. -/

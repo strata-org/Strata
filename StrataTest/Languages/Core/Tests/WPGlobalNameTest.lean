@@ -112,7 +112,7 @@ private def procP (body : List Core.Statement) : Core.Decl :=
   .proc { header := { name := "P", typeArgs := [], inputs := [("c", .int)],
                       outputs := [("r", .int)] },
           spec := { preconditions := [], postconditions := [] },
-          body := .structured body } .empty
+          body := .structured body false } .empty
 
 /-- The body `assert [pc]: c == 0`. -/
 private def assertPc : List Core.Statement :=

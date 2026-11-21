@@ -59,7 +59,8 @@ private theorem wpProcsProgram_unit {reserved : List Expression.Ident} {mid out 
   fun _ _ hq hu => ((Except.bind_is_ok _ _ _).1 h).elim fun _ ⟨hm, he⟩ => by
     obtain ⟨d, hdo, hd⟩ := mapM_except_mem_left _ _ _ hm _ hq
     simp only [hu, ite_true] at hd
-    exact Except.ok.inj he ▸ Except.ok.inj hd ▸ hdo
+    cases Except.ok.inj he
+    exact List.mem_filterMap.2 ⟨_, hdo, (Except.ok.inj hd).symm⟩
 
 end -- public section
 end WP

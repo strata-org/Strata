@@ -217,16 +217,17 @@ structure WFCFGProp (p : Program) (d : Procedure) (cfg : DetCFG) : Prop where
         (CFG.cycleLabelsWith cfg.succMap cfg.labels).contains lbl = false
 
 structure WFProcedureProp (p : Program) (d : Procedure) : Prop where
-  wfstmts : ∀ ss, d.body = .structured ss → WFStatementsProp p ss
-  wfloclnd : ∀ ss, d.body = .structured ss → (HasVarsImp.definedVars (P:=Expression) ss false).Nodup
+  wfstmts : ∀ ss opq, d.body = .structured ss opq → WFStatementsProp p ss
+  wfloclnd : ∀ ss opq, d.body = .structured ss opq → (HasVarsImp.definedVars (P:=Expression) ss
+      false).Nodup
   inputsNodup : (ListMap.keys d.header.inputs).Nodup
   outputsNodup : (ListMap.keys d.header.outputs).Nodup
   ioNotOld : ∀ id ∈ ListMap.keys d.header.inputs ++ ListMap.keys d.header.outputs,
       ∀ x, id ≠ CoreIdent.mkOld x
   wfspec : WFSpecProp p d.spec d
-  bodyExitsCovered : ∀ ss, d.body = .structured ss →
+  bodyExitsCovered : ∀ ss opq, d.body = .structured ss opq →
     Block.exitsCoveredByBlocks [] ss
-  wfcfg : ∀ cfg, d.body = .cfg cfg → WFCFGProp p d cfg
+  wfcfg : ∀ cfg opq, d.body = .cfg cfg opq → WFCFGProp p d cfg
 structure WFFunctionProp (p : Program) (f : Function) : Prop where
 
 structure WFRecFuncBlockProp (p : Program) (fs : List Function) : Prop where

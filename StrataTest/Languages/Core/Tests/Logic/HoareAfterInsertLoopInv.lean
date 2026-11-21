@@ -132,7 +132,7 @@ private def parts : Parts :=
   match countProc.body with
   | .structured [Stmt.cmd (CmdExt.cmd (Cmd.set _ _ md0)),
       Stmt.loop (.det g) (some m) [(l, i)] [Stmt.cmd (CmdExt.cmd (Cmd.set _ (.det e) md2))]
-        md1] => ⟨md0, g, m, l, i, e, md2, md1⟩
+        md1] _ => ⟨md0, g, m, l, i, e, md2, md1⟩
   | _ => default
 
 /-- The initialisation `y := 0`. -/
@@ -146,7 +146,7 @@ private abbrev countSet : Core.Statement := Core.Statement.set countY parts.rhs 
 private theorem count_body_eq :
     countProc.body = .structured ([countInit] ++
       [.loop (.det parts.guard) (some parts.measure) [(parts.invLabel, parts.inv)] [countSet]
-        parts.md1]) := by
+        parts.md1]) false := by
   native_decide
 
 /-! ## The checked body -/
@@ -218,7 +218,8 @@ private theorem count_decl : countPgmAST.decls[0]? = some (.proc countProc count
 
 /-- The Core pass turns the procedure body into `countInit` followed by `tgtLoop`. -/
 private theorem count_out_decl : countOut.decls[0]? =
-    some (.proc { countProc with body := .structured ([countInit] ++ tgtLoop) } countDeclMd) := by
+    some (.proc { countProc with body := .structured ([countInit] ++ tgtLoop) false } countDeclMd)
+        := by
   native_decide
 
 /-! ## Evaluating the conditions -/

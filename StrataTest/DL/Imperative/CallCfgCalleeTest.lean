@@ -92,7 +92,7 @@ private def callee : Procedure :=
   { header := { name := ⟨"callee", ()⟩, typeArgs := [], inputs := [],
                 outputs := [(yId, .tcons "bool" [])] }
     spec := { preconditions := [], postconditions := [] }
-    body := .cfg calleeCFG }
+    body := .cfg calleeCFG false }
 
 /-- A procedure environment resolving only `"callee"`. -/
 private def calleeEnv : String → Option Procedure :=
@@ -136,7 +136,7 @@ private theorem callCmd_sem (fac : Expression.Factory) :
     (π := calleeEnv) (fac := fac) (σ := (σ0 fac)) (σAO := (frame fac))
     (by simp [Calls.typeInstantiatedCallee, calleeEnv, ProcedureTypeInstantiation.instantiate,
       Procedure.instantiateTypes, callee])
-    ⟨[], [(ffV fac)], .eval_none,
+    rfl ⟨[], [(ffV fac)], .eval_none,
       .read_some (by simp [σ0, bind]) (HasBool.boolIsVal fac).2 .read_none,
       ⟨emptyStore, (frame fac), .init_none, .init_some (initState_bind rfl) .init_none, rfl⟩⟩
     hbody
@@ -180,9 +180,9 @@ private theorem callerCFG_run (fac : Expression.Factory) :
 /-- A CFG caller procedure body: `callerCFG` as a `BigStepE` body run from `x ↦ false`
     ends at `x ↦ true`. -/
 example (fac : Expression.Factory) :
-    BigStepE calleeEnv (.cfg callerCFG) ⟨(σ0 fac), fac⟩ (bind (σ0 fac) xId (ttV fac))
+    BigStepE calleeEnv (.cfg callerCFG false) ⟨(σ0 fac), fac⟩ (bind (σ0 fac) xId (ttV fac))
       [bodyEvent fac] := by
-  have h := BigStepE.cfg (ρ := ⟨(σ0 fac), fac⟩) (callerCFG_run fac)
+  have h := BigStepE.cfg (opq := false) (ρ := ⟨(σ0 fac), fac⟩) (callerCFG_run fac)
   have hσ : projectStore (σ0 fac) (bind (σ0 fac) xId (ttV fac)) = bind (σ0 fac) xId (ttV fac) := by
     funext i
     by_cases hi : i = xId <;> simp [projectStore, σ0, bind, emptyStore, hi]
@@ -230,11 +230,12 @@ private def eraseCmdMd (c : Command) : Command :=
 /-- A procedure body with the metadata of its commands, its transfers and its
     top-level statements erased. -/
 private def eraseBodyMd : Procedure.Body → Procedure.Body
-  | .cfg g => .cfg { g with blocks := g.blocks.map fun (l, b) =>
-      (l, { cmds := b.cmds.map eraseCmdMd, transfer := b.transfer.stripMetaData }) }
-  | .structured ss => .structured (ss.map fun
+  | .cfg g _ => .cfg { g with blocks := g.blocks.map fun (l, b) =>
+      (l, { cmds := b.cmds.map eraseCmdMd, transfer := b.transfer.stripMetaData }) } false
+  | .structured ss _ => .structured (ss.map fun
       | .cmd c => .cmd (eraseCmdMd c)
-      | s => s.stripMetaData)
+      | s => s.stripMetaData) false
+  | .abstract => .abstract
 
 /-- The procedures of the DDM translation of `calleeProgram`, with their bodies'
     metadata erased. -/
@@ -249,9 +250,9 @@ private def parsedProcedures : List Procedure :=
 #guard parsedProcedures[0]? == some callee
 
 -- The parsed structured caller's body is the statement `call callee(out x)`.
-#guard (parsedProcedures[1]?.map (·.body)) == some (.structured [.cmd callCmd])
+#guard (parsedProcedures[1]?.map (·.body)) == some (.structured [.cmd callCmd] false)
 
 -- The parsed CFG caller's body is `callerCFG`.
-#guard (parsedProcedures[2]?.map (·.body)) == some (.cfg callerCFG)
+#guard (parsedProcedures[2]?.map (·.body)) == some (.cfg callerCFG false)
 
 end CallCfgCalleeTest

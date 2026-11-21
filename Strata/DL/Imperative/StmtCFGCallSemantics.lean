@@ -28,13 +28,16 @@ written `p` below, to completion in one command step:
   (`Calls.checksAtCall`), so that the checks of two calls at different source
   positions are different assertions.
 - *Body*: the body runs from the entry frame until it terminates, emitting its own
-  events.
+  events.  An opaque callee (`Body.isOpaque`: an abstract body, or a body marked opaque) is
+  not run: its call havocs the output formals instead and emits every postcondition as an
+  assumption event, as `EvalCmdExtContractE` does (`EvalCmdExtE.call_abstract_sem`).
 - *Postcondition events*: each non-free postcondition is emitted as an assertion
   event, evaluated in the callee's final frame.
 - *Exit* (`Calls.CallExit`): read the output formals in the final frame and write
   them back to the caller's `out`/`inout` variables.
 The call's trace is the precondition events, then the body events, then the
-postcondition events.
+postcondition events; for an opaque callee it is the precondition events, then the
+postcondition assumption events.
 
 `EvalCmdExtE` (one command) and `BigStepE` (one procedure body) are mutually
 inductive: a call's `EvalCmdExtE.call_sem` derivation contains a `BigStepE`
@@ -197,7 +200,7 @@ inductive BigStepE
         emitted
         (.terminal ρ') →
       ----
-      BigStepE π (.structured ss) ρ ρ'.store emitted
+      BigStepE π (.structured ss opq) ρ ρ'.store emitted
 
   /-- A CFG body runs from its entry block to `finish`. The CFG program and
       environment are carried by each `CFGConfig`, so the nested relation captures
@@ -209,7 +212,7 @@ inductive BigStepE
         emitted
         (.terminal ρ') →
       ----
-      BigStepE π (.cfg g) ρ (projectStore ρ.store ρ'.store) emitted
+      BigStepE π (.cfg g opq) ρ (projectStore ρ.store ρ'.store) emitted
 
 /-- Event-producing command semantics of `CmdExt P`.  Base commands delegate to
     `EvalCmdE`.  A call emits its non-free preconditions as assertions at the
@@ -217,7 +220,8 @@ inductive BigStepE
     (`Calls.checksAtCall md`), executes its body from that frame, and emits its
     non-free postconditions, with their own metadata, as assertions at the callee's
     final frame. The call runs its body and interprets each contract clause with the
-    active factory `fac`. -/
+    active factory `fac`. This rule applies to a callee whose body is not opaque; a call to an
+    opaque procedure uses its contract instead (`call_abstract_sem`). -/
 inductive EvalCmdExtE
     (π : String → Option (Procedure P (CmdExt P) Hdr)) :
     P.Factory → SemanticStore P → CmdExt P → SemanticStore P → Trace P → Prop where
@@ -235,6 +239,7 @@ inductive EvalCmdExtE
       arguments (`Calls.typeInstantiatedCallee`). -/
   | call_sem {σ n tyArgs p callArgs σ' σ_final bodyEvents md fac σAO} :
       Calls.typeInstantiatedCallee π n tyArgs = .some p →
+      p.body.isOpaque = false →
       Calls.CallEntry fac σ p callArgs σAO →
       BigStepE π p.body ⟨σAO, fac⟩ σ_final bodyEvents →
       Calls.CallExit fac σ p callArgs σ_final σ' →
@@ -243,6 +248,23 @@ inductive EvalCmdExtE
         (Calls.defaultAssertEvents fac σAO (Calls.checksAtCall md p.spec.preconditions) ++
           bodyEvents ++
           Calls.defaultAssertEvents fac σ_final p.spec.postconditions)
+
+  /-- A call to an opaque procedure (`Body.isOpaque`) has the meaning of its contract, as in
+      `EvalCmdExtContractE.call_sem`: it emits the non-free preconditions as assertions at the
+      callee entry frame, havocs the output formals, emits every postcondition as an
+      assumption at the post-havoc frame, and writes the outputs back to the caller.
+      Arguments are matched positionally, and the callee is instantiated at the call's type
+      arguments, as in `call_sem`. -/
+  | call_abstract_sem {σ σO n tyArgs p callArgs σ' md fac σAO} :
+      Calls.typeInstantiatedCallee π n tyArgs = .some p →
+      p.body.isOpaque = true →
+      Calls.CallEntry fac σ p callArgs σAO →
+      Calls.HavocVars fac σAO (ProcedureHeader.outputParams (P := P) p.header) σO →
+      Calls.CallExit fac σ p callArgs σO σ' →
+      ----
+      EvalCmdExtE π fac σ (.call n tyArgs callArgs md) σ'
+        (Calls.defaultAssertEvents fac σAO (Calls.checksAtCall md p.spec.preconditions) ++
+          Calls.assumeEvents fac σO p.spec.postconditions)
 
 end
 

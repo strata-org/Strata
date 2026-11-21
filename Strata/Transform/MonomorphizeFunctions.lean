@@ -268,10 +268,11 @@ def collectFromProcedure (polyfunDecls : PolymorphicFuncDecls)
   -- Collect from both body forms, mirroring `rewriteProcedure` (which rewrites
   -- both), so no reference is renamed without its specialization being seeded.
   let bodyExprs := match proc.body with
-    | .structured ss => Statements.collectExprs ss
-    | .cfg cfg => cfg.blocks.flatMap fun (_, b) =>
+    | .structured ss _ => Statements.collectExprs ss
+    | .cfg cfg _ => cfg.blocks.flatMap fun (_, b) =>
         b.md.exprs ++ b.cmds.flatMap collectFromCommand ++
         (match b.transfer with | .condGoto pp _ _ _ => [pp] | .finish _ => [])
+    | .abstract => []
   (specExprs ++ bodyExprs).flatMap (collectFuncSpecializations polyfunDecls factory)
 
 /-- All references to polymorphic functions in a function's expressions. -/
@@ -290,8 +291,8 @@ def rewriteProcedure (polyfunDecls : PolymorphicFuncDecls)
   let pre' ← proc.spec.preconditions.mapM (fun (l, c) => do pure (l, { c with expr := ← rw c.expr }))
   let post' ← proc.spec.postconditions.mapM (fun (l, c) => do pure (l, { c with expr := ← rw c.expr }))
   let body' ← match proc.body with
-    | .structured ss => Procedure.Body.structured <$> Statements.mapExprsM rw ss
-    | .cfg cfg => do
+    | .structured ss o => (Procedure.Body.structured · o) <$> Statements.mapExprsM rw ss
+    | .cfg cfg o => do
       let blocks ← cfg.blocks.mapM (fun (l, b) => do
         let cmds ← b.cmds.mapM (Command.mapExprM rw)
         let transfer ← match b.transfer with
@@ -299,7 +300,8 @@ def rewriteProcedure (polyfunDecls : PolymorphicFuncDecls)
           | .finish md => pure (.finish md)
         let md ← b.md.mapExprsM rw
         pure (l, { b with cmds := cmds, transfer := transfer, md := md }))
-      pure (Procedure.Body.cfg { cfg with blocks := blocks })
+      pure (Procedure.Body.cfg { cfg with blocks := blocks } o)
+    | .abstract => pure .abstract
   pure { proc with
     spec := { proc.spec with preconditions := pre', postconditions := post' },
     body := body' }

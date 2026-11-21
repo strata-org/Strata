@@ -956,14 +956,15 @@ def toCoreProofObligationProgram (options : VerifyOptions) (program : Program)
   -- dropped silently. Check the input structurally and fail loudly instead.
   match program.decls.findSome? (fun d => match d with
     | .proc proc _ => (match proc.body with
-        | .structured ss =>
+        | .structured ss _ =>
           if Imperative.Block.noNondetGuards ss then none
           else some s!"procedure '{proc.header.name.1}' contains a nondeterministic \
             if/loop guard; run nondetElim before symbolic evaluation."
-        | .cfg _ =>
+        | .cfg _ _ =>
           some s!"procedure '{proc.header.name.1}' has a CFG body; symbolic \
             evaluation supports only structured bodies. Pass --vcgen symexec (for an \
-            acyclic one) or --vcgen usp (or uwp) to verify it.")
+            acyclic one) or --vcgen usp (or uwp) to verify it."
+        | .abstract => none)
     | _ => none) with
   | some msg => throw (Message.fromString s!"toCoreProofObligationProgram: {msg}")
   | none => pure ()
@@ -1041,19 +1042,22 @@ private def isOnlyCheck (md : MetaData Expression) : Bool :=
   (md.findElem onlyCheckField).isSome
 
 /-- The checks (`assert`s and `cover`s) of `program`, by label and metadata: each procedure
-    body's checks and the asserts its non-free postconditions become, with how many checks
-    share that label and metadata. -/
+    body's checks and the asserts its non-free postconditions become (an abstract procedure has
+    neither: its postconditions are not checked), with how many checks share that label and
+    metadata. -/
 private def checkCounts (program : Program) : Std.HashMap String Nat :=
   let key (label : String) (md : MetaData Expression) := s!"{label}@{repr md}"
   let bodyKeys (body : Procedure.Body) : List String := match body with
-    | .structured ss =>
+    | .structured ss _ =>
       (Statement.Statements.collectAsserts ss ++
         Statement.Statements.collectCovers ss).map fun (l, md) => key l md
-    | .cfg g => g.blocks.flatMap fun (_, b) => b.cmds.filterMap fun
+    | .cfg g _ => g.blocks.flatMap fun (_, b) => b.cmds.filterMap fun
         | .cmd (.assert label _ md) | .cmd (.cover label _ md) => some (key label md)
         | _ => none
+    | .abstract => []
   let keys := program.decls.flatMap fun
     | .proc p _ => bodyKeys p.body ++
+        if p.body.isAbstract then [] else
         p.spec.postconditions.toList.filterMap fun (label, c) => match c.attr with
           | .Free => none
           | _ => some (key label c.md)
@@ -1076,9 +1080,10 @@ private def markOnlyChecks (counts : Std.HashMap String Nat) (p : Procedure) : P
     | .cmd c => .cmd (markCmd c)
     | c => c
   let body := match p.body with
-    | .structured ss => Procedure.Body.structured (Imperative.Block.mapExpr id markCommand ss)
-    | .cfg g => Procedure.Body.cfg { g with blocks := g.blocks.map fun (l, b) =>
-        (l, { b with cmds := b.cmds.map markCommand }) }
+    | .structured ss o => Procedure.Body.structured (Imperative.Block.mapExpr id markCommand ss) o
+    | .cfg g o => Procedure.Body.cfg { g with blocks := g.blocks.map fun (l, b) =>
+        (l, { b with cmds := b.cmds.map markCommand }) } o
+    | .abstract => .abstract
   let post := p.spec.postconditions.toList.map fun (label, c) => match c.attr with
     | .Free => (label, c)
     | _ => (label, { c with md := mark label c.md })
@@ -1130,7 +1135,9 @@ def toSymExecObligationProgram (options : VerifyOptions) (program : Program)
       match d with
       | .ax a _ => pure (axioms.push (toString a.name, a.e), nDistinct, idx, blocks, stats)
       | .distinct .. => pure (axioms, nDistinct + 1, idx, blocks, stats)
-      | .proc p _ =>
+      -- An abstract procedure has no body to check, and call elimination has removed every call
+      -- to it, so it is skipped.
+      | .proc p _ => if p.body.isAbstract then pure acc else
         let p := markOnlyChecks counts p
         let pol := policy.getD (SymExec.MergePolicy.ofMode options.symExecMode)
         let r := SymExec.exploreProc { simpFuel := postEvalEnv.exprEnv.config.fuel,
@@ -1198,6 +1205,59 @@ structure SolverPhaseLog where
   result : SMT.Result
   deriving Repr, BEq
 
+/-- The fuel with which `modelFalsifies` evaluates a guard. -/
+def markerGuardFuel : Nat := 1000
+
+/-- The operators that `modelFalsifies` evaluates in a guard: Boolean connectives, and integer
+    and real addition, subtraction, multiplication, negation and comparisons. On these, Core's
+    evaluator and the solver agree on every value. Division and remainder are not among them:
+    Core gives division by zero a value (`0` for reals), while SMT-LIB leaves it unconstrained. -/
+def markerGuardOps : List String :=
+  ["Bool.Not", "Bool.And", "Bool.Or", "Bool.Implies", "Bool.Equiv",
+   "Int.Add", "Int.Sub", "Int.Mul", "Int.Neg", "Int.Lt", "Int.Le", "Int.Gt", "Int.Ge",
+   "Real.Add", "Real.Sub", "Real.Mul", "Real.Neg", "Real.Lt", "Real.Le", "Real.Gt", "Real.Ge"]
+
+/-- Whether `modelFalsifies` may evaluate `e`: it is built from literals, variables,
+    conditionals, equalities and applications of the operators `markerGuardOps`. -/
+def markerGuardEvaluable : Expression.Expr → Bool
+  | .const _ _ | .fvar _ _ _ => true
+  | .op _ o _ => markerGuardOps.contains o.name
+  | .app _ f a => markerGuardEvaluable f && markerGuardEvaluable a
+  | .ite _ c t f => markerGuardEvaluable c && markerGuardEvaluable t && markerGuardEvaluable f
+  | .eq _ a b => markerGuardEvaluable a && markerGuardEvaluable b
+  | _ => false
+
+/-- The store under which `modelFalsifies` evaluates a guard: each variable bound to the value
+    the solver model `m` gives it, where that value is a literal (`smtTermIsValue`). A variable
+    that a deterministic declaration of `obligation` defines and that the model leaves without
+    such a value is then bound, in the order of the declarations, to the value of its
+    definition, when the definition is `markerGuardEvaluable` and evaluates (`evalBounded`, in the
+    factory `Core.Factory`). Every other variable is unbound. -/
+def markerGuardStore (m : Imperative.SMT.Model Expression.Ident)
+    (obligation : ProofObligation Expression) : RStore Expression :=
+  let modelStore : RStore Expression := fun x =>
+    (m.toList.find? (·.1 == x)).bind fun (_, t) =>
+      if smtTermIsValue t then some (smtTermToLExpr t) else none
+  obligation.assumptions.foldl (fun store pc => pc.foldl (fun store entry =>
+    match entry with
+    | .varDecl x _ (.det e) =>
+      if (store x).isSome || !markerGuardEvaluable e then store else
+      match evalBounded markerGuardFuel Core.Factory store e with
+      | some v => fun y => if y == x then some v else store y
+      | none => store
+    | _ => store) store) modelStore
+
+/-- Whether the solver model `m` of `obligation` falsifies the branch guard `g`: `g` is
+    `markerGuardEvaluable` and evaluates (`evalBounded`, in the factory `Core.Factory`) to `false`
+    under `markerGuardStore`. A guard that reads an unbound variable does not evaluate, and is not
+    falsified. -/
+def modelFalsifies (m : Imperative.SMT.Model Expression.Ident)
+    (obligation : ProofObligation Expression) (g : Expression.Expr) : Bool :=
+  markerGuardEvaluable g &&
+  match evalBounded markerGuardFuel Core.Factory (markerGuardStore m obligation) g with
+  | some (.const _ (.boolConst false)) => true
+  | _ => false
+
 /-- Validate a model against all phases for a given obligation. Phases are
     recorded top-down, so we reverse them to validate from the last
     (innermost) phase first. Returns the adjusted result and a log of
@@ -1209,7 +1269,9 @@ structure SolverPhaseLog where
     (when the model fails validation) or promote `.unknown (some m)` back to
     `.sat m` (when the model passes validation against the pre-phase
     semantics). This means phases are not cascading — each validating
-    phase makes its own decision based on the model. -/
+    phase makes its own decision based on the model. A phase with `markersOnPath` demotes
+    `.sat m` when `m` can reach one of its markers, that is when `m` falsifies
+    (`modelFalsifies`) none of that marker's guards; it passes every other result through. -/
 def AbstractedPhase.validateModel (phases : List AbstractedPhase)
     (result : SMT.Result)
     (obligation : ProofObligation Expression)
@@ -1225,6 +1287,9 @@ def AbstractedPhase.validateModel (phases : List AbstractedPhase)
       | .unknown (some m), .modelToValidate f => match f holds m with
         | some m' => .sat m'
         | none => .unknown (some m)
+      | .sat m, .markersOnPath guards =>
+        if guards.any (fun gs => !gs.any (modelFalsifies m obligation)) then .unknown (some m)
+        else .sat m
       -- .unknown none or .modelPreserving: pass through unchanged
       | _, _ => r
     (r', { phase := p.name, result := r' } :: log)
@@ -2374,7 +2439,19 @@ def coreValidatedPipeline
   ValidatedPipeline.ofListDelivering "the verification back end" backEndRequiredFacts
     (corePipelinePhases options moreFns)
 
-/-- The abstracted phases derived from the Core pipeline phases.
+/-- The model check of the markers that a front end places after a call to a procedure that
+    models code Strata does not see (`externalAssumePrefix`). It is not a pipeline phase: the
+    front end makes the markers before the pipeline runs. A counterexample on a path through such
+    a call may come from the model of that code, not from an execution, so it is not reported as
+    a failure. Where `--vcgen wp` keeps a marker under its reach condition (`markerGuards`), a
+    counterexample that falsifies that condition does not pass the call, and stands. -/
+def externalCallsAbstractedPhase : AbstractedPhase where
+  name := "externalCalls"
+  getValidation obligation :=
+    markerValidation obligation [externalAssumePrefix] (guarded := [externalAssumePrefix])
+
+/-- The abstracted phases derived from the Core pipeline phases, and the model check of a front
+    end's external-call markers (`externalCallsAbstractedPhase`).
 
     Must be called with the same `options` as the corresponding
     `corePipelinePhases` run: the phase list's membership is
@@ -2383,7 +2460,7 @@ def coreValidatedPipeline
 def coreAbstractedPhases
     (options : VerifyOptions := VerifyOptions.default)
     (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default) : List AbstractedPhase :=
-  (corePipelinePhases options moreFns).map (·.phase)
+  (corePipelinePhases options moreFns).map (·.phase) ++ [externalCallsAbstractedPhase]
 
 /-- Build the solver log from raw results and phase validation logs. -/
 private def buildSolverLog (satResult valResult : SMT.Result)
@@ -3338,10 +3415,10 @@ def verifyPipeline (program : Program)
       (keepAllFilesPrefix := options.keepAllFilesPrefix)
     pure (prog, state.factory, state.statistics, inputs)
   -- A phase that validates models against its input gets the input it was given.
-  let phases := pipelinePhases.zipIdx.map fun (p, i) =>
+  let phases := (pipelinePhases.zipIdx.map fun (p, i) =>
     match inputs.lookup i with
     | some input => p.phase.onInput input
-    | none => p.phase
+    | none => p.phase) ++ [externalCallsAbstractedPhase]
   let allStats := pipelineStats
   let axiomNames := program.decls.filterMap fun decl =>
     match decl with | .ax a _ => some a.name | _ => none

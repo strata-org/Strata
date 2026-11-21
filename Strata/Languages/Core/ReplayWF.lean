@@ -305,6 +305,27 @@ private theorem runCallee_closed {sc : StepCmdM Expression Command (ReplayM Expr
     split
     · exact .pure (projectStore_closed hc)
     · exact .throw _
+  · exact .throw _
+
+/-- A successful `Calls.havocVarList` run from a closed store returns a closed store. -/
+private theorem havocVarList_closed (k : Nat) (factory : Lambda.Factory CoreLParams) :
+    ∀ (xs : List Expression.Ident) {σ : IStore Expression}, StoreClosed σ.get →
+      OkPost (Calls.havocVarList (m := ReplayM Expression) k factory xs σ) (StoreClosed ·.get)
+  | [], _, h => .pure h
+  | _ :: xs, _, h =>
+    .bind (stepBaseCmdStore_closed _ _ h _) fun _ h => havocVarList_closed k factory xs h
+
+/-- A successful contract run of an abstract callee (`Calls.runAbstractCallee`) from a callee
+    entry frame built from closed values returns a closed store. -/
+private theorem runAbstractCallee_closed (k : Nat) (factory : Lambda.Factory CoreLParams)
+    (xs : List Expression.Ident) (post : ListMap String (Imperative.Check Expression))
+    (p : Procedure) {inputVals outOnlyVals : List Expression.Expr}
+    (hi : ∀ v ∈ inputVals, Lambda.LExpr.LExpr.getVars v = [])
+    (ho : ∀ v ∈ outOnlyVals, Lambda.LExpr.LExpr.getVars v = []) :
+    OkPost (Calls.runAbstractCallee (m := ReplayM Expression) k factory xs post
+      (Calls.callEntryStore p inputVals outOnlyVals)) StoreClosed :=
+  .bind (havocVarList_closed k factory xs (by simpa using callEntryStore_closed p hi ho))
+    fun _ h => .bind (.true _) fun _ _ => .pure h
 
 /-- From a closed store, every successful step of Core's command stepper yields a terminal
     configuration with the caller's factory and a closed store. -/
@@ -328,8 +349,15 @@ private theorem replayStepCmd_closed (π : String → Option Procedure) :
     | refine .bind (runCallee_closed (fun _ => (ih · · · |>.mono fun _ ⟨_, e, _, h⟩ => e ▸ h)) _ _ _ _
         (callEntryStore_closed _ (evalBoundedList_closed ‹_›) (readVarList_closed h ‹_›)))
           fun _ _ => ?_
-    | with_reducible refine .bind (.true _) fun _ _ => ?_
+    | with_reducible refine .bind (x := List.forM _ _) (.true _) fun _ _ => ?_
     | exact .pure ⟨_, rfl, rfl, hbp _ _ _ h (readVarList_closed ‹_› ‹_›)⟩
+    | (with_reducible_and_instances
+         refine .bind (R := StoreClosed) (x := Calls.runAbstractCallee (P := Expression) ..) ?_ ?_
+       · exact runAbstractCallee_closed _ _ _ _ _ (evalBoundedList_closed ‹_›)
+           (readVarList_closed h ‹_›)
+       intro _ _)
+    | (with_reducible refine .bind (x := Pure.pure _) (R := (· = _)) (.pure rfl) fun _ hEq => ?_
+       subst hEq)
     | nofun
 
 /-! ## Steps keep configurations well-formed -/

@@ -254,8 +254,8 @@ def Program.typeNames (p : Program) : List String :=
     | .type td _ => td.names.map (·.name)
     | .proc proc _ =>
       match proc.body with
-      | .structured ss => (Imperative.Block.localTypeDecls ss).map (·.name)
-      | .cfg _ => []
+      | .structured ss _ => (Imperative.Block.localTypeDecls ss).map (·.name)
+      | .cfg _ _ | .abstract => []
     | _ => []
 
 /-- The type names in the signatures of the procedures of `P`. -/
@@ -502,12 +502,13 @@ statement. -/
     q.spec.preconditions.values.map (·.expr) ++
     q.spec.postconditions.values.map (·.expr) ++
     (match q.body with
-     | .structured _ => []
-     | .cfg g => g.blocks.flatMap fun (_, blk) =>
+     | .structured _ _ => []
+     | .cfg g _ => g.blocks.flatMap fun (_, blk) =>
          blk.md.exprs ++
          match blk.transfer with
          | .condGoto p _ _ _ => [p]
-         | .finish _ => [])
+         | .finish _ => []
+     | .abstract => [])
   | Core.Decl.func f _md => f.exprs
   | Core.Decl.recFuncBlock fs _md => fs.flatMap (·.exprs)
   | Core.Decl.ax a _md => [a.e]
@@ -566,13 +567,14 @@ def Program.funcAttrs (p : Program) : Std.HashMap String (Array Strata.DL.Util.F
      | Core.Decl.recFuncBlock fs _md => fs.all (·.typeArgs.isEmpty)
      | _ => true)
 
-/-- Is `d` a procedure with a structured body, or not a procedure at all? -/
+/-- Is `d` a procedure without a CFG body (its body is structured or abstract), or not a procedure
+    at all? -/
 @[expose] def Decl.isStructuredOrNonProc (d : Decl) : Bool :=
   match d with
-  | Core.Decl.proc p _md => p.body.isStructured
+  | Core.Decl.proc p _md => !p.body.isCfg
   | _ => true
 
-/-- Does every procedure in `p` have a structured body? -/
+/-- Does no procedure in `p` have a CFG body? Every body is structured or abstract. -/
 @[expose] def Program.allStructured (p : Program) : Bool :=
   p.decls.all Decl.isStructuredOrNonProc
 
@@ -581,8 +583,8 @@ def Program.funcAttrs (p : Program) : Std.HashMap String (Array Strata.DL.Util.F
 @[expose] def Program.noCFGCycles (p : Program) : Bool :=
   p.decls.all fun d => match d with
     | Core.Decl.proc q _md => match q.body with
-      | .cfg g => (Imperative.CFG.cycleLabelsWith g.succMap [g.entry]).isEmpty
-      | .structured _ => true
+      | .cfg g _ => (Imperative.CFG.cycleLabelsWith g.succMap [g.entry]).isEmpty
+      | .structured _ _ | .abstract => true
     | _ => true
 
 /-- The calls in a declaration: a procedure's calls, and nothing for any other
@@ -630,7 +632,7 @@ def Program.callSites (p : Program) : List CallSite :=
   Decl.proc {
       header := { name := name, typeArgs := [], inputs := [], outputs := [] },
       spec := { preconditions := [], postconditions := [] },
-      body := .structured body } .empty
+      body := .structured body false } .empty
 
 end Core
 

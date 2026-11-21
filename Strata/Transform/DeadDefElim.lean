@@ -158,10 +158,10 @@ open Imperative Imperative.DeadDefElim
     whether that body changed. -/
 @[expose] def deadDefElimDecl : Decl → Decl × Bool
   | .proc q md => match q.body with
-    | .structured ss =>
+    | .structured ss o =>
       let ss' := deadDefElimH [] ss
-      (.proc { q with body := .structured ss' } md, ss' != ss)
-    | .cfg _ => (.proc q md, false)
+      (.proc { q with body := .structured ss' o } md, ss' != ss)
+    | .cfg _ _ | .abstract => (.proc q md, false)
   | d => (d, false)
 
 /-- **The dead-definition transform.**  Every procedure of the program with the unread `init`s
@@ -179,10 +179,10 @@ end DeadDefElim
 @[expose] def Decl.mapStructuredBody (f : Statements → Statements)
     (changed : Statements → Statements → Bool) : Decl → Decl × Bool
   | .proc q md => match q.body with
-    | .structured ss =>
+    | .structured ss o =>
       let ss' := f ss
-      (.proc { q with body := .structured ss' } md, changed ss ss')
-    | .cfg _ => (.proc q md, false)
+      (.proc { q with body := .structured ss' o } md, changed ss ss')
+    | .cfg _ _ | .abstract => (.proc q md, false)
   | d => (d, false)
 
 /-- Every procedure of the program with its structured body rewritten by `f`, every other

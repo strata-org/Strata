@@ -35,7 +35,7 @@ def body : Statements := [.cmd (.cmd (.assert "l" obl #[]))]
 def unit : Procedure :=
   { header := { name := ⟨"l", ()⟩, typeArgs := [], inputs := [], outputs := [] },
     spec := { preconditions := [], postconditions := [] },
-    body := .structured body }
+    body := .structured body false }
 
 /-- `x@1` is a free variable of the body. -/
 theorem mem_freeVars_body : (⟨"x@1", ()⟩ : Expression.Ident) ∈ Block.freeVars body := by

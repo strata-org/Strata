@@ -45,7 +45,7 @@ open Lambda Imperative
     variables are those of a lemma's obligation and not parameters, is well typed under some
     typing, which gives those variables the types of their annotations. -/
 @[expose] def WPPhaseInputWellTyped (prog : Program) : Prop :=
-  ∀ p md body, Decl.proc p md ∈ prog.decls → p.body = .structured body →
+  ∀ p md body opq, Decl.proc p md ∈ prog.decls → p.body = .structured body opq →
     if WP.isObligationUnit p then ∃ Γ, Statements.WellTyped Γ (p.contractWrapped body)
     else Statements.WellTyped (fun x => Imperative.WP.Tys.get? p.paramTys x)
       (p.contractWrapped body)
@@ -56,7 +56,7 @@ open Lambda Imperative
     parameter or an alias (`Procedure.entryParams`, `Procedure.oldAliases`) the type the
     procedure's parameter types record. -/
 @[expose] def WPPipelineEntryWellTyped (mid : Program) : Prop :=
-  ∀ q md lay, Decl.proc q md ∈ mid.decls → q.body = .structured lay →
+  ∀ q md lay opq, Decl.proc q md ∈ mid.decls → q.body = .structured lay opq →
     ∃ Γ, Statements.WellTyped Γ lay ∧ ∀ x ∈ Block.freeVars lay, ∀ T, Γ x = some T →
       x ∈ q.entryParams ∨ x ∈ q.oldAliases.map (·.1) →
       Imperative.WP.Tys.get? (P := Expression) q.paramTys x = some T
@@ -71,17 +71,20 @@ open Lambda Imperative
 theorem wpProcsProgram_entryWellTyped {reserved : List Expression.Ident} {prog mid : Program}
     (h : WP.wpProcsProgram reserved prog = .ok mid) (hin : WPPhaseInputWellTyped prog) :
     WPPipelineEntryWellTyped mid := by
-  intro q md lay hq hb
+  intro q md lay opq hq hb
   obtain ⟨decls, hm, he⟩ := (Except.bind_is_ok _ _ _).1 h
   cases he
-  obtain ⟨d, hd, hdq⟩ := mapM_except_mem_right _ _ _ hm _ hq
+  obtain ⟨od, hod, hodq⟩ := List.mem_filterMap.1 hq
+  cases hodq
+  obtain ⟨d, hd, hdq⟩ := mapM_except_mem_right _ _ _ hm _ hod
   rcases d with _ | _ | _ | _ | ⟨p, md'⟩ | _ <;>
-    try (simp only [pure, Except.pure, Except.ok.injEq, reduceCtorEq] at hdq; done)
+    try (simp only [pure, Except.pure, Except.ok.injEq, reduceCtorEq, Option.some.injEq] at hdq
+         done)
   dsimp only at hdq
   by_cases hu : WP.isObligationUnit p = true
   · simp only [hu, ↓reduceIte] at hdq
     cases hdq
-    have hw := hin q md lay hd hb
+    have hw := hin q md lay opq hd hb
     simp only [hu, ↓reduceIte] at hw
     obtain ⟨Γ, hw⟩ := hw
     simp only [WP.isObligationUnit] at hu
@@ -94,12 +97,13 @@ theorem wpProcsProgram_entryWellTyped {reserved : List Expression.Ident} {prog m
       exact nomatch hk
   · simp only [Bool.not_eq_true] at hu
     simp only [hu, Bool.false_eq_true, ↓reduceIte] at hdq
-    rcases hpb : p.body with body | _ <;>
-      simp only [WP.wpProc, hpb, throw, throwThe, MonadExceptOf.throw, reduceCtorEq] at hdq
+    rcases hpb : p.body with ⟨body, opq'⟩ | _ | _ <;>
+      simp only [WP.wpProc, hpb, throw, throwThe, MonadExceptOf.throw, reduceCtorEq, pure,
+        Except.pure, Except.ok.injEq] at hdq
     obtain ⟨w, hw, hdq⟩ := (Except.bind_is_ok _ _ _).1 hdq
     cases hdq
     cases hb
-    have hin' := hin p _ body hd hpb
+    have hin' := hin p _ body _ hd hpb
     simp only [hu, Bool.false_eq_true, ↓reduceIte] at hin'
     refine ⟨_, WP.wpEntry_wellTyped (WP.wpLoopFree_body hw) (WP.checkLoopFree_ok
       (((Except.bind_is_ok _ _ _).1 hw).elim fun _ h => h.1)) hin', fun x _ T hx _ => ?_⟩

@@ -8,6 +8,7 @@ meta import StrataCortex.Implementation.Pipeline
 meta import StrataCortex.Implementation.Interpret
 meta import StrataCortex.Implementation.Cli
 meta import StrataCortex.Tests.Util.TestCortex
+meta import StrataDDM.Util.Ion
 
 open Strata Cortex.Wire
 open Cortex.TestCortex (at_ blk noLoc proc)
@@ -719,5 +720,34 @@ info: Cortex lowering failed: EntriesNotCalled: call of 'Base$get': entry proced
 -/
 #guard_msgs in
 #eval typeCheck virtualCallsEntry
+
+/-! ## The `external` field
+
+`external` is optional on the wire: a procedure written without it, as by a front end that
+predates the field, is not external. -/
+
+/-- A program with one procedure `ext` without a body, with the extra struct fields `extra`. -/
+meta def externalIon (extra : Array (String × Ion.Ion String)) : Ion.Ion String :=
+  let pos (n : Int) : Ion.Ion String := .struct #[("byteIdx", .int n)]
+  .struct #[("composites", .list #[]), ("constrained", .list #[]),
+    ("procedures", .list #[.struct (#[
+      ("name", .string "ext"), ("inputs", .list #[]), ("outputs", .list #[]), ("throws", .null),
+      ("requires", .list #[]), ("body", .null), ("entry", .bool false),
+      ("source", .struct #[("file", .struct #[("_0", .string "T.java")]),
+        ("range", .struct #[("start", pos 0), ("stop", pos 1)])])] ++ extra)])]
+
+/-- Whether the procedures of the program that `ion` encodes are external. -/
+meta def externals (ion : Ion.Ion String) : IO Unit :=
+  match readProgram (Ion.internAndSerialize [ion]) with
+  | .error e => IO.println s!"error: {e}"
+  | .ok p => IO.println s!"{p.procedures.map (·.external)}"
+
+/-- info: [false] -/
+#guard_msgs in
+#eval externals (externalIon #[])
+
+/-- info: [true] -/
+#guard_msgs in
+#eval externals (externalIon #[("external", .bool true)])
 
 end Cortex.WireTest

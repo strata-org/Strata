@@ -125,7 +125,7 @@ def mkProc (name : String) (typeArgs : List TyIdentifier)
   .proc { header := { name := ⟨name, ()⟩, typeArgs, inputs, outputs },
           spec := { preconditions := conds "requires" pre,
                     postconditions := conds "ensures" post },
-          body := .structured body } .empty
+          body := .structured body false } .empty
 
 /-- The polymorphic procedure `Identity<T>(x : T, out y : T)` that sets `y := x`. -/
 def identityDecl : Decl :=
@@ -138,7 +138,7 @@ def cfgProc (name : String) (inputs outputs : @LMonoTySignature Unit)
     (blocks : Imperative.DetBlocks String Command Expression) : Decl :=
   .proc { header := { name := ⟨name, ()⟩, typeArgs := [], inputs, outputs },
           spec := { preconditions := [], postconditions := [] },
-          body := .cfg { entry := "entry", blocks } } .empty
+          body := .cfg { entry := "entry", blocks } false } .empty
 
 /-- `datatype List (a : Type) { Nil(), Cons(hd : a, tl : List a) }`. -/
 def listDecl : Decl :=
@@ -214,10 +214,11 @@ def callTyArgs (pgm : Program) : List (Option (List String)) :=
   (pgm.decls.flatMap fun
     | .proc p _ =>
       match p.body with
-      | .structured ss => stmtsCallTyArgs ss
-      | .cfg g => g.blocks.flatMap fun (_, blk) => blk.cmds.flatMap fun
+      | .structured ss _ => stmtsCallTyArgs ss
+      | .cfg g _ => g.blocks.flatMap fun (_, blk) => blk.cmds.flatMap fun
         | .call _ tyArgs _ _ => [tyArgs]
         | .cmd _ => []
+      | .abstract => []
     | _ => []).map (·.map (List.map fun ty => toString (Std.format ty)))
 
 /-- The type arguments stored on each call of the program a check or transform returns, in program

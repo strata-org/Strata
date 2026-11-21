@@ -150,7 +150,7 @@ info: wellFormedCalls, noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMe
 #eval IO.println (factNames (ofProgramFacts { decls :=
   [.proc { (default : Procedure) with
              header := { (default : Procedure.Header) with typeArgs := ["a"] },
-             body := .structured [] } default] }))
+             body := .structured [] false } default] }))
 
 /--
 info: wellFormedCalls, noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, uniqueInits,
@@ -164,7 +164,7 @@ info: wellFormedCalls, noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMe
 
 /-- Wrap `body` as the single procedure of a program. -/
 private def progOf (body : List Statement) : Program :=
-  { decls := [.proc { (default : Procedure) with body := .structured body } default] }
+  { decls := [.proc { (default : Procedure) with body := .structured body false } default] }
 
 /-- A loop carrying both an invariant and a measure, with a call nested two
     levels down inside its body. -/
@@ -239,7 +239,7 @@ info: noLoops, noLoopInvariants, noLoopMeasures, uniqueInits, loopBodyNoInits,
 -/
 #guard_msgs (whitespace := lax) in
 #eval IO.println
-  (factNames (ofProgramFacts { decls := [.proc { (default : Procedure) with body := .cfg { entry := "entry", blocks := [("entry", { cmds := [.call "f" none [] {}], transfer := .finish {} })] } } default] }))
+  (factNames (ofProgramFacts { decls := [.proc { (default : Procedure) with body := .cfg { entry := "entry", blocks := [("entry", { cmds := [.call "f" none [] {}], transfer := .finish {} })] } false } default] }))
 
 /--
 info: wellFormedCalls, noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, uniqueInits,
@@ -332,7 +332,7 @@ info: wellFormedCalls, noCalls, noLoops, noLoopInvariants, noLoopMeasures, uniqu
 -/
 #guard_msgs (whitespace := lax) in
 #eval IO.println
-  (factNames (ofProgramFacts { decls := [.proc { (default : Procedure) with body := .cfg { entry := "entry", blocks := [("entry", { cmds := [], transfer := .condGoto redexExpr "t" "f" {} })] } } default] }))
+  (factNames (ofProgramFacts { decls := [.proc { (default : Procedure) with body := .cfg { entry := "entry", blocks := [("entry", { cmds := [], transfer := .condGoto redexExpr "t" "f" {} })] } false } default] }))
 
 /-! A CFG block's commands are reached as well as its transfer: `Body.statements`
 flattens the blocks, so an expression inside a command is seen by the same walk
@@ -346,7 +346,7 @@ info: wellFormedCalls, noCalls, noLoops, noLoopInvariants, noLoopMeasures, uniqu
 -/
 #guard_msgs (whitespace := lax) in
 #eval IO.println
-  (factNames (ofProgramFacts { decls := [.proc { (default : Procedure) with body := .cfg { entry := "entry", blocks := [("entry", { cmds := [.cmd (.assert "a" redexExpr {})], transfer := .finish {} })] } } default] }))
+  (factNames (ofProgramFacts { decls := [.proc { (default : Procedure) with body := .cfg { entry := "entry", blocks := [("entry", { cmds := [.cmd (.assert "a" redexExpr {})], transfer := .finish {} })] } false } default] }))
 
 /--
 info: wellFormedCalls, noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, uniqueInits,
@@ -1133,9 +1133,9 @@ private def namedProc (n : String) (b : Procedure.Body)
 
 private def namedMixedProgram : Program :=
   { decls :=
-      [namedProc "structured" (.structured []),
+      [namedProc "structured" (.structured [] false),
        namedProc "cfgHelper" (.cfg { entry := "entry", blocks :=
-         [("entry", { cmds := [], transfer := .finish {} })] })] }
+         [("entry", { cmds := [], transfer := .finish {} })] } false)] }
 
 private def runPhases (phases : List PipelinePhase) (p : Program) : String :=
   let step (prog : Program) (ph : PipelinePhase) : Transform.CoreTransformM Program := do
@@ -1162,12 +1162,12 @@ procedure that declares a local at two types still rejects the run. -/
 
 private def cfgDuplicateLocalProgram : Program :=
   { decls :=
-      [namedProc "structured" (.structured []),
+      [namedProc "structured" (.structured [] false),
        namedProc "cfgHelper" (.cfg { entry := "entry", blocks :=
          [("entry", { cmds := [.cmd (.init "w" (.forAll [] .bool) .nondet {})],
                       transfer := .finish {} }),
           ("next", { cmds := [.cmd (.init "w" (.forAll [] .int) .nondet {})],
-                     transfer := .finish {} })] })] }
+                     transfer := .finish {} })] } false)] }
 
 /--
 info: rejected: ❌ Type checking error.
@@ -1187,7 +1187,7 @@ private def cfgUnannotatedProgram : Program :=
       [namedProc "cfgHelper"
          (.cfg { entry := "entry", blocks :=
            [("entry", { cmds := [.cmd (.assert "a" (Transform.createFvar "x") {})],
-                        transfer := .finish {} })] })
+                        transfer := .finish {} })] } false)
          (inputs := [("x", .bool)])
          (spec := { preconditions := [("pre", { expr := Transform.createFvar "x" })],
                     postconditions := [] })] }
@@ -1203,7 +1203,7 @@ private def cfgBodiedProgram : Program :=
   { decls := [.proc
       { (default : Procedure) with
           header := { (default : Procedure.Header) with name := ⟨"cfgProc", ()⟩ }
-          body := .cfg { entry := "entry", blocks := [] } }
+          body := .cfg { entry := "entry", blocks := [] } false }
       default] }
 
 /-! ### Configuring a pipeline by name
@@ -1471,13 +1471,13 @@ private def polyProgOf (typeArgs : List String) (body : Procedure.Body) : Progra
 /-- info: accepted -/
 #guard_msgs in
 #eval IO.println (runAsserter genOpaqueTypeParamsPipelinePhase
-  (polyProgOf ["T"] (.cfg { entry := "entry", blocks := [] })))
+  (polyProgOf ["T"] (.cfg { entry := "entry", blocks := [] } false)))
 
 /-- A CFG body whose one block calls `f`. -/
 private def cfgCallBody : Procedure.Body :=
   .cfg {
     entry := "entry"
-    blocks := [("entry", { cmds := [.call "f" none [] #[]], transfer := .finish #[] })] }
+    blocks := [("entry", { cmds := [.call "f" none [] #[]], transfer := .finish #[] })] } false
 
 /-- info: rejected: ❌ GenOpaqueTypeParams: procedure _ still contains a call; eliminate calls before running this pass. -/
 #guard_msgs in
@@ -1486,7 +1486,7 @@ private def cfgCallBody : Procedure.Body :=
 /-- info: rejected: ❌ GenOpaqueTypeParams: procedure _ still contains a call; eliminate calls before running this pass. -/
 #guard_msgs in
 #eval IO.println (runAsserter genOpaqueTypeParamsPipelinePhase
-  (polyProgOf ["T"] (.structured [Statement.call "f" none [] {}])))
+  (polyProgOf ["T"] (.structured [Statement.call "f" none [] {}] false)))
 
 /-! A non-polymorphic procedure with a call is similarly accepted:
     monomorphization is a no-op, so the noCalls precondition does not apply. -/
@@ -1570,7 +1570,7 @@ private def withEnsures : Program :=
   { decls := [.proc { header := { name := "p", typeArgs := [], inputs := [], outputs := [] },
                       spec := { preconditions := [],
                                 postconditions := [("post", { expr := trueExpr, md := default })] },
-                      body := .structured [] } default] }
+                      body := .structured [] false } default] }
 
 /-- info: rejected: ObligationExtraction: procedure 'p' still carries a requires or ensures clause; obligations can only be extracted from procedures without a contract -/
 #guard_msgs in
@@ -1601,7 +1601,7 @@ private def paramNextToConst (x c : String) : Program :=
                       spec := { preconditions := [], postconditions := [] },
                       body := .structured [Statement.assert "nz"
                         (.eq testLoc (.fvar testLoc x (some (Lambda.LMonoTy.tcons "int" [])))
-                          (.intConst testLoc 0)) {}] } default] }
+                          (.intConst testLoc 0)) {}] false } default] }
 
 /-- info: [r@1 == 0] -/
 #guard_msgs in
@@ -1623,7 +1623,7 @@ body, the parameter becomes `r@2`. -/
                         Statement.assert "eq"
                           (.eq testLoc (.fvar testLoc "r" (some (Lambda.LMonoTy.tcons "int" [])))
                             (.fvar testLoc "r@1" (some (Lambda.LMonoTy.tcons "int"
-                                [])))) {}] } default] })
+                                [])))) {}] false } default] })
 
 /-! A parameter named like a nullary constructor is renamed too: `Nil` is a constant of
 the datatype's factory. -/
@@ -1639,7 +1639,7 @@ the datatype's factory. -/
                       spec := { preconditions := [], postconditions := [] },
                       body := .structured [Statement.assert "nz"
                         (.eq testLoc (.fvar testLoc "Nil" (some (Lambda.LMonoTy.tcons "int" [])))
-                          (.intConst testLoc 0)) {}] } default] })
+                          (.intConst testLoc 0)) {}] false } default] })
 
 /-! A parameter with a name of its own keeps it. -/
 
@@ -1654,8 +1654,8 @@ checked. -/
 
 private def mixedProgram : Program :=
   { decls :=
-      [.proc { (default : Procedure) with body := .structured [] } default,
-       .proc { (default : Procedure) with body := .cfg { entry := "entry", blocks := [] } } default] }
+      [.proc { (default : Procedure) with body := .structured [] false } default,
+       .proc { (default : Procedure) with body := .cfg { entry := "entry", blocks := [] } false } default] }
 
 /--
 info: rejected: ❌ Symbolic evaluation error.

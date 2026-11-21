@@ -20,7 +20,8 @@ induction hypothesis re-states the callee run over the command relation
 `evalCmdExtE_cmd_iff` characterizes evaluation of an embedded base command as
 exactly `EvalCmdE`, with no call event behavior, so the `EvalCmdE.*_inv` inversions of
 `CmdSemanticsProps` apply to it. `EvalCmdExtE.assumeRun_inv` and `EvalCmdExtE.assertRun_inv`
-invert completed runs of an `assume` or `assert` statement. `Calls.mem_checksAtCall`: a clause
+invert completed runs of an `assume` or `assert` statement. `EvalCmdExtE.call_iff_contract`: a
+call to an opaque callee runs exactly as the contract call semantics `EvalCmdExtContractE`. `Calls.mem_checksAtCall`: a clause
 checked at a call site (`Calls.checksAtCall`) is a clause of the callee's specification with
 the same label, expression and attribute. `Calls.defaultAssertEvents_label_metadata`: the assertion
 events emitted for a list of clauses carry the labels and metadata of its non-free clauses,
@@ -38,7 +39,8 @@ variable {P : PureExpr}
 
 /-- Induction on `EvalCmdExtE` with a single motive. In the `call_sem` case the
 induction hypothesis covers every command step of a structured or CFG callee run,
-including commands inside nested calls. -/
+including commands inside nested calls. The `call_abstract_sem` case, a call to an abstract
+callee, has no callee run. -/
 theorem EvalCmdExtE.induct
     {π : String → Option (Procedure P (CmdExt P) Hdr)}
     {motive : ∀ fac σ c σ' evs, EvalCmdExtE π fac σ c σ' evs → Prop}
@@ -48,28 +50,37 @@ theorem EvalCmdExtE.induct
     (cmd_sem : ∀ {fac σ c σ' emitted} (h : EvalCmdE (P := P) fac σ c σ' emitted),
       motive fac σ (.cmd c) σ' emitted (.cmd_sem h))
     (call_sem : ∀ {σ n tyArgs p callArgs σ' σFinal bodyEvents md fac σAO}
-      (hπ : Calls.typeInstantiatedCallee π n tyArgs = .some p)
+      (hπ : Calls.typeInstantiatedCallee π n tyArgs = .some p) (hno : p.body.isOpaque = false)
       (hentry : Calls.CallEntry fac σ p callArgs σAO)
       (hbody : BigStepE π p.body ⟨σAO, fac⟩ σFinal bodyEvents)
       (hexit : Calls.CallExit fac σ p callArgs σFinal σ'),
-      ((∃ ss ρ', p.body = .structured ss ∧ ρ'.store = σFinal ∧
+      ((∃ ss ρ' opq, p.body = .structured ss opq ∧ ρ'.store = σFinal ∧
         StepStmtStarE P (fun fac σ c σ' evs => ∃ h, motive fac σ c σ' evs h)
           (.stmt (Stmt.block "" ss #[]) ⟨σAO, fac⟩) bodyEvents (.terminal ρ')) ∨
-       (∃ g ρ', p.body = .cfg g ∧ projectStore σAO ρ'.store = σFinal ∧
+       (∃ g ρ' opq, p.body = .cfg g opq ∧ projectStore σAO ρ'.store = σFinal ∧
         StepCFGStarE P (fun fac σ c σ' evs => ∃ h, motive fac σ c σ' evs h)
           (.atBlock g g.entry ⟨σAO, fac⟩) bodyEvents (.terminal ρ'))) →
       motive fac σ (.call n tyArgs callArgs md) σ'
         (Calls.defaultAssertEvents fac σAO (Calls.checksAtCall md p.spec.preconditions) ++
           bodyEvents ++
           Calls.defaultAssertEvents fac σFinal p.spec.postconditions)
-        (.call_sem hπ hentry hbody hexit)) :
+        (.call_sem hπ hno hentry hbody hexit))
+    (call_abstract_sem : ∀ {σ σO n tyArgs p callArgs σ' md fac σAO}
+      (hπ : Calls.typeInstantiatedCallee π n tyArgs = .some p) (hb : p.body.isOpaque = true)
+      (hentry : Calls.CallEntry fac σ p callArgs σAO)
+      (hhavoc : Calls.HavocVars fac σAO (ProcedureHeader.outputParams (P := P) p.header) σO)
+      (hexit : Calls.CallExit fac σ p callArgs σO σ'),
+      motive fac σ (.call n tyArgs callArgs md) σ'
+        (Calls.defaultAssertEvents fac σAO (Calls.checksAtCall md p.spec.preconditions) ++
+          Calls.assumeEvents fac σO p.spec.postconditions)
+        (.call_abstract_sem hπ hb hentry hhavoc hexit)) :
     motive fac σ c σ' evs h :=
   EvalCmdExtE.rec (motive_2 := motive)
     (motive_1 := fun b ρ σFinal evs _ =>
-      (∃ ss ρ', b = .structured ss ∧ ρ'.store = σFinal ∧
+      (∃ ss ρ' opq, b = .structured ss opq ∧ ρ'.store = σFinal ∧
         StepStmtStarE P (fun fac σ c σ' evs => ∃ h, motive fac σ c σ' evs h)
           (.stmt (Stmt.block "" ss #[]) ρ) evs (.terminal ρ')) ∨
-      (∃ g ρ', b = .cfg g ∧ projectStore ρ.store ρ'.store = σFinal ∧
+      (∃ g ρ' opq, b = .cfg g opq ∧ projectStore ρ.store ρ'.store = σFinal ∧
         StepCFGStarE P (fun fac σ c σ' evs => ∃ h, motive fac σ c σ' evs h)
           (.atBlock g g.entry ρ) evs (.terminal ρ')))
     (motive_3 := fun c evs c' _ =>
@@ -80,9 +91,9 @@ theorem EvalCmdExtE.induct
       StepStmtE P (fun fac σ c σ' evs => ∃ h, motive fac σ c σ' evs h) c evs c')
     (motive_6 := fun c evs c' _ =>
       StepCFGE P (fun fac σ c σ' evs => ∃ h, motive fac σ c σ' evs h) c evs c')
-    (fun _ ih => .inl ⟨_, _, rfl, rfl, ih⟩)
-    (fun _ ih => .inr ⟨_, _, rfl, rfl, ih⟩)
-    cmd_sem call_sem
+    (fun _ ih => .inl ⟨_, _, _, rfl, rfl, ih⟩)
+    (fun _ ih => .inr ⟨_, _, _, rfl, rfl, ih⟩)
+    cmd_sem call_sem call_abstract_sem
     (fun _ => .refl _)
     (fun _ _ _ _ _ _ _ ihStep ihRest => .step _ _ _ _ _ ihStep ihRest)
     (fun _ => .refl _)
@@ -153,6 +164,30 @@ theorem EvalCmdExtE.assertRun_inv
   obtain ⟨hcmd, hρ'⟩ := cmdRun_invE h
   obtain ⟨hσ, rfl⟩ := EvalCmdE.assert_inv (evalCmdExtE_cmd_iff.mp hcmd)
   exact ⟨rfl, by rw [hρ', hσ]⟩
+
+/-- A call to an opaque callee (`Body.isOpaque`) has exactly the runs of the contract call
+semantics: `EvalCmdExtE.call_abstract_sem` and `EvalCmdExtContractE.call_sem` relate the same
+stores by the same events. -/
+theorem EvalCmdExtE.call_iff_contract
+    {π : String → Option (Procedure P (CmdExt P) Hdr)} {fac : P.Factory}
+    {σ σ' : SemanticStore P} {n : String} {tyArgs : Option (List P.Ty)}
+    {callArgs : List (CallArg P)} {md : MetaData P} {evs : Trace P}
+    {p : Procedure P (CmdExt P) Hdr} (hπ : Calls.typeInstantiatedCallee π n tyArgs = some p)
+    (ho : p.body.isOpaque = true) :
+    EvalCmdExtE π fac σ (.call n tyArgs callArgs md) σ' evs ↔
+      EvalCmdExtContractE π fac σ (.call n tyArgs callArgs md) σ' evs := by
+  constructor
+  · intro h
+    cases h with
+    | call_sem hπ' hno =>
+      cases hπ.symm.trans hπ'
+      exact nomatch ho.symm.trans hno
+    | call_abstract_sem hπ' _ he hh hx => exact .call_sem hπ' he hh hx
+  · intro h
+    cases h with
+    | call_sem hπ' he hh hx =>
+      cases hπ.symm.trans hπ'
+      exact .call_abstract_sem hπ' ho he hh hx
 
 end
 

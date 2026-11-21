@@ -311,8 +311,8 @@ def programNames (program : Program) : List String :=
   program.decls.flatMap fun d => (d.names ++ d.funcNames).map (·.name)
 
 /-- Lower one procedure to a passification CFG and generate its obligations in
-    the chosen calculus. Fails if the body still contains a call, a structured
-    loop or a cycle, or fails a shape check. The pipeline removes loops first;
+    the chosen calculus; an abstract procedure has none. Fails if the body still
+    contains a call, a structured loop or a cycle, or fails a shape check. The pipeline removes loops first;
     the check here guards a direct caller. The names the obligations introduce
     avoid `avoid` (`programNames`) and the procedure's variables
     (`PassiveVCGen.Naming.avoiding`). -/
@@ -322,12 +322,13 @@ def procObligations (method : PassiveVCGen.VcMethod) (prefixes : List String)
   let name := proc.header.name.name
   let params := (proc.header.inputs.keys ++ proc.header.outputs.keys).map (·.name)
   let detCfg ← match proc.body with
-    | .structured ss =>
+    | .abstract => return { defs := [], obligations := [] }
+    | .structured ss _ =>
       if !Imperative.Block.noLoops ss then
         throw s!"procedure '{name}' has a structured loop, which loop elimination \
                  (`insertLoopInvariantAsserts` and `loopElim`) removes before this phase"
       lowerStructured name params ss
-    | .cfg cfg       => do
+    | .cfg cfg _     => do
       -- Passification relies on the CFG body's scoping (`declaredBeforeUse` below):
       -- every read of a local is dominated by its declaration, and no path declares
       -- a local twice. The CFG type checker establishes this; checked here too, so
@@ -436,11 +437,12 @@ def obligationProc (method : PassiveVCGen.VcMethod) (prefixes : List String)
       [Statement.assume "" o.facts .empty, Statement.assume "" o.pre .empty, check]) [] .empty)
   pure { header := { p.header with inputs := [], outputs := [] },
          spec := { preconditions := [], postconditions := [] },
-         body := .structured body.toList }
+         body := .structured body.toList false }
 
 /-- The passive VC phase of a program: every procedure that is not an obligation
-    unit becomes its obligation procedure (`obligationProc`); every other
-    declaration is kept, in order. `prefixes` are the assumption-label prefixes
+    unit becomes its obligation procedure (`obligationProc`), except an abstract
+    procedure, which has no body to check and is dropped; every other declaration is
+    kept, in order. `prefixes` are the assumption-label prefixes
     the pipeline's phases validate by (`labelKey`). The names it introduces avoid the
     program's (`programNames`) and `reserved`, the names of functions given outside
     the program (the verifier's extra factory functions), which the SMT encoding
@@ -450,10 +452,11 @@ def passiveVCProgram (method : PassiveVCGen.VcMethod) (program : Program)
   let avoid := programNames program ++ reserved
   let decls ← program.decls.mapM fun d => match d with
     | .proc p md =>
-      if WP.isObligationUnit p then pure d
-      else do pure (.proc (← obligationProc method prefixes p avoid) md)
-    | d => pure d
-  pure { decls := decls }
+      if WP.isObligationUnit p then pure (some d)
+      else if p.body matches .abstract then pure none
+      else do pure (some (.proc (← obligationProc method prefixes p avoid) md))
+    | d => pure (some d)
+  pure { decls := decls.filterMap id }
 
 end -- public section
 

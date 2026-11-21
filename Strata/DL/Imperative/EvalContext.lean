@@ -283,6 +283,10 @@ class EvalContext (P : PureExpr) (State : Type) where
       a consumer resolve the failure's source location without going through the
       label. -/
   recordAssertFailure : State → String → P.Expr → MetaData P → State := fun s _ _ _ => s
+  /-- An explanation, for a diagnostic, of why the condition `e` of an `assert` or `assume` did
+      not reduce to a Boolean in concrete execution (`Cmd.run`), when the context can give one.
+      The default gives none. -/
+  explainUnreduced : State → P.Expr → Option String := fun _ _ => none
 
   /-- Whether concrete execution (`Cmd.run`) should treat `assume` statements as
       no-ops instead of enforcing them. Defaults to `false` (assumes are

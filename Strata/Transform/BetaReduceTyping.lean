@@ -190,13 +190,13 @@ end
 theorem betaReduceProgram_proc_typed {p : Program} {q' : Procedure} {md : MetaData Expression}
     (h : Decl.proc q' md ∈ (betaReduceProgram p).decls) :
     ∃ q, Decl.proc q md ∈ p.decls ∧ q'.header = q.header ∧
-      ∀ ss', q'.body = .structured ss' → ∃ ss, q.body = .structured ss ∧
+      ∀ ss' o, q'.body = .structured ss' o → ∃ ss, q.body = .structured ss o ∧
         (∀ D df, Block.defUseWellFormed D df ss = true →
           Block.defUseWellFormed D df ss' = true) ∧
         ∀ Γ, Block.fvarTypesWellAnnotated Γ ss → Block.initsTyped Expression.Typed ss →
           Block.fvarTypesWellAnnotated Γ ss' ∧ Block.initsTyped Expression.Typed ss' := by
   obtain ⟨_ | _ | _ | _ | _ | _ | _, hd, ⟨⟩⟩ := List.mem_map.1 h
-  refine ⟨_, hd, rfl, fun ss' hb => ?_⟩
+  refine ⟨_, hd, rfl, fun ss' o hb => ?_⟩
   split at hb <;> cases hb
   exact ⟨_, ‹_›, fun D df => reduceBlock_defUse D df _, reduceBlock_typed _⟩
 
@@ -212,14 +212,14 @@ private theorem reduceBlock_passive (ss : Statements) (hp : Block.passiveForm ss
 theorem betaReduceProgram_proc_kept {p : Program} {q' : Procedure} {md : MetaData Expression}
     (h : Decl.proc q' md ∈ (betaReduceProgram p).decls) :
     ∃ q, Decl.proc q md ∈ p.decls ∧ q'.header = q.header ∧
-      ∀ ss', q'.body = .structured ss' → ∃ ss, q.body = .structured ss ∧
+      ∀ ss' o, q'.body = .structured ss' o → ∃ ss, q.body = .structured ss o ∧
         (Block.passiveForm ss = true → Block.passiveForm ss' = true) ∧
         (∀ D df, Block.defUseWellFormed D df ss = true →
           Block.defUseWellFormed D df ss' = true) ∧
         ∀ Γ, Block.fvarTypesWellAnnotated Γ ss → Block.initsTyped Expression.Typed ss →
           Block.fvarTypesWellAnnotated Γ ss' ∧ Block.initsTyped Expression.Typed ss' := by
   obtain ⟨_ | _ | _ | _ | _ | _ | _, hd, ⟨⟩⟩ := List.mem_map.1 h
-  refine ⟨_, hd, rfl, fun ss' hb => ?_⟩
+  refine ⟨_, hd, rfl, fun ss' o hb => ?_⟩
   split at hb <;> cases hb
   exact ⟨_, ‹_›, reduceBlock_passive _, fun D df => reduceBlock_defUse D df _, reduceBlock_typed _⟩
 

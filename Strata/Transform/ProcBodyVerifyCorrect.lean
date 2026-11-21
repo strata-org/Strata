@@ -462,12 +462,15 @@ private theorem nodup_mkOld_map (ids : List Expression.Ident)
 /-- if `procToVerifyStmt` succeeds, then the input procedure has `.structured` body -/
 theorem procToVerifyStmt_is_structured
     (h : (procToVerifyStmt proc).run st = (Except.ok verifyStmt, st')) :
-      ∃ ss, proc.body = .structured ss := by
+      ∃ ss opq, proc.body = .structured ss opq := by
     simp only [ExceptT.run, procToVerifyStmt, Body.getStructured, List.append_assoc, List.cons_append,
     List.nil_append, bind_pure_comp] at h
     cases hb: proc.body with
     | structured ss => simp
     | cfg blk =>
+      simp only [hb] at h
+      cases h
+    | abstract =>
       simp only [hb] at h
       cases h
 
@@ -483,8 +486,8 @@ theorem procToVerifyStmt_structure
     (h : (procToVerifyStmt proc).run st = (Except.ok verifyStmt, st'))
     (π : String → Option Procedure)
     (h_wf_proc : WF.WFProcedureProp p proc) :
-    ∃ (prefixStmts ss : List Statement),
-      proc.body = .structured ss ∧
+    ∃ (prefixStmts ss : List Statement) (opq : Bool),
+      proc.body = .structured ss opq ∧
       verifyStmt = Stmt.block s!"verify_{proc.header.name.name}"
         (prefixStmts ++ [Stmt.block s!"body_{proc.header.name.name}" ss #[]] ++
           ensuresToAsserts proc.spec.postconditions) #[] ∧
@@ -494,7 +497,7 @@ theorem procToVerifyStmt_structure
           CoreStepStarE π (.stmts prefixStmts ρ_init) tP (.terminal ρ₀) ∧
           ∀ a, Event.assume a ∈ tP →
             Expression.eval a.factory a.store a.expr = some (HasBool.ttVal a.factory)) := by
-  obtain ⟨ss, h_body_eq⟩ := procToVerifyStmt_is_structured h
+  obtain ⟨ss, _, h_body_eq⟩ := procToVerifyStmt_is_structured h
   unfold procToVerifyStmt at h
   rw [h_body_eq] at h
   simp only [bind, ExceptT.bind, ExceptT.mk, ExceptT.run, ExceptT.bindCont,
@@ -511,7 +514,7 @@ theorem procToVerifyStmt_structure
   let assumes := requiresToAssumes proc.spec.preconditions
   let prefixStmts := inputInits ++ outputOnlyInits ++ oldInoutInits ++ assumes
   rw [h_body_eq]
-  refine ⟨prefixStmts, ss, rfl, ?_, ?_, ?_⟩
+  refine ⟨prefixStmts, ss, _, rfl, ?_, ?_, ?_⟩
   · rw [← h_eq]
     simp [prefixStmts, inputInits, outputOnlyInits, oldInoutInits, assumes, paramInits,
       oldInits, List.append_assoc]
@@ -712,7 +715,7 @@ theorem procBodyVerify_procedureCorrectOnTraces
     (h_wf_proc : WF.WFProcedureProp p proc) (params : Core.Logic.InitEnvWFParams) :
     Core.Specification.ProcedureAssertsValidOnTraces I params procName p := by
   let π : String → Option Procedure := p.findProcByString?
-  obtain ⟨prefixStmts, ss, h_body, h_eq, _, h_prefix_trace⟩ :=
+  obtain ⟨prefixStmts, ss, _, h_body, h_eq, _, h_prefix_trace⟩ :=
     procToVerifyStmt_structure proc p st st' verifyStmt h_transform π h_wf_proc
   let vL := s!"verify_{proc.header.name.name}"
   let bL := s!"body_{proc.header.name.name}"
@@ -763,7 +766,7 @@ theorem procBodyVerify_procedureCorrectOnTraces
       contract := ?_ }
   · ----- Part 1: every assertion a run of the body reaches is valid -----
     intro a
-    refine ⟨proc, ss, h_lookup, h_body, ?_⟩
+    refine ⟨proc, ss, _, h_lookup, h_body, ?_⟩
     intro ρ₀ cfg tr hpre hrun
     obtain ⟨hwf, _⟩ := hpre
     rcases h_inner ρ₀ tr cfg hrun with rfl | ⟨_, hi⟩
@@ -776,11 +779,11 @@ theorem procBodyVerify_procedureCorrectOnTraces
       exact Trace.AssertionsValidFromP.mono_keep _ (fun _ _ => trivial)
         (Trace.AssertionsValid.suffix _ tP tr hheld hv)
   · ----- Part 2: the body meets the contract -----
-    intro proc' ss' hfind hb' ρ₀ ρ' tr hpre hrun
+    intro proc' ss' _ hfind hb' ρ₀ ρ' tr hpre hrun
     obtain ⟨hwf, _⟩ := hpre
     have hproc : proc' = proc := Option.some.inj (hfind.symm.trans h_lookup)
     subst hproc
-    have hss : ss' = ss := Imperative.Body.structured.inj (hb'.symm.trans h_body)
+    have hss : ss' = ss := (Imperative.Body.structured.inj (hb'.symm.trans h_body)).1
     subst hss
     -- A run of the one-element list `[block]` is a run of the block itself.
     have hstmt : CoreStepStarE π (.stmt (Stmt.block "" ss' #[]) ρ₀) tr (.terminal ρ') ∨
@@ -803,7 +806,7 @@ theorem procBodyVerify_procedureCorrectOnTraces
       rcases hdone with h | ⟨lbl, h⟩
       · exact h
       · exact absurd h (Imperative.stmts_exitsCoveredByBlocks_noEscapeE _ ss'
-          (h_wf_proc.bodyExitsCovered ss' hb') ρ₀ lbl ρ_inner)
+          (h_wf_proc.bodyExitsCovered ss' _ hb') ρ₀ lbl ρ_inner)
     subst hρ'
     obtain ⟨ρ_i, tP, hs, hheld⟩ := h_start ρ₀ hwf
     have hfull := ReflTransTrace.trans _ hs

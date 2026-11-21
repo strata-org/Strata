@@ -90,7 +90,7 @@ private abbrev growBody : Core.Statements :=
    Core.Statement.assert "grow" (.app Core.valueLoc (.app Core.valueLoc Core.intGtOp (v yId)) (v xId)) assertMd]
 
 /-- The translated body really is the two assignments followed by the assertion. -/
-private theorem grow_body_eq : growProc.body = .structured growBody := by native_decide
+private theorem grow_body_eq : growProc.body = .structured growBody false := by native_decide
 
 /-! ## The SSA form -/
 

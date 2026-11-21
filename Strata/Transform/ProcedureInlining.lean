@@ -196,7 +196,11 @@ end
 /-
 Procedure Inlining.
 
-If st is a call statement, inline the contents of the callee procedure.
+If st is a call statement, inline the contents of the callee procedure. An abstract procedure,
+which has no body, is inlined as its contract after the call's entry: its non-free
+preconditions are asserted (with the call-site metadata), its inout parameters are havocked (its
+output-only parameters are already unconstrained by their `nondet` init), and its postconditions
+are assumed.
 To avoid conflicts between duplicated variable names in caller and callee,
 every variables in callee are renamed. The opaque types a call's instance gets avoid the
 type names `taken`.
@@ -242,9 +246,14 @@ def inlineCallCmd (taken : Std.HashSet String)
           proc.header.outputs.map (fun (id, ty) => (id, Lambda.LMonoTy.subst tySubst ty))
         let args := typedInputExprs inputs callArgs
 
-        let bodyStmts : List Statement ← match proc.body with
-          | .structured ss => pure (ss.map (Core.Statement.Statement.subst tySubst))
-          | .cfg _ => throw (Strata.Message.fromString
+        -- `Block.setCallSiteMetadata` below gives the contract's asserts and assumes the
+        -- call-site metadata.
+        let inouts := proc.header.outputs.keys.filter proc.header.inputs.keys.contains
+        let bodyStmts : List Statement ← if proc.body.isOpaque then
+            pure ((proc.contractStmts inouts md).map (Core.Statement.Statement.subst tySubst))
+          else match proc.body with
+          | .structured ss _ => pure (ss.map (Core.Statement.Statement.subst tySubst))
+          | .cfg .. | .abstract => throw (Strata.Message.fromString
               "cannot inline procedure with CFG body into structured code")
 
         let inoutParams : List (Expression.Ident × Expression.Ident × Expression.Ty) :=

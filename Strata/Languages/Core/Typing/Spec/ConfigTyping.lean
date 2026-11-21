@@ -103,9 +103,11 @@ inductive ConfigWellTyped (P : Program) (F : Expression.Factory) (S : Subst) :
       StatementsWellTyped P C1 ts1 L ss0 C2 ts2 →
       ConfigWellTyped P F S L (.seq inner ss) C2 ts2 tsf
 
-/-- Every procedure of the program has a structured body. -/
+/-- Every procedure of the program has a structured body or no body: a call to it runs its
+    structured body, or, for an opaque procedure (`Body.isOpaque`), its contract. -/
 @[expose] def CalleesStructured (P : Program) : Prop :=
-  ∀ n p, Program.Procedure.find? P n = some p → ∃ ss, p.body = .structured ss
+  ∀ n p, Program.Procedure.find? P n = some p →
+    (∃ ss opq, p.body = .structured ss opq) ∨ p.body = .abstract
 
 /-- No undeclared type variables: every type variable in a structured procedure body's local
     declarations and call type arguments is a type parameter of the procedure. A body with
@@ -113,7 +115,7 @@ inductive ConfigWellTyped (P : Program) (F : Expression.Factory) (S : Subst) :
     so its run blocks at the declaration. A well-typed program satisfies it
     (`ProgramWellTyped.calleesTyVarsScoped`). -/
 @[expose] def CalleesTyVarsScoped (P : Program) : Prop :=
-  ∀ n p ss, Program.Procedure.find? P n = some p → p.body = .structured ss →
+  ∀ n p ss opq, Program.Procedure.find? P n = some p → p.body = .structured ss opq →
     Statements.AllDeclTys (fun ty => ∀ τ, ty = .forAll [] τ →
       ∀ a ∈ LMonoTy.freeVars τ, a ∈ p.header.typeArgs) ss
 

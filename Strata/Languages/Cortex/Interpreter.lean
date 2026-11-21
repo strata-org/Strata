@@ -238,7 +238,7 @@ where
                     (stopSummary? pre.cond pre.md).isNone).map fun (pre, i) =>
                   (s!"requires_{i}", ({ expr := pre.cond, md := pre.md } : Imperative.Check CortexExpression)))
                 postconditions := ListMap.ofList [] }
-      body := .cfg body }
+      body := .cfg body false }
 
 @[expose] def locatedAt {α : Type} (md : MD) (x : m α) : m α :=
   tryCatchThe StopReason x fun e => throwThe StopReason (e.locate md)
@@ -247,7 +247,7 @@ where
     Imperative.StepCmdM CortexExpression IRCmd m :=
   fun fuel env c =>
     locatedAt (IRCmd.md c) (stepCmdWith (view prog) (fun c x => locatedAt (IRCmd.md c) x)
-      (calleeTable prog) Imperative.defaultMaxCallDepth fuel env c)
+      (calleeTable prog) .execute Imperative.defaultMaxCallDepth fuel env c)
 
 /-- The first source location the run reaches from `cmds` and then `tr`: the passes that lower a program add commands
 and jumps without one, as the prologue of an entry, which runs before its first command. A jump without a location

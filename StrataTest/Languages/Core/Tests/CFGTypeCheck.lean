@@ -1275,7 +1275,7 @@ private def cfgProgram (outputs : @Lambda.LMonoTySignature Unit)
   { decls := [.proc
       { header := { name := "P", typeArgs := [], inputs, outputs },
         spec := { preconditions := [], postconditions := [] },
-        body := .cfg { entry := "entry", blocks } } .empty] }
+        body := .cfg { entry := "entry", blocks } false } .empty] }
 
 /-! ## Conflicting uses of one type variable across blocks are rejected.
 
@@ -1638,12 +1638,12 @@ private def annotatedTypes (p : Core.Program) :
     match d with
     | Core.Decl.proc q _ =>
       match q.body with
-      | .cfg g => g.blocks.map fun (l, blk) =>
+      | .cfg g _ => g.blocks.map fun (l, blk) =>
           (l, blk.cmds.flatMap cmdAnnots ++
             match blk.transfer with
             | .condGoto c _ _ _ => exprAnnots c
             | .finish _ => [])
-      | .structured _ => []
+      | .structured _ _ | .abstract => []
     | _ => []
 
 /-! ### A type variable solved by a later block resolves an earlier block.
@@ -1717,11 +1717,11 @@ private def mdAnnotatedTypes (p : Core.Program) :
     match d with
     | Core.Decl.proc q _ =>
       match q.body with
-      | .cfg g => g.blocks.map fun (l, blk) =>
+      | .cfg g _ => g.blocks.map fun (l, blk) =>
           (l, blk.md.toList.flatMap fun elem => match elem.value with
             | .expr e => exprAnnots e
             | _ => [])
-      | .structured _ => []
+      | .structured _ _ | .abstract => []
     | _ => []
 
 /--
@@ -2167,8 +2167,8 @@ private def allCFGBodies (p : Core.Program) :
     match d with
     | Core.Decl.proc q _ =>
       match q.body with
-      | .cfg g => [g]
-      | .structured _ => []
+      | .cfg g _ => [g]
+      | .structured _ _ | .abstract => []
     | _ => []
 
 /-- Every test program above; both differential checks run on all of them. -/
@@ -2563,7 +2563,7 @@ private def polymorphicLocalAst : Core.Program :=
         spec := { preconditions := [], postconditions := [] },
         body := .cfg { entry := "entry", blocks :=
           [("entry", { cmds := [.cmd (.init "y" (.forAll [] (.ftvar "a")) .nondet .empty)],
-                       transfer := .finish .empty })] } } .empty] }
+                       transfer := .finish .empty })] } false } .empty] }
 
 /-- info: "ok" -/
 #guard_msgs in

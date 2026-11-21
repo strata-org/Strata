@@ -62,8 +62,8 @@ private theorem nondetElimDecls_proc_mem
     {decls : List Decl} {results : List (Decl × Bool)}
     {q : Procedure} {md : MetaData Expression} {ss : Statements}
     (h : decls.mapM nondetElimDecl = .ok results)
-    (hq : Decl.proc q md ∈ decls) (hb : q.body = .structured ss) :
-    (Decl.proc { q with body := .structured (Imperative.Block.nondetElim ss) } md,
+    (hq : Decl.proc q md ∈ decls) (hb : q.body = .structured ss opq) :
+    (Decl.proc { q with body := .structured (Imperative.Block.nondetElim ss) opq } md,
       Imperative.Block.nondetElim ss != ss) ∈ results := by
   induction decls generalizing results with
   | nil => simp at hq
@@ -90,8 +90,8 @@ private theorem nondetElim_proc_mem
     {program out : Program} {s s' : Transform.CoreTransformState} {changed : Bool}
     {q : Procedure} {md : MetaData Expression} {ss : Statements}
     (h : (nondetElim program).run s = (.ok (changed, out), s'))
-    (hq : Decl.proc q md ∈ program.decls) (hb : q.body = .structured ss) :
-    Decl.proc { q with body := .structured (Imperative.Block.nondetElim ss) } md ∈
+    (hq : Decl.proc q md ∈ program.decls) (hb : q.body = .structured ss opq) :
+    Decl.proc { q with body := .structured (Imperative.Block.nondetElim ss) opq } md ∈
       out.decls := by
   cases hmap : program.decls.mapM nondetElimDecl with
   | error error =>
@@ -346,8 +346,8 @@ theorem nondetElimPipelinePhase_over
       (.ok (changed, out), s'))
     (hnoCallsProgram : ProgramFact.noCalls.holds program)
     {q : Procedure} {md : MetaData Expression} {ss : Statements}
-    (hq : Decl.proc q md ∈ program.decls) (hb : q.body = .structured ss) :
-    Decl.proc { q with body := .structured (Imperative.Block.nondetElim ss) } md ∈
+    (hq : Decl.proc q md ∈ program.decls) (hb : q.body = .structured ss opq) :
+    Decl.proc { q with body := .structured (Imperative.Block.nondetElim ss) opq } md ∈
         out.decls
     ∧ ∀ (base : InitEnvWFParams),
       prefixesDisjoint base.prefixIdents Imperative.NondetElim.isGeneratedName →

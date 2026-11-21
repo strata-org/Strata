@@ -347,7 +347,7 @@ def dblProgram : Core.Program :=
       header := { name := ⟨"Dbl", ()⟩, typeArgs := [], inputs := [], outputs := [] },
       spec := { preconditions := [], postconditions := [] },
       body := .structured [.cmd (.cmd (.init y (.forAll [] .int) (.det dbl21) md)),
-        .cmd (.cmd (.assert "p" (.eq Core.valueLoc (.fvar Core.valueLoc y (some .int)) (.intConst Core.valueLoc 42)) md))] }
+        .cmd (.cmd (.assert "p" (.eq Core.valueLoc (.fvar Core.valueLoc y (some .int)) (.intConst Core.valueLoc 42)) md))] false }
       .empty] }
 
 -- No solver is available: under `--vcgen wp` the SSA phase evaluates `dbl(21)` by the concrete

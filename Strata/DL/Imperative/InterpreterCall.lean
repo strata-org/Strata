@@ -21,6 +21,11 @@ reference rule `Calls.EvalCmdExtE.call_sem`: `callEntryStore` is its `InitCallFr
 argument evaluation and `out` read its other `CallEntry` premises, the trailing
 `readVarList`/`bindPositional` pair its `CallExit`, and the callee's non-`free` pre- and
 postconditions are **emitted** as assertion events (never adjudicated) around the body run.
+A call whose callee runs as its contract in the stepper's `CallMode` (an opaque callee under
+`CallMode.contract`, an abstract one under either mode) follows
+`Calls.EvalCmdExtE.call_abstract_sem`: its output formals are havocked through `choose`, and its
+postconditions are emitted as assumption events (`runAbstractCallee`). The replay theorems are
+stated at `CallMode.contract`, the mode that matches the reference semantics.
 
 An unresolved callee and a positional arity mismatch are refused.
 
@@ -115,6 +120,15 @@ theorem withOldSnapshotsV_eq (snapshot : List P.Ident) (σ : SemanticStore P) :
       none
 
 omit [ProcedureTypeInstantiation P Hdr] in
+/-- The runtime counterpart of `assumeEvents`: every clause of `checks`, free clauses included,
+    as a runtime assume event at the runtime snapshot `(rf, σ)`. -/
+@[expose] def rAssumeEvents {RF : Type} (rf : RF) (σ : RStore P)
+    (checks : ListMap String (Check P)) : List (REvent P RF) :=
+  checks.toList.map fun (label, check) =>
+    .assume { factory := rf, store := σ, label := label, expr := check.expr,
+              metadata := check.md }
+
+omit [ProcedureTypeInstantiation P Hdr] in
 /-- The callee's entry frame `σAO`: a fresh, empty store in which the input formals
     hold the evaluated input values, the output-only formals hold the caller's
     `out`-actual values, and each inout formal is snapshotted under `old`.
@@ -137,24 +151,52 @@ variable [HasBool P] [DecidableEq P.Expr] [InterpLang P] [HasFvar P]
     `runInterpCFG` from its entry block, each command through `step` at the running store, and
     its final store is the halting store projected through the entry frame (`projectStore`), as
     in `BigStepE`.  A body that does not end in a terminal configuration stops with
-    `programCallBodyExited`. -/
+    `programCallBodyExited`.  An abstract body has no statements to run, and stops with
+    `unsupportedAbstractBody`; `stepCmd` runs the contract of an abstract callee instead
+    (`runAbstractCallee`), as it does for every callee its call mode runs as its contract
+    (`CallMode.runsContract`). -/
 @[expose] def runCallee {m : Type → Type} [Monad m] [InterpEffects P m] [MonadExcept StopReason m]
     {CmdT : Type} [CmdDefs P CmdT] (step : StepCmdM P CmdT m) (procName : String) (body : Body P CmdT)
     (fac : InterpLang.RFactory P) (fuel : Nat) (entryStore : RStore P) : m (RStore P) :=
   match body with
-  | .structured ss => do
+  | .structured ss _ => do
     let finalCfg ← runInterp step fuel
       (.stmt (.block "" ss #[])
         { store := .ofStore entryStore, factory := fac })
     let .terminal finalEnv := finalCfg
       | throw (.programCallBodyExited procName)
     pure finalEnv.store.get
-  | .cfg g => do
+  | .cfg g _ => do
     let finalCfg ← runInterpCFG step.toStore fuel (.atBlock g g.entry
         { store := .ofStore entryStore, factory := fac })
     let .terminal ρEnd := finalCfg
       | throw (.programCallBodyExited procName)
     pure (RStore.project entryStore ρEnd.store.get)
+  | .abstract => throw (.unsupportedAbstractBody procName)
+
+/-- Havoc the names `names` of the store `st` in turn, each as a nondeterministic `set`
+    through `stepBaseCmdStore` at fuel `fuel` and factory `fac`: the executable counterpart of
+    `Calls.HavocVars`. -/
+@[expose] def havocVarList {m : Type → Type} [Monad m] [InterpEffects P m]
+    [MonadExcept StopReason m] (fuel : Nat) (fac : InterpLang.RFactory P) :
+    List P.Ident → IStore P → m (IStore P)
+  | [], st => pure st
+  | name :: names, st => do
+    let st ← stepBaseCmdStore fuel fac st (.set name .nondet MetaData.empty)
+    havocVarList fuel fac names st
+
+/-- The contract run of a call to a callee run as its contract, from its entry frame `entryStore` at the
+    caller's factory `fac`: havoc the output formals `outputNames` (`havocVarList`, at fuel
+    `fuel`), emit every clause of `post` as an assumption at the post-havoc frame, and return
+    that frame.  The executable counterpart of the `HavocVars` and `assumeEvents` premises of
+    `EvalCmdExtE.call_abstract_sem`. -/
+@[expose] def runAbstractCallee {m : Type → Type} [Monad m] [InterpEffects P m]
+    [MonadExcept StopReason m] (fuel : Nat) (fac : InterpLang.RFactory P)
+    (outputNames : List P.Ident) (post : ListMap String (Check P)) (entryStore : RStore P) :
+    m (RStore P) := do
+  let havocked ← havocVarList fuel fac outputNames (.ofStore entryStore)
+  (rAssumeEvents fac havocked.get post).forM (InterpEffects.emit (P := P))
+  pure havocked.get
 
 inductive CmdView (P : PureExpr) [InterpLang P] (CmdT : Type) (Hdr : Type) [DecidableEq Hdr]
     [Inhabited Hdr] (m : Type → Type) where
@@ -183,11 +225,15 @@ omit [ProcedureTypeInstantiation P Hdr] in
     metadata (`checksAtCall md`), runs the callee body (`runCallee`) at the caller's factory with
     this stepper baked at budget `depth'` and fuel `fuel'`, emits the non-free postconditions at the
     callee's final store, checks that each output has the type of the value its target held
-    (`writeBackTyped`; `illTypedValue` otherwise), and writes the outputs back. -/
+    (`writeBackTyped`; `illTypedValue` otherwise), and writes the outputs back.  A call whose
+    callee runs as its contract in mode `mode` (`CallMode.runsContract`) follows
+    `EvalCmdExtE.call_abstract_sem` instead of running a body: `runAbstractCallee` havocs the
+    output formals of the entry frame and emits every postcondition as an assumption at the
+    post-havoc frame. -/
 def stepCmdWith {m : Type → Type} [Monad m] [InterpEffects P m] [MonadExcept StopReason m]
     {CmdT : Type} [CmdDefs P CmdT] (view : CmdT → CmdView P CmdT Hdr m)
     (around : CmdT → m (IConfig P CmdT) → m (IConfig P CmdT))
-    (π : String → Option (Procedure P CmdT Hdr)) (depth : Nat)
+    (π : String → Option (Procedure P CmdT Hdr)) (mode : CallMode) (depth : Nat)
     (fuel : Nat) (env : IEnv P) (cmd : CmdT) : m (IConfig P CmdT) :=
   match view cmd with
   | .base base => do
@@ -224,11 +270,15 @@ def stepCmdWith {m : Type → Type} [Monad m] [InterpEffects P m] [MonadExcept S
           let entryStore := callEntryStore p inputVals outOnlyVals
           (rDefaultAssertEvents env.factory entryStore
               (checksAtCall md p.spec.preconditions)).forM (InterpEffects.emit (P := P))
-          let finalStore ← runCallee
-            (fun _ e c => around c (stepCmdWith view around π depth' fuel' e c)) procName p.body
-            env.factory fuel' entryStore
-          (rDefaultAssertEvents env.factory finalStore p.spec.postconditions).forM
-            (InterpEffects.emit (P := P))
+          let finalStore ← if mode.runsContract p.body then
+              runAbstractCallee fuel' env.factory outputNames p.spec.postconditions entryStore
+            else do
+              let finalStore ← runCallee
+                (fun _ e c => around c (stepCmdWith view around π mode depth' fuel' e c)) procName p.body
+                env.factory fuel' entryStore
+              (rDefaultAssertEvents env.factory finalStore p.spec.postconditions).forM
+                (InterpEffects.emit (P := P))
+              pure finalStore
           let some modvals := readVarList finalStore outputNames
             | throw (.programCallOutputUndefinedOnReturn procName)
           if lhs.length ≠ outputNames.length then
@@ -244,17 +294,17 @@ termination_by fuel
 decreasing_by all_goals omega
 
 abbrev stepCmd {m : Type → Type} [Monad m] [InterpEffects P m] [MonadExcept StopReason m]
-    (π : String → Option (Procedure P (CmdExt P) Hdr)) (depth : Nat)
+    (π : String → Option (Procedure P (CmdExt P) Hdr)) (mode : CallMode) (depth : Nat)
     (fuel : Nat) (env : IEnv P) (cmd : CmdExt P) : m (IConfig P (CmdExt P)) :=
-  stepCmdWith CmdExt.view (fun _ x => x) π depth fuel env cmd
+  stepCmdWith CmdExt.view (fun _ x => x) π mode depth fuel env cmd
 
-/-- The call-aware driver: `runInterp` over `stepCmd π maxCallDepth`, nesting at most
+/-- The call-aware driver: `runInterp` over `stepCmd π mode maxCallDepth`, nesting at most
     `maxCallDepth` calls. -/
 @[expose] def runCallInterp {m : Type → Type} [Monad m] [InterpEffects P m]
     [MonadExcept StopReason m] (π : String → Option (Procedure P (CmdExt P) Hdr))
-    (fuel : Nat) (cfg : IConfig P (CmdExt P)) (maxCallDepth : Nat := defaultMaxCallDepth) :
-    m (IConfig P (CmdExt P)) :=
-  runInterp (stepCmd π maxCallDepth) fuel cfg
+    (mode : CallMode) (fuel : Nat) (cfg : IConfig P (CmdExt P))
+    (maxCallDepth : Nat := defaultMaxCallDepth) : m (IConfig P (CmdExt P)) :=
+  runInterp (stepCmd π mode maxCallDepth) fuel cfg
 
 end Stepper
 
@@ -356,7 +406,7 @@ variable [HasOldIdent P] [HasFvar P]
     (maxCallDepth : Nat := defaultMaxCallDepth) :
     CEValidationVerdict StopReason :=
   let cfg : ReplayCfg P := { oracleConfig := .strict }
-  (runReplay (runCallInterp (m := ReplayM P) π fuel cex.cfg maxCallDepth) cfg
+  (runReplay (runCallInterp (m := ReplayM P) π .contract fuel cex.cfg maxCallDepth) cfg
     (assertFailureHalt target fuel) cex.oracle).1
 
 /-- Genuineness: `cex` replays, at fuel `fuel` and call-depth limit `maxCallDepth`, to the
@@ -371,7 +421,7 @@ variable [HasOldIdent P] [HasFvar P]
     (maxCallDepth : Nat := defaultMaxCallDepth) : Prop :=
   genuine π target fuel cex maxCallDepth ∧
     PathFeasible fuel
-      (runReplayRun (runCallInterp (m := ReplayM P) π fuel cex.cfg maxCallDepth)
+      (runReplayRun (runCallInterp (m := ReplayM P) π .contract fuel cex.cfg maxCallDepth)
         { oracleConfig := .strict, interruptOn := enforceInterrupt target fuel }
         cex.oracle).2.traceRev
 
@@ -379,7 +429,7 @@ variable [HasOldIdent P] [HasFvar P]
 @[expose] def genuineEnforced (π : String → Option (Procedure P (CmdExt P) Hdr))
     (target : AssertId P) (fuel : Nat) (cex : CexA P (CmdExt P))
     (maxCallDepth : Nat := defaultMaxCallDepth) : Prop :=
-  (runReplay (runCallInterp (m := ReplayM P) π fuel cex.cfg maxCallDepth)
+  (runReplay (runCallInterp (m := ReplayM P) π .contract fuel cex.cfg maxCallDepth)
     { oracleConfig := .strict, interruptOn := enforceInterrupt target fuel }
     (assertFailureHalt target fuel) cex.oracle).1 = .genuine
 

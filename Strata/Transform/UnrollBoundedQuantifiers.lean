@@ -679,10 +679,10 @@ def unrollDecl (sc : Scope) (decl : Decl) : Decl × Counts :=
     (.lemma { l with e := e' } md, c)
   | .proc proc md =>
     match proc.body with
-    | .structured ss =>
+    | .structured ss o =>
       let (ss', css) := unrollBlock sc.env ss
-      (.proc { proc with body := .structured ss' } md, css)
-    | .cfg _ => (decl, {})
+      (.proc { proc with body := .structured ss' o } md, css)
+    | .cfg _ _ | .abstract => (decl, {})
   | d => (d, {})
 
 /-- Unroll the bounded index quantifiers of every declaration, over the factory `F`, in

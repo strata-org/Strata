@@ -127,6 +127,9 @@ structure Procedure where
   body : Option Body
   entry : Bool
   source : Strata.FileRange
+  /-- Whether the procedure models code that Strata does not see (`Cortex.Procedure.external`).
+  A message without the field reads as `false`. -/
+  external : Bool := false
   deriving Repr, Inhabited
 
 structure Field where
@@ -287,7 +290,7 @@ def Procedure.toCortex (globals : List String) (p : Procedure) : Except String C
          | some s => (MetaData.empty : Cortex.MD).pushElem MetaData.propertySummary (.msg s)
          | none => .empty } : Cortex.Precondition)
   return { name := p.name, inputs := params p.inputs, outputs := params p.outputs, throws := p.throws,
-           body, md, requires }
+           body, md, requires, external := p.external }
 
 def Program.checkCallArities (p : Program) : Except String Unit := do
   let arities : Std.HashMap String (Nat × Nat) :=

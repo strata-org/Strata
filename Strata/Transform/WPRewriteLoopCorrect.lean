@@ -470,8 +470,8 @@ theorem loopProgram_over {fac : Lambda.Factory CoreLParams} {prog out : Program}
     {s s' : Transform.CoreTransformState} {b : Bool}
     (h : (WPLoop.wpLoopProgramWith (loopBody fac) prog).run s = (.ok (b, out), s'))
     {q : Procedure} {md : Imperative.MetaData Expression} {ss : Statements}
-    (hq : Decl.proc q md ∈ prog.decls) (hb : q.body = .structured ss) :
-    Decl.proc { q with body := .structured (loopBody fac ss).1 } md ∈ out.decls := by
+    {opq : Bool} (hq : Decl.proc q md ∈ prog.decls) (hb : q.body = .structured ss opq) :
+    Decl.proc { q with body := .structured (loopBody fac ss).1 opq } md ∈ out.decls := by
   simp only [WPLoop.wpLoopProgramWith, Transform.incrementStat, List.countP_map, List.any_map,
     List.map_map, bind_pure_comp] at h
   cases h

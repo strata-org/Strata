@@ -88,7 +88,7 @@ private abbrev maxBody : Core.Statements :=
    maxIte]
 
 /-- The translated body really is the two definitions followed by the `if`. -/
-private theorem max_body_eq : maxProc.body = .structured maxBody := by native_decide
+private theorem max_body_eq : maxProc.body = .structured maxBody false := by native_decide
 
 /-- Erasing the unread definitions leaves the `if` alone. -/
 private theorem max_dde : Imperative.DeadDefElim.deadDefElim [] maxBody = [maxIte] := by
@@ -109,7 +109,7 @@ private theorem max_decl : maxPgmAST.decls[0]? = some (.proc maxProc maxDeclMd) 
 theorem max_run_out :
     ∃ b out s', (Core.DeadDefElim.deadDefElimProgram maxPgmAST).run
         Core.Transform.CoreTransformState.emp = (.ok (b, out), s') ∧
-      Core.Decl.proc { maxProc with body := .structured [maxIte] } maxDeclMd ∈ out.decls := by
+      Core.Decl.proc { maxProc with body := .structured [maxIte] false } maxDeclMd ∈ out.decls := by
   refine ⟨_, _, _, rfl, ?_⟩
   have h := (Core.DeadDefElim.deadDefElimProgram_over (s := Core.Transform.CoreTransformState.emp)
     rfl (List.mem_of_getElem? max_decl) max_body_eq).1

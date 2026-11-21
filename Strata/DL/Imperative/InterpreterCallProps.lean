@@ -35,7 +35,8 @@ Lemmas about the definitions of `InterpreterCall.lean`:
   `storeTyped_callEntryStore`);
 * the runtime call marshalling against its semantic image (`readVarList_absStore`,
   `readVarList_absStore_of_denoting`, `absStore_bindPositional`, `denoting_bindPositional`,
-  `absStore_withOldSnapshotsV`, `callEntryStore_abs`, `rDefaultAssertEvents_abs`);
+  `absStore_withOldSnapshotsV`, `callEntryStore_abs`, `rDefaultAssertEvents_abs`,
+  `rAssumeEvents_abs`);
 * `targetReached_of_assertFailureHalt`: the halting predicate fires only on target-id matches. -/
 
 /-! ## Stepper reductions -/
@@ -55,7 +56,7 @@ variable [HasBool P] [DecidableEq P.Expr] [InterpLang P] [HasFvar P]
 @[simp] theorem stepCmd_cmd {m : Type → Type} [Monad m] [InterpEffects P m]
     [MonadExcept StopReason m] (π : String → Option (Procedure P (CmdExt P) Hdr)) (depth : Nat)
     (fuel : Nat) (env : IEnv P) (base : Cmd P) :
-    stepCmd (m := m) π depth fuel env (.cmd base)
+    stepCmd (m := m) π .contract depth fuel env (.cmd base)
       = (stepBaseCmdStore fuel env.factory env.store base >>=
           fun store => pure (.terminal { env with store := store })) := by rw [stepCmd, stepCmdWith]; rfl
 
@@ -67,11 +68,13 @@ theorem CmdExt.view_ne_ext {m : Type → Type} (c : CmdExt P)
     CmdExt.view (Hdr := Hdr) (m := m) c ≠ CmdView.ext run := by
   cases c <;> simp [CmdExt.view]
 
-/-- The call-aware driver `runCallInterp` is `runInterp` over the stepper `stepCmd π d`. -/
+/-- The call-aware driver `runCallInterp` is `runInterp` over the stepper `stepCmd π .contract d`.
+    -/
 @[simp] theorem runCallInterp_eq {m : Type → Type} [Monad m] [InterpEffects P m]
     [MonadExcept StopReason m] (π : String → Option (Procedure P (CmdExt P) Hdr)) (fuel : Nat)
     (cfg : IConfig P (CmdExt P)) (d : Nat) :
-    runCallInterp (m := m) π fuel cfg d = runInterp (stepCmd π d) fuel cfg := rfl
+    runCallInterp (m := m) π .contract fuel cfg d = runInterp (stepCmd π .contract d) fuel cfg :=
+        rfl
 
 end Stepper
 end Calls
@@ -134,7 +137,7 @@ variable [DecidableEq P.Ident] [HasOldIdent P] [HasFvar P]
 theorem genuine_iff (π : String → Option (Procedure P (CmdExt P) Hdr)) (target : AssertId P)
     (fuel : Nat) (cex : CexA P (CmdExt P)) (d : Nat) :
     genuine π target fuel cex d ↔
-        ∃ ev ∈ (runReplayRun (runCallInterp (m := ReplayM P) π fuel cex.cfg d)
+        ∃ ev ∈ (runReplayRun (runCallInterp (m := ReplayM P) π .contract fuel cex.cfg d)
                   { oracleConfig := .strict }
                   cex.oracle).2.traceRev,
           assertFailureHalt target fuel ev = true := runReplay_genuine_iff ..
@@ -534,6 +537,15 @@ theorem rDefaultAssertEvents_abs (F : P.Factory) (σ : RStore P)
   congr
   funext ⟨_, _⟩
   split <;> rfl
+
+/-- The runtime assume events of `checks` at a runtime store abstract to the assumption events of
+    `checks` at the store's image. -/
+theorem rAssumeEvents_abs (F : P.Factory) (σ : RStore P)
+    (checks : ListMap String (Check P)) :
+    (rAssumeEvents (InterpLang.rfactory F) σ checks).map (REvent.abs F) =
+      assumeEvents F (InterpLang.absStore F σ) checks := by
+  simp only [rAssumeEvents, assumeEvents, List.map_map]
+  rfl
 
 /-- A successful read of names in the image of a runtime store reads runtime values that denote
     the values read. -/

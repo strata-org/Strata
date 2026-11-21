@@ -36,7 +36,7 @@ private def program : Program :=
               spec := { preconditions := [], postconditions := [] },
               body := .structured
                 [Statement.init x (.forAll [] (.ftvar "a")) (.det (.const coreLoc (.intConst 1)))
-                  #[]] } #[] ] }
+                  #[]] false } #[] ] }
 
 /--
 info: program Core;
@@ -89,7 +89,8 @@ private def typeParamProc : Program :=
               body := .structured
                 [Statement.init y (.forAll [] (.ftvar "a")) .nondet #[],
                  Imperative.Stmt.ite (.det tt)
-                   [Statement.init ⟨"z", ()⟩ (.forAll [] .int) (.det one) #[]] [] #[]] } #[] ] }
+                   [Statement.init ⟨"z", ()⟩ (.forAll [] .int) (.det one) #[]] [] #[]] false }
+            #[] ] }
 
 /--
 info: program Core;
@@ -141,7 +142,8 @@ private def cfgProc : Program :=
                   blocks :=
                     [("l0", ⟨[.cmd (.init y (.forAll [] (.ftvar "a")) (.det one) #[])],
                         .condGoto tt "l1" "l2" #[], #[]⟩),
-                     ("l1", ⟨[], .finish #[], #[]⟩), ("l2", ⟨[], .finish #[], #[]⟩)] } } #[] ] }
+                     ("l1", ⟨[], .finish #[], #[]⟩), ("l2", ⟨[], .finish #[], #[]⟩)] } false }
+            #[] ] }
 
 /--
 info: program Core;
@@ -212,12 +214,12 @@ private def callPoly : Program :=
     [ .proc { header := { name := ⟨"id", ()⟩, typeArgs := ["a"], inputs := [(x, .ftvar "a")],
                           outputs := [(y, .ftvar "a")] },
               spec := emptySpec,
-              body := .structured [] } #[],
+              body := .structured [] false } #[],
       .proc { header := { name := ⟨"p", ()⟩, typeArgs := [], inputs := [], outputs := [] },
               spec := emptySpec,
               body := .structured
                 [Statement.init y (.forAll [] .int) .nondet #[],
-                 .cmd (.call "id" none [.inArg one, .outArg y] #[])] } #[] ] }
+                 .cmd (.call "id" none [.inArg one, .outArg y] #[])] false } #[] ] }
 
 /--
 info: program Core;
@@ -244,7 +246,7 @@ private def callPolyTyArgs : IO Unit :=
     match checked.decls with
     | [_, .proc q _] =>
       match q.body with
-      | .structured [_, .cmd (.call _ tyArgs _ _)] =>
+      | .structured [_, .cmd (.call _ tyArgs _ _)] _ =>
         IO.println s!"{tyArgs.map (·.map toString)}"
       | _ => IO.println "unexpected body"
     | _ => IO.println "unexpected declarations"
@@ -265,7 +267,7 @@ private def changedConst : Program :=
                 [Statement.init y (.forAll [] (.ftvar "a")) .nondet #[],
                  Imperative.Stmt.ite (.det tt)
                    [Statement.init ⟨"z", ()⟩ (.forAll [] .int)
-                     (.det (.const coreLoc (.intConst 2))) #[]] [] #[]] } #[] ] }
+                     (.det (.const coreLoc (.intConst 2))) #[]] [] #[]] false } #[] ] }
 
 /-- info: erasures agree: false -/
 #guard_msgs in

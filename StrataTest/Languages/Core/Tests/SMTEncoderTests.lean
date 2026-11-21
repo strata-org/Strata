@@ -689,7 +689,7 @@ private def redexTestPgm : Program :=
           body := .structured [
             Statement.assume "arg_precondition" constLambdaRedex #[],
             Statement.init ⟨"v", ()⟩ (.forAll [] (.tcons "bool" [])) (.det constLambdaRedex) #[],
-            Statement.assert "goal" constLambdaRedex #[]] } #[]] }
+            Statement.assert "goal" constLambdaRedex #[]] false } #[]] }
 
 -- The `betaReduce` phase contracts the redex in all four positions: the
 -- assumption, the variable definition's RHS, the goal, and both distinctness
@@ -710,7 +710,7 @@ assert goal: true
     | .structured [
         Statement.assume _ a _,
         Statement.init _ _ (.det rhs) _,
-        Statement.assert _ g _] => do
+        Statement.assert _ g _] false => do
       IO.println s!"assume: {f!"{a}".pretty}"
       IO.println s!"init rhs: {f!"{rhs}".pretty}"
       IO.println s!"assert goal: {f!"{g}".pretty}"

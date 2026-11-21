@@ -8,6 +8,7 @@ import Strata.Languages.Core.Verifier
 import Strata.Languages.Core
 import Strata.MetaVerifier
 import StrataTest.Languages.Core.Tests.WPTestUtils
+import StrataTest.Languages.Core.Tests.ReparseTestUtils
 
 /-! # Verdicts on paths through loop elimination's arbitrary iteration
 
@@ -42,6 +43,29 @@ def markerModes : List (String × Core.VerifyOptions) :=
 def printMarkerVerdicts (pgm : StrataDDM.SourcedProgram) : IO Unit := do
   for (mode, opts) in markerModes do
     let rs ← Core.verify pgm (options := opts)
+    let vs := rs.toList.map fun r =>
+      let v := if r.isSuccess then "proved" else if r.isFailure then "failed" else "unknown"
+      s!"{r.obligation.label} {v}"
+    IO.println s!"{mode}: {", ".intercalate vs}"
+
+/-- `p` with the bodies of the procedures named in `names` marked opaque (`Body.isOpaque`). -/
+def markOpaque (names : List String) (p : Core.Program) : Core.Program :=
+  { p with decls := p.decls.map fun
+    | .proc q md =>
+      if names.contains q.header.name.name then
+        .proc { q with body := match q.body with
+          | .structured ss _ => .structured ss true
+          | .cfg g _ => .cfg g true
+          | .abstract => .abstract } md
+      else .proc q md
+    | d => d }
+
+/-- `printMarkerVerdicts` on `pgm` with the bodies of the procedures `names` marked opaque. -/
+def printOpaqueMarkerVerdicts (names : List String) (pgm : StrataDDM.SourcedProgram) :
+    IO Unit := do
+  let program ← IO.ofExcept (strataProgramToCore pgm.program)
+  for (mode, opts) in markerModes do
+    let rs ← (Core.verifyProgram (markOpaque names program) opts).toIO IO.userError
     let vs := rs.toList.map fun r =>
       let v := if r.isSuccess then "proved" else if r.isFailure then "failed" else "unknown"
       s!"{r.obligation.label} {v}"
@@ -195,9 +219,10 @@ per-path: x_gt_1 failed -/
 #guard_msgs in
 #eval printMarkerVerdicts realFailPgm
 
-/-! Call elimination marks the postcondition assumptions of every call, with or without outputs:
-the contract over-approximates the callee, which may not return in every state the contract
-admits. -/
+/-! Call elimination marks the postcondition assumptions of every call to a procedure with a
+body, with or without outputs: the contract over-approximates the callee, which may not return in
+every state the contract admits. A call to an abstract procedure is not marked
+(`callElimPostPrefix`): its contract is its call semantics. -/
 
 /-- A call without outputs whose contract is `ensures true`, then an assertion that fails for
     `x = 0`: the path goes through the callee's contract, so the verdict is `unknown`. -/
@@ -268,6 +293,447 @@ symexec: q_ensures_0 proved, ok unknown
 per-path: q_ensures_0 proved, ok unknown -/
 #guard_msgs in
 #eval printMarkerVerdicts havocCallPgm
+
+/-- The call of `havocCallPgm` to an abstract `q`: a call to `q` havocs `n` under `ensures true`,
+    so `a = -1` after the call is a state of an execution and `ok` fails. -/
+def abstractCallPgm :=
+#strata
+program Core;
+procedure q (inout n : int)
+spec { ensures true; };
+procedure p ()
+{
+  var a : int := 3;
+  call q(inout a);
+  assert [ok]: int.ge(a, 0);
+};
+#end
+
+/-- info: symbolic: ok failed
+wp: ok failed
+symexec: ok failed
+per-path: ok failed -/
+#guard_msgs in
+#eval printMarkerVerdicts abstractCallPgm
+
+/-- The call of `abstractCallPgm` to a `q` with the body `{ }`, which does nothing: call elimination
+    still replaces the call by the contract, which havocs `n`, so the path is marked and `ok` is
+    `unknown`, although `a` is `3` after every execution. -/
+def emptyBodyCallPgm :=
+#strata
+program Core;
+procedure q (inout n : int)
+spec { ensures true; }
+{ };
+procedure p ()
+{
+  var a : int := 3;
+  call q(inout a);
+  assert [ok]: int.ge(a, 0);
+};
+#end
+
+/-- info: symbolic: q_ensures_0 proved, ok unknown
+wp: q_ensures_0 proved, ok unknown
+symexec: q_ensures_0 proved, ok unknown
+per-path: q_ensures_0 proved, ok unknown -/
+#guard_msgs in
+#eval printMarkerVerdicts emptyBodyCallPgm
+
+/-- A call to a procedure with a body and no postconditions: call elimination marks the havocs
+    of its output with an assumption of `true`, as if the callee had `ensures true`. `g` sets `r`
+    to `1`, so `y_is_1` holds after every execution, and its counterexample (`y = 0`) comes from
+    the havocked output. `x_pos`, before the call, fails on a path through no abstraction. -/
+def noPostcondCallPgm :=
+#strata
+program Core;
+procedure g (out r : int)
+{
+  r := 1;
+};
+procedure p (x : int, out y : int)
+{
+  assert [x_pos]: int.gt(x, 0);
+  call g(out y);
+  assert [y_is_1]: y == 1;
+};
+#end
+
+/-- info: symbolic: x_pos failed, y_is_1 unknown
+wp: x_pos failed, y_is_1 unknown
+symexec: x_pos failed, y_is_1 unknown
+per-path: x_pos failed, y_is_1 unknown -/
+#guard_msgs in
+#eval printMarkerVerdicts noPostcondCallPgm
+
+/-- The call of `noPostcondCallPgm` to a `g` whose body is the stub `assume true`, the shape a
+    front end uses for a callee it does not want read as abstract: `g` has a body, so the call is
+    marked and `y_is_1` is `unknown`. -/
+def stubBodyNoPostcondCallPgm :=
+#strata
+program Core;
+procedure g (out r : int)
+{
+  assume true;
+};
+procedure p (x : int, out y : int)
+{
+  assert [x_pos]: int.gt(x, 0);
+  call g(out y);
+  assert [y_is_1]: y == 1;
+};
+#end
+
+/-- info: symbolic: x_pos failed, y_is_1 unknown
+wp: x_pos failed, y_is_1 unknown
+symexec: x_pos failed, y_is_1 unknown
+per-path: x_pos failed, y_is_1 unknown -/
+#guard_msgs in
+#eval printMarkerVerdicts stubBodyNoPostcondCallPgm
+
+/-- The call of `noPostcondCallPgm` to a `g` whose body havocs its output: the call is marked, as
+    for every callee with a body that is not opaque, and `y_is_1` is `unknown`. -/
+def havocBodyNoPostcondCallPgm :=
+#strata
+program Core;
+procedure g (out r : int)
+{
+  havoc r;
+};
+procedure p (x : int, out y : int)
+{
+  assert [x_pos]: int.gt(x, 0);
+  call g(out y);
+  assert [y_is_1]: y == 1;
+};
+#end
+
+/-- info: symbolic: x_pos failed, y_is_1 unknown
+wp: x_pos failed, y_is_1 unknown
+symexec: x_pos failed, y_is_1 unknown
+per-path: x_pos failed, y_is_1 unknown -/
+#guard_msgs in
+#eval printMarkerVerdicts havocBodyNoPostcondCallPgm
+
+/-- Calls on one branch of a fork to a `g` without postconditions. `--vcgen wp` keeps the marker
+    of the havoc under the reach condition of its branch (`WP.kMarkImp`). In `p` and `q`, every
+    counterexample to `x_pos` lies on the branch without the call, so it falsifies that condition
+    and the failure stands. In `r` and `s`, every counterexample to `y_is_1` passes the call, so
+    it is unknown. Symbolic evaluation and symbolic execution keep the marker on both branches,
+    so `x_pos` is unknown there. -/
+def branchCallPgm :=
+#strata
+program Core;
+procedure g (out r : int)
+{
+  r := 1;
+};
+procedure p (b : bool, out y : int, out x : int)
+{
+  if (b) { call g(out y); x := 1; } else { x := 0; }
+  assert [x_pos]: int.gt(x, 0);
+};
+procedure q (b : bool, out y : int, out x : int)
+{
+  if (b) { x := 0; } else { call g(out y); x := 1; }
+  assert [x_pos]: int.gt(x, 0);
+};
+procedure r (b : bool, out y : int)
+{
+  if (b) { call g(out y); } else { y := 1; }
+  assert [y_is_1]: y == 1;
+};
+procedure s (b : bool, out y : int)
+{
+  if (b) { y := 1; } else { call g(out y); }
+  assert [y_is_1]: y == 1;
+};
+#end
+
+/-- info: symbolic: x_pos unknown, x_pos unknown, y_is_1 unknown, y_is_1 unknown
+wp: x_pos failed, x_pos failed, y_is_1 unknown, y_is_1 unknown
+symexec: x_pos unknown, x_pos unknown, y_is_1 unknown, y_is_1 unknown
+per-path: x_pos failed, x_pos failed, y_is_1 unknown, y_is_1 unknown -/
+#guard_msgs in
+#eval printMarkerVerdicts branchCallPgm
+
+/-- The branches of `branchCallPgm` with the call replaced by a call to an abstract `ext` and the
+    marker a front end places after a call to a procedure that models code Strata does not see
+    (`Core.externalAssumePrefix`). The verdicts are those of `branchCallPgm`. -/
+def branchExternalPgm :=
+#strata
+program Core;
+procedure ext (out r : int);
+procedure p (b : bool, out y : int, out x : int)
+{
+  if (b) { call ext(out y); assume [$__externalAssume_0]: true; x := 1; } else { x := 0; }
+  assert [x_pos]: int.gt(x, 0);
+};
+procedure q (b : bool, out y : int, out x : int)
+{
+  if (b) { x := 0; } else { call ext(out y); assume [$__externalAssume_1]: true; x := 1; }
+  assert [x_pos]: int.gt(x, 0);
+};
+procedure r (b : bool, out y : int)
+{
+  if (b) { call ext(out y); assume [$__externalAssume_2]: true; } else { y := 1; }
+  assert [y_is_1]: y == 1;
+};
+procedure s (b : bool, out y : int)
+{
+  if (b) { y := 1; } else { call ext(out y); assume [$__externalAssume_3]: true; }
+  assert [y_is_1]: y == 1;
+};
+#end
+
+/-- info: symbolic: x_pos unknown, x_pos unknown, y_is_1 unknown, y_is_1 unknown
+wp: x_pos failed, x_pos failed, y_is_1 unknown, y_is_1 unknown
+symexec: x_pos unknown, x_pos unknown, y_is_1 unknown, y_is_1 unknown
+per-path: x_pos failed, x_pos failed, y_is_1 unknown, y_is_1 unknown -/
+#guard_msgs in
+#eval printMarkerVerdicts branchExternalPgm
+
+/-- A marker under a reach condition that divides by zero. Core gives `x / 0.0` the value `0.0`,
+    while the solver leaves it unconstrained, so the two can disagree on the condition
+    `x / 0.0 > 0.0`. The counterexample to `y_is_1` takes the branch with the call, where the
+    solver makes the condition true, and is `unknown` in every mode: the model check evaluates
+    no condition or definition with a division (`Core.markerGuardEvaluable`), so the marker
+    applies. -/
+def divByZeroGuardPgm :=
+#strata
+program Core;
+procedure g (out r : int)
+{
+  r := 1;
+};
+procedure p (x : real, out y : int)
+{
+  if (real.gt(real.div(x, 0.0), 0.0)) { call g(out y); } else { y := 1; }
+  assert [y_is_1]: y == 1;
+};
+#end
+
+/-- info: symbolic: y_is_1 unknown
+wp: y_is_1 unknown
+symexec: y_is_1 unknown
+per-path: y_is_1 unknown -/
+#guard_msgs in
+#eval printMarkerVerdicts divByZeroGuardPgm
+
+/-- The call of `noPostcondCallPgm` to an abstract `g` without postconditions: every value of
+    `y` after the call is a state of an execution, so `y_is_1` fails. -/
+def abstractNoPostcondCallPgm :=
+#strata
+program Core;
+procedure g (out r : int);
+procedure p (x : int, out y : int)
+{
+  assert [x_pos]: int.gt(x, 0);
+  call g(out y);
+  assert [y_is_1]: y == 1;
+};
+#end
+
+/-- info: symbolic: x_pos failed, y_is_1 failed
+wp: x_pos failed, y_is_1 failed
+symexec: x_pos failed, y_is_1 failed
+per-path: x_pos failed, y_is_1 failed -/
+#guard_msgs in
+#eval printMarkerVerdicts abstractNoPostcondCallPgm
+
+/-! An opaque callee (`Body.isOpaque`) is known to its callers only through its contract, which is
+its call semantics, so a call to it carries no marker, with or without postconditions; its body is
+still verified against its contract. Each callee below is checked in three kinds: transparent with
+its body, opaque with the same body (`printOpaqueMarkerVerdicts`), and abstract. In every case
+`y_is_1` has a counterexample in which the havocked output is not `1`: it is `unknown` after a
+call to the transparent callee and `failed` after a call to the opaque or abstract one. -/
+
+/-- info: symbolic: x_pos failed, y_is_1 failed
+wp: x_pos failed, y_is_1 failed
+symexec: x_pos failed, y_is_1 failed
+per-path: x_pos failed, y_is_1 failed -/
+#guard_msgs in
+#eval printOpaqueMarkerVerdicts ["g"] noPostcondCallPgm
+
+/-- The callee of `noPostcondCallPgm` with the postcondition `ensures true`. -/
+def ensuresTrueCallPgm :=
+#strata
+program Core;
+procedure g (out r : int)
+spec { ensures true; }
+{
+  r := 1;
+};
+procedure p (x : int, out y : int)
+{
+  assert [x_pos]: int.gt(x, 0);
+  call g(out y);
+  assert [y_is_1]: y == 1;
+};
+#end
+
+/-- info: symbolic: g_ensures_0 proved, x_pos failed, y_is_1 unknown
+wp: g_ensures_0 proved, x_pos failed, y_is_1 unknown
+symexec: g_ensures_0 proved, x_pos failed, y_is_1 unknown
+per-path: g_ensures_0 proved, x_pos failed, y_is_1 unknown -/
+#guard_msgs in
+#eval printMarkerVerdicts ensuresTrueCallPgm
+
+/-- info: symbolic: g_ensures_0 proved, x_pos failed, y_is_1 failed
+wp: g_ensures_0 proved, x_pos failed, y_is_1 failed
+symexec: g_ensures_0 proved, x_pos failed, y_is_1 failed
+per-path: g_ensures_0 proved, x_pos failed, y_is_1 failed -/
+#guard_msgs in
+#eval printOpaqueMarkerVerdicts ["g"] ensuresTrueCallPgm
+
+/-- The abstract callee of `ensuresTrueCallPgm`. -/
+def abstractEnsuresTrueCallPgm :=
+#strata
+program Core;
+procedure g (out r : int)
+spec { ensures true; };
+procedure p (x : int, out y : int)
+{
+  assert [x_pos]: int.gt(x, 0);
+  call g(out y);
+  assert [y_is_1]: y == 1;
+};
+#end
+
+/-- info: symbolic: x_pos failed, y_is_1 failed
+wp: x_pos failed, y_is_1 failed
+symexec: x_pos failed, y_is_1 failed
+per-path: x_pos failed, y_is_1 failed -/
+#guard_msgs in
+#eval printMarkerVerdicts abstractEnsuresTrueCallPgm
+
+/-- The callee of `noPostcondCallPgm` with the postcondition `r ≥ 0`, which its body meets and
+    which leaves `y = 0` possible after a call. -/
+def realPostCallPgm :=
+#strata
+program Core;
+procedure g (out r : int)
+spec { ensures int.ge(r, 0); }
+{
+  r := 1;
+};
+procedure p (x : int, out y : int)
+{
+  assert [x_pos]: int.gt(x, 0);
+  call g(out y);
+  assert [y_is_1]: y == 1;
+};
+#end
+
+/-- info: symbolic: g_ensures_0 proved, x_pos failed, y_is_1 unknown
+wp: g_ensures_0 proved, x_pos failed, y_is_1 unknown
+symexec: g_ensures_0 proved, x_pos failed, y_is_1 unknown
+per-path: g_ensures_0 proved, x_pos failed, y_is_1 unknown -/
+#guard_msgs in
+#eval printMarkerVerdicts realPostCallPgm
+
+/-- info: symbolic: g_ensures_0 proved, x_pos failed, y_is_1 failed
+wp: g_ensures_0 proved, x_pos failed, y_is_1 failed
+symexec: g_ensures_0 proved, x_pos failed, y_is_1 failed
+per-path: g_ensures_0 proved, x_pos failed, y_is_1 failed -/
+#guard_msgs in
+#eval printOpaqueMarkerVerdicts ["g"] realPostCallPgm
+
+/-- An opaque callee whose body violates its postcondition when `x < 0`: `g`'s own check
+    `g_ensures_0` fails, so the flag does not skip the verification of its body, while the
+    caller's `y_nonneg`, which follows from `g`'s contract, is proved. -/
+def opaqueBadBodyPgm :=
+#strata
+program Core;
+procedure g (x : int, out r : int)
+spec { ensures int.ge(r, 0); }
+{
+  r := x;
+};
+procedure p (out y : int)
+{
+  call g(1, out y);
+  assert [y_nonneg]: int.ge(y, 0);
+};
+#end
+
+/-- info: symbolic: g_ensures_0 failed, y_nonneg proved
+wp: g_ensures_0 failed, y_nonneg proved
+symexec: g_ensures_0 failed, y_nonneg proved
+per-path: g_ensures_0 failed, y_nonneg proved -/
+#guard_msgs in
+#eval printOpaqueMarkerVerdicts ["g"] opaqueBadBodyPgm
+
+/-- `noPostcondCallPgm` with `g` written opaque in the surface syntax (`opaque` before its body). -/
+def opaqueSyntaxPgm :=
+#strata
+program Core;
+procedure g (out r : int)
+opaque {
+  r := 1;
+};
+procedure p (x : int, out y : int)
+{
+  assert [x_pos]: int.gt(x, 0);
+  call g(out y);
+  assert [y_is_1]: y == 1;
+};
+#end
+
+/-- The verdicts of `program` in each of the `markerModes`, one line per mode. -/
+def markerVerdictLines (program : Core.Program) : IO (List String) :=
+  markerModes.mapM fun (mode, opts) => do
+    let rs ← (Core.verifyProgram program opts).toIO IO.userError
+    let vs := rs.toList.map fun r =>
+      let v := if r.isSuccess then "proved" else if r.isFailure then "failed" else "unknown"
+      s!"{r.obligation.label} {v}"
+    pure s!"{mode}: {", ".intercalate vs}"
+
+/-! The `opaque` mark survives printing and parsing again, and so do the verdicts: `y_is_1` fails
+after the call to the opaque `g` both in the parsed program and in the program parsed back from
+its printed text. -/
+
+/-- info: printed g: procedure g (out r : int)
+opaque {
+  r := 1;
+};
+symbolic: x_pos failed, y_is_1 failed
+wp: x_pos failed, y_is_1 failed
+symexec: x_pos failed, y_is_1 failed
+per-path: x_pos failed, y_is_1 failed
+same verdicts after printing and parsing again: true -/
+#guard_msgs in
+#eval do
+  let program ← IO.ofExcept (strataProgramToCore opaqueSyntaxPgm.program)
+  let printed := (Core.formatProgram program).pretty
+  let gText := (printed.splitOn "procedure g").getD 1 ""
+  IO.println s!"printed g: procedure g{(gText.splitOn "procedure p").headD ""}".trimAsciiEnd
+  let before ← markerVerdictLines program
+  before.forM IO.println
+  let reparsed ← IO.ofExcept (← Strata.Test.CoreReparse.parseAndTranslate printed)
+  let after ← markerVerdictLines reparsed
+  IO.println s!"same verdicts after printing and parsing again: {before == after}"
+
+/-- The abstract callee of `realPostCallPgm`. -/
+def abstractRealPostCallPgm :=
+#strata
+program Core;
+procedure g (out r : int)
+spec { ensures int.ge(r, 0); };
+procedure p (x : int, out y : int)
+{
+  assert [x_pos]: int.gt(x, 0);
+  call g(out y);
+  assert [y_is_1]: y == 1;
+};
+#end
+
+/-- info: symbolic: x_pos failed, y_is_1 failed
+wp: x_pos failed, y_is_1 failed
+symexec: x_pos failed, y_is_1 failed
+per-path: x_pos failed, y_is_1 failed -/
+#guard_msgs in
+#eval printMarkerVerdicts abstractRealPostCallPgm
 
 /-! The marker prefixes are reserved: each abstraction phase rejects a program with a label that
 starts with its prefix (`Core.rejectMarkerLabels`), since a written assumption with such a label

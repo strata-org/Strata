@@ -36,25 +36,27 @@ public section
   ssaEntry fac G p.paramTys p.entryParams p.oldAliases lay
 
 /-- The SSA phase of one procedure of a guarded program under the factory `fac`: an obligation
-    procedure of the same name without parameters. -/
+    procedure of the same name without parameters. An abstract procedure has no body to check,
+    and call elimination has removed every call to it, so it produces no declaration (`none`). -/
 @[expose] def ssaProc (fac : Lambda.Factory CoreLParams) (G : IdSet Expression) (q : Procedure) :
-    Except String Decl := do
+    Except String (Option Decl) := do
   match q.body with
-  | .cfg _ => throw s!"SSA: procedure '{q.header.name.name}' has a CFG body"
-  | .structured lay =>
+  | .cfg _ _ => throw s!"SSA: procedure '{q.header.name.name}' has a CFG body"
+  | .structured lay _ =>
     let (_, so) ← ssaLoopFree fac G q lay
-    pure (Decl.obligationProc q.header.name so.out)
+    pure (some (Decl.obligationProc q.header.name so.out))
+  | .abstract => pure none
 
-/-- **The SSA phase of a program** under the factory `fac`: every procedure through `ssaProc`,
-    its fresh names avoiding the names of `reserved` and those the program declares (one hash set
-    built once); every other declaration kept, in order. -/
+/-- **The SSA phase of a program** under the factory `fac`: every procedure through `ssaProc`
+    (an abstract procedure dropped), its fresh names avoiding the names of `reserved` and those
+    the program declares (one hash set built once); every other declaration kept, in order. -/
 @[expose] def ssaProgram (fac : Lambda.Factory CoreLParams) (reserved : List Expression.Ident)
     (mid : Program) : Except String Program := do
   let G := IdSet.ofList (avoidOf [] (reserved ++ declNames mid))
   let decls ← mid.decls.mapM fun d => match d with
     | .proc q _ => ssaProc fac G q
-    | d => pure d
-  pure { decls := decls }
+    | d => pure (some d)
+  pure { decls := decls.filterMap id }
 
 end -- public section
 

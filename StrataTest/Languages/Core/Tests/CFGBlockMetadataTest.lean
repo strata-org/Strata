@@ -112,7 +112,7 @@ private def translate (p : StrataDDM.Program) : Core.Program :=
 private def blockMds (p : Core.Program) : List (String × Imperative.MetaData Core.Expression) :=
   p.decls.flatMap fun d => match d with
     | .proc proc _ => match proc.body with
-      | .cfg g => g.blocks.map fun (l, b) => (l, b.md)
+      | .cfg g _ => g.blocks.map fun (l, b) => (l, b.md)
       | _ => []
     | _ => []
 
@@ -223,7 +223,7 @@ roundtrip preserves block metadata: true
     let rewritten := (blockMds ast').length == (blockMds ast).length &&
       ast'.decls.any fun d => match d with
         | .proc proc _ => match proc.body with
-          | .cfg g => g.blocks.any fun (l, b) => l == "body" && b.md.size == 1 &&
+          | .cfg g _ => g.blocks.any fun (l, b) => l == "body" && b.md.size == 1 &&
               b.cmds.all fun c => match c with | .call .. => false | _ => true
           | _ => false
         | _ => false
@@ -334,8 +334,8 @@ private def mapBlockMds (f : Core.Expression.Expr → Core.Expression.Expr) (p :
     Core.Program :=
   { decls := p.decls.map fun d => match d with
     | .proc q md => match q.body with
-      | .cfg g => .proc { q with body := .cfg { g with blocks := g.blocks.map fun (l, b) =>
-          (l, { b with md := b.md.mapExprs f }) } } md
+      | .cfg g o => .proc { q with body := .cfg { g with blocks := g.blocks.map fun (l, b) =>
+          (l, { b with md := b.md.mapExprs f }) } o } md
       | _ => d
     | _ => d }
 

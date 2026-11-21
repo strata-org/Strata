@@ -34,7 +34,7 @@ private def translateCore (p : StrataDDM.Program) : Core.Program :=
 private def bodyOf (p : Core.Program) (name : String) : List Core.Statement :=
   match p.findProcByString? name with
   | some proc => match proc.body with
-    | .structured ss => ss
+    | .structured ss _ => ss
     | _ => []
   | none => []
 

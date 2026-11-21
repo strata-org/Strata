@@ -150,7 +150,7 @@ private theorem CmdExtWellTyped.preserves_store {π : String → Option Procedur
     rw [mapCmdTys_call] at hmap
     subst hmap
     cases he with
-    | call_sem _ _ _ hexit =>
+    | call_sem _ _ _ _ hexit | call_abstract_sem _ _ _ _ hexit =>
       obtain ⟨_, outputVals, _, hupd, hrel⟩ := hexit
       refine ⟨fun y ty hy => ?_,
         storeFresh_of_equiv hequiv fun y hy => UpdateStates_preserves_none hupd (hfresh y hy)⟩
@@ -468,7 +468,7 @@ theorem reachable_configs_wellTyped {C0 : LContext CoreLParams} {ts0 : TypeScope
     {P : Program} {proc : Procedure} {md : MetaData Expression} {ss : List Statement}
     {π : String → Option Procedure} {ρ : Env Expression}
     (hP : ProgramWellTyped C0 ts0 P) (hmem : Decl.proc proc md ∈ P.decls)
-    (hbody : proc.body = .structured ss) (hground : Statements.Ground ss)
+    {opq : Bool} (hbody : proc.body = .structured ss opq) (hground : Statements.Ground ss)
     (hρ : StoreHasTyping ρ.factory ρ.store (procBodyScopes ts0 proc).find?)
     (hfresh : StoreFresh ρ.store (procBodyScopes ts0 proc).find?) :
     ∃ C, ∀ evs cfg,
@@ -480,7 +480,7 @@ theorem reachable_configs_wellTyped {C0 : LContext CoreLParams} {ts0 : TypeScope
   have hbt := hproc.bodyTyped
   rw [hbody] at hbt
   cases hbt with
-  | structured _ C' ts' hss =>
+  | structured _ C' ts' _ hss =>
     exact ⟨C, reachable_configs_wellTyped_of_typed_empty hss hground hρ hfresh⟩
 
 end -- public section

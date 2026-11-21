@@ -156,9 +156,9 @@ theorem Procedure.rigidNames_body_lits
     (scope progSigs : Thunk (Std.HashSet String)) (C : Core.Expression.TyContext)
     (proc : Procedure) (tyNames : Unit → List String)
     (htn : ∀ n ∈ procTyNames proc (procAnnotTys proc), n ∈ tyNames ()) :
-    ∀ ss, proc.body = .structured ss →
+    ∀ ss opq, proc.body = .structured ss opq →
       ∀ p ∈ Procedure.rigidNames scope progSigs C proc tyNames, p.2 ∉ stmtsLitTyNames ss := by
-  intro ss hss p hp hn
+  intro ss _ hss p hp hn
   refine Procedure.rigidNames_not_procLitTyNames scope progSigs C proc tyNames htn p hp ?_
   unfold procLitTyNames procCollect
   rw [hss]
@@ -224,10 +224,10 @@ theorem Procedure.rigidNames_conditions (scope progSigs : Thunk (Std.HashSet Str
 theorem Procedure.rigidNames_body (scope progSigs : Thunk (Std.HashSet String))
     (C : Core.Expression.TyContext) (proc : Procedure) (tyNames : Unit → List String)
     (htn : ∀ n ∈ procTyNames proc (procAnnotTys proc), n ∈ tyNames ()) :
-    ∀ ss, proc.body = .structured ss →
+    ∀ ss opq, proc.body = .structured ss opq →
       allStmtsTys (mtyAllTyConsNames
         (notRigidConst (Procedure.rigidNames scope progSigs C proc tyNames))) ss = true := by
-  intro ss hss
+  intro ss _ hss
   rw [Statement.allStmtsTys_eq_all_stmtsAnnotTys]
   refine List.all_eq_true.mpr fun t ht => List.all_eq_true.mpr fun n hn => ?_
   refine notRigidConst_of_ne fun p hp heq =>
@@ -307,6 +307,8 @@ theorem Procedure.renameTypeArgs_body (proc : Procedure) (ren : List (String × 
       Procedure.Body.calledProcedureNames_cfg, Imperative.Body.isStructured,
       Imperative.Body.getStructured]
     exact ⟨trivial, trivial⟩
+  | abstract =>
+    simp [Procedure.renameTypeArgs, Procedure.mapTys, hb, Procedure.Body.calledProcedureNames]
 
 namespace TypeSpec
 
@@ -317,10 +319,11 @@ private theorem ProcBodyHasType_transport {P : Program}
     (hR : TContext.FindEq (T := CoreLParams) Ξ Γ)
     (h : ProcBodyHasType P C Γ body) : ProcBodyHasType P C Ξ body := by
   cases h with
-  | cfg c => exact .cfg c
-  | structured ss Cout Γout Δout hss =>
+  | cfg c o => exact .cfg c o
+  | abstract => exact .abstract
+  | structured ss Cout Γout Δout o hss =>
     obtain ⟨Γout', hss', -⟩ := StatementsHasType_transport hR hss
-    exact .structured ss Cout Γout' Δout hss'
+    exact .structured ss Cout Γout' Δout o hss'
 
 /-- Procedure typing by the typechecker spec transfers to a type scope with the same lookups and
     aliases. -/
@@ -361,10 +364,11 @@ private theorem TypeSpec.ProcBodyHasType_idents_irrel
     (h : ProcBodyHasType P { C with idents := j } Γ_body body) :
     ProcBodyHasType P C Γ_body body := by
   cases h with
-  | structured ss C' Γ' Δ' hss =>
+  | structured ss C' Γ' Δ' o hss =>
     obtain ⟨Cbase, _, hss'⟩ := StatementsHasType_idents_irrel hss C j rfl
-    exact ProcBodyHasType.structured ss Cbase Γ' Δ' hss'
-  | cfg c => exact ProcBodyHasType.cfg c
+    exact ProcBodyHasType.structured ss Cbase Γ' Δ' o hss'
+  | cfg c o => exact ProcBodyHasType.cfg c o
+  | abstract => exact ProcBodyHasType.abstract
 
 /-- Changing only the ambient identifier table preserves procedure typing by the typechecker
     spec. -/

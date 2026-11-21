@@ -561,7 +561,8 @@ A CFG body is rewritten whole by `cfgBody` when it is `some k` (`k proc g` retur
 changed `g` and the new graph), else command by command by `cfgCmd` when it is `some h` (`h`
 is run on each command of its blocks, `runCFGCmds`), with the current procedure and program set
 as for a structured body; `cfgCmd` is not used when `cfgBody` is given. When both are `none`, a
-CFG body in a listed procedure is an error.
+CFG body in a listed procedure is an error. An abstract body has no statements and is left
+unchanged.
 
 The returned boolean is false if neither `f`, `cfgCmd` nor `cfgBody` reported a change in any
 procedure of `p` that is a member of `targetProcList` (if it is `.some ..`). The requirement on
@@ -597,18 +598,19 @@ def runProgramTyped
         })
 
         let (changed, newBody) ← match proc.body, cfgBody, cfgCmd with
-          | .structured ss, _, _ => do
+          | .structured ss o, _, _ => do
             let (changed, ss') ← runStmtsRecTyped f (TypeSpec.procBodyScopes [] proc) ss
-            pure (changed, Procedure.Body.structured ss')
-          | .cfg g, some k, _ => do
+            pure (changed, Procedure.Body.structured ss' o)
+          | .cfg g o, some k, _ => do
             let (changed, g') ← k proc g
-            pure (changed, Procedure.Body.cfg g')
-          | .cfg _, none, none => throw (Strata.Message.fromString
+            pure (changed, Procedure.Body.cfg g' o)
+          | .cfg _ _, none, none => throw (Strata.Message.fromString
               s!"runProgram: cannot apply statement-level transform to CFG body (procedure '{proc.header.name.1}')")
-          | .cfg g, none, some h => do
+          | .cfg g o, none, some h => do
             let (changed, g') ← runCFGCmdsTyped h
               ((TypeSpec.procBodyScopes [] proc).addCFGInits g) g
-            pure (changed, Procedure.Body.cfg g')
+            pure (changed, Procedure.Body.cfg g' o)
+          | .abstract, _, _ => pure (false, Procedure.Body.abstract)
 
         if changed then
           newDecls := newDecls.set i (Decl.proc { proc with body := newBody } md)

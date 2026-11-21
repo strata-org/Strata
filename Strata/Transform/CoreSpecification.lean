@@ -87,9 +87,9 @@ structure ProcEnvWF (params : InitEnvWFParams) (proc : Procedure)
     Expression.eval ρ.factory ρ.store check.expr = some (HasBool.ttVal ρ.factory)
   /-- A structured body, as the block the procedure's specifications wrap it
       in, is well formed to run from `ρ`. -/
-  structuredBodyWF : ∀ ss, proc.body = .structured ss →
+  structuredBodyWF : ∀ ss opq, proc.body = .structured ss opq →
     Core.Logic.BlockInitEnvWF params [Stmt.block "" ss #[]] ρ
   /-- A CFG body is well formed to run from `ρ`. -/
-  cfgBodyWF : ∀ cfg, proc.body = .cfg cfg → Core.Logic.CFGInitEnvWF params cfg ρ
+  cfgBodyWF : ∀ cfg opq, proc.body = .cfg cfg opq → Core.Logic.CFGInitEnvWF params cfg ρ
 
 end Core.Specification

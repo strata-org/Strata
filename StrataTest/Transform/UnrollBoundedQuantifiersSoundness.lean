@@ -169,8 +169,8 @@ private partial def goalLines : List Core.Statement → List String
 private def unrolledProcs (pgm : StrataDDM.Program) : IO Unit :=
   printUnrolled pgm fun
     | .proc q _ => match q.body with
-      | .structured ss => some ("\n".intercalate (goalLines ss))
-      | .cfg _ => none
+      | .structured ss _ => some ("\n".intercalate (goalLines ss))
+      | .cfg _ _ | .abstract => none
     | _ => none
 
 /-- info: a: true -/

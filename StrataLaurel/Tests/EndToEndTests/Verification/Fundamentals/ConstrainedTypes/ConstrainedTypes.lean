@@ -104,8 +104,8 @@ procedure holeIsAnyValueOfItsType()
 //^^^^^^^^^^^^^ error: assertion does not hold
 };
 
-// In a loop invariant, a quantifier body or a transparent body only the call's precondition
-// check sees the constraint, not the obligation
+// `natToInt` never assigns its output `r` (its body only evaluates `n`), so `natToInt(x)` is an
+// arbitrary `int` whatever `x` is: each assertion below on its result fails for a real reason
 procedure natToInt(n: nat) returns (r: int) { n };
 procedure holeInInvariant()
   opaque
@@ -113,7 +113,7 @@ procedure holeInInvariant()
   var i: int := 0;
   while (i < 1)
     invariant natToInt(<?>) >= 0
-//            ^^^^^^^^^^^^^^^^^^ error: assertion could not be proved
+//            ^^^^^^^^^^^^^^^^^^ error: assertion does not hold
   {
     i := i + 1
   }
@@ -123,7 +123,7 @@ procedure holeInQuantifier()
   opaque
 {
   assert forall(k: int) => natToInt(<?>) >= 0
-//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion could not be proved
+//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
 };
 
 procedure natOfHole() returns (r: int) { natToInt(<?>) };
@@ -133,6 +133,54 @@ procedure holeInTransparentBody()
   var y: int := natOfHole();
   assert y >= 0
 //^^^^^^^^^^^^^ error: assertion does not hold
+};
+
+// A hole of a constrained type is a value of that type wherever it is read, also as a function:
+// in a loop invariant, a quantifier body and a transparent body
+procedure natToIntAssigned(n: nat) returns (r: int) { r := n };
+procedure assignedHoleInInvariant()
+  opaque
+{
+  var i: int := 0;
+  while (i < 1)
+    invariant natToIntAssigned(<?>) >= 0
+  {
+    i := i + 1
+  }
+};
+
+procedure assignedHoleInQuantifier()
+  opaque
+{
+  assert forall(k: int) => natToIntAssigned(<?>) >= 0
+};
+
+procedure natOfAssignedHole() returns (r: int) { r := natToIntAssigned(<?>) };
+procedure assignedHoleInTransparentBody()
+  opaque
+{
+  var y: int := natOfAssignedHole();
+  assert y >= 0
+};
+
+// The hole is any value of the type, not a particular one: a property false of some `nat` fails
+procedure assignedHoleNegative()
+  opaque
+{
+  var i: int := 0;
+  while (i < 1)
+    invariant natToIntAssigned(<?>) < 1
+//            ^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
+  {
+    i := i + 1
+  }
+};
+
+procedure assignedHoleNegativeValue()
+  opaque
+{
+  assert natToIntAssigned(<?>) < 0
+//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
 };
 
 // A hole at a type parameter that a binding nested in another type binds to a constrained type is

@@ -115,6 +115,14 @@ def recordAssertFailure (E : Env) (label : String) (e : Expression.Expr)
 def ignoreAssume (E : Env) : Bool :=
   E.ignoreAssumes
 
+/-- Why a condition `e` did not reduce to a Boolean, when it reads a value that a call run as its
+    contract havocked (`Env.havocOrigins`): concrete execution chooses no value for it. -/
+def explainUnreduced (E : Env) (e : Expression.Expr) : Option String :=
+  (Lambda.LExpr.freeVars e).findSome? fun (x, _) =>
+    (E.havocOrigins.find? (·.1 == x)).map fun (_, kind, proc, out) =>
+      s!"it reads the value of '{out}' that the call to the {kind} procedure '{proc}' \
+        havocked, which a concrete run does not choose"
+
 /-
 theorem lookupEval (E1 E2 : Env) (h : ∀x, lookup E1 x = lookup E2 x) :
   ∀ e, eval E1 e = eval E2 e := by
@@ -146,6 +154,7 @@ instance : EvalContext Expression Env where
   continuePastAssert  := CmdEval.continuePastAssert
   recordAssertFailure := CmdEval.recordAssertFailure
   ignoreAssume        := CmdEval.ignoreAssume
+  explainUnreduced    := CmdEval.explainUnreduced
   keepsTrueAssume     := isAbstractionMarker
 
 instance instToFormatProdCmdsExpressionEnv : ToFormat (Cmds Expression × Env) where

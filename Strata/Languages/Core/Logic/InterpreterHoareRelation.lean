@@ -165,7 +165,7 @@ private theorem Procedure.contractPost_of_ensuresHoldOnLits {fuel : Nat} {bs : L
 theorem Procedure.contractTriple_of_meetsContractOnLits (p : Program) (params : InitEnvWFParams)
     (procName : String) (proc : Procedure) (bss : Statements) (fuel : Nat)
     (hproc : p.findProcByString? procName = some proc)
-    (hbody : proc.body = .structured bss)
+    (hbody : proc.body = .structured bss opq)
     (hchecksTyped : Procedure.contractChecksTyped proc)
     (hfac : p.factoryBeforeProcedure procName = Core.Factory)
     (hchk : Procedure.meetsContractOnLits fuel proc bss = Bool.true)

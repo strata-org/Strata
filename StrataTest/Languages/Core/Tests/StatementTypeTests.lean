@@ -395,7 +395,7 @@ private def bodyPgm (ss : List Statement) (typeArgs : List TyIdentifier := [])
     (inputs : @LMonoTySignature Unit := []) : Program := { decls := [
   .proc { header := { name := "P", typeArgs, inputs, outputs := [] },
           spec := { preconditions := [], postconditions := [] },
-          body := .structured ss } .empty ]}
+          body := .structured ss false } .empty ]}
 
 /-- The procedure checker's error on body `ss`, or the declared types of the elaborated body. -/
 private def procVerdict (ss : List Statement) : Format :=
@@ -405,8 +405,9 @@ private def procVerdict (ss : List Statement) : Format :=
     match p.decls with
     | [.proc pr _] =>
       match pr.body with
-      | .structured b => f!"ok, declared types: {Format.joinSep (stmtsDeclTys b) ", "}"
-      | .cfg _ => "unexpected control-flow-graph body"
+      | .structured b _ => f!"ok, declared types: {Format.joinSep (stmtsDeclTys b) ", "}"
+      | .cfg _ _ => "unexpected control-flow-graph body"
+      | .abstract => "unexpected abstract body"
     | _ => "unexpected declarations"
 
 /-- Declares `T` and solves the type variable `b` to `T` through `y`. -/
@@ -806,7 +807,7 @@ private def typeDeclInBlockPgm : Program := { decls := [
               .typeDecl { name := "MyT", params := [] } .empty,
               Statement.init "x" (.forAll [] (.tcons "MyT" [])) .nondet .empty
             ] .empty
-          ] } .empty
+          ] false } .empty
 ]}
 
 /-- The type declared in the block of `typeDeclInBlockPgm` and the type of the variable after it,
@@ -815,7 +816,7 @@ private def blockTypeAndVar (p : Program) : Std.Format :=
   match p.decls with
   | [.proc proc _] =>
     match proc.body with
-    | .structured [.block _ [.typeDecl d _, .cmd (.cmd (.init x ty _ _))] _] =>
+    | .structured [.block _ [.typeDecl d _, .cmd (.cmd (.init x ty _ _))] _] _ =>
       f!"type {d.name}; var {x} : {ty}"
     | _ => "unexpected shape"
   | _ => "unexpected shape"
@@ -1034,8 +1035,8 @@ def bodyOf (ds : List Core.Decl) : List Core.Statement :=
   match ds.find? (fun d => match d with | .proc _ _ => true | _ => false) with
   | some (.proc d _) =>
     match d.body with
-    | .structured ss => ss
-    | .cfg _ => []
+    | .structured ss _ => ss
+    | .cfg _ _ | .abstract => []
   | _ => []
 
 /-- The starting context extended with every declared function. -/
@@ -1238,7 +1239,7 @@ private def testProc : Procedure :=
       inputs := [(⟨"x", ()⟩, .int)],
       outputs := [(⟨"x", ()⟩, .int), (⟨"y", ()⟩, .int)] },
     spec := { preconditions := [], postconditions := [] },
-    body := .structured [] }
+    body := .structured [] false }
 
 private def testProgram : Program :=
   { decls := [.proc testProc .empty] }

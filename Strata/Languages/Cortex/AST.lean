@@ -122,6 +122,12 @@ structure Procedure where
   body : Option Body
   md : MD := .empty
   requires : List Precondition := []
+  /-- Whether the procedure models code that Strata does not see, such as a library method:
+  its contract is a model of that code. The lowering to Core marks every call to it
+  (`Core.externalAssumePrefix`), so a counterexample through the call is not reported as a
+  failure. A procedure that is not external, such as a primitive of the API, means exactly its
+  contract, with or without a body. -/
+  external : Bool := false
 
 structure UnorderedProgram where
   composites : List CompositeDecl

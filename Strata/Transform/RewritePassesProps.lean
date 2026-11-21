@@ -232,8 +232,8 @@ end DefInline
 theorem Program.mapStructuredBodies_mem {f : Statements → Statements}
     {changed : Statements → Statements → Bool} {prog : Program} {q : Procedure}
     {md : Imperative.MetaData Expression} {ss : Statements} (hq : Decl.proc q md ∈ prog.decls)
-    (hb : q.body = .structured ss) :
-    Decl.proc { q with body := .structured (f ss) } md ∈
+    {opq : Bool} (hb : q.body = .structured ss opq) :
+    Decl.proc { q with body := .structured (f ss) opq } md ∈
       (prog.mapStructuredBodies f changed).2.decls := by
   simp only [Program.mapStructuredBodies, List.map_map, List.mem_map]
   exact ⟨_, hq, by simp [Decl.mapStructuredBody, hb]⟩
@@ -246,16 +246,20 @@ theorem Program.mapStructuredBodies_proc {f : Statements → Statements}
     {md : Imperative.MetaData Expression}
     (hq : Decl.proc q' md ∈ (prog.mapStructuredBodies f changed).2.decls) :
     ∃ q, Decl.proc q md ∈ prog.decls ∧ q'.header = q.header ∧
-      ∀ ss', q'.body = .structured ss' → ∃ ss, q.body = .structured ss ∧ ss' = f ss := by
+      ∀ ss' o, q'.body = .structured ss' o → ∃ ss, q.body = .structured ss o ∧ ss' = f ss := by
   simp only [Program.mapStructuredBodies, List.map_map, List.mem_map, Function.comp_apply] at hq
   obtain ⟨_ | _ | _ | _ | ⟨q, md₀⟩ | _ | _, hd, heq⟩ := hq
   all_goals simp only [Decl.mapStructuredBody, reduceCtorEq] at heq
   split at heq
-  · rename_i ss hb
+  · rename_i ss o hb
     cases heq
-    exact ⟨q, hd, rfl, fun ss' hb' => ⟨ss, hb, (by simpa using hb' : f ss = ss').symm⟩⟩
-  · cases heq
-    exact ⟨_, hd, rfl, fun ss' hb' => by simp_all⟩
+    refine ⟨q, hd, rfl, fun ss' o' hb' => ?_⟩
+    simp only [Imperative.Body.structured.injEq] at hb'
+    obtain ⟨rfl, rfl⟩ := hb'
+    exact ⟨ss, hb, rfl⟩
+  all_goals
+    cases heq
+    exact ⟨_, hd, rfl, fun ss' o' hb' => by simp_all⟩
 
 end -- public section
 

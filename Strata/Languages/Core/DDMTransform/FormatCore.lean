@@ -1505,18 +1505,27 @@ def procToCST {M} [Inhabited M] (proc : Core.Procedure)
       ⟨default, none⟩
     else
       ⟨default, some (Spec.spec_mk default specAnn)⟩
+  -- The `opaque` mark of a flagged body; an abstract body is opaque without it.
+  let opqAnn (opq : Bool) : Ann (Option (OpaqueMark M)) M :=
+    if opq then ⟨default, some (.opaque_mark default)⟩ else ⟨default, none⟩
   match proc.body with
-  | .structured ss =>
+  | .structured ss opq =>
     let bodyCST ← blockToCST ss
     let body : Ann (Option (CoreDDM.Block M)) M := ⟨default, some bodyCST⟩
     modify ToCSTContext.popScope
     let annotsAnn ← metadataToAnn md (← get).annFilter
-    pure (.command_procedure default annotsAnn name typeArgs arguments spec body)
-  | .cfg cfg =>
+    pure (.command_procedure default annotsAnn name typeArgs arguments spec (opqAnn opq) body)
+  | .cfg cfg opq =>
     let bodyCST ← cfgBodyToCST cfg
     modify ToCSTContext.popScope
     let annotsAnn ← metadataToAnn md (← get).annFilter
-    pure (.command_cfg_procedure default annotsAnn name typeArgs arguments spec bodyCST)
+    pure (.command_cfg_procedure default annotsAnn name typeArgs arguments spec (opqAnn opq)
+      bodyCST)
+  | .abstract =>
+    let body : Ann (Option (CoreDDM.Block M)) M := ⟨default, none⟩
+    modify ToCSTContext.popScope
+    let annotsAnn ← metadataToAnn md (← get).annFilter
+    pure (.command_procedure default annotsAnn name typeArgs arguments spec (opqAnn false) body)
 
 -- Recreate enough of `GlobalContext` from `ToCSTContext` obtained from
 -- `programToCST`, purely for formatting.

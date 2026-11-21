@@ -264,7 +264,7 @@ private def branchesProg (n : Nat) : String := Id.run do
 private def cseVarCount (p : Core.Program) : Nat :=
   p.decls.foldl (fun n d => match d with
     | .proc pr _ => match pr.body with
-      | .structured ss => n + (ss.filter fun s => match s with
+      | .structured ss _ => n + (ss.filter fun s => match s with
           | .cmd (.cmd (.init x _ _ _)) => Core.CSE.isCSEGeneratedName x.name
           | _ => false).length
       | _ => n

@@ -128,6 +128,7 @@ theorem EvalCommandE.call_sem
     {σ' σ_final : CoreStore} {bodyEvents : Trace Expression}
     {md : MetaData Expression} {fac : Expression.Factory} {σAO : CoreStore}
     (hπ : Imperative.Calls.typeInstantiatedCallee π n tyArgs = some p)
+    (hno : p.body.isOpaque = false)
     (hentry : CallEntry fac σ p callArgs σAO)
     (hbody : CoreBodyExecE π p.body ⟨σAO, fac⟩ σ_final bodyEvents)
     (hexit : CallExit fac σ p callArgs σ_final σ') :
@@ -135,7 +136,7 @@ theorem EvalCommandE.call_sem
       (defaultAssertEvents fac σAO (Imperative.Calls.checksAtCall md p.spec.preconditions) ++
         bodyEvents ++
         defaultAssertEvents fac σ_final p.spec.postconditions) :=
-  EvalCmdExtE.call_sem hπ hentry hbody hexit
+  EvalCmdExtE.call_sem hπ hno hentry hbody hexit
 
 /-- Structured-body run of Core's event body relation. -/
 theorem CoreBodyExecE.structured
@@ -144,13 +145,13 @@ theorem CoreBodyExecE.structured
     {emitted : Trace Expression}
     (h : CoreStepStarE π
       (.stmt (Stmt.block "" ss #[]) ρ) emitted (.terminal ρ')) :
-    CoreBodyExecE π (.structured ss) ρ ρ'.store emitted := BigStepE.structured h
+    CoreBodyExecE π (.structured ss opq) ρ ρ'.store emitted := BigStepE.structured h
 
 /-- A complete run of a structured body from a store ends in a finished configuration of the
     block that runs the body, with the same factory. -/
 theorem CoreBodyExecE.structured_terminal {π : String → Option Procedure} {p : Procedure}
     {ss : List Statement} {f : Expression.Factory} {σ σ' : CoreStore}
-    {evs : Trace Expression} (hbody : p.body = .structured ss)
+    {evs : Trace Expression} {opq : Bool} (hbody : p.body = .structured ss opq)
     (hrun : CoreBodyExecE π p.body ⟨σ, f⟩ σ' evs) :
     ∃ ρ' : Env Expression,
       CoreStepStarE π (.stmt (Stmt.block "" ss #[]) ⟨σ, f⟩) evs (.terminal ρ') ∧
@@ -509,7 +510,8 @@ theorem EvalCommandE.store_eq_of_call_getLhs_nil
     (hLhs : CallArg.getLhs callArgs = [])
     (h : EvalCommandE π fac σ (.call n tyArgs callArgs md) σ' emitted) : σ' = σ := by
   cases h with
-  | call_sem _ _ _ hExit => exact CallExit.store_eq_of_getLhs_nil hLhs hExit
+  | call_sem _ _ _ _ hExit | call_abstract_sem _ _ _ _ hExit =>
+    exact CallExit.store_eq_of_getLhs_nil hLhs hExit
 
 /-- Executing an event-producing abstract contract call with no left-hand-side
 arguments leaves the caller store unchanged. -/
@@ -637,7 +639,7 @@ theorem CoreBodyExecE.singleton_cmd_invert
 
     {fac : Expression.Factory} {σ σ' : CoreStore}
     {cmd : Command} {emitted : Trace Expression}
-    (h : CoreBodyExecE π (.structured [.cmd cmd]) ⟨σ, fac⟩ σ' emitted) :
+    (h : CoreBodyExecE π (.structured [.cmd cmd] opq) ⟨σ, fac⟩ σ' emitted) :
     ∃ σCmd, EvalCommandE π fac σ cmd σCmd emitted ∧
       σ' = projectStore σ σCmd := by
   cases h with
@@ -712,7 +714,7 @@ theorem CoreBodyExecE.singleton_cmd_invert
 theorem CoreBodyExecE.singleton_cmd {π : String → Option Procedure}
     {fac : Expression.Factory} {σ σ' : CoreStore} {cmd : Command}
     (h : EvalCommandE π fac σ cmd σ' []) :
-    CoreBodyExecE π (.structured [.cmd cmd]) ⟨σ, fac⟩ (projectStore σ σ') [] := by
+    CoreBodyExecE π (.structured [.cmd cmd] opq) ⟨σ, fac⟩ (projectStore σ σ') [] := by
   refine CoreBodyExecE.structured (ρ' := ⟨projectStore σ σ', fac⟩) ?_
   refine .step _ [] _ [] _ .step_block ?_
   refine .step _ [] _ [] _ (.step_block_body .step_stmts_cons) ?_
@@ -721,8 +723,8 @@ theorem CoreBodyExecE.singleton_cmd {π : String → Option Procedure}
   refine .step _ [] _ [] _ (.step_block_body .step_stmts_nil) ?_
   exact .step _ [] _ [] _ .step_block_done (.refl _)
 
-/-- An event-producing call has a unique store and trace when every execution of
-its selected body has a unique store, factory, and trace. -/
+/-- An event-producing call to a procedure that is not abstract has a unique store and trace
+when every execution of its selected body has a unique store, factory, and trace. -/
 theorem EvalCommandE.call_unique_of_body_unique
     {π : String → Option Procedure}
 
@@ -730,7 +732,8 @@ theorem EvalCommandE.call_unique_of_body_unique
     {n : String} {p : Procedure} {callArgs : List (CallArg Expression)}
     {tyArgs : Option (List Expression.Ty)}
     {md : MetaData Expression} {emitted₁ emitted₂ : Trace Expression}
-    (hLookup : Imperative.Calls.typeInstantiatedCallee π n tyArgs = some p)
+    (hLookup : Imperative.Calls.typeInstantiatedCallee π n tyArgs = some p) (hNotOpaque :
+        ¬p.body.isOpaque)
     (hBodyUnique : ∀ {frame end₁ end₂ : CoreStore}
       {bodyEvents₁ bodyEvents₂ : Trace Expression},
       CoreBodyExecE π p.body ⟨frame, fac⟩ end₁ bodyEvents₁ →
@@ -741,10 +744,10 @@ theorem EvalCommandE.call_unique_of_body_unique
     σ₁ = σ₂ ∧ emitted₁ = emitted₂ := by
   cases h₁ with
   | @call_sem _ _ _ p₁ _ _ end₁ bodyEvents₁ _ _ frame₁
-      lookup₁ entry₁ bodyExec₁ exit₁ =>
+      lookup₁ _ entry₁ bodyExec₁ exit₁ =>
     cases h₂ with
     | @call_sem _ _ _ p₂ _ _ end₂ bodyEvents₂ _ _ frame₂
-        lookup₂ entry₂ bodyExec₂ exit₂ =>
+        lookup₂ _ entry₂ bodyExec₂ exit₂ =>
       have hp₁ : p₁ = p := Option.some.inj (lookup₁.symm.trans hLookup)
       have hp₂ : p₂ = p := Option.some.inj (lookup₂.symm.trans hLookup)
       subst p₁
@@ -755,6 +758,12 @@ theorem EvalCommandE.call_unique_of_body_unique
       subst end₂
       subst bodyEvents₂
       exact ⟨CallExitUniqueResult exit₁ exit₂, rfl⟩
+    | call_abstract_sem lookup₂ hb =>
+      rw [Option.some.inj (lookup₂.symm.trans hLookup)] at hb
+      exact absurd hb hNotOpaque
+  | call_abstract_sem lookup₁ hb =>
+    rw [Option.some.inj (lookup₁.symm.trans hLookup)] at hb
+    exact absurd hb hNotOpaque
 
 /-- A singleton-command event body has a unique store, factory, and trace when
 that command has a unique store and trace. -/
@@ -768,8 +777,8 @@ theorem CoreBodyExecE.singleton_cmd_unique
       EvalCommandE π fac σ cmd σ₁ result₁ →
       EvalCommandE π fac σ cmd σ₂ result₂ →
       σ₁ = σ₂ ∧ result₁ = result₂)
-    (h₁ : CoreBodyExecE π (.structured [.cmd cmd]) ⟨σ, fac⟩ end₁ emitted₁)
-    (h₂ : CoreBodyExecE π (.structured [.cmd cmd]) ⟨σ, fac⟩ end₂ emitted₂) :
+    (h₁ : CoreBodyExecE π (.structured [.cmd cmd] opq) ⟨σ, fac⟩ end₁ emitted₁)
+    (h₂ : CoreBodyExecE π (.structured [.cmd cmd] opq) ⟨σ, fac⟩ end₂ emitted₂) :
     end₁ = end₂ ∧ emitted₁ = emitted₂ := by
   obtain ⟨σCmd₁, hcmd₁, hend₁⟩ := h₁.singleton_cmd_invert
   obtain ⟨σCmd₂, hcmd₂, hend₂⟩ := h₂.singleton_cmd_invert
@@ -802,7 +811,7 @@ theorem CoreBodyExecE.empty_unique
     (π : String → Option Procedure)
 
     (σ σ' : CoreStore) (fac : Expression.Factory) (emitted : Trace Expression)
-    (h : CoreBodyExecE π (.structured []) ⟨σ, fac⟩ σ' emitted) :
+    (h : CoreBodyExecE π (.structured [] opq) ⟨σ, fac⟩ σ' emitted) :
     σ' = σ ∧ emitted = [] := by
   cases h with
   | structured hstar =>
@@ -833,13 +842,13 @@ theorem EvalCommandE.empty_body_call_store_unique
     {tyArgs : Option (List Expression.Ty)}
     {md : MetaData Expression} {emitted : Trace Expression}
     (hLookup : Imperative.Calls.typeInstantiatedCallee π n tyArgs = some p)
-    (hBody : p.body = .structured [])
+    (hBody : p.body = .structured [] false)
     (hEntry : CallEntry fac σ p callArgs σAO)
     (hExit : CallExit fac σ p callArgs σAO expected)
     (h : EvalCommandE π fac σ (.call n tyArgs callArgs md) σ' emitted) : σ' = expected := by
   cases h with
   | @call_sem _ _ _ q _ _ σFinal bodyEvents _ _ frame
-      hLookup' hEntry' hBodyExec hExit' =>
+      hLookup' _ hEntry' hBodyExec hExit' =>
     have hp : q = p := Option.some.inj (hLookup'.symm.trans hLookup)
     subst q
     have hFrame : frame = σAO := CallEntryUniqueResult hEntry' hEntry
@@ -847,6 +856,8 @@ theorem EvalCommandE.empty_body_call_store_unique
     rw [hBody] at hBodyExec
     obtain ⟨rfl, _⟩ := CoreBodyExecE.empty_unique π σAO σFinal fac bodyEvents hBodyExec
     exact CallExitUniqueResult hExit' hExit
+  | call_abstract_sem hLookup' hb =>
+    simp [Option.some.inj (hLookup'.symm.trans hLookup), hBody] at hb
 
 theorem InitStatesApp' :
   InitStates σ (k1 ++ k2) (v1 ++ v2) σ' →
@@ -1820,7 +1831,7 @@ theorem evalCommandE_preserves_none_of_not_def
   | cmd_sem h =>
     exact Imperative.evalCmdE_preserves_none_of_not_def h h_none
       (by simpa [HasVarsImp.definedVars, Command.definedVars, CmdExt.definedVars] using h_not_def)
-  | call_sem _ _ _ hexit =>
+  | call_sem _ _ _ _ hexit | call_abstract_sem _ _ _ _ hexit =>
     unfold Calls.CallExit at hexit
     obtain ⟨_, _, _, hupd, -⟩ := hexit
     exact UpdateStates_preserves_none hupd h_none
@@ -1842,7 +1853,7 @@ theorem evalCommandE_preserves_isSome
     (σ' y).isSome = true := by
   cases h_eval with
   | cmd_sem h => exact Imperative.evalCmdE_preserves_isSome h h_some
-  | call_sem _ _ _ hexit =>
+  | call_sem _ _ _ _ hexit | call_abstract_sem _ _ _ _ hexit =>
     unfold Calls.CallExit at hexit
     obtain ⟨_, _, _, hupd, -⟩ := hexit
     exact updateStates_preserves_isSome hupd y h_some
@@ -1859,7 +1870,7 @@ theorem evalCommandE_storeWellDefined
   | cmd_sem hcmd =>
     exact Imperative.evalCmdE_storeWellDefined
       (coreEvaluator_WellFormedSemanticEvalVal fac) hcmd hsv
-  | call_sem _ _ _ hexit =>
+  | call_sem _ _ _ _ hexit | call_abstract_sem _ _ _ _ hexit =>
     unfold Calls.CallExit at hexit
     obtain ⟨_, _, hread, hupd, -⟩ := hexit
     exact updateStates_preserves_wellFormedStore hupd
@@ -1875,7 +1886,7 @@ theorem evalCommandE_preserves_typedAt
     ∃ v, σ' y = some v ∧ HasVal.valueOfTy f v ty := by
   cases h_eval with
   | cmd_sem h => exact Imperative.EvalCmdE_preserves_typedAt h hy
-  | call_sem _ _ _ hexit =>
+  | call_sem _ _ _ _ hexit | call_abstract_sem _ _ _ _ hexit =>
     obtain ⟨_, _, _, hupd, hrel⟩ := hexit
     exact Imperative.UpdateStates_typedAt hupd hrel hy hy
 
@@ -1952,7 +1963,7 @@ private theorem evalCommandE_definedVars_isSome
   | cmd_sem h =>
     exact Imperative.evalCmdE_definedVars_isSome h
       (by simpa [HasVarsImp.definedVars, Command.definedVars, CmdExt.definedVars] using h_def)
-  | call_sem => simp [HasVarsImp.definedVars, CmdExt.definedVars] at h_def
+  | call_sem | call_abstract_sem => simp [HasVarsImp.definedVars, CmdExt.definedVars] at h_def
 
 /-- A store slot defined at the start of a terminating event-native `.stmt`
 run remains defined at the end. -/

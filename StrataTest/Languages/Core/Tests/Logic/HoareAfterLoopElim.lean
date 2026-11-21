@@ -100,7 +100,7 @@ private def countParts :
       Core.Statements × Imperative.MetaData Core.Expression :=
   match countProc.body with
   | .structured [Imperative.Stmt.cmd (Imperative.CmdExt.cmd (Imperative.Cmd.set _ _ md0)),
-                 Imperative.Stmt.loop (.det g) m inv body md1] => (md0, g, m, inv, body, md1)
+                 Imperative.Stmt.loop (.det g) m inv body md1] _ => (md0, g, m, inv, body, md1)
   | _ => default
 
 private abbrev countGuard : Core.Expression.Expr := countParts.2.1
@@ -123,7 +123,8 @@ translation fixes; extracted from the translated body rather than written out so
 test pins the shape, not the location. -/
 private def countInitExpr : Core.Expression.Expr :=
   match countProc.body with
-  | .structured (Imperative.Stmt.cmd (Imperative.CmdExt.cmd (Imperative.Cmd.set _ (.det e) _)) :: _) => e
+  | .structured (Imperative.Stmt.cmd (Imperative.CmdExt.cmd (Imperative.Cmd.set _ (.det e) _)) :: _)
+      _ => e
   | _ => default
 
 /-- The translated body really is the initialisation followed by the loop. -/
@@ -131,7 +132,7 @@ private theorem count_body_eq :
     countProc.body = .structured
       ([Core.Statement.set countY (countInitExpr) countParts.1] ++
         [.loop (.det countGuard) countParts.2.2.1 countParts.2.2.2.1 countInner
-          countParts.2.2.2.2.2]) := by
+          countParts.2.2.2.2.2]) false := by
   native_decide
 
 /-- The right-hand side and metadata of the loop body's assignment `y := int.add(y, 1)`. -/
@@ -191,7 +192,8 @@ private theorem count_run : ∃ σ', countRun = (.ok (Bool.true, countOut), σ')
 
 /-- The run replaces the body of the procedure by `countTgt`. -/
 private theorem count_out_decl :
-    countOut.decls[0]? = some (.proc { countProc with body := .structured countTgt } countMd) := by
+    countOut.decls[0]? = some (.proc { countProc with body := .structured countTgt false } countMd)
+        := by
   native_decide
 
 /-! ## The triple of the loop-free body -/
@@ -332,7 +334,7 @@ theorem count_meets_contract :
       Core.Statement.isNotCall, Core.Statement.set])
   rw [count_out_decl] at hd
   simp only [Option.some.injEq, Core.Decl.proc.injEq] at hd
-  obtain rfl : countTgt = ss' := Imperative.Body.structured.inj (congrArg (·.body) hd.1)
+  obtain rfl : countTgt = ss' := (Imperative.Body.structured.inj (congrArg (·.body) hd.1)).1
   exact block_rule (htriple (fun _ hpre => hpre.2.1) countTgt_triple)
     (by rw [count_inner_eq]; decide +kernel)
 

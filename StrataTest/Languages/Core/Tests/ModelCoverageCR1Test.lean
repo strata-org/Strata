@@ -84,13 +84,13 @@ private def typeCheckObligation (F : @Lambda.Factory CoreLParams)
     |>.mapM fun | (x, some ty) => .ok (x, ty) | (x, none) => .error s!"unannotated {x.name}"
   let header : Procedure.Header :=
     { name := ⟨"obligation", ()⟩, typeArgs := [], inputs := inputs, outputs := [] }
-  let proc : Procedure := { header, spec := default, body := .structured (pc ++ [goal]) }
+  let proc : Procedure := { header, spec := default, body := .structured (pc ++ [goal]) false }
   let extras := (F.toArray.toList.drop Core.Factory.toArray.size).foldl
     (fun G f => G.pushIfNew { f with axioms := [] }) Lambda.Factory.default
   let prog ← (Core.typeCheck .quiet { decls := [.proc proc #[]] } none extras).mapError
     (toString ·.message)
   let some (.proc p _) := prog.decls.head? | .error "no procedure"
-  let .structured ss := p.body | .error "unstructured body"
+  let .structured ss _ := p.body | .error "unstructured body"
   let g ← match ss.getLast? with
     | some (Statement.assert _ g _) | some (Statement.cover _ g _) => pure g
     | _ => .error "no goal"

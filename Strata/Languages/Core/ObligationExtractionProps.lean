@@ -851,7 +851,7 @@ theorem extractObligations_defsTyped {p : Program} {obs : ProofObligations Expre
 @[expose] def WPPipelineEntryGates (params : Core.Logic.InitEnvWFParams)
     (moreFns : Lambda.Factory CoreLParams) (mid : Program) : Prop :=
   ∀ fac, wpFactory moreFns mid = .ok fac →
-    ∀ q md lay, Decl.proc q md ∈ mid.decls → q.body = .structured lay →
+    ∀ q md lay opq, Decl.proc q md ∈ mid.decls → q.body = .structured lay opq →
       Block.treeForm lay = true ∧ Block.armsHaveChecks lay = true ∧
       (∀ x ∈ Block.freeVars lay, x ∈ q.entryParams ∨ x ∈ q.oldAliases.map (·.1) ∨
         x ∉ Block.modifiedOrDefinedVars lay false) ∧
@@ -868,13 +868,14 @@ private theorem wpFactory_ssaProgram {fac moreFns : Lambda.Factory CoreLParams}
     wpFactory moreFns p₁ = wpFactory moreFns mid := by
   obtain ⟨decls, hdecls, h⟩ := (Except.bind_is_ok _ _ _).1 h
   cases h
-  suffices hd : ∀ (ds decls : List Decl), ds.mapM (fun d => match d with
+  suffices hd : ∀ (ds : List Decl) (decls : List (Option Decl)), ds.mapM (fun d => match d with
       | .proc q _ => WP.ssaProc fac (Imperative.WP.IdSet.ofList
           (WP.avoidOf [] (R ++ WP.declNames mid))) q
-      | d => pure d) = Except.ok decls →
-      decls.filterMap (fun | .type (.data b) _ => some b | _ => none) =
+      | d => pure (some d)) = Except.ok decls →
+      (decls.filterMap id).filterMap (fun | .type (.data b) _ => some b | _ => none) =
         ds.filterMap (fun | .type (.data b) _ => some b | _ => none) by
-    have hpd : programDatatypes { decls := decls } = programDatatypes mid := hd _ _ hdecls
+    have hpd : programDatatypes { decls := decls.filterMap id } = programDatatypes mid :=
+      hd _ _ hdecls
     simp only [wpFactory, hpd]
   intro ds
   induction ds with
@@ -886,11 +887,13 @@ private theorem wpFactory_ssaProgram {fac moreFns : Lambda.Factory CoreLParams}
     obtain ⟨ds', hds', h⟩ := (Except.bind_is_ok _ _ _).1 h
     cases h
     rcases d with _ | _ | _ | _ | ⟨q, md⟩ | _
-    all_goals first | (cases hd'; simp only [List.filterMap_cons, ih _ hds']) | skip
+    all_goals first
+      | (cases hd'; simp only [List.filterMap_cons, id, ih _ hds']) | skip
     simp only [WP.ssaProc, bind, Except.bind] at hd'
     split at hd' <;> try cases hd'
-    split at hd' <;> cases hd'
-    simp [Decl.obligationProc, ih _ hds']
+    · split at hd' <;> cases hd'
+      simp [Decl.obligationProc, ih _ hds']
+    · simp [ih _ hds']
 
 end Core.ObligationExtraction
 

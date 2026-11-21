@@ -2389,6 +2389,7 @@ private def paramNamedLikeFunctionAst : Core.Program := { decls := [
           body := .structured
             [Core.Statement.assert "g" (.eq Core.coreLoc cParam (.intConst Core.coreLoc 5)) .empty,
              Core.Statement.assert "g2" (.eq Core.coreLoc cParam (.intConst Core.coreLoc 5)) .empty]
+             false
                  }
     .empty] }
 

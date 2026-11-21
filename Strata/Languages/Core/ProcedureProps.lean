@@ -121,19 +121,21 @@ theorem Procedure.mapExprs_id (p : Procedure) : Procedure.mapExprs id p = p := b
       simp only [Procedure.mapExprs, hmap]
       cases body with
       | structured ss =>
-        simp only [Imperative.Procedure.mk.injEq, Imperative.Body.structured.injEq, true_and]
+        simp only [Imperative.Procedure.mk.injEq, Imperative.Body.structured.injEq, true_and,
+            and_true]
         exact Statements.mapExprs_id ss
       | cfg c => rfl
+      | abstract => rfl
 
 /-- A structured body calls exactly the procedures called by its statements. -/
 @[simp] theorem Procedure.Body.calledProcedureNames_structured (ss : Statements) :
-    Procedure.Body.calledProcedureNames (.structured ss)
+    Procedure.Body.calledProcedureNames (.structured ss opq)
       = Statements.calledProcedureNames ss := by
   rw [Procedure.Body.calledProcedureNames]
 
 /-- A control-flow-graph body has no called procedure names. -/
 @[simp] theorem Procedure.Body.calledProcedureNames_cfg (g : DetCFG) :
-    Procedure.Body.calledProcedureNames (.cfg g) = [] := by
+    Procedure.Body.calledProcedureNames (.cfg g opq) = [] := by
   rw [Procedure.Body.calledProcedureNames]
 
 /-- A procedure's callees are exactly the callees of its body. -/
@@ -378,8 +380,9 @@ theorem Procedure.instantiateTypes_spec {proc inst : Procedure} {tys : List Expr
         (Strata.Util.HMaps.ofScopes [proc.header.typeArgs.zip ms]) q.2)) ∧
       inst.header.outputs = proc.header.outputs.map (fun q => (q.1, Lambda.LMonoTy.subst
         (Strata.Util.HMaps.ofScopes [proc.header.typeArgs.zip ms]) q.2)) ∧
-      ∀ ss, proc.body = .structured ss → inst.body = .structured (mapStmtsTys
-        (Lambda.LMonoTy.subst (Strata.Util.HMaps.ofScopes [proc.header.typeArgs.zip ms])) ss) := by
+      ∀ ss opq, proc.body = .structured ss opq → inst.body = .structured (mapStmtsTys
+        (Lambda.LMonoTy.subst (Strata.Util.HMaps.ofScopes [proc.header.typeArgs.zip ms])) ss)
+          opq := by
   unfold Procedure.instantiateTypes at h
   split at h
   · rename_i hempty
@@ -398,7 +401,7 @@ theorem Procedure.instantiateTypes_spec {proc inst : Procedure} {tys : List Expr
       refine ⟨[], rfl, ?_, ?_, ?_⟩
       · rw [hid]; simp only [id_eq, List.map_id_fun']; rfl
       · rw [hid]; simp only [id_eq, List.map_id_fun']; rfl
-      · intro ss hss
+      · intro ss _ hss
         rw [hid, mapStmtsTys_id]
         exact hss
     · cases h
@@ -408,7 +411,7 @@ theorem Procedure.instantiateTypes_spec {proc inst : Procedure} {tys : List Expr
   · cases h
   obtain ⟨ms, hms, rfl⟩ := Option.map_eq_some_iff.1 h
   refine ⟨ms, hms, rfl, rfl, ?_⟩
-  intro ss hss
+  intro ss _ hss
   simp only [Procedure.mapTys, hss]
 
 /-- Mapping the types of a procedure by the identity changes only its type parameters, to
@@ -431,6 +434,10 @@ theorem Procedure.mapTys_id (proc : Procedure) (typeArgs : List Lambda.TyIdentif
       exact List.map_id'' (fun ⟨l, b⟩ => by cases b with
         | mk cmds tr md => cases tr <;> rw [Imperative.MetaData.mapExprs_id]) blocks
     simp only [Procedure.mapTys, id_eq, List.map_id_fun', Lambda.mapExprTys_id, hcfg,
+      Imperative.Procedure.mk.injEq, and_true]
+    exact ⟨rfl, rfl⟩
+  | abstract =>
+    simp only [Procedure.mapTys, id_eq, List.map_id_fun', Lambda.mapExprTys_id,
       Imperative.Procedure.mk.injEq, and_true]
     exact ⟨rfl, rfl⟩
 
@@ -546,9 +553,9 @@ theorem Procedure.bodyCollect_noExprs_eq_cmds {β : Type} (ft : LMonoTy → List
     (body : Procedure.Body) :
     bodyCollect (fun _ => []) ft body = (bodyCmds body).flatMap (cmdCollect (fun _ => []) ft) := by
   match body with
-  | .structured ss =>
+  | .structured ss _ =>
     simp only [bodyCollect, bodyCmds, stmtsCollect_noExprs_eq_cmds ft ss]
-  | .cfg c =>
+  | .cfg c _ =>
     have hblk : ∀ x : String × Imperative.DetBlock String Command Expression,
         x.2.md.exprs.flatMap (fun _ => ([] : List β)) ++
           x.2.cmds.flatMap (cmdCollect (fun _ => []) ft) ++
@@ -568,28 +575,32 @@ theorem Procedure.bodyCollect_noExprs_eq_cmds {β : Type} (ft : LMonoTy → List
     congr 1
     funext x
     exact hblk x
+  | .abstract => rfl
+
+/-- A list of types that are all monotypes converts to monotypes. -/
+private theorem mapM_toMonoType_of_mono :
+    ∀ tys : List Expression.Ty, (∀ ty ∈ tys, ∃ m, ty = .forAll [] m) →
+      ∃ ms, tys.mapM LTy.toMonoType? = some ms := by
+  intro tys
+  induction tys with
+  | nil => intro _; exact ⟨[], rfl⟩
+  | cons ty rest ih =>
+    intro hm
+    obtain ⟨m, rfl⟩ := hm ty List.mem_cons_self
+    obtain ⟨ms, hms⟩ := ih (fun ty' hty' => hm ty' (List.mem_cons_of_mem _ hty'))
+    have hcons : (LTy.forAll [] m :: rest).mapM LTy.toMonoType? = some (m :: ms) := by
+      simp only [List.mapM_cons, LTy.toMonoType?, hms]
+      rfl
+    exact ⟨m :: ms, hcons⟩
 
 /-- Instantiating a procedure with a structured body, whose declarations are all at monotypes,
     at monotype arguments, one per type parameter, gives a procedure with a structured body. -/
 theorem Procedure.instantiateTypes_structured {proc : Procedure} {tys : List Expression.Ty}
     {ss : List Statement} (hlen : tys.length = proc.header.typeArgs.length)
     (hmono : ∀ ty ∈ tys, ∃ m, ty = .forAll [] m) (hinits : proc.initTypesMono = true)
-    (hbody : proc.body = .structured ss) :
-    ∃ inst ss', proc.instantiateTypes tys = some inst ∧ inst.body = .structured ss' := by
-  have hmapM : ∀ tys : List Expression.Ty, (∀ ty ∈ tys, ∃ m, ty = .forAll [] m) →
-      ∃ ms, tys.mapM LTy.toMonoType? = some ms := by
-    intro tys
-    induction tys with
-    | nil => intro _; exact ⟨[], rfl⟩
-    | cons ty rest ih =>
-      intro hm
-      obtain ⟨m, rfl⟩ := hm ty List.mem_cons_self
-      obtain ⟨ms, hms⟩ := ih (fun ty' hty' => hm ty' (List.mem_cons_of_mem _ hty'))
-      have hcons : (LTy.forAll [] m :: rest).mapM LTy.toMonoType? = some (m :: ms) := by
-        simp only [List.mapM_cons, LTy.toMonoType?, hms]
-        rfl
-      exact ⟨m :: ms, hcons⟩
-  obtain ⟨ms, hms⟩ := hmapM tys hmono
+    {opq : Bool} (hbody : proc.body = .structured ss opq) :
+    ∃ inst ss', proc.instantiateTypes tys = some inst ∧ inst.body = .structured ss' opq := by
+  obtain ⟨ms, hms⟩ := mapM_toMonoType_of_mono tys hmono
   by_cases hempty : proc.header.typeArgs.isEmpty = true
   · have hnil : proc.header.typeArgs = [] := List.isEmpty_iff.1 hempty
     have hzero : proc.header.typeArgs.length = 0 := by
@@ -607,6 +618,44 @@ theorem Procedure.instantiateTypes_structured {proc : Procedure} {tys : List Exp
     · simp only [Procedure.instantiateTypes, hempty, Bool.false_eq_true, ↓reduceIte, hlen,
         ne_eq, not_true_eq_false, hinits, Bool.not_true, hms, Option.map_some]
     · simp only [Procedure.mapTys, hbody]
+
+/-- Instantiating an abstract procedure at monotype arguments, one per type parameter, gives an
+    abstract procedure. -/
+theorem Procedure.instantiateTypes_abstract {proc : Procedure} {tys : List Expression.Ty}
+    (hlen : tys.length = proc.header.typeArgs.length)
+    (hmono : ∀ ty ∈ tys, ∃ m, ty = .forAll [] m) (hbody : proc.body = .abstract) :
+    ∃ inst, proc.instantiateTypes tys = some inst ∧ inst.body = .abstract := by
+  obtain ⟨ms, hms⟩ := mapM_toMonoType_of_mono tys hmono
+  have hinits : proc.initTypesMono = true := by
+    simp only [Procedure.initTypesMono, hbody, List.all_nil]
+  by_cases hempty : proc.header.typeArgs.isEmpty = true
+  · have htys : tys = [] := List.length_eq_zero_iff.1
+      (hlen.trans (by rw [List.isEmpty_iff.1 hempty]; rfl))
+    subst htys
+    exact ⟨proc, by simp only [Procedure.instantiateTypes, hempty, List.isEmpty_nil, ite_true],
+      hbody⟩
+  · refine ⟨proc.mapTys
+        (LMonoTy.subst (Strata.Util.HMaps.ofScopes [proc.header.typeArgs.zip ms])) [], ?_, ?_⟩
+    · simp only [Procedure.instantiateTypes, hempty, Bool.false_eq_true, ↓reduceIte, hlen,
+        ne_eq, not_true_eq_false, hinits, Bool.not_true, hms, Option.map_some]
+    · simp only [Procedure.mapTys, hbody]
+
+/-- An instance of an abstract procedure is abstract. -/
+theorem Procedure.instantiateTypes_body_abstract {proc inst : Procedure} {tys : List Expression.Ty}
+    (h : proc.instantiateTypes tys = some inst) (hbody : proc.body = .abstract) :
+    inst.body = .abstract := by
+  unfold Procedure.instantiateTypes at h
+  split at h
+  · split at h
+    · cases h
+      exact hbody
+    · cases h
+  split at h
+  · cases h
+  split at h
+  · cases h
+  obtain ⟨ms, -, rfl⟩ := Option.map_eq_some_iff.1 h
+  simp only [Procedure.mapTys, hbody]
 
 end Core
 

@@ -221,7 +221,7 @@ private structure Procedure.CheckRun (sc ps : Thunk (Std.HashSet String))
     proc'.body = .ok ()
   /-- A CFG body, skolemized, passes the CFG checker in the body scope, and the returned body is
       the deskolemized result. -/
-  bodyCfg : ∀ c, proc.body = .cfg c → ∃ loc cOut EnvX,
+  bodyCfg : ∀ c o, proc.body = .cfg c o → ∃ loc cOut EnvX,
     CFG.typeCheck (addSkolemTypes C (Procedure.rigidNames sc ps C proc tn))
         (Function.formalsEnv Env (Procedure.rigidNames sc ps C proc tn) (bodySig proc'.header))
         p proc
@@ -229,10 +229,10 @@ private structure Procedure.CheckRun (sc ps : Thunk (Std.HashSet String))
           (skolemizeBody none (Procedure.rigidNames sc ps C proc tn))) loc = .ok (cOut, EnvX) ∧
     proc'.body = .cfg (DetCFG.mapCmdsGuards cOut
       (mapCmdTys (deskolemizeTy (Procedure.rigidNames sc ps C proc tn)))
-      (mapExprTys (deskolemizeTy (Procedure.rigidNames sc ps C proc tn))))
+      (mapExprTys (deskolemizeTy (Procedure.rigidNames sc ps C proc tn)))) o
   /-- A structured body, skolemized, checks in the body scope with every rigid type variable
       fixed, and the returned body is the deskolemized result. -/
-  bodyStructured : ∀ ss, proc.body = .structured ss → ∃ ssOut EnvX,
+  bodyStructured : ∀ ss o, proc.body = .structured ss o → ∃ ssOut EnvX,
     Statement.typeCheck
         (addSkolemTypes C (Procedure.rigidNames sc ps C proc tn))
         (Function.formalsEnv Env (Procedure.rigidNames sc ps C proc tn) (bodySig proc'.header))
@@ -241,7 +241,9 @@ private structure Procedure.CheckRun (sc ps : Thunk (Std.HashSet String))
     (∀ v ∈ (addSkolemTypes C (Procedure.rigidNames sc ps C proc tn)).rigidTypeVars,
       LMonoTy.subst EnvX.stateSubstInfo.subst (.ftvar v) = .ftvar v) ∧
     proc'.body = .structured
-      (mapStmtsTys (deskolemizeTy (Procedure.rigidNames sc ps C proc tn)) ssOut)
+      (mapStmtsTys (deskolemizeTy (Procedure.rigidNames sc ps C proc tn)) ssOut) o
+  /-- An abstract body is returned abstract. -/
+  bodyAbstract : proc.body = .abstract → proc'.body = .abstract
 
 /-- Skipping skolemization of a control-flow graph when `σ` is empty agrees with skolemizing it. -/
 private theorem cfg_skolemize_unless_isEmpty (σ : RigidNames) (c : DetCFG) :
@@ -303,7 +305,7 @@ private theorem Procedure.typeCheckCore_ok_inv
   elim_err h with preconds' hPre
   elim_err h with postconds' hPost
   have hbody : ∃ body' : Procedure.Body,
-      (∀ c, proc.body = .cfg c → ∃ loc cOut EnvX,
+      (∀ c o, proc.body = .cfg c o → ∃ loc cOut EnvX,
         CFG.typeCheck (addSkolemTypes C (Procedure.rigidNames sc ps C proc tn))
             (Function.formalsEnv Env (Procedure.rigidNames sc ps C proc tn)
               (bodySig { proc.header with inputs := proc.header.inputs.keys.zip insR,
@@ -313,8 +315,8 @@ private theorem Procedure.typeCheckCore_ok_inv
               (skolemizeBody none (Procedure.rigidNames sc ps C proc tn))) loc = .ok (cOut, EnvX) ∧
         body' = .cfg (DetCFG.mapCmdsGuards cOut
           (mapCmdTys (deskolemizeTy (Procedure.rigidNames sc ps C proc tn)))
-          (mapExprTys (deskolemizeTy (Procedure.rigidNames sc ps C proc tn))))) ∧
-      (∀ ss, proc.body = .structured ss → ∃ ssOut EnvX,
+          (mapExprTys (deskolemizeTy (Procedure.rigidNames sc ps C proc tn)))) o) ∧
+      (∀ ss o, proc.body = .structured ss o → ∃ ssOut EnvX,
         Statement.typeCheck
             (addSkolemTypes C (Procedure.rigidNames sc ps C proc tn))
             (Function.formalsEnv Env (Procedure.rigidNames sc ps C proc tn)
@@ -325,8 +327,9 @@ private theorem Procedure.typeCheckCore_ok_inv
         (∀ v ∈ (addSkolemTypes C (Procedure.rigidNames sc ps C proc tn)).rigidTypeVars,
           LMonoTy.subst EnvX.stateSubstInfo.subst (.ftvar v) = .ftvar v) ∧
         body' = .structured
-          (mapStmtsTys (deskolemizeTy (Procedure.rigidNames sc ps C proc tn)) ssOut)) ∧
+          (mapStmtsTys (deskolemizeTy (Procedure.rigidNames sc ps C proc tn)) ssOut) o) ∧
       Procedure.checkDeclTyVarsBound proc.header.name md proc.header.typeArgs body' = .ok () ∧
+      (proc.body = .abstract → body' = .abstract) ∧
       ({ proc with
           header :=
             { proc.header with inputs := proc.header.inputs.keys.zip insR,
@@ -334,27 +337,28 @@ private theorem Procedure.typeCheckCore_ok_inv
           spec := { preconditions := preconds', postconditions := postconds' },
           body := body' }, Env) = (proc', Env') := by
     split_ns at h
-    · rename_i c hc
+    · rename_i c o hc
       elim_err h with vC hC
       obtain ⟨cOut, EnvX⟩ := vC
       elim_err h
       elim_err h with hchk
-      refine ⟨_, fun c' hc' => ?_, fun ss hss => ?_, ?_, Except.ok.inj h⟩
+      refine ⟨_, fun c' o' hc' => ?_, fun ss o' hss => ?_, hchk, fun ha => ?_, Except.ok.inj h⟩
       · rw [hc] at hc'
         cases hc'
         have hC' := Except.mapError_ok_h' hC
         rw [cfg_skolemize_unless_isEmpty] at hC'
-        exact ⟨_, cOut, EnvX, hC', congrArg Procedure.Body.cfg
+        exact ⟨_, cOut, EnvX, hC', congrArg (Procedure.Body.cfg · o)
           (cfg_deskolemize_unless_isEmpty _ _)⟩
       · rw [hc] at hss
         cases hss
-      · exact hchk
-    · rename_i ss hss
+      · rw [hc] at ha
+        cases ha
+    · rename_i ss o hss
       elim_err h with vB hBMap
       obtain ⟨ssOut, EnvX⟩ := vB
       elim_err h with hrig
       elim_err h with hchk
-      refine ⟨_, fun c hc => ?_, fun ss' hss' => ?_, ?_, Except.ok.inj h⟩
+      refine ⟨_, fun c o' hc => ?_, fun ss' o' hss' => ?_, hchk, fun ha => ?_, Except.ok.inj h⟩
       · rw [hss] at hc
         cases hc
       · rw [hss] at hss'
@@ -364,9 +368,17 @@ private theorem Procedure.typeCheckCore_ok_inv
         exact ⟨ssOut, EnvX, hB,
           (Procedure.ambientRigidVarsFixed_iff _ _).mp
             (Procedure.ensureAmbientRigidVarsFixed_ok _ _ _ hrig),
-          congrArg Procedure.Body.structured (stmts_deskolemize_unless_isEmpty _ _)⟩
-      · exact hchk
-  obtain ⟨body', hbodyCfg, hbodyStructured, hbodyChk, hret⟩ := hbody
+          congrArg (Procedure.Body.structured · o) (stmts_deskolemize_unless_isEmpty _ _)⟩
+      · rw [hss] at ha
+        cases ha
+    · rename_i ha
+      elim_err h with hchk
+      refine ⟨_, fun c o hc => ?_, fun ss o hss => ?_, hchk, fun _ => rfl, Except.ok.inj h⟩
+      · rw [ha] at hc
+        cases hc
+      · rw [ha] at hss
+        cases hss
+  obtain ⟨body', hbodyCfg, hbodyStructured, hbodyChk, hbodyAbstract, hret⟩ := hbody
   simp only [Prod.mk.injEq] at hret
   obtain ⟨rfl, rfl⟩ := hret
   have hpreRun := Procedure.conditionsMapM_ok
@@ -406,7 +418,8 @@ private theorem Procedure.typeCheckCore_ok_inv
       postconditionsRel := (mapM_except_rel₂ _ _ _ hPost).imp ?postRel
       declTyVarsBound := hbodyChk
       bodyCfg := hbodyCfg
-      bodyStructured := hbodyStructured }⟩
+      bodyStructured := hbodyStructured
+      bodyAbstract := hbodyAbstract }⟩
   case preRel =>
     intro a b hab
     elim_err hab with chk' hcc
@@ -452,13 +465,13 @@ theorem CFG.typeCheck_eraseAnnots_eq {C : Expression.TyContext} {Env : Expressio
 private theorem Procedure.CheckRun.cfgCmdsRel {C : Expression.TyContext}
     {Env : Expression.TyEnv} {p : Program} {proc proc' : Procedure} {md : MetaData Expression}
     {insR outsR : LMonoTys}
-    (run : Procedure.CheckRun sc ps tn C Env p proc md proc' insR outsR) {c : DetCFG}
-    (hb : proc.body = .cfg c) :
-    ∃ c', proc'.body = .cfg c' ∧ DetCFG.CmdsRel (fun x y =>
+    (run : Procedure.CheckRun sc ps tn C Env p proc md proc' insR outsR) {c : DetCFG} {o : Bool}
+    (hb : proc.body = .cfg c o) :
+    ∃ c', proc'.body = .cfg c' o ∧ DetCFG.CmdsRel (fun x y =>
       Command.modifiedVars y = Command.modifiedVars x ∧
       Command.definedVars y = Command.definedVars x ∧
       ∀ cs ∈ Command.callSites y, WF.WFcallProp p cs.procName cs.args) c c' := by
-  obtain ⟨loc, cOut, EnvX, hrun, hout⟩ := run.bodyCfg c hb
+  obtain ⟨loc, cOut, EnvX, hrun, hout⟩ := run.bodyCfg c o hb
   refine ⟨_, hout, ?_⟩
   have hchecked := CFG.typeCheck_cmdsRel (fun x y =>
       Command.modifiedVars y = Command.modifiedVars x ∧
@@ -562,13 +575,16 @@ private theorem Procedure.typeCheckCore_body_vars_eq
         HasVarsImp.definedVars (P := Expression) proc.body b := by
   obtain ⟨-, _, _, run⟩ := Procedure.typeCheckCore_ok_inv h
   cases hb : proc.body with
-  | cfg c =>
+  | cfg c o =>
     obtain ⟨c', hc', hrel⟩ := run.cfgCmdsRel hb
     rw [hc']
     exact ⟨DetCFG.CmdsRel.flatMap_eq _ (fun _ _ hq => hq.1) hrel,
       fun _ => DetCFG.CmdsRel.flatMap_eq _ (fun _ _ hq => hq.2.1) hrel⟩
-  | structured ss =>
-    obtain ⟨ssOut, EnvX, hr, -, hbody'⟩ := run.bodyStructured ss hb
+  | abstract =>
+    rw [run.bodyAbstract hb]
+    exact ⟨rfl, fun _ => rfl⟩
+  | structured ss o =>
+    obtain ⟨ssOut, EnvX, hr, -, hbody'⟩ := run.bodyStructured ss o hb
     obtain ⟨hm, hd⟩ := Statement.typeCheck_vars_eq _ _ _ _ _ _ _ hr
     rw [hbody']
     refine ⟨?_, ?_⟩
@@ -683,13 +699,13 @@ private theorem Procedure.typeCheckCore_env_eq_and_name_eq
     body the procedure checker returns. -/
 private theorem Procedure.typeCheckCore_cfgCallsChecked
     {C : Expression.TyContext} {Env Env' : Expression.TyEnv} {p : Program}
-    {proc proc' : Procedure} {md : MetaData Expression} {g : DetCFG}
+    {proc proc' : Procedure} {md : MetaData Expression} {g : DetCFG} {o : Bool}
     (h : Procedure.typeCheckCore sc ps C Env p proc md tn = .ok (proc', Env'))
-    (hg : proc'.body = .cfg g) :
+    (hg : proc'.body = .cfg g o) :
     ∀ cs ∈ proc'.callSites, callError? p cs.procName cs.args = none := by
   obtain ⟨-, _, _, run⟩ := Procedure.typeCheckCore_ok_inv h
   cases hb : proc.body with
-  | cfg c =>
+  | cfg c o =>
     obtain ⟨c', hc', hrel⟩ := run.cfgCmdsRel hb
     intro cs hcs
     rw [Procedure.callSites, hc'] at hcs
@@ -697,9 +713,12 @@ private theorem Procedure.typeCheckCore_cfgCallsChecked
     obtain ⟨y, hy, hcs⟩ := List.mem_flatMap.mp hcs
     obtain ⟨x, hq⟩ := DetCFG.CmdsRel.exists_of_mem hrel hlb hy
     exact (callError?_eq_none_iff _ _ _).mpr (hq.2.2 cs hcs)
-  | structured ss =>
-    obtain ⟨_, _, _, _, hout⟩ := run.bodyStructured ss hb
+  | structured ss o =>
+    obtain ⟨_, _, _, _, hout⟩ := run.bodyStructured ss o hb
     rw [hout] at hg
+    cases hg
+  | abstract =>
+    rw [run.bodyAbstract hb] at hg
     cases hg
 
 /-- Checking a procedure keeps a registered substitution range registered. -/
@@ -1837,11 +1856,13 @@ private theorem Procedure.typeCheckCore_bodyTyped_input
   have hsigAgree := Procedure.typeCheckCore_sigAgree C Env Env' p proc proc' md h
   obtain ⟨-, _, _, run⟩ := Procedure.typeCheckCore_ok_inv h
   cases hbody : proc.body with
-  | cfg cfgBody =>
-    exact ProcBodyHasType.cfg _
-  | structured ssIn =>
-    obtain ⟨ssOut, EnvX, hB, hRigid, -⟩ := run.bodyStructured ssIn hbody
-    have hbodyAnnot := Procedure.rigidNames_body sc ps C proc tn htn ssIn hbody
+  | cfg cfgBody o =>
+    exact ProcBodyHasType.cfg _ _
+  | abstract =>
+    exact ProcBodyHasType.abstract
+  | structured ssIn o =>
+    obtain ⟨ssOut, EnvX, hB, hRigid, -⟩ := run.bodyStructured ssIn o hbody
+    have hbodyAnnot := Procedure.rigidNames_body sc ps C proc tn htn ssIn o hbody
     have hbodyRT : mapStmtsTys (deskolemizeTy (Procedure.rigidNames sc ps C proc tn))
         (skolemizeStmts none (Procedure.rigidNames sc ps C proc tn) ssIn) = ssIn :=
       mapStmtsTys_deskolemizeTy_skolemizeStmts none _ hnd ssIn hbodyAnnot
@@ -1853,7 +1874,7 @@ private theorem Procedure.typeCheckCore_bodyTyped_input
           h_closed hsigs hS hta ssIn ssOut EnvX hB)
         h_env h_fac h_closed h_amb.ctxTypes
         h_amb.aliases h_aliasNames h_amb.functions h_mono hbodyAnnot
-        (Procedure.rigidNames_body_lits sc ps C proc tn htn ssIn hbody) hrt
+        (Procedure.rigidNames_body_lits sc ps C proc tn htn ssIn o hbody) hrt
         (bodySig_freeVars_mem _ _ hσ) hbodyRT
         (Procedure.rigidNames_calledSigsFixed sc ps C p proc tn hP)
     obtain ⟨hkeysB, hvalsB⟩ :=
@@ -1865,7 +1886,7 @@ private theorem Procedure.typeCheckCore_bodyTyped_input
         (bodySig proc.header) _ [] ssIn Cout Γout Δout h_env.aliasesWF hkeysB hvalsB hj
     rw [(Procedure.rigidNames_fresh _ _ _ _ _).2.2.2.1] at hj'
     rw [procBodyContext_eq]
-    exact ProcBodyHasType.structured _ Cout Γout' Δout hj'
+    exact ProcBodyHasType.structured _ Cout Γout' Δout o hj'
 
 /-- A property of every CFG body and of every deskolemized checked structured body, given the side
     conditions of the skolemized body scope, holds of the body an accepted procedure returns. -/
@@ -1877,9 +1898,9 @@ private theorem Procedure.typeCheckCore_body_cases
     (hdecl : proc.header.SigDeclared)
     (h_env : LExpr.TEnvWF (T := CoreLParams) Env)
     (h_aliasNamesFresh : ∀ al ∈ Env.context.aliases, C.knownTypes.containsName al.name = false)
-    (Q : Procedure.Body → Prop) (hcfg : ∀ c, Q (.cfg c))
-    (hstr : ∀ (ssIn ssOut : List Statement) (EnvX : Expression.TyEnv),
-      proc.body = .structured ssIn →
+    (Q : Procedure.Body → Prop) (hcfg : ∀ c o, Q (.cfg c o)) (habs : Q .abstract)
+    (hstr : ∀ (ssIn ssOut : List Statement) (EnvX : Expression.TyEnv) (o : Bool),
+      proc.body = .structured ssIn o →
       Statement.typeCheck (addSkolemTypes C (Procedure.rigidNames sc ps C proc tn))
           (Function.formalsEnv Env (Procedure.rigidNames sc ps C proc tn) (bodySig proc'.header))
           p (some proc) (skolemizeStmts none (Procedure.rigidNames sc ps C proc tn) ssIn)
@@ -1899,7 +1920,8 @@ private theorem Procedure.typeCheckCore_body_cases
       (∀ mty ∈ (bodySig proc'.header).values,
         Env.context.resolveTy (skolemizeTy (Procedure.rigidNames sc ps C proc tn) mty)
           = skolemizeTy (Procedure.rigidNames sc ps C proc tn) mty) →
-      Q (.structured (mapStmtsTys (deskolemizeTy (Procedure.rigidNames sc ps C proc tn)) ssOut))) :
+      Q (.structured (mapStmtsTys (deskolemizeTy (Procedure.rigidNames sc ps C proc tn)) ssOut)
+        o)) :
     Q proc'.body := by
   have hpfx := (Procedure.rigidNames_fresh sc ps C proc tn).1
   have hσ := Procedure.typeCheckCore_signatureFreeVars_rigid C Env Env' p proc proc' md h hdecl
@@ -1914,14 +1936,17 @@ private theorem Procedure.typeCheckCore_body_cases
         Env' p proc proc' md h]
   obtain ⟨-, _, _, run⟩ := Procedure.typeCheckCore_ok_inv h
   cases hbody : proc.body with
-  | cfg cfgBody =>
-    obtain ⟨_, _, _, -, hout⟩ := run.bodyCfg cfgBody hbody
+  | cfg cfgBody o =>
+    obtain ⟨_, _, _, -, hout⟩ := run.bodyCfg cfgBody o hbody
     rw [hout]
-    exact hcfg _
-  | structured ssIn =>
-    obtain ⟨ssOut, EnvX, hB, -, hbody'⟩ := run.bodyStructured ssIn hbody
+    exact hcfg _ _
+  | abstract =>
+    rw [run.bodyAbstract hbody]
+    exact habs
+  | structured ssIn o =>
+    obtain ⟨ssOut, EnvX, hB, -, hbody'⟩ := run.bodyStructured ssIn o hbody
     rw [hbody']
-    exact hstr ssIn ssOut EnvX hbody hB hta hpfx (FactorySigDeskolemizes.refl_of_fixed _ _ hfixed)
+    exact hstr ssIn ssOut EnvX o hbody hB hta hpfx (FactorySigDeskolemizes.refl_of_fixed _ _ hfixed)
       (FactorySigDeskolSafe.of_fixed _ _ hfixed) hamb.aliases hrt (bodySig_freeVars_mem _ _ hσ)
       hfreshSk
       (Procedure.typeCheckCore_bodySig_skolemize_resolved C Env Env' p proc proc' md h hfreshSk)
@@ -1947,7 +1972,7 @@ private theorem Procedure.typeCheckCore_bodyTyped_output
     ProcBodyWellTyped (p.resolveSigs Env.context.aliases)
       { C with rigidTypeVars := C.rigidTypeVars ++ proc'.header.typeArgs }
       (procBodyScopes Env.context.dealias.types proc') proc'.body ∧
-    ∀ ss, proc'.body = .structured ss →
+    ∀ ss o, proc'.body = .structured ss o →
       StatementsNamesWF (p.resolveSigs Env.context.aliases) (· ∈ C.functions) ss := by
   have hresP := Procedure.typeCheckCore_paramTypes_resolved C Env Env' p proc proc' md h
     h_aliasNamesFresh
@@ -1956,20 +1981,20 @@ private theorem Procedure.typeCheckCore_bodyTyped_output
     (fun b => ProcBodyWellTyped (p.resolveSigs Env.context.aliases)
       { C with rigidTypeVars := C.rigidTypeVars ++ proc'.header.typeArgs }
       (procBodyScopes Env.context.dealias.types proc') b ∧
-      ∀ ss, b = .structured ss →
+      ∀ ss o, b = .structured ss o →
         StatementsNamesWF (p.resolveSigs Env.context.aliases) (· ∈ C.functions) ss)
-    (fun c => ⟨.cfg c, fun _ hss => nomatch hss⟩) ?_
-  intro ssIn ssOut EnvX hbodyEq hB hta hpfx hfactoryRel hfactorySafe haliasNoSkolem hrt hσ hfreshSk
-    hresSk
+    (fun c o => ⟨.cfg c o, fun _ _ hss => nomatch hss⟩) ⟨.abstract, fun _ _ hss => nomatch hss⟩ ?_
+  intro ssIn ssOut EnvX o hbodyEq hB hta hpfx hfactoryRel hfactorySafe haliasNoSkolem hrt hσ
+    hfreshSk hresSk
   obtain ⟨⟨Cout, tsOut, hj⟩, hnames⟩ :=
     bodyTyped_output_core C Env EnvX p proc (Procedure.rigidNames sc ps C proc tn) _ hpfx
       ssIn ssOut hB h_env h_fac hfactoryRel hfactorySafe h_resolved haliasNoSkolem h_closed h_mono
       h_known hrt hσ ((Procedure.rigidNames_fresh sc ps C proc tn).2.2.1) hfreshSk hresSk
       (fun mty hm => hresP mty (bodySig_values_subset _ mty hm)) h_sigsFixed
       (Procedure.rigidNames_calledSigsFixed sc ps C p proc tn hP)
-      (Procedure.rigidNames_body_lits sc ps C proc tn htn ssIn hbodyEq)
+      (Procedure.rigidNames_body_lits sc ps C proc tn htn ssIn o hbodyEq)
   rw [hta] at hj
-  refine ⟨.structured _ Cout tsOut hj, fun ss hss => ?_⟩
+  refine ⟨.structured _ Cout tsOut o hj, fun ss _ hss => ?_⟩
   injection hss with hss'
   subst hss'
   exact hnames
@@ -2137,8 +2162,9 @@ private theorem Procedure.typeCheckCore_sound_output
   · rw [hinKeys, houtKeys]
     exact hformals
   · cases hb : proc'.body with
-    | structured ss => exact hbnames ss hb
-    | cfg c => trivial
+    | structured ss o => exact hbnames ss o hb
+    | cfg c o => trivial
+    | abstract => trivial
 
 /-- With well-formed aliases, the resolved signature of any renaming of a procedure's type
     parameters has every instantiation of the procedure's resolved signature: a call typed
@@ -2214,12 +2240,13 @@ private theorem ProcBodyWellTyped.program_congr_calls {P1 P2 : Program}
     (hagree : ProcedureCallsRel ProcSigInstOf P1 P2 (Procedure.Body.calledProcedureNames body))
     (h : ProcBodyWellTyped P1 C ts body) : ProcBodyWellTyped P2 C ts body := by
   cases h with
-  | structured ss C' ts' hss =>
+  | structured ss C' ts' o hss =>
     have hagree' : ProcedureCallsRel ProcSigInstOf P1 P2 (Statements.calledProcedureNames ss) := by
       simpa using hagree
-    exact .structured ss C' ts'
+    exact .structured ss C' ts' o
       (TypeSpec.StatementsWellTyped.program_congr_calls hnames hagree' hss)
-  | cfg c => exact .cfg c
+  | cfg c o => exact .cfg c o
+  | abstract => exact .abstract
 
 /-- A well-typed procedure stays well typed against a program giving every procedure it calls a
     signature with every instantiation of the original's, and declaring only type names the
@@ -2250,10 +2277,11 @@ private theorem ProcBodyWellTyped.withIdents {C : Expression.TyContext} {j : Ide
     {P : Program} {ts : TypeScopes} {body : Procedure.Body}
     (h : ProcBodyWellTyped P { C with idents := j } ts body) : ProcBodyWellTyped P C ts body := by
   cases h with
-  | structured ss C' ts' hss =>
+  | structured ss C' ts' o hss =>
     obtain ⟨Cbase, -, hss'⟩ := TypeSpec.StatementsWellTyped.withIdents hss C j rfl
-    exact .structured ss Cbase ts' hss'
-  | cfg c => exact .cfg c
+    exact .structured ss Cbase ts' o hss'
+  | cfg c o => exact .cfg c o
+  | abstract => exact .abstract
 
 /-- Procedure well-typedness does not depend on the context's `idents` field. -/
 theorem TypeSpec.ProcWellTyped.withIdents {C : Expression.TyContext} {j : Identifiers Unit}
@@ -2300,11 +2328,12 @@ private theorem Procedure.typeCheckCore_calledProcedureNames_eq
   obtain ⟨-, _, _, run⟩ := Procedure.typeCheckCore_ok_inv h
   simp only [Procedure.calledProcedureNames_eq_body]
   cases hpb : proc.body with
-  | cfg c =>
-    obtain ⟨_, _, _, -, hout⟩ := run.bodyCfg c hpb
+  | cfg c o =>
+    obtain ⟨_, _, _, -, hout⟩ := run.bodyCfg c o hpb
     rw [hout, Procedure.Body.calledProcedureNames_cfg, Procedure.Body.calledProcedureNames_cfg]
-  | structured ss =>
-    obtain ⟨ssOut, EnvX, hB, -, hbody'⟩ := run.bodyStructured ss hpb
+  | abstract => rw [run.bodyAbstract hpb]
+  | structured ss o =>
+    obtain ⟨ssOut, EnvX, hB, -, hbody'⟩ := run.bodyStructured ss o hpb
     simp only [hbody', Procedure.Body.calledProcedureNames_structured]
     rw [mapStmtsTys_calledProcedureNames,
       Statement.typeCheck_calledProcedureNames_eq _ _ _ _ _ _ _ hB,
@@ -2357,13 +2386,16 @@ private theorem Procedure.typeCheckCore_call_descent
   simp only [Procedure.calledProcedureNames_eq_body] at hcalled
   obtain ⟨-, _, _, run⟩ := Procedure.typeCheckCore_ok_inv h
   cases hbody : proc.body with
-  | cfg cfgBody =>
+  | cfg cfgBody o =>
     rw [hbody] at hcalled
     simp only [Procedure.Body.calledProcedureNames_cfg, List.not_mem_nil] at hcalled
-  | structured ssIn =>
+  | abstract =>
+    rw [hbody] at hcalled
+    simp only [Procedure.Body.calledProcedureNames, List.not_mem_nil] at hcalled
+  | structured ssIn o =>
     rw [hbody] at hcalled
     simp only [Procedure.Body.calledProcedureNames_structured] at hcalled
-    obtain ⟨ssOut, EnvX, hB, -, -⟩ := run.bodyStructured ssIn hbody
+    obtain ⟨ssOut, EnvX, hB, -, -⟩ := run.bodyStructured ssIn o hbody
     exact callSite_of_body_typeCheck C Env EnvX program proc
       (Procedure.rigidNames sc ps C proc tn) _ nm ssIn ssOut hB h_env h_fac h_closed
       (bodySig_freeVars_mem _ _ hσ) hcalled
@@ -2716,9 +2748,9 @@ theorem Procedure.typeCheckIn_calledProcedureNames_eq (scope progSigs : Thunk (S
     every call in a CFG body that `Procedure.typeCheckIn` returns. -/
 theorem Procedure.typeCheckIn_cfgCallsChecked {scope progSigs : Thunk (Std.HashSet String)}
     {C : Expression.TyContext} {Env Env' : Expression.TyEnv} {p : Program}
-    {proc proc' : Procedure} {md : MetaData Expression} {g : DetCFG}
+    {proc proc' : Procedure} {md : MetaData Expression} {g : DetCFG} {o : Bool}
     (h : Procedure.typeCheckIn scope progSigs C Env p proc md = .ok (proc', Env'))
-    (hg : proc'.body = .cfg g) :
+    (hg : proc'.body = .cfg g o) :
     ∀ cs ∈ proc'.callSites, callError? p cs.procName cs.args = none :=
   Procedure.typeCheckCore_cfgCallsChecked (Procedure.typeCheckIn_core_ok h) hg
 

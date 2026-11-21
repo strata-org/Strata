@@ -822,7 +822,7 @@ private def callsF : Core.Decl :=
   .proc { (default : Core.Procedure) with
     header := { (default : Core.Procedure.Header) with name := ⟨"P", ()⟩ }
     body := .structured [Core.Statement.init ⟨"r", ()⟩ (.forAll [] .int)
-      (.det (callOf "f" (.const Core.coreLoc (.intConst 5)))) .empty] } .empty
+      (.det (callOf "f" (.const Core.coreLoc (.intConst 5)))) .empty] false } .empty
 
 /-- The integer literal `42`. -/
 private def intLit : Core.Expression.Expr := .const Core.coreLoc (.intConst 42)

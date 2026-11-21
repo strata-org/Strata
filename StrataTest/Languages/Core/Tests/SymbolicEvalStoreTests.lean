@@ -535,7 +535,7 @@ private def localNamedLikeFunctionAst : Core.Program :=
                 .cmd (.cmd (.init "c" (.forAll [] .int) .nondet .empty)),
                 .cmd (.cmd (.assert "a" (.eq Core.coreLoc (.fvar Core.coreLoc "c" (some .int))
                                          (.intConst Core.coreLoc 5))
-                  .empty))] } .empty] }
+                  .empty))] false } .empty] }
 
 #guard leakedNamesOf localNamedLikeFunctionAst == []
 

@@ -308,7 +308,7 @@ def structuredToUnstructuredDecl
   match d with
   | .proc proc md =>
     match proc.body with
-    | .structured ss =>
+    | .structured ss o =>
       if ss.isEmpty then
         pure (d, false)
       else if let some msg := shapeError? proc.header.name.1 ss then
@@ -316,16 +316,17 @@ def structuredToUnstructuredDecl
       else
         match Core.stmtsToCFG ss with
         | some cfg =>
-          pure (Decl.proc { proc with body := .cfg cfg } md, true)
+          pure (Decl.proc { proc with body := .cfg cfg o } md, true)
         | none =>
           throw (Strata.Message.fromString
             s!"structuredToUnstructured: procedure '{proc.header.name.1}' \
                contains a call; structuredToUnstructured expects call-free \
                structured bodies.")
-    | .cfg _ =>
+    | .cfg _ _ =>
       throw (Strata.Message.fromString
         s!"structuredToUnstructured: procedure '{proc.header.name.1}' already \
            has a CFG body; structuredToUnstructured expects structured bodies.")
+    | .abstract => pure (d, false)
   | _ => pure (d, false)
 
 /-- Lower every nonempty structured Core procedure body to a CFG. The returned

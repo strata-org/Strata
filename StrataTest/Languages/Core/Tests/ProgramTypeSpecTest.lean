@@ -105,7 +105,7 @@ private def procAt (t : String) : Procedure :=
               postconditions :=
                 [("post", { expr := .eq Core.valueLoc (xAt t) (xAt t) })] },
     body := .structured
-      [Statement.init ⟨"y", ()⟩ (.forAll [] (.ftvar t)) .nondet .empty] }
+      [Statement.init ⟨"y", ()⟩ (.forAll [] (.ftvar t)) .nondet .empty] false }
 
 /-- Renaming `$__ty0` to `a` renames it in the type parameters, the input and
     output types, the annotations of both conditions and the declared type of

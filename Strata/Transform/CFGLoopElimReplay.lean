@@ -173,13 +173,13 @@ def replayRequiresPrefix : String := "$replayRequires_"
 /-- `q` as a run calls it: its body first assumes each of its preconditions, free ones
     included, so a run that enters `q` in a state outside its contract, or in one where a
     precondition does not evaluate, stops there (`enforceInterrupt`). The interpreter emits
-    only the non-free ones, as assertions, and runs the body whatever they give. A procedure
-    without a body is abstract: a call returns any outputs its contract allows. One without
-    outputs (no `out` or `inout` parameter) changes no variable, so its run is exact: it
-    assumes its postconditions, free ones included, and stops the run if one is false or
-    does not evaluate. For one with outputs, running its empty body (outputs unchanged) need
-    not be a run of the contract, so its body stops the run after the preconditions
-    (`assume false`). -/
+    only the non-free ones, as assertions, and runs the body whatever they give. An opaque
+    procedure (`Body.isOpaque`: abstract, or with a flagged body) means its contract: a call
+    returns any outputs the contract allows. One without outputs (no `out` or `inout`
+    parameter) changes no variable, so its run is exact: its body becomes the assumption of
+    its postconditions, free ones included, which stops the run if one is false or does not
+    evaluate. For one with outputs, a run of a body need not be a run of the contract, so its
+    body stops the run after the preconditions (`assume false`). -/
 def asCalled (q : Procedure) : Procedure :=
   let assumes : List Command := q.spec.preconditions.toList.map fun (l, c) =>
     .cmd (.assume s!"{replayRequiresPrefix}{l}" c.expr c.md)
@@ -188,11 +188,11 @@ def asCalled (q : Procedure) : Procedure :=
   let posts : List Command := q.spec.postconditions.toList.map fun (l, c) =>
     .cmd (.assume s!"{replayRequiresPrefix}ensures_{l}" c.expr c.md)
   match q.body with
-  | .structured [] =>
+  | .structured ss false => { q with body := .structured (assumes.map .cmd ++ ss) false }
+  | .cfg cfg false => { q with body := .cfg (withEntryBlock cfg assumes) false }
+  | _ =>
     let rest := if q.header.outputs.isEmpty then posts else [stop]
-    { q with body := .structured ((assumes ++ rest).map .cmd) }
-  | .structured ss => { q with body := .structured (assumes.map .cmd ++ ss) }
-  | .cfg cfg => { q with body := .cfg (withEntryBlock cfg assumes) }
+    { q with body := .structured ((assumes ++ rest).map .cmd) false }
 
 /-- The label `l` of `callee`'s checked precondition whose assertion call elimination labels
     `label` (`callElimAssert_` ++ `l` ++ `_` and a number), if any. -/
@@ -228,8 +228,8 @@ def tagTargetIn (target : ReplayTarget) (clone : String) (p : Procedure) : Proce
     let posts := p.spec.postconditions.toList.map fun (l', c) =>
       (l', if l' == l && c.md == md then { c with md := tagTarget c.md } else c)
     let body := match p.body with
-      | .cfg cfg => .cfg { cfg with blocks := cfg.blocks.map fun (lbl, b) =>
-          (lbl, { b with cmds := b.cmds.map tagCmd }) }
+      | .cfg cfg o => .cfg { cfg with blocks := cfg.blocks.map fun (lbl, b) =>
+          (lbl, { b with cmds := b.cmds.map tagCmd }) } o
       | b => b
     { p with body, spec := { p.spec with postconditions := ListMap.ofList posts } }
   | .precondition callee _ callMd =>
@@ -238,8 +238,8 @@ def tagTargetIn (target : ReplayTarget) (clone : String) (p : Procedure) : Proce
         if f == callee.header.name.name && md == callMd then .call clone tys args md else c
       | _ => c
     match p.body with
-    | .cfg cfg => { p with body := .cfg { cfg with blocks := cfg.blocks.map fun (lbl, b) =>
-        (lbl, { b with cmds := b.cmds.map redirect }) } }
+    | .cfg cfg o => { p with body := .cfg { cfg with blocks := cfg.blocks.map fun (lbl, b) =>
+        (lbl, { b with cmds := b.cmds.map redirect }) } o }
     | _ => p
 
 /-- Does replaying the model of obligation `ob` through the CFG procedures of `input`
@@ -272,7 +272,7 @@ def replayValidates (abstracted : String → Bool) (input : Program)
   let candidates : List (Procedure × ReplayTarget) := procs.flatMap fun p =>
     if source.any (· != p.header.name.name) then [] else
     match p.body with
-    | .cfg cfg =>
+    | .cfg cfg _ =>
       let g := bracketed p cfg
       let checks := g.blocks.flatMap fun (_, b) => b.cmds.filterMap fun c => match c with
         | .cmd (.assert l _ md) =>
@@ -299,7 +299,7 @@ def replayValidates (abstracted : String → Bool) (input : Program)
     let clone := Strata.Name.freshName (Std.HashSet.ofList (procs.map (·.header.name.name)))
       "$replayCallee"
     let p := tagTargetIn kind clone p0
-    let .cfg cfg := p.body | return none
+    let .cfg cfg _ := p.body | return none
     let g := bracketed p cfg
     let target : AssertId Expression := match kind with
       | .check l md => { label := l, md := tagTarget md }

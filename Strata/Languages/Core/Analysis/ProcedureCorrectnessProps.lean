@@ -227,8 +227,8 @@ variable {π : String → Option Procedure}
 theorem procedureAssertsValidOnTraces_of_overapproximates
     (I : ConditionInterp Expression) (params : Core.Logic.InitEnvWFParams)
     (name : String) (p p' : Program) (proc proc' : Procedure) (ss ss' : Statements)
-    (h_find : p.findProcByString? name = some proc) (h_body : proc.body = .structured ss)
-    (h_find' : p'.findProcByString? name = some proc') (h_body' : proc'.body = .structured ss')
+    (h_find : p.findProcByString? name = some proc) (h_body : proc.body = .structured ss opq)
+    (h_find' : p'.findProcByString? name = some proc') (h_body' : proc'.body = .structured ss' opq)
     (h_header : proc'.header = proc.header) (h_spec : proc'.spec = proc.spec)
     (h_axioms : ∀ ρ₀, AxiomsBeforeProcedureDecl name p ρ₀ →
       AxiomsBeforeProcedureDecl name p' ρ₀)
@@ -242,17 +242,17 @@ theorem procedureAssertsValidOnTraces_of_overapproximates
     (h : ProcedureAssertsValidOnTraces I params name p') :
     ProcedureAssertsValidOnTraces I params name p := by
   have h_sim := fun ρ₀ (hent : ProcEntryEnv params name p proc ρ₀) =>
-    h_over _ _ h_T h_pre ρ₀ ρ₀ rfl (hent.1.structuredBodyWF ss h_body)
+    h_over _ _ h_T h_pre ρ₀ ρ₀ rfl (hent.1.structuredBodyWF ss _ h_body)
   have h_entry : ∀ ρ₀, ProcEntryEnv params name p proc ρ₀ →
       ProcEntryEnv params name p' proc' ρ₀ := by
     intro ρ₀ hent
     refine ⟨hent.1.of_sameSignature h_header h_spec ?_ ?_, h_axioms ρ₀ hent.2.1,
       hent.2.2.trans h_factory.symm⟩
-    · intro ss'' hb
+    · intro ss'' _ hb
       rw [h_body'] at hb
       cases hb
       exact (h_sim ρ₀ hent).2.2.2
-    · intro cfg hb
+    · intro cfg _ hb
       rw [h_body'] at hb
       cases hb
   have h_post : ∀ ρ, postconditionEvents proc' ρ = postconditionEvents proc ρ := by
@@ -264,23 +264,23 @@ theorem procedureAssertsValidOnTraces_of_overapproximates
       contract := ?_ }
   · ----- Validity on every finite prefix -----
     intro a
-    obtain ⟨proc'', ss'', hf'', hb'', hv⟩ := h.assertsValid a
+    obtain ⟨proc'', ss'', _, hf'', hb'', hv⟩ := h.assertsValid a
     have hproc : proc'' = proc' := Option.some.inj (hf''.symm.trans h_find')
     subst hproc
-    have hss : ss'' = ss' := Imperative.Body.structured.inj (hb''.symm.trans h_body')
+    have hss : ss'' = ss' := (Imperative.Body.structured.inj (hb''.symm.trans h_body')).1
     subst hss
-    refine ⟨proc, ss, h_find, h_body, ?_⟩
+    refine ⟨proc, ss, _, h_find, h_body, ?_⟩
     intro ρ₀ cfg tr hent hrun
     obtain ⟨cfg₂, tr₂, hrun₂, rfl⟩ := (h_sim ρ₀ hent).1 _ tr (Core.stmt_run_to_singleton_runE hrun)
     obtain ⟨cfg₃, hrun₃⟩ := Core.singleton_run_to_stmt_runE hrun₂
     exact hv ρ₀ cfg₃ _ (h_entry ρ₀ hent) hrun₃
   · ----- The contract -----
-    intro proc'' ss'' hf'' hb''
+    intro proc'' ss'' _ hf'' hb''
     have hproc : proc'' = proc := Option.some.inj (hf''.symm.trans h_find)
     subst hproc
-    have hss : ss'' = ss := Imperative.Body.structured.inj (hb''.symm.trans h_body)
+    have hss : ss'' = ss := (Imperative.Body.structured.inj (hb''.symm.trans h_body)).1
     subst hss
-    have htarget := h.contract proc' ss' h_find' h_body'
+    have htarget := h.contract proc' ss' _ h_find' h_body'
     intro ρ₀ ρ' tr hent hrun
     have hr := h_sim ρ₀ hent
     have htgt : ∃ ρ'', ρ' = ρ'' ∧

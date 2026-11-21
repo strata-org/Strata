@@ -63,7 +63,7 @@ private def generatedLabels (p : StrataDDM.Program) : List String :=
   match Core.Transform.run (translate p) Core.CFGLoopElim.cfgLoopElim with
   | .ok (_, p') => p'.decls.flatMap fun d => match d with
     | .proc q _ => match q.body with
-      | .cfg g => g.blocks.flatMap fun (_, b) => b.cmds.filterMap fun c => match c with
+      | .cfg g _ => g.blocks.flatMap fun (_, b) => b.cmds.filterMap fun c => match c with
         | .cmd (.assert l _ _) => some l
         | .cmd (.assume l _ _) => some l
         | _ => none
@@ -487,7 +487,7 @@ private def checkLocations (p : StrataDDM.Program) : List String :=
   let rangeOf (md : Imperative.MetaData Core.Expression) :=
     (Imperative.getFileRange md).map (·.range)
   let blocks := q.decls.flatMap fun d => match d with
-    | .proc pr _ => match pr.body with | .cfg g => g.blocks | _ => []
+    | .proc pr _ => match pr.body with | .cfg g _ => g.blocks | _ => []
     | _ => []
   let invRanges := blocks.flatMap fun (_, b) =>
     (b.md.loopInvariantValues.filterMap fun v => match v with
@@ -504,7 +504,7 @@ private def checkLocations (p : StrataDDM.Program) : List String :=
   match Core.Transform.run q Core.CFGLoopElim.cfgLoopElim with
   | .ok (_, p') => p'.decls.flatMap fun d => match d with
     | .proc pr _ => match pr.body with
-      | .cfg g => g.blocks.flatMap fun (_, b) => b.cmds.filterMap fun c => match c with
+      | .cfg g _ => g.blocks.flatMap fun (_, b) => b.cmds.filterMap fun c => match c with
         | .cmd (.assert l _ md) =>
           if l.startsWith Core.CFGLoopElim.cfgLoopElimAssertPrefix then some s!"{l}: {name md}"
           else none
@@ -621,7 +621,7 @@ private def afterPhases (phases : List (Core.Program → Core.Transform.CoreTran
 private def blockLabels (p : Core.Program) : List String :=
   p.decls.flatMap fun d => match d with
     | .proc q _ => match q.body with
-      | .cfg g => g.blocks.map (·.1)
+      | .cfg g _ => g.blocks.map (·.1)
       | _ => []
     | _ => []
 
@@ -648,7 +648,7 @@ private def printReparse (phases : List (Core.Program → Core.Transform.CoreTra
 private def nondetOf (p : Core.Program) (lbl : String) : List String × List String :=
   p.decls.foldl (fun acc d => match d with
     | .proc q _ => match q.body with
-      | .cfg g => match g.blocks.lookup lbl with
+      | .cfg g _ => match g.blocks.lookup lbl with
         | some b =>
           (acc.1 ++ b.cmds.filterMap (fun | .cmd (.init x _ .nondet _) => some x.name | _ => none),
            acc.2 ++ b.cmds.filterMap (fun | .cmd (.set x .nondet _) => some x.name | _ => none))
@@ -1132,7 +1132,7 @@ cfg entry {
 private def annotatedBlocks (p : Core.Program) : List String :=
   p.decls.flatMap fun d => match d with
     | .proc q _ => match q.body with
-      | .cfg g => g.blocks.filterMap fun (l, b) =>
+      | .cfg g _ => g.blocks.filterMap fun (l, b) =>
         if b.md.loopInvariantValues.isEmpty then none else some l
       | _ => []
     | _ => []

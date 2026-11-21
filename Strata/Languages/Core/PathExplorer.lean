@@ -1167,8 +1167,9 @@ private def wrapCFG (g : Core.DetCFG) (pre post : List Command) : Core.DetCFG :=
 /-- Set up a procedure: choose a symbol prefix no name of the procedure starts with; bind every
     input and output to a fresh symbol of its declared type; bind `old x` to `x`'s entry symbol
     for in-out parameters. Then run, for a structured body, `precondition assumes ++ body ++
-    checked-postcondition asserts`, and for a CFG body, the CFG with an entry block assuming
-    the preconditions and an exit block asserting the checked postconditions (`wrapCFG`).
+    checked-postcondition asserts`, for a CFG body, the CFG with an entry block assuming
+    the preconditions and an exit block asserting the checked postconditions (`wrapCFG`). An
+    abstract procedure has no body to check against its contract, so its result is empty.
 
     Assumes what the pipeline establishes before VC generation (`symExecRequires`): no calls,
     no nondeterministic guards, monomorphic procedures, type-annotated expressions.  A
@@ -1214,19 +1215,22 @@ def exploreProc (cfg : ExploreCfg) (maxSteps runFuel : Nat) (F : Lambda.Factory 
   let names := formals.map (·.1) ++ formals.map (fun (x, _) => CoreIdent.mkOld x.name)
   let entry := names.filterMap fun x => (σ.get x).map (x, ·)
   match p.body with
-  | .structured body =>
+  | .structured body _ =>
     let stmt (c : Imperative.Cmd Expression) : Statement := .cmd (.cmd c)
     let stmts := pre.map stmt ++ body ++ post.map stmt
     let r := explore (structuredShape cfg) maxSteps
       { cfg := .stmts stmts env, st := { next := n, types }, node := 0, budget := runFuel }
       pol p.header.name.name
     { r.addUnreached (stmtCheckObls stmts) with entry, stmts }
-  | .cfg g =>
+  | .cfg g _ =>
     let g := wrapCFG g (pre.map CmdExt.cmd) (post.map CmdExt.cmd)
     let r := explore (cfgShape cfg g) maxSteps
       { cfg := .atBlock g g.entry env, st := { next := n, types }, node := 0, budget := runFuel }
       pol p.header.name.name
     { r.addUnreached (blockCheckObls g) with entry, graph := some g }
+  -- An abstract procedure has no body to explore: its result is empty. The program-level folds
+  -- skip abstract procedures, so they do not reach this arm.
+  | .abstract => { nodes := #[], steps := 0, entry }
 
 /-! ## Programs -/
 
@@ -1256,7 +1260,11 @@ def symExecProgram (cfg : ExploreCfg) (maxSteps runFuel : Nat) (F : Lambda.Facto
   let fnNames := F.toArray.toList.map (·.name.name)
   match failedRequires prog with
   | [] => .ok <| prog.decls.filterMap fun
-    | .proc p _ => some (p.header.name.name, exploreProc cfg maxSteps runFuel F p fnNames)
+    | .proc p _ =>
+      -- An abstract procedure has no body to check, and call elimination has removed every
+      -- call to it, so it is skipped.
+      if p.body.isAbstract then none
+      else some (p.header.name.name, exploreProc cfg maxSteps runFuel F p fnNames)
     | _ => none
   | fs => .error fs
 

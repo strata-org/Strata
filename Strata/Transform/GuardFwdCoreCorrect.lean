@@ -297,8 +297,8 @@ theorem guardFwdPipelinePhase_ok (program : Program) (s : Transform.CoreTransfor
 theorem guardFwdProgram_over {prog out : Program} {s s' : Transform.CoreTransformState}
     {b : Bool} (h : (guardFwdProgram prog).run s = (.ok (b, out), s')) {q : Procedure}
     {md : Imperative.MetaData Expression} {ss : Statements} (hq : Decl.proc q md ∈ prog.decls)
-    (hb : q.body = .structured ss) :
-    Decl.proc { q with body := .structured (guardFwd ss) } md ∈ out.decls := by
+    {opq : Bool} (hb : q.body = .structured ss opq) :
+    Decl.proc { q with body := .structured (guardFwd ss) opq } md ∈ out.decls := by
   cases h
   exact Program.mapStructuredBodies_mem hq hb
 

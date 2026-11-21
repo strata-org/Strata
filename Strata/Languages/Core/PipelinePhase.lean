@@ -35,6 +35,12 @@ inductive ModelValidation where
       satisfiability query, `P ∧ Q`) or failing (the validity query, `P ∧ ¬Q`). -/
   | modelToValidate (validate : (holds : Bool) → Imperative.SMT.Model Expression.Ident →
       Option (Imperative.SMT.Model Expression.Ident))
+  /-- The obligation's path carries markers of the phase, each placed under the branch guards
+      `guards` lists for it (`markerGuards`; an empty list for a marker on every path). A model
+      can reach a marker unless it falsifies one of the marker's guards; a `sat` result whose
+      model can reach one of the markers is not sound. A model that reaches none of them is
+      passed through, never promoted. -/
+  | markersOnPath (guards : List (List Expression.Expr))
 
 /-- A phase in the verification pipeline. Each phase determines per-obligation
     whether its models need validation, based on whether the obligation is
@@ -86,6 +92,33 @@ def obligationHasLabelPrefix (obligation : ProofObligation Expression)
     pc.any fun
       | .assumption l _ => l.startsWith pfx
       | _ => false
+
+/-- The reach condition under which `--vcgen wp` keeps a marker whose condition is `true`, when
+    `e` is that marker's condition as WP keeps it: `if c then true else ¬c`, `c` being the reach
+    condition (`WP.kMarkImp`). `some []` for the condition `true`, and `none` for any other
+    condition. Symbolic evaluation and symbolic execution never give a marker the first form:
+    every leaf of their markers' conditions is `true`. -/
+def markerGuards : Expression.Expr → Option (List Expression.Expr)
+  | .ite _ c (.const _ (.boolConst true))
+      (.ite _ c' (.const _ (.boolConst false)) (.const _ (.boolConst true))) =>
+    if c == c' then some [c] else none
+  | .const _ (.boolConst true) => some []
+  | _ => none
+
+/-- The model validation of an abstraction phase whose markers are the assumptions of the
+    obligation's path condition with a label that starts with one of `pfxs`. Without such an
+    assumption, `modelPreserving`. Otherwise `markersOnPath` with, for each, its branch guards
+    (`markerGuards`) when its label starts with one of `guarded`, whose markers have the
+    condition `true`, and no guards (the marker is on every path) for any other. -/
+def markerValidation (obligation : ProofObligation Expression) (pfxs : List String)
+    (guarded : List String := []) : ModelValidation :=
+  let guards := obligation.assumptions.flatMap fun pc => pc.filterMap fun
+    | .assumption l e =>
+      if !pfxs.any (l.startsWith ·) then none
+      else if guarded.any (l.startsWith ·) then some ((markerGuards e).getD [])
+      else some []
+    | _ => none
+  if guards.isEmpty then .modelPreserving else .markersOnPath guards
 
 
 /-! ## Proof obligations, deferred

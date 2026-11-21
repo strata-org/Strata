@@ -89,13 +89,13 @@ private def π : String → Option Procedure := Strata.InterpreterTestUtils.proc
 /-- The call command of the structured caller `n`, whose body is one call. -/
 private def callerCmd (n : String) : Command :=
   match (π n).map Procedure.body with
-  | some (.structured [.cmd c]) => c
+  | some (.structured [.cmd c] _) => c
   | _ => .call "" none [] #[]
 
 /-- The CFG body of the procedure `n`, the empty CFG if it has none. -/
 private def cfgBody (n : String) : DetCFG Expression Command :=
   match (π n).map Procedure.body with
-  | some (.cfg g) => g
+  | some (.cfg g _) => g
   | _ => { entry := "", blocks := [] }
 
 /-- The Core identifier `name`. -/
@@ -134,7 +134,7 @@ private def xOfKleene :
 
 /-- `x` after the generic statement engine runs the structured caller `n`. -/
 private def structGeneric (n : String) : Option Expression.Expr :=
-  xOfCfg ((((Calls.runCallInterp (m := EvalM) π 100 (.stmt (.cmd (callerCmd n)) env0)).run
+  xOfCfg ((((Calls.runCallInterp (m := EvalM) π .contract 100 (.stmt (.cmd (callerCmd n)) env0)).run
     opts).run).run {})
 
 /-- `x` after Core's statement engine runs the structured caller `n`. -/

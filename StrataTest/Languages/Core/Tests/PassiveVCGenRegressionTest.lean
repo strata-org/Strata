@@ -343,7 +343,7 @@ private def gotoEdges : List (String × List String) :=
   let p := (TransM.run Inhabited.default (translateProgram gotoPgm.program)).fst
   match p.decls.findSome? fun d => match d with
       | .proc proc _ => match proc.body with
-        | .cfg g => some g
+        | .cfg g _ => some g
         | _ => none
       | _ => none with
   | some g => match Imperative.StructuredToPassiveCFG.convert (P := Core.Expression) g with
@@ -550,14 +550,14 @@ Result: ✅ pass
 
 /-! ## Each obligation marks each label prefix once
 
-Each of the 20 calls adds labelled assumptions; the obligation after the last
-one carries one `callElimAssume_` mark, not one per assumption, since call
-elimination's prefix is a known one. -/
+Each of the 20 calls to `Q`, which has a body and is not opaque, adds labelled
+assumptions; the obligation after the last one carries one `callElimAssume_` mark, not
+one per assumption, since call elimination's prefix is a known one. -/
 
 def manyCalls :=
 #strata
 program Core;
-procedure Q(out y : int) spec { ensures [q_post]: (int.ge(y, 0)); };
+procedure Q(out y : int) spec { ensures [q_post]: (int.ge(y, 0)); } { y := 1; };
 procedure P(out y : int)
 cfg entry {
   entry: {
@@ -599,7 +599,7 @@ cfg entry {
   | .ok out =>
     let counts := out.decls.flatMap fun d => match d with
       | .proc q _ => if q.header.name.name != "P" then [] else match q.body with
-        | .structured ss => ss.filterMap fun s => match s with
+        | .structured ss _ => ss.filterMap fun s => match s with
           | .ite _ arm _ _ =>
             let label := arm.findSome? fun s => match s with
               | .cmd (.cmd (.assert l _ _)) => some l
@@ -608,7 +608,7 @@ cfg entry {
               | .cmd (.cmd (.assume l _ _)) => l.startsWith _root_.Core.CallElim.callElimAssumePrefix
               | _ => false).length)
           | _ => none
-        | .cfg _ => []
+        | .cfg _ _ | .abstract => []
       | _ => []
     IO.println counts
   | .error e => IO.println s!"error: {e}"
@@ -1230,13 +1230,13 @@ private def defPlacement : String :=
     | none => "no procedure"
     | some proc =>
       match proc.body with
-      | .structured ss =>
+      | .structured ss _ =>
         let kinds := ss.map fun s => match s with
           | .cmd (.cmd (.init x _ _ _)) => if x.name.startsWith "$__vc" then "d" else "v"
           | .ite .. => "a"
           | _ => "?"
         String.join kinds
-      | .cfg _ => "cfg"
+      | .cfg _ _ | .abstract => "cfg"
 
 /-- info: "vvdadddddddddda" -/
 #guard_msgs in
@@ -1294,12 +1294,12 @@ private def postChecks : Nat :=
   | .error _ => 0
   | .ok q => q.decls.foldl (fun n d => match d with
     | .proc r _ => match r.body with
-      | .structured ss => n + (ss.filter fun s => match s with
+      | .structured ss _ => n + (ss.filter fun s => match s with
         | .ite _ arm _ _ => arm.any fun t => match t with
           | .cmd (.cmd (.assert l _ _)) => l == "post"
           | _ => false
         | _ => false).length
-      | .cfg _ => n
+      | .cfg _ _ | .abstract => n
     | _ => n) 0
 
 /-- info: 1 -/
@@ -1386,7 +1386,7 @@ one it validates, and the phases that declare prefixes are the ones listed. -/
       obligation := Lambda.LExpr.boolConst default true, metadata := {} }
   let validates (ph : _root_.Core.PipelinePhase) (l : String) : Bool :=
     match ph.phase.getValidation (obligationWith l) with
-    | .modelToValidate _ => true
+    | .modelToValidate _ | .markersOnPath _ => true
     | .modelPreserving => false
   IO.println ((Strata.Core.nameablePhases).filterMap fun ph =>
     if ph.phase.validationPrefixes.isEmpty then none
@@ -2064,7 +2064,7 @@ cfg entry {
     | IO.println "callElim failed"
   IO.println (p.decls.flatMap fun d => match d with
     | .proc q _ => if q.header.name.name != "K" then [] else match q.body with
-      | .cfg g => g.blocks.flatMap fun (_, b) => b.cmds.filterMap fun c => match c with
+      | .cfg g _ => g.blocks.flatMap fun (_, b) => b.cmds.filterMap fun c => match c with
         | .cmd (.init x _ _ _) => some x.name
         | _ => none
       | _ => []

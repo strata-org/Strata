@@ -8,6 +8,7 @@ module
 public import Strata.Backends.CBMC.GOTO.CoreToCProverGOTO
 import Strata.Backends.CBMC.GOTO.HoistFnApps
 import Strata.Transform.ProcedureInlining
+import Strata.Transform.ProcBodyVerify
 public import Strata.Languages.Core.Factory
 import Strata.Backends.CBMC.CollectSymbols
 import Strata.Backends.CBMC.GOTO.DefaultSymbols
@@ -253,7 +254,8 @@ def procedureToGotoCtx
   -- TODO: This translation could be split into a two-stage transformation:
   -- 1. structured → cfg (via StructuredToUnstructured)
   -- 2. cfg → CProverGOTO (always operates on CFG, no pattern matching needed)
-  let body ← p.body.getStructured.mapError fun s => f!"{s}"
+  -- An abstract procedure is exported with an empty body.
+  let body ← p.body.getStructuredOrEmpty.mapError fun s => f!"{s}"
   let pname := Core.CoreIdent.toPretty p.header.name
   if !p.header.typeArgs.isEmpty then
     .error f!"[procedureToGotoCtx] Polymorphic procedures unsupported."
@@ -630,14 +632,14 @@ public def coreToGotoFiles (tcPgm : Core.Program) (Env : Core.Expression.TyEnv)
     | .error e => throw s!"Error writing {gotoFile}: {e}"
     let _ ← IO.println s!"Written {symTabFile} and {gotoFile}" |>.toBaseIO
 
-/-- Build a `void main()` verification harness for a parameter-carrying entry
-    procedure `entry`: havoc its parameters, `assume` its preconditions, then
-    call it. The procedure inliner then inlines `entry` into this harness,
-    yielding a parameterless `main` that `goto-cc`/CBMC/cprover accept, with the
-    precondition assumed — matching Core's "preconditions are assumed for the
-    body" semantics (otherwise the back-end's synthesized harness leaves inputs
-    unconstrained and reports spurious failures). -/
-private def mkVerificationHarness (entry : Core.Procedure) : Core.Procedure :=
+/-- The statements that check a call to `entry` from an arbitrary state: havoc its parameters,
+    `assume` its preconditions, then call the procedure named `callee` with them (`entry` itself,
+    or a transparent copy of it). Inlining the call then checks `entry`'s body under its
+    preconditions, as Core's "preconditions are assumed for the body" semantics says (otherwise
+    the back-end's synthesized harness leaves inputs unconstrained and reports spurious
+    failures). -/
+private def harnessStmts (entry : Core.Procedure) (callee : String)
+    (tyArgs : Option (List Core.Expression.Ty) := none) : List Core.Statement :=
   let md : Imperative.MetaData Core.Expression := #[]
   let inKeys := entry.header.inputs.keys
   let outKeys := entry.header.outputs.keys
@@ -653,11 +655,160 @@ private def mkVerificationHarness (entry : Core.Procedure) : Core.Procedure :=
   let outArgs : List (Imperative.CallArg Core.Expression) :=
     (entry.header.outputs.toList.filter (fun (id, _) => id ∉ inKeys)).map (fun (id, _) =>
       .outArg id)
-  let callStmt : Core.Statement :=
-    .call (Core.CoreIdent.toPretty entry.header.name) none (inArgs ++ outArgs) md
-  { header := { name := ⟨"main", ()⟩, typeArgs := [], inputs := [], outputs := [] },
+  inDecls ++ outOnlyDecls ++ assumes ++ [.call callee tyArgs (inArgs ++ outArgs) md]
+
+/-- The name of the transparent copy of the opaque procedure `name` that a check block calls. -/
+private def checkedCopyName (name : String) : String := s!"{name}$checked"
+
+/-- The name of the parameterless procedure that checks the procedure `name` (`harnessStmts`). -/
+private def checkName (name : String) : String := s!"{name}$check"
+
+/-- A transparent parameterless procedure named `name` whose body is `body`. -/
+private def paramlessProc (name : String) (body : List Core.Statement) : Core.Procedure :=
+  { header := { name := ⟨name, ()⟩, typeArgs := [], inputs := [], outputs := [] },
     spec := { preconditions := [], postconditions := [] },
-    body := .structured (inDecls ++ outOnlyDecls ++ assumes ++ [callStmt]) }
+    body := .structured body false }
+
+/-- One of the statement lists `blocks`, chosen nondeterministically. -/
+private def chooseOne : List (List Core.Statement) → List Core.Statement
+  | [] => []
+  | [b] => b
+  | b :: rest => [.ite .nondet b (chooseOne rest) #[]]
+
+/-- The nullary type at which a generic body is checked for a type variable that a call leaves
+    unconstrained, as procedure inlining instantiates such a variable with a nullary type. -/
+private def defaultCheckType : String := "$__opaqueCheckTy"
+
+/-- The concrete type instances at which the procedures `start` of the type-checked `program`
+    and the procedures they reach call each generic procedure, in order of discovery. A call in a
+    generic procedure's body is read at that procedure's instance, so the instances are those at
+    which inlining the callers into `start` would inline the callee. A type variable that a call
+    leaves unconstrained (a call without type arguments, or one whose type arguments keep a type
+    variable) is instantiated with `defaultCheckType`, so every called generic body is checked at
+    least once. -/
+private def genericCallInstances (program : Core.Program) (start : List Core.Procedure) :
+    Except String (List (Core.Procedure × List Lambda.LMonoTy)) :=
+  let closeOver (ty : Lambda.LMonoTy) : Lambda.LMonoTy :=
+    ty.subst (Lambda.Subst.ofZip ty.freeVars (ty.freeVars.map fun _ => .tcons defaultCheckType []))
+  let instanceAt (S : Lambda.Subst) (q : Core.Procedure) (cs : Core.CallSite) :
+      List Lambda.LMonoTy :=
+    match cs.tyArgs with
+    | some tys => tys.map fun t => closeOver ((Lambda.LTy.toMonoTypeUnsafe t).subst S)
+    | none => q.header.typeArgs.map fun _ => .tcons defaultCheckType []
+  -- Each round visits the calls of the procedures found in the previous one; the instances are
+  -- finite in a program without polymorphic recursion. A search that runs out of fuel with new
+  -- instances left fails, so that no instance is left unchecked.
+  let rec go (fuel : Nat) (found : List (Core.Procedure × List Lambda.LMonoTy))
+      (frontier : List (Core.Procedure × Lambda.Subst)) :
+      Except String (List (Core.Procedure × List Lambda.LMonoTy)) :=
+    match fuel, frontier with
+    | _, [] => pure found
+    | 0, _ => throw "GOTO export: the type instances of the generic opaque procedures do not \
+        terminate (polymorphic recursion), so their bodies cannot all be checked"
+    | fuel + 1, _ =>
+      let next := frontier.flatMap fun (p, S) => p.callSites.filterMap fun cs =>
+        match program.findProcByString? cs.procName with
+        | some q => if q.header.typeArgs.isEmpty then none else some (q, instanceAt S q cs)
+        | none => none
+      let new := next.foldl (init := []) fun acc (q, tys) =>
+        if (found ++ acc).any (fun (q', tys') => q'.header.name == q.header.name && tys' == tys)
+        then acc else acc ++ [(q, tys)]
+      go fuel (found ++ new) (new.map fun (q, tys) => (q, Lambda.Subst.ofZip q.header.typeArgs tys))
+  go (8 * (program.decls.length + 1)) [] (start.map (·, Lambda.Subst.empty))
+
+/-- Prepare the type-checked `program` for a GOTO export of the entry `entry`, so that every
+    body the export should check is in the GOTO `main`. An opaque procedure (`Body.isOpaque`) is
+    inlined as its contract, so the inlining of `main` does not check its body. So for each opaque
+    procedure with a body (`Body.isOpaqueWithBody`) that the entry reaches, `program` gets a
+    transparent copy (`checkedCopyName`), and `main` runs, nondeterministically, either the entry's
+    own check or the check of one such procedure from an arbitrary state (`harnessStmts`). A
+    generic opaque procedure is checked once for each concrete type instance at which the entry
+    reaches it (`genericCallInstances`), since a GOTO program has no type variables. The entry's
+    own check is its body when the entry is a parameterless `main` without a contract, and
+    otherwise a call to a transparent copy of it from an arbitrary state; it comes first, so its
+    properties keep their numbers. A parameterless entry with nothing to check, or without a
+    structured body (inlining folds calls only into structured code), is exported as it is. When
+    the entry reaches a generic opaque procedure with a body, it fails if the type instances of
+    the generic procedures do not terminate. It fails on a procedure to check through a copy
+    whose body is a CFG, since a copy is checked by inlining into structured code. -/
+private def withOpaqueBodyChecks (program : Core.Program) (entry : Core.Procedure) :
+    Except String Core.Program := do
+  let entryName := Core.CoreIdent.toPretty entry.header.name
+  let reached := program.toProcedureCG.getAllCalleesClosure [entryName]
+  let reachedProcs := (entryName :: reached).eraseDups.filterMap program.findProcByString?
+  let concreteOpaque := reachedProcs.filter fun q =>
+    q.body.isOpaqueWithBody && q.header.typeArgs.isEmpty &&
+      Core.CoreIdent.toPretty q.header.name != "main"
+  -- The instance search runs only when a generic opaque body needs checking, so that a program
+  -- without one exports whatever its generic procedures do.
+  let instances ←
+    if reachedProcs.any fun q => q.body.isOpaqueWithBody && !q.header.typeArgs.isEmpty then
+      genericCallInstances program (reachedProcs.filter (·.header.typeArgs.isEmpty))
+    else pure []
+  let genericOpaque := instances.filter fun (q, _) => q.body.isOpaqueWithBody
+  -- A parameterless entry, `main` or another (`__main__`), with nothing to check is exported as
+  -- it is, as the export picks it as the GOTO `main` (`coreToGotoFiles`).
+  let paramlessMain := entryName == "main" && entry.header.inputs.isEmpty
+  if entry.header.inputs.isEmpty && ((concreteOpaque.isEmpty && genericOpaque.isEmpty) ||
+      !(entry.body matches .structured _ _)) then return program
+  -- A parameterless `main` without a contract is checked as its body. Any other entry is checked
+  -- through a call to its copy, since a contract on the combined `main` would also govern the
+  -- other checks.
+  let entryInline := paramlessMain && entry.spec.preconditions.isEmpty &&
+    entry.spec.postconditions.isEmpty
+  -- The procedures checked through a transparent copy, each with its type instances (`none` for
+  -- a procedure that is not generic). A structured copy asserts the non-free postconditions after
+  -- its body, as `ProcBodyVerify` does: inlining a callee runs only its body, and callers assume
+  -- them.
+  let concreteChecked := (if entryInline then [] else [entry]) ++
+    concreteOpaque.filter fun q => Core.CoreIdent.toPretty q.header.name != entryName
+  let copiedProcs := concreteChecked ++ (genericOpaque.map (·.1)).foldl (init := []) fun acc q =>
+    if acc.any (·.header.name == q.header.name) then acc else acc ++ [q]
+  -- A copy is checked by inlining it into structured code, which a CFG body cannot be.
+  if let some q := copiedProcs.find? (·.body matches .cfg _ _) then
+    throw s!"GOTO export: procedure '{Core.CoreIdent.toPretty q.header.name}' has a CFG body, \
+      which the export checks through a structured copy, so it cannot check that body"
+  let copies : List Core.Decl := copiedProcs.map fun q =>
+    .proc { q with
+      header := { q.header with name := ⟨checkedCopyName (Core.CoreIdent.toPretty q.header.name), ()⟩ }
+      body := match q.body with
+        | .structured ss _ =>
+          .structured (.block s!"body_{Core.CoreIdent.toPretty q.header.name}" ss #[] ::
+            Core.ProcBodyVerify.ensuresToAsserts q.spec.postconditions) false
+        | .cfg g _ => .cfg g false
+        | .abstract => .abstract } #[]
+  -- Each check runs in its own parameterless procedure, so that inlining it into `main` gives
+  -- its locals fresh names. A generic one declares its parameters at the instance's types and
+  -- calls the copy at them.
+  let concreteChecks : List (String × List Core.Statement) := concreteChecked.map fun q =>
+    let n := Core.CoreIdent.toPretty q.header.name
+    (checkName n, harnessStmts q (checkedCopyName n))
+  let genericChecks : List (String × List Core.Statement) := genericOpaque.zipIdx.map
+    fun ((q, tys), i) =>
+      let n := Core.CoreIdent.toPretty q.header.name
+      let S := Lambda.Subst.ofZip q.header.typeArgs tys
+      (s!"{checkName n}{i}", (harnessStmts q (checkedCopyName n)
+        (some (tys.map (Lambda.LTy.forAll []))) ).map (Core.Statement.Statement.subst S))
+  let checks := concreteChecks ++ genericChecks
+  let checkProcs : List Core.Decl := checks.map fun (n, body) => .proc (paramlessProc n body) #[]
+  let callCheck (n : String) : List Core.Statement := [.call n none [] #[]]
+  let entryCheck : List Core.Statement :=
+    match entryInline, entry.body with
+    | true, .structured ss _ => ss
+    | _, _ => callCheck (checkName entryName)
+  let calleeChecks := (checks.filter fun (n, _) => n != checkName entryName).map (callCheck ·.1)
+  -- A parameterless `main` without a contract keeps its header; only its body gains the checks.
+  let mainBody := chooseOne (entryCheck :: calleeChecks)
+  let main : Core.Procedure :=
+    if entryInline then { entry with body := .structured mainBody false }
+    else paramlessProc "main" mainBody
+  let decls := program.decls.filter fun d => match d with
+    | .proc q _ => Core.CoreIdent.toPretty q.header.name != "main"
+    | _ => true
+  -- The nullary type `defaultCheckType`, which a generic instance may use.
+  let defaultDecl : List Core.Decl :=
+    if genericOpaque.isEmpty then [] else [Core.Decl.opaqueType defaultCheckType]
+  return { program with decls := defaultDecl ++ decls ++ copies ++ checkProcs ++ [.proc main #[]] }
 
 /--
 Type-check, inline procedures, and emit CProver GOTO JSON files.
@@ -669,17 +820,25 @@ public def inlineCoreToGotoFiles (program : Core.Program)
     (factory : @Lambda.Factory Core.CoreLParams := Core.Factory)
     (hoistRecursive : Bool := false)
     : EIO String Unit := do
-  -- If the chosen entry carries parameters, wrap it in a parameterless `main`
-  -- verification harness (havoc params + assume preconditions + call); the
-  -- inliner then folds the entry in. Keeps existing void `main` entries as-is.
+  -- The GOTO `main` checks the entry (a parameter-carrying entry through a harness that havocs
+  -- its parameters, assumes its preconditions and calls it) and the body of every opaque
+  -- procedure the entry reaches (`withOpaqueBodyChecks`); the inliner then folds them in.
   let findEntry (name : String) := program.decls.find? fun d =>
     match d with | .proc p _ => Core.CoreIdent.toPretty p.header.name == name | _ => false
+  -- The body checks read the type instances of calls, which type checking fills in, so the
+  -- program is type-checked again after they are added.
+  let (tcPgm0, _) ← match typeCheckCore program factory with
+    | .ok r => pure r
+    | .error msg => throw msg
   let program := match entryPoints.findSome? findEntry with
     | some (.proc p _) =>
-      if !p.header.inputs.isEmpty && Core.CoreIdent.toPretty p.header.name != "main" then
-        { program with decls := program.decls ++ [.proc (mkVerificationHarness p) #[]] }
-      else program
-    | _ => program
+      match tcPgm0.findProcByString? (Core.CoreIdent.toPretty p.header.name) with
+      | some p' => withOpaqueBodyChecks tcPgm0 p'
+      | none => pure program
+    | _ => pure program
+  let program ← match program with
+    | .ok p => pure p
+    | .error msg => throw msg
   let (tcPgm, Env) ← match typeCheckCore program factory with
     | .ok r => pure r
     | .error msg => throw msg

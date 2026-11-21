@@ -168,6 +168,11 @@ structure Env where
   /-- When `true`, concrete execution treats `assume` statements as no-ops
       instead of enforcing them. See `EvalContext.ignoreAssume`. -/
   ignoreAssumes : Bool := false
+  /-- The fresh values that concrete execution gave the outputs of calls run as their contract
+      (to abstract procedures, and to opaque ones under `CallMode.contract`), each with the kind of
+      the procedure (`abstract` or `opaque`), the procedure and the output it was havocked for, so
+      that an error about a condition that reads one can name the call. -/
+  havocOrigins : List (CoreIdent × String × String × String) := []
 
 def Env.init (empty_factory:=false): Env :=
   let σ := Lambda.LState.init
@@ -195,7 +200,7 @@ instance : ToFormat Env where
   format s :=
     let { error, program := _, exprEnv, datatypes, distinct := _, pathConditions, warnings,
           deferred, pathCap := _, collectAllAssertFailures := _, assertFailures := _,
-          ignoreAssumes := _ } := s
+          ignoreAssumes := _, havocOrigins := _ } := s
     format f!"Error:{Format.line}{error}{Format.line}\
               Expression Env:{Format.line}{exprEnv}{Format.line}\
               Datatypes:{Format.line}{datatypes}{Format.line}\

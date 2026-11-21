@@ -116,7 +116,7 @@ private abbrev drainBody : Core.Statements :=
      (loc 709 806)]
 
 /-- The translated body really is the assignment followed by the loop. -/
-private theorem drain_body_eq : drainProc.body = .structured drainBody := by native_decide
+private theorem drain_body_eq : drainProc.body = .structured drainBody false := by native_decide
 
 /-! ## The CFG of the pipeline, spelled out -/
 

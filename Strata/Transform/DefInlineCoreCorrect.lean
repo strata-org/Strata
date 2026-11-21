@@ -424,8 +424,8 @@ theorem defInlineProgram_over {norm : SubstNorm Expression} {prog out : Program}
     {s s' : Transform.CoreTransformState} {b : Bool}
     (h : (defInlineProgram norm prog).run s = (.ok (b, out), s')) {q : Procedure}
     {md : Imperative.MetaData Expression} {ss : Statements} (hq : Decl.proc q md ∈ prog.decls)
-    (hb : q.body = .structured ss) :
-    Decl.proc { q with body := .structured (defInline norm ss) } md ∈ out.decls := by
+    {opq : Bool} (hb : q.body = .structured ss opq) :
+    Decl.proc { q with body := .structured (defInline norm ss) opq } md ∈ out.decls := by
   cases h
   exact Program.mapStructuredBodies_mem hq hb
 

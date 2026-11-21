@@ -223,7 +223,7 @@ def proc (name : String) : GenM Procedure := do
     header := { name := ⟨name, ()⟩, typeArgs := [], outputs := [],
                 inputs := params.map fun (x, ty) => (⟨x, ()⟩, ty) }
     spec := { preconditions := [], postconditions := [] }
-    body := .structured (← stmts s 3) }
+    body := .structured (← stmts s 3) false }
 
 /-- The random program of seed `seed`: one to three procedures, `p0`, `p1`, …. -/
 def generate (seed : Nat) : Program :=

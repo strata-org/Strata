@@ -33,7 +33,7 @@ private def idProc : Procedure :=
     spec := default,
     body := .structured
       [.cmd (.cmd (.init (id "t") (.forAll [] tvA) (.det (.fvar default (id "x") (some tvA))) md)),
-       .cmd (.cmd (.set (id "y") (.det (.fvar default (id "t") (some tvA))) md))] }
+       .cmd (.cmd (.set (id "y") (.det (.fvar default (id "t") (some tvA))) md))] false }
 
 private def π : String → Option Procedure := fun n => if n = "Id" then some idProc else none
 
@@ -63,7 +63,7 @@ private def stopOf (tyArgs : Option (List Expression.Ty)) : Option StopReason :=
 private def capProc : Procedure :=
   { idProc with
     body := .structured
-      [.cmd (.cmd (.init (id "f") (.forAll ["b"] (.arrow tvA (.ftvar "b"))) .nondet md))] }
+      [.cmd (.cmd (.init (id "f") (.forAll ["b"] (.arrow tvA (.ftvar "b"))) .nondet md))] false }
 -- `Cap` has no instance: substituting under the binder could capture a type variable of the
 -- type arguments (here `b`).
 #guard !capProc.initTypesMono

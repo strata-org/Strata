@@ -49,7 +49,7 @@ def inc : Procedure where
               outputs := [(id' "y", LMonoTy.int)] }
   spec := { preconditions := [("pos", ⟨incPre, .Default, #[]⟩)],
             postconditions := [("grows", ⟨incPost, .Default, #[]⟩)] }
-  body := .structured incBody
+  body := .structured incBody false
 
 /-- An expression whose free-variable occurrences are annotated with `int` is typed at a ground
     type `τ` when the type checker of annotated expressions gives it the type `τ`. -/
@@ -115,9 +115,9 @@ private meta def eraseMd (p : Procedure) : Procedure :=
     spec := { preconditions := p.spec.preconditions.map ck,
               postconditions := p.spec.postconditions.map ck }
     body := match p.body with
-      | .structured ss => .structured (ss.map fun
+      | .structured ss _ => .structured (ss.map fun
         | .cmd (.cmd (.set x (.det e) _)) => .cmd (.cmd (.set x (.det (Core.eraseLocs e)) #[]))
-        | s => s)
+        | s => s) false
       | b => b }
 
 -- Type checking the parsed program gives `inc`, up to metadata.

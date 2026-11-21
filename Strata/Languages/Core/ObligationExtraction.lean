@@ -206,11 +206,12 @@ def procedureStatements (funcNames : List String) (proc : Procedure) :
       "' still carries a requires or ensures clause; obligations can only be " ++
       "extracted from procedures without a contract")
   match proc.body with
-  | .structured ss => .ok (renameShadowingParams funcNames proc ss)
-  | .cfg _ =>
+  | .structured ss _ => .ok (renameShadowingParams funcNames proc ss)
+  | .cfg _ _ =>
     .error ("ObligationExtraction: procedure '" ++ toString proc.header.name ++
       "' has a CFG body; obligations can only be extracted from " ++
       "structured bodies")
+  | .abstract => .ok []
 
 /-- One step of `extractObligations`: read the declaration `decl`, given the global
     path-condition facts declared before it (newest first) and the obligations found so far. -/

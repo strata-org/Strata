@@ -86,18 +86,20 @@ abbrev CoreBodyRel :=
     statement relation built from `E`; a CFG body runs from its entry block at the factory of the
     entry environment through the engine-realizable event-trace CFG relation over `E`
     (`StepCFGEngE`), and its final store is the halting store projected through the entry
-    store. -/
+    store.  An abstract body has no execution (a call to an opaque callee is
+    `CoreAbstractCallArmEng`). -/
 @[expose] def CoreBodyExecEngOf
     (R : ChoiceRecord Expression) (E : CoreCmdRel) : CoreBodyRel
-  | .structured ss, ρ, σ', emitted =>
+  | .structured ss _, ρ, σ', emitted =>
       ∃ ρ' : Imperative.Env Expression,
         ReflTransTrace (Imperative.StepEngParamE Expression R E)
           (.stmt (Stmt.block "" ss #[]) ρ) emitted (.terminal ρ')
         ∧ ρ'.store = σ'
-  | .cfg g, ρ, σ', emitted =>
+  | .cfg g _, ρ, σ', emitted =>
       ∃ ρEnd : Imperative.Env Expression,
         StepCFGEngStarE Expression E (.atBlock g g.entry ρ) emitted (.terminal ρEnd)
         ∧ projectStore ρ.store ρEnd.store = σ'
+  | .abstract, _, _, _ => False
 
 /-- The base-command arm of the engine-realizable Core command relation: the
     reference `EvalCommandE.cmd_sem` arm with the engine's executable value checks
@@ -115,7 +117,7 @@ abbrev CoreBodyRel :=
   fun fac σ c σ' emitted =>
     ∃ nm tyArgs p callArgs md σAO σ_final bodyEvents,
       c = CmdExt.call nm tyArgs callArgs md
-      ∧ Calls.typeInstantiatedCallee π nm tyArgs = some p
+      ∧ Calls.typeInstantiatedCallee π nm tyArgs = some p ∧ p.body.isOpaque = false
       ∧ CallEntry fac σ p callArgs σAO
       ∧ B p.body ⟨σAO, fac⟩ σ_final bodyEvents
       ∧ CallExit fac σ p callArgs σ_final σ'
@@ -124,10 +126,28 @@ abbrev CoreBodyRel :=
           bodyEvents ++ defaultAssertEvents fac σ_final p.spec.postconditions
       ∧ Calls.CallArgsReach fac σ callArgs ∧ Calls.WriteBackOK fac σ p callArgs σ_final
 
+/-- The abstract-call arm of the engine-realizable Core command relation: the reference
+    `EvalCommandE.call_abstract_sem` arm with an engine-realizable havoc of the output formals
+    (`Calls.HavocEng`), plus the engine's facts about the call (`Calls.CallArgsReach`,
+    `Calls.WriteBackOK`). -/
+@[expose] def CoreAbstractCallArmEng (π : String → Option Procedure)
+    (R : ChoiceRecord Expression) : CoreCmdRel :=
+  fun fac σ c σ' emitted =>
+    ∃ nm tyArgs p callArgs md σAO σO,
+      c = CmdExt.call nm tyArgs callArgs md
+      ∧ Calls.typeInstantiatedCallee π nm tyArgs = some p ∧ p.body.isOpaque = true
+      ∧ CallEntry fac σ p callArgs σAO
+      ∧ Calls.HavocEng R fac σAO (ProcedureHeader.outputParams (P := Expression) p.header) σO
+      ∧ CallExit fac σ p callArgs σO σ'
+      ∧ emitted =
+          defaultAssertEvents fac σAO (Imperative.Calls.checksAtCall md p.spec.preconditions) ++
+          assumeEvents fac σO p.spec.postconditions
+      ∧ Calls.CallArgsReach fac σ callArgs ∧ Calls.WriteBackOK fac σ p callArgs σO
+
 /-- Engine-realizable Core command semantics at call-nesting height `n`: base
     commands at every height, and calls whose callee body is itself an
-    engine-realizable run at height `n - 1`.  At height `0` only base commands
-    are related. -/
+    engine-realizable run at height `n - 1`, or whose callee is opaque.  At height `0` only
+    base commands are related. -/
 @[expose] def EvalCommandEngAtE
     (π : String → Option Procedure)
     (R : ChoiceRecord Expression) : Nat → CoreCmdRel
@@ -136,6 +156,7 @@ abbrev CoreBodyRel :=
       CoreCmdArmEng R fac σ c σ' emitted
       ∨ CoreCallArmEng π
           (CoreBodyExecEngOf R (EvalCommandEngAtE π R n)) fac σ c σ' emitted
+      ∨ CoreAbstractCallArmEng π R fac σ c σ' emitted
 
 /-- Traced closure of the engine-realizable Core statement relation at height `n`. -/
 abbrev CoreStepEngAtStarE
@@ -159,16 +180,20 @@ private theorem evalCommandEngAtE_toGeneric :
   induction n with
   | zero => exact id
   | succ _ ih =>
-    rintro _ _ _ _ _ (h | ⟨_, _, ⟨_, _, _ | _⟩, _, _, _, _, _, rfl, k, l, hb, s, t, ha, hw⟩)
+    rintro _ _ _ _ _ (h | ⟨_, _, ⟨_, _, _ | _ | _⟩, _, _, _, _, _, rfl, k, q, l, hb, s, t, ha, hw⟩ |
+      ⟨_, _, _, _, _, _, _, rfl, k, hab, l, hH, s, t, ha, hw⟩)
     · exact .inl h
     · obtain ⟨_, o, p⟩ := hb
-      exact .inr ⟨_, _, _, _, _, _, _, _, rfl, k, (callEntry_iff ..).1 l,
+      exact .inr (.inl ⟨_, _, _, _, _, _, _, _, rfl, k, q, (callEntry_iff ..).1 l,
         ⟨_, o.imp fun _ _ _ => Calls.stepEngParamE_imp (P := Expression) fun _ _ _ _ _ => ih, p⟩,
-        (callExit_iff ..).1 s, t, ha, hw⟩
+        (callExit_iff ..).1 s, t, ha, hw⟩)
     · obtain ⟨_, o, p⟩ := hb
-      exact .inr ⟨_, _, _, _, _, _, _, _, rfl, k, (callEntry_iff ..).1 l,
+      exact .inr (.inl ⟨_, _, _, _, _, _, _, _, rfl, k, q, (callEntry_iff ..).1 l,
         ⟨_, o.imp fun _ _ _ => StepCFGEngE.imp fun _ _ _ _ _ => ih, p⟩, (callExit_iff ..).1 s, t,
-        ha, hw⟩
+        ha, hw⟩)
+    · exact hb.elim
+    · exact .inr (.inr ⟨_, _, _, _, _, _, _, rfl, k, hab, (callEntry_iff ..).1 l, hH,
+        (callExit_iff ..).1 s, t, ha, hw⟩)
 
 /-- Core's engine-realizable run at height `n` is a generic one. -/
 private theorem coreStepEngAtStarE_toGeneric (n : Nat) {c c' : CoreConfig}

@@ -188,7 +188,7 @@ private def hdMd : Imperative.MetaData Core.Expression :=
 
 /-- `HeadOfCons` consists of the single assignment `r := IntList..hd(Cons(1, Nil()))`. -/
 private theorem hd_body_shape :
-    (procOf listAST "HeadOfCons").body = .structured [Core.Statement.set rId hdE hdMd] := by
+    (procOf listAST "HeadOfCons").body = .structured [Core.Statement.set rId hdE hdMd] false := by
   native_decide
 
 /-- Its postcondition is `r == 1`. -/
@@ -202,7 +202,7 @@ theorem headOfCons_meets_contract :
   let command : Core.Command :=
     Imperative.CmdExt.cmd (Imperative.Cmd.set rId (.det hdE) hdMd)
   refine Core.Logic.Hoare.Procedure.contractTriple_singleton_cmd (hmono := by native_decide)
-    listAST testParams "HeadOfCons" (procOf listAST "HeadOfCons") (by native_decide) command ?_
+    (opq := false) listAST testParams "HeadOfCons" (procOf listAST "HeadOfCons") (by native_decide) command ?_
     (by native_decide) ?_ ?_
   · simpa [command] using hd_body_shape
   · intro ρ₀ σ' emitted hpre _hwf hstep

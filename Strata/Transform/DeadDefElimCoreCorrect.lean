@@ -70,8 +70,8 @@ public section
 theorem deadDefElimProgram_over {prog out : Program} {s s' : Transform.CoreTransformState}
     {b : Bool} (h : (deadDefElimProgram prog).run s = (.ok (b, out), s')) {q : Procedure}
     {md : Imperative.MetaData Expression} {ss : Statements} (hq : Decl.proc q md ∈ prog.decls)
-    (hb : q.body = .structured ss) :
-    Decl.proc { q with body := .structured (deadDefElimH [] ss) } md ∈ out.decls ∧
+    (hb : q.body = .structured ss opq) :
+    Decl.proc { q with body := .structured (deadDefElimH [] ss) opq } md ∈ out.decls ∧
       ∀ {F : Expression.Factory}, WellFormedSemanticEvalExprCongr (P := Expression) F →
         WellFormedSemanticEvalBool (P := Expression) F → Block.noLoops ss = true →
         ∀ {σ : SemanticStore Expression}, WellFormedStore σ F →
@@ -98,8 +98,8 @@ theorem deadDefElimPipelinePhase_over {program out : Program}
     {s s' : Transform.CoreTransformState} {b : Bool}
     (h : (deadDefElimPipelinePhase.transform program).run s = (.ok (b, out), s'))
     {q : Procedure} {md : Imperative.MetaData Expression} {ss : Statements}
-    (hq : Decl.proc q md ∈ program.decls) (hb : q.body = .structured ss) :
-    Decl.proc { q with body := .structured (deadDefElimH [] ss) } md ∈ out.decls ∧
+    (hq : Decl.proc q md ∈ program.decls) (hb : q.body = .structured ss opq) :
+    Decl.proc { q with body := .structured (deadDefElimH [] ss) opq } md ∈ out.decls ∧
       ∀ {F : Expression.Factory}, WellFormedSemanticEvalExprCongr (P := Expression) F →
         WellFormedSemanticEvalBool (P := Expression) F → Block.noLoops ss = true →
         ∀ {σ : SemanticStore Expression}, WellFormedStore σ F →

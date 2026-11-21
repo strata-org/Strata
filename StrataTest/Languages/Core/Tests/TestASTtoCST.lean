@@ -1184,7 +1184,7 @@ private def constAstPgm : Core.Program := { decls := [
 /--
 info: program Core;
 
-function opaque () : int;
+function |opaque| () : int;
 function five () : int {
   5
 }

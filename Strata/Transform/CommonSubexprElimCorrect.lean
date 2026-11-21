@@ -954,13 +954,14 @@ private def cseStep : List Core.Decl × Nat × Bool → Core.Decl → Transform.
     match decl with
     | .proc proc md =>
       match proc.body with
-      | .structured ss =>
+      | .structured ss o =>
         let (body', idx') := stmtRunCSESinglePass ss idx
-        pure (.proc { proc with body := .structured body' } md :: acc, idx', changed || idx' > idx)
-      | .cfg _ =>
+        pure (.proc { proc with body := .structured body' o } md :: acc, idx', changed || idx' > idx)
+      | .cfg _ _ =>
         throw (Strata.Message.fromFormat
           f!"❌ CommonSubexprElim: procedure {proc.header.name.name} has a CFG body; \
              common subexpressions can only be eliminated from structured bodies.")
+      | .abstract => pure (decl :: acc, idx, changed)
     | other => pure (other :: acc, idx, changed)
 
 /-- `runCSE` through its step. -/
@@ -971,12 +972,15 @@ private theorem runCSE_eq (p : Program) : runCSE p = (do
 /-- **`runCSE` rewrites each structured body** with the single pass, from some start index. -/
 private theorem runCSE_mem {p out : Program} {s s' : Transform.CoreTransformState} {b : Bool}
     (h : (runCSE p).run s = (.ok (b, out), s')) {q : Procedure} {md : MetaData Expression}
-    {ss : Statements} (hq : Decl.proc q md ∈ p.decls) (hb : q.body = .structured ss) :
-    ∃ idx, Decl.proc { q with body := .structured (stmtRunCSESinglePass ss idx).1 } md ∈ out.decls := by
+    {ss : Statements} {opq : Bool} (hq : Decl.proc q md ∈ p.decls)
+    (hb : q.body = .structured ss opq) :
+    ∃ idx, Decl.proc { q with body := .structured (stmtRunCSESinglePass ss idx).1 opq } md ∈
+      out.decls := by
   rw [runCSE_eq] at h
   simp only [ExceptT.run_bind] at h
-  let R : Core.Decl → Core.Decl → Prop := fun d d' => ∀ q md ss, d = Decl.proc q md → q.body = .structured ss →
-    ∃ idx, d' = Decl.proc { q with body := .structured (stmtRunCSESinglePass ss idx).1 } md
+  let R : Core.Decl → Core.Decl → Prop := fun d d' => ∀ q md ss o, d = Decl.proc q md →
+    q.body = .structured ss o →
+    ∃ idx, d' = Decl.proc { q with body := .structured (stmtRunCSESinglePass ss idx).1 o } md
   have hstep : ∀ acc d s, (∃ e, ExceptT.run (cseStep acc d) s = (.error e, s)) ∨
       ∃ d' a, ExceptT.run (cseStep acc d) s = (.ok (d' :: acc.1, a), s) ∧ R d d' := by
     intro acc d s
@@ -984,17 +988,23 @@ private theorem runCSE_mem {p out : Program} {s s' : Transform.CoreTransformStat
     cases d with
     | proc q' md' =>
       cases hb' : q'.body with
-      | structured ss' =>
+      | structured ss' o' =>
         right
-        refine ⟨_, _, by simp [cseStep, hb']; rfl, fun q md ss hd hbq => ?_⟩
+        refine ⟨_, _, by simp [cseStep, hb']; rfl, fun q md ss o hd hbq => ?_⟩
         cases hd
         rw [hb'] at hbq
         cases hbq
         exact ⟨idx, rfl⟩
-      | cfg c => left; exact ⟨_, by simp [cseStep, hb']; rfl⟩
+      | cfg c o' => left; exact ⟨_, by simp [cseStep, hb']; rfl⟩
+      | abstract =>
+        right
+        refine ⟨_, _, by simp [cseStep, hb']; rfl, fun q md ss o hd hbq => ?_⟩
+        cases hd
+        rw [hb'] at hbq
+        cases hbq
     | _ =>
       right
-      exact ⟨_, _, by simp [cseStep]; rfl, fun q md ss hd => by cases hd⟩
+      exact ⟨_, _, by simp [cseStep]; rfl, fun q md ss o hd => by cases hd⟩
   cases hF : ExceptT.run (p.decls.foldlM cseStep ([], 0, false)) s with
   | mk res s1 =>
     simp only [bind, StateT.bind, hF] at h
@@ -1003,7 +1013,7 @@ private theorem runCSE_mem {p out : Program} {s s' : Transform.CoreTransformStat
     | ok r =>
       obtain ⟨-, h2⟩ := foldlM_spec cseStep R hstep p.decls _ s r s1 hF
       obtain ⟨d', hR, hd'⟩ := h2 _ hq
-      obtain ⟨idx, rfl⟩ := hR q md ss rfl hb
+      obtain ⟨idx, rfl⟩ := hR q md ss opq rfl hb
       have hout : out = { decls := r.1.reverse } := by
         simp only [ExceptT.pure, ExceptT.run, ExceptT.mk, pure, StateT.pure] at h
         cases h
@@ -1017,8 +1027,8 @@ private theorem commonSubexprElimPhase_mem {minTreeSize : Option Nat} {program o
     {s s' : Transform.CoreTransformState} {b : Bool}
     (h : ((Core.commonSubexprElimPhase minTreeSize).transform program).run s = (.ok (b, out), s'))
     {q : Procedure} {md : MetaData Expression} {ss : Statements}
-    (hq : Decl.proc q md ∈ program.decls) (hb : q.body = .structured ss) :
-    ∃ ss', Decl.proc { q with body := .structured ss' } md ∈ out.decls ∧
+    {opq : Bool} (hq : Decl.proc q md ∈ program.decls) (hb : q.body = .structured ss opq) :
+    ∃ ss', Decl.proc { q with body := .structured ss' opq } md ∈ out.decls ∧
       (ss' = ss ∨ ∃ idx, ss' = (stmtRunCSESinglePass ss idx).1) := by
   cases minTreeSize with
   | none =>
@@ -1031,7 +1041,7 @@ private theorem commonSubexprElimPhase_mem {minTreeSize : Option Nat} {program o
     · simp only [pure] at h
       cases h
       refine ⟨ss, ?_, .inl rfl⟩
-      have : ({ q with body := .structured ss } : Procedure) = q := by
+      have : ({ q with body := .structured ss opq } : Procedure) = q := by
         cases q; simp only at hb; rw [hb]
       rw [this]; exact hq
     · obtain ⟨idx, hm⟩ := runCSE_mem (p := program) h hq hb
@@ -1053,9 +1063,9 @@ theorem commonSubexprElimPhase_failures {minTreeSize : Option Nat} {program out 
     (hssa : ProgramFact.staticSingleAssignment.holds program)
     (hloops : ProgramFact.noLoops.holds program)
     {q : Procedure} {md : MetaData Expression} {ss : Statements}
-    (hq : Decl.proc q md ∈ program.decls) (hb : q.body = .structured ss)
+    {opq : Bool} (hq : Decl.proc q md ∈ program.decls) (hb : q.body = .structured ss opq)
     (hfresh : FreshCSENames ss 0) (hnc : NoHashCollisions ss) :
-    ∃ ss', Decl.proc { q with body := .structured ss' } md ∈ out.decls ∧
+    ∃ ss', Decl.proc { q with body := .structured ss' opq } md ∈ out.decls ∧
       ∀ {F : Expression.Factory}, WellFormedSemanticEvalBool (P := Expression) F →
         WellFormedSemanticEvalVar (P := Expression) F →
         ∀ {σ : SemanticStore Expression}, (∀ k : Nat, σ ⟨s!"{cseVarPrefix}{k}", ()⟩ = none) →

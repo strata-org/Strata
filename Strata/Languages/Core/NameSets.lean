@@ -43,10 +43,11 @@ def Procedure.Body.mapCheckLabelsM {M : Type → Type} [Monad M]
     | .cmd (.cover l e md) => do let (l, md) ← f l md; return .cmd (.cover l e md)
     | c => pure c
   match body with
-  | .structured ss => return .structured (← Imperative.Block.mapExprM pure g ss)
-  | .cfg g' =>
+  | .structured ss o => return .structured (← Imperative.Block.mapExprM pure g ss) o
+  | .cfg g' o =>
     return .cfg { g' with blocks := ← g'.blocks.mapM fun (l, b) =>
-      return (l, { b with cmds := ← b.cmds.mapM g }) }
+      return (l, { b with cmds := ← b.cmds.mapM g }) } o
+  | .abstract => return .abstract
 
 /-- The labels of a procedure's checks: its contract's `requires` and `ensures`
     clauses, which the procedure check turns into an `assume` and an `assert`
@@ -61,8 +62,8 @@ def Decl.checkLabels : Decl → List String
       modifyGet fun ls => ((l, md), l :: ls)
     let (_, bodyLabels) := (Procedure.Body.mapCheckLabelsM record q.body).run []
     let invariantLabels := match q.body with
-      | .structured ss => (Statements.collectAssertIds ss).map (·.label)
-      | .cfg _ => []
+      | .structured ss _ => (Statements.collectAssertIds ss).map (·.label)
+      | .cfg _ _ | .abstract => []
     q.spec.preconditions.map (·.1) ++ q.spec.postconditions.map (·.1) ++
       bodyLabels.reverse ++ invariantLabels
   | _ => []
@@ -86,8 +87,9 @@ def Program.declaredNames (p : Program) : List String :=
     a CFG body. A pass that adds variables to the procedure must avoid them. -/
 def Procedure.varNames (p : Procedure) : List String :=
   let locals := match p.body with
-    | .structured ss => Imperative.Block.definedVars ss false
-    | .cfg g => g.blocks.flatMap fun (_, b) => b.cmds.flatMap Command.definedVars
+    | .structured ss _ => Imperative.Block.definedVars ss false
+    | .cfg g _ => g.blocks.flatMap fun (_, b) => b.cmds.flatMap Command.definedVars
+    | .abstract => []
   (p.header.inputs.keys ++ p.header.outputs.keys ++ locals).map (·.name)
 
 /-- The names of the variables the program's procedures declare (`Procedure.varNames`). -/
@@ -205,15 +207,16 @@ def block (acc : Acc) : List Statement → Acc
 end
 
 /-- The internal names of a procedure body: its statements, or its block labels, commands and
-    transfers. -/
+    transfers; none for an abstract body. -/
 def body (acc : Acc) : Procedure.Body → Acc
-  | .structured ss => block acc ss
-  | .cfg g =>
+  | .structured ss _ => block acc ss
+  | .cfg g _ =>
     g.blocks.foldl (init := add acc g.entry) fun acc (l, b) =>
       let acc := b.cmds.foldl command (add acc l)
       match b.transfer with
       | .condGoto p lt lf _ => add (add (expr acc p) lt) lf
       | .finish _ => acc
+  | .abstract => acc
 
 /-- The internal names of the labelled clauses of a contract. -/
 def checks (acc : Acc) (cs : List (String × Procedure.Check)) : Acc :=

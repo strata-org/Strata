@@ -178,9 +178,9 @@ private theorem loopInitHoistDecls_proc_mem
     {decls : List Decl} {results : List (Decl × Bool)}
     {q : Procedure} {md : MetaData Expression} {ss ss' : Statements}
     (h : decls.mapM loopInitHoistDecl = .ok results)
-    (hq : Decl.proc q md ∈ decls) (hb : q.body = .structured ss)
+    (hq : Decl.proc q md ∈ decls) (hb : q.body = .structured ss opq)
     (hss : Core.hoistLoopPrefixInits ss = some ss') :
-    (Decl.proc { q with body := .structured ss' } md, ss' != ss) ∈ results := by
+    (Decl.proc { q with body := .structured ss' opq } md, ss' != ss) ∈ results := by
   induction decls generalizing results with
   | nil => simp at hq
   | cons d rest ih =>
@@ -206,9 +206,9 @@ private theorem loopInitHoist_proc_mem
     {program out : Program} {s s' : Transform.CoreTransformState} {changed : Bool}
     {q : Procedure} {md : MetaData Expression} {ss ss' : Statements}
     (h : (loopInitHoist program).run s = (.ok (changed, out), s'))
-    (hq : Decl.proc q md ∈ program.decls) (hb : q.body = .structured ss)
+    (hq : Decl.proc q md ∈ program.decls) (hb : q.body = .structured ss opq)
     (hss : Core.hoistLoopPrefixInits ss = some ss') :
-    Decl.proc { q with body := .structured ss' } md ∈ out.decls := by
+    Decl.proc { q with body := .structured ss' opq } md ∈ out.decls := by
   cases hmap : program.decls.mapM loopInitHoistDecl with
   | error error =>
       simp only [loopInitHoist, hmap, liftExcept, pure] at h
@@ -233,9 +233,9 @@ theorem loopInitHoistPipelinePhase_over
     (hnoCallsProgram : ProgramFact.noCalls.holds program)
     (huniqProgram : ProgramFact.uniqueInits.holds program)
     {q : Procedure} {md : MetaData Expression} {ss : Statements}
-    (hq : Decl.proc q md ∈ program.decls) (hb : q.body = .structured ss) :
+    (hq : Decl.proc q md ∈ program.decls) (hb : q.body = .structured ss opq) :
     ∃ ss', Core.hoistLoopPrefixInits ss = some ss'
-      ∧ Decl.proc { q with body := .structured ss' } md ∈ out.decls
+      ∧ Decl.proc { q with body := .structured ss' opq } md ∈ out.decls
       ∧ ∀ (params : InitEnvWFParams) {I : ConditionInterp Expression},
         I.StableUnder
           (EventArg.WithWF (P := Expression) (EventArg.ExtendsEnv (fun _ => True))) →

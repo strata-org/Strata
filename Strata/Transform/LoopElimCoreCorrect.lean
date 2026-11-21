@@ -170,8 +170,8 @@ body exiting to a label starting with `Core.loopElimPrefix`. -/
 theorem overapproximatesTraces_coreProgram (params : InitEnvWFParams) {p p' : Program} {c : Bool}
     {σ σ' : Transform.CoreTransformState} (h : loopElim p σ = (.ok (c, p'), σ'))
     {i : Nat} {proc : Procedure} {md : Imperative.MetaData Expression} {ss : Statements}
-    (hproc : p.decls[i]? = some (.proc proc md)) (hbody : proc.body = .structured ss) :
-    ∃ ss', p'.decls[i]? = some (.proc { proc with body := .structured ss' } md) ∧
+    (hproc : p.decls[i]? = some (.proc proc md)) (hbody : proc.body = .structured ss opq) :
+    ∃ ss', p'.decls[i]? = some (.proc { proc with body := .structured ss' opq } md) ∧
       OverapproximatesTraces2UptoWhen
         (Trace.HasExtraEvents
           (Trace.PreservesLastEvent (RComp Trace.MayDropEvents
@@ -197,8 +197,8 @@ theorem overapproximatesTraces_coreProgram (params : InitEnvWFParams) {p p' : Pr
 theorem assertValid_coreProgram (params : InitEnvWFParams) {p p' : Program} {c : Bool}
     {σ σ' : Transform.CoreTransformState} (h : loopElim p σ = (.ok (c, p'), σ'))
     {i : Nat} {proc : Procedure} {md : Imperative.MetaData Expression} {ss : Statements}
-    (hproc : p.decls[i]? = some (.proc proc md)) (hbody : proc.body = .structured ss) :
-    ∃ ss', p'.decls[i]? = some (.proc { proc with body := .structured ss' } md) ∧
+    (hproc : p.decls[i]? = some (.proc proc md)) (hbody : proc.body = .structured ss opq) :
+    ∃ ss', p'.decls[i]? = some (.proc { proc with body := .structured ss' opq } md) ∧
       ∀ {I : ConditionInterp Expression},
         I.TrueStutterHolds (WellFormedSemanticEval (P := Expression)) →
         AssertValidityPreservedWhen I (EventLang.coreBlock π) (EventLang.coreBlock π)
@@ -216,9 +216,9 @@ theorem assertValid_coreProgram (params : InitEnvWFParams) {p p' : Program} {c :
 theorem triple_coreProgram (params : InitEnvWFParams) {p p' : Program} {c : Bool}
     {σ σ' : Transform.CoreTransformState} (h : loopElim p σ = (.ok (c, p'), σ'))
     {i : Nat} {proc : Procedure} {md : Imperative.MetaData Expression} {ss : Statements}
-    (hproc : p.decls[i]? = some (.proc proc md)) (hbody : proc.body = .structured ss)
+    (hproc : p.decls[i]? = some (.proc proc md)) (hbody : proc.body = .structured ss opq)
     (hnc : Statements.noCalls ss = Bool.true) :
-    ∃ ss', p'.decls[i]? = some (.proc { proc with body := .structured ss' } md) ∧
+    ∃ ss', p'.decls[i]? = some (.proc { proc with body := .structured ss' opq } md) ∧
       ∀ {F : Lambda.Factory CoreLParams} {Pre Post : Env Expression → Prop},
         (∀ ρ₀, Pre ρ₀ → ρ₀.factory.factory = F) →
         Core.Logic.Hoare.Triple π params Pre ss' Post F →
@@ -236,9 +236,9 @@ theorem triple_coreProgram (params : InitEnvWFParams) {p p' : Program} {c : Bool
 theorem validOnTracesVerifier_coreProgram (params : InitEnvWFParams) {p p' : Program} {c : Bool}
     {σ σ' : Transform.CoreTransformState} (h : loopElim p σ = (.ok (c, p'), σ'))
     {i : Nat} {proc : Procedure} {md : Imperative.MetaData Expression} {ss : Statements}
-    (hproc : p.decls[i]? = some (.proc proc md)) (hbody : proc.body = .structured ss)
+    (hproc : p.decls[i]? = some (.proc proc md)) (hbody : proc.body = .structured ss opq)
     (hnc : Statements.noCalls ss = Bool.true) :
-    ∃ ss', p'.decls[i]? = some (.proc { proc with body := .structured ss' } md) ∧
+    ∃ ss', p'.decls[i]? = some (.proc { proc with body := .structured ss' opq } md) ∧
       ∀ {I : ConditionInterp Expression},
         I.TrueStutterHolds (WellFormedSemanticEval (P := Expression)) →
       ∀ {analyze : Statements → Bool},

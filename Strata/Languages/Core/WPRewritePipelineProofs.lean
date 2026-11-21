@@ -76,7 +76,7 @@ public section
 @[expose] def KeepsBodyFacts (R : Program → Program → Prop) : Prop :=
   ∀ (p out : Program), R p out → ∀ (q' : Procedure) (md : Imperative.MetaData Expression),
     Decl.proc q' md ∈ out.decls → ∃ q, Decl.proc q md ∈ p.decls ∧ q'.header = q.header ∧
-      ∀ ss', q'.body = .structured ss' → ∃ ss, q.body = .structured ss ∧
+      ∀ ss' o, q'.body = .structured ss' o → ∃ ss, q.body = .structured ss o ∧
         ∀ D df Γ, WPRewriteLoop.BodyOK D df Γ ss → WPRewriteLoop.BodyOK D df Γ ss'
 
 /-- **Beta reduction keeps the body facts.** -/
@@ -85,7 +85,7 @@ theorem betaReduce_keepsBodyFacts : KeepsBodyFacts (PhaseRuns betaReducePipeline
   rw [betaReducePipelinePhase_ok] at h
   cases h
   exact (BetaReduce.betaReduceProgram_proc_kept hq').imp fun q ⟨hq, hh, hb⟩ =>
-    ⟨hq, hh, fun ss' hs' => (hb ss' hs').imp fun ss ⟨hs, hp, hdu, hty⟩ => ⟨hs,
+    ⟨hq, hh, fun ss' o hs' => (hb ss' o hs').imp fun ss ⟨hs, hp, hdu, hty⟩ => ⟨hs,
       fun D df Γ ⟨hpa, hd, hw, hi⟩ => ⟨hp hpa, hdu D df hd, (hty Γ hw hi).1, (hty Γ hw hi).2⟩⟩⟩
 
 /-- **Phases that keep the body facts carry them to the extracted statement lists.** When every
@@ -95,7 +95,7 @@ theorem betaReduce_keepsBodyFacts : KeepsBodyFacts (PhaseRuns betaReducePipeline
     `init`s. -/
 theorem keepsBodyFacts_typed {R : Program → Program → Prop} (hR : KeepsBodyFacts R)
     {p₂ out : Program} (hro : R p₂ out)
-    (hfacts : ∀ q₂ md ss₂, Decl.proc q₂ md ∈ p₂.decls → q₂.body = .structured ss₂ →
+    (hfacts : ∀ q₂ md ss₂ o, Decl.proc q₂ md ∈ p₂.decls → q₂.body = .structured ss₂ o →
       q₂.header.inputs ++ q₂.header.outputs = [] ∧ ∃ D df Γ, WPRewriteLoop.BodyOK D df Γ ss₂) :
     ∀ q md ss, Decl.proc q md ∈ out.decls → procedureStatements out.funcNames q = .ok ss →
       ∃ D df Γ, Block.defUseWellFormed D df ss = true ∧ Block.fvarTypesWellAnnotated Γ ss ∧
@@ -105,13 +105,17 @@ theorem keepsBodyFacts_typed {R : Program → Program → Prop} (hR : KeepsBodyF
   simp only [procedureStatements] at hss
   split at hss
   · simp [throw, throwThe, MonadExceptOf.throw, bind, Except.bind] at hss
-  rcases hb₃ : q₃.body with ss₃ | _ <;> simp only [hb₃, reduceCtorEq] at hss
-  cases hss
-  obtain ⟨ss₂, hb₂, hk⟩ := hb ss₃ hb₃
-  obtain ⟨hio, D, df, Γ, hok⟩ := hfacts q₂ _ ss₂ hq₂ hb₂
-  obtain ⟨-, hdu₃, hw₃, hi₃⟩ := hk D df Γ hok
-  simp only [renameShadowingParams, hhd, hio, List.foldl_nil]
-  exact ⟨D, df, Γ, hdu₃, hw₃, hi₃⟩
+  rcases hb₃ : q₃.body with ⟨ss₃, o₃⟩ | _ | _ <;> simp only [hb₃, reduceCtorEq] at hss
+  · cases hss
+    obtain ⟨ss₂, hb₂, hk⟩ := hb ss₃ o₃ hb₃
+    obtain ⟨hio, D, df, Γ, hok⟩ := hfacts q₂ _ ss₂ _ hq₂ hb₂
+    obtain ⟨-, hdu₃, hw₃, hi₃⟩ := hk D df Γ hok
+    simp only [renameShadowingParams, hhd, hio, List.foldl_nil]
+    exact ⟨D, df, Γ, hdu₃, hw₃, hi₃⟩
+  · cases hss
+    exact ⟨fun _ => False, fun _ => False, fun _ => none, by
+      simp [Block.defUseWellFormed], by simp [Block.fvarTypesWellAnnotated],
+      by simp [Block.initsTyped]⟩
 
 /-- **A procedure of the output of the SSA phase and the six-pass rewrite loop.** Let the SSA
     phase and the loop (`ssaPipelinePhase`, `wpRewriteLoopPipelinePhase`) run in turn on `mid` and
@@ -123,8 +127,8 @@ theorem wpRewriteLoopPipeline_proc {moreFns : Lambda.Factory CoreLParams} {mid p
     (h₁ : PhaseRuns (ssaPipelinePhase moreFns) mid p₁)
     (h₂ : PhaseRuns (wpRewriteLoopPipelinePhase moreFns) p₁ p₂)
     {q : Procedure} {md : Imperative.MetaData Expression} {ss : Statements}
-    (hq : Decl.proc q md ∈ p₂.decls) (hb : q.body = .structured ss) :
-    ∃ fac q₀ md₀ lay r, Decl.proc q₀ md₀ ∈ mid.decls ∧ q₀.body = .structured lay ∧
+    {opq : Bool} (hq : Decl.proc q md ∈ p₂.decls) (hb : q.body = .structured ss opq) :
+    ∃ fac q₀ md₀ lay lo r, Decl.proc q₀ md₀ ∈ mid.decls ∧ q₀.body = .structured lay lo ∧
       wpFactory moreFns mid = .ok fac ∧
       WP.ssaLoopFree fac (Imperative.WP.IdSet.ofList
         (WP.avoidOf [] (fac.toArray.toList.map (·.name) ++ WP.declNames mid))) q₀ lay = .ok r ∧
@@ -142,16 +146,19 @@ theorem wpRewriteLoopPipeline_proc {moreFns : Lambda.Factory CoreLParams} {mid p
     simp only [Function.comp_apply, WPLoop.wpLoopDecl, reduceCtorEq] at he₁
   obtain ⟨decls, hdecls, hssa⟩ := (Except.bind_is_ok _ _ _).1 hssa
   cases hssa
-  obtain ⟨d₀, hd₀, he₀⟩ := mapM_except_mem_right _ _ _ hdecls _ hd₁
+  obtain ⟨od, hod, hodq⟩ := List.mem_filterMap.1 hd₁
+  cases hodq
+  obtain ⟨d₀, hd₀, he₀⟩ := mapM_except_mem_right _ _ _ hdecls _ hod
   rcases d₀ with _ | _ | _ | _ | ⟨q₀, md₀⟩ | _ <;>
-    simp only [pure, Except.pure, Except.ok.injEq, reduceCtorEq] at he₀
-  rcases hb₀ : q₀.body with lay | _ <;>
-    simp only [WP.ssaProc, hb₀, throw, throwThe, MonadExceptOf.throw, reduceCtorEq] at he₀
+    simp only [pure, Except.pure, Except.ok.injEq, reduceCtorEq, Option.some.injEq] at he₀
+  rcases hb₀ : q₀.body with ⟨lay, lo⟩ | _ | _ <;>
+    simp only [WP.ssaProc, hb₀, throw, throwThe, MonadExceptOf.throw, reduceCtorEq, pure,
+      Except.pure, Except.ok.injEq] at he₀
   obtain ⟨r, hr, he₀⟩ := (Except.bind_is_ok _ _ _).1 he₀
   cases he₀
   cases he₁
   cases hb
-  exact ⟨fac, q₀, md₀, lay, r, hd₀, hb₀, hfac, hr, rfl, rfl⟩
+  exact ⟨fac, q₀, md₀, lay, lo, r, hd₀, hb₀, hfac, hr, rfl, rfl⟩
 
 /-- A procedure of the output of beta reduction with a structured body `ss` comes from a
     procedure of the input with the same header and metadata and a structured body whose beta
@@ -159,8 +166,8 @@ theorem wpRewriteLoopPipeline_proc {moreFns : Lambda.Factory CoreLParams} {mid p
 private theorem betaReduceProgram_proc_body {p : Program} {q' : Procedure}
     {md : Imperative.MetaData Expression}
     (h : Decl.proc q' md ∈ (BetaReduce.betaReduceProgram p).decls)
-    {ss' : Statements} (hb : q'.body = .structured ss') :
-    ∃ q ss, Decl.proc q md ∈ p.decls ∧ q.body = .structured ss ∧ q'.header = q.header ∧
+    {ss' : Statements} {opq : Bool} (hb : q'.body = .structured ss' opq) :
+    ∃ q ss, Decl.proc q md ∈ p.decls ∧ q.body = .structured ss opq ∧ q'.header = q.header ∧
       ss' = BetaReduce.betaReduceBlock ss := by
   obtain ⟨_ | _ | _ | _ | _ | _ | _, hd, ⟨⟩⟩ := List.mem_map.1 h
   split at hb <;> cases hb
@@ -177,8 +184,8 @@ theorem wpRewritePipeline_proc {moreFns : Lambda.Factory CoreLParams} {mid p₁ 
     (h₂ : PhaseRuns (wpRewriteLoopPipelinePhase moreFns) p₁ p₂)
     (h₃ : PhaseRuns betaReducePipelinePhase p₂ out)
     {q : Procedure} {md : Imperative.MetaData Expression} {ss : Statements}
-    (hq : Decl.proc q md ∈ out.decls) (hb : q.body = .structured ss) :
-    ∃ fac q₀ md₀ lay r, Decl.proc q₀ md₀ ∈ mid.decls ∧ q₀.body = .structured lay ∧
+    {opq : Bool} (hq : Decl.proc q md ∈ out.decls) (hb : q.body = .structured ss opq) :
+    ∃ fac q₀ md₀ lay lo r, Decl.proc q₀ md₀ ∈ mid.decls ∧ q₀.body = .structured lay lo ∧
       wpFactory moreFns mid = .ok fac ∧
       WP.ssaLoopFree fac (Imperative.WP.IdSet.ofList
         (WP.avoidOf [] (fac.toArray.toList.map (·.name) ++ WP.declNames mid))) q₀ lay = .ok r ∧
@@ -188,9 +195,9 @@ theorem wpRewritePipeline_proc {moreFns : Lambda.Factory CoreLParams} {mid p₁ 
   rw [betaReducePipelinePhase_ok] at h₃
   cases h₃
   obtain ⟨q₂, ss₂, hq₂, hb₂, hh, rfl⟩ := betaReduceProgram_proc_body hq hb
-  obtain ⟨fac, q₀, md₀, lay, r, hd₀, hb₀, hfac, hr, rfl, hio⟩ :=
+  obtain ⟨fac, q₀, md₀, lay, lo, r, hd₀, hb₀, hfac, hr, rfl, hio⟩ :=
     wpRewriteLoopPipeline_proc h₁ h₂ hq₂ hb₂
-  exact ⟨fac, q₀, md₀, lay, r, hd₀, hb₀, hfac, hr, rfl, hh ▸ hio⟩
+  exact ⟨fac, q₀, md₀, lay, lo, r, hd₀, hb₀, hfac, hr, rfl, hh ▸ hio⟩
 
 /-- **The phases `--vcgen wp` runs after the WP phase, on one procedure body** `ss` of the
     procedure `q`: the SSA phase at the factory `fac`, the global names `G` and the parameter
@@ -234,8 +241,8 @@ theorem wpRewritePipeline_overapproximatesTraces {moreFns : Lambda.Factory CoreL
     (hp : ∀ p ∈ params.prefixIdents, '@' ∉ p.toList) (hin : WPPhaseInputWellTyped prog)
     (hgate : WPPipelineEntryGates params moreFns mid)
     {q : Procedure} {md : Imperative.MetaData Expression} {ss : Statements}
-    (hq : Decl.proc q md ∈ out.decls) (hb : q.body = .structured ss) :
-    ∃ fac q₀ md₀ lay, Decl.proc q₀ md₀ ∈ mid.decls ∧ q₀.body = .structured lay ∧
+    {opq : Bool} (hq : Decl.proc q md ∈ out.decls) (hb : q.body = .structured ss opq) :
+    ∃ fac q₀ md₀ lay lo, Decl.proc q₀ md₀ ∈ mid.decls ∧ q₀.body = .structured lay lo ∧
       wpFactory moreFns mid = .ok fac ∧
       let G := Imperative.WP.IdSet.ofList
         (WP.avoidOf [] (fac.toArray.toList.map (·.name) ++ WP.declNames mid))
@@ -246,10 +253,12 @@ theorem wpRewritePipeline_overapproximatesTraces {moreFns : Lambda.Factory CoreL
         (RComp (fun ρ ρ' => ρ'.factory = ρ.factory) WPRewriteLoop.LoopOut)
         (EventLang.coreBlock π) (EventLang.coreBlock π)
         (wpRewriteTail fac G q₀) (WPRewriteTailPre q₀ lay) params params := by
-  obtain ⟨fac, q₀, md₀, lay, r, hd₀, hb₀, hfac, hr, rfl, -⟩ := wpRewritePipeline_proc h₁ h₂ h₃ hq hb
-  obtain ⟨htree, harms, hfv, -⟩ := hgate _ hfac q₀ _ lay hd₀ hb₀
-  obtain ⟨Γ₀, ⟨⟨hR₀, hC₀, hW₀⟩, -⟩, hty₀⟩ := wpPipelinePhase_entryWellTyped h₀ hin q₀ _ lay hd₀ hb₀
-  refine ⟨fac, q₀, md₀, lay, hd₀, hb₀, hfac, ?_,
+  obtain ⟨fac, q₀, md₀, lay, lo, r, hd₀, hb₀, hfac, hr, rfl, -⟩ :=
+    wpRewritePipeline_proc h₁ h₂ h₃ hq hb
+  obtain ⟨htree, harms, hfv, -⟩ := hgate _ hfac q₀ _ lay _ hd₀ hb₀
+  obtain ⟨Γ₀, ⟨⟨hR₀, hC₀, hW₀⟩, -⟩, hty₀⟩ :=
+    wpPipelinePhase_entryWellTyped h₀ hin q₀ _ lay _ hd₀ hb₀
+  refine ⟨fac, q₀, md₀, lay, lo, hd₀, hb₀, hfac, ?_,
     ⟨⟨rfl, htree, harms, hfv⟩, Γ₀, hW₀, hR₀, hC₀, hty₀⟩,
     WPRewriteLoop.ssa_loopBody_betaReduce_overapproximatesTraces π params hp
       hfac _ _ _ _ (Procedure.oldAliases_mem q₀) lay⟩
@@ -267,13 +276,13 @@ theorem wpRewriteLoopPipeline_bodyFacts {moreFns : Lambda.Factory CoreLParams}
     (h₂ : PhaseRuns (wpRewriteLoopPipelinePhase moreFns) p₁ p₂)
     (params : Core.Logic.InitEnvWFParams) (hp : ∀ p ∈ params.prefixIdents, '@' ∉ p.toList)
     (hgate : WPPipelineEntryGates params moreFns mid) (hwt : WPPipelineEntryWellTyped mid) :
-    ∀ q₂ md ss₂, Decl.proc q₂ md ∈ p₂.decls → q₂.body = .structured ss₂ →
+    ∀ q₂ md ss₂ o, Decl.proc q₂ md ∈ p₂.decls → q₂.body = .structured ss₂ o →
       q₂.header.inputs ++ q₂.header.outputs = [] ∧ ∃ D df Γ, WPRewriteLoop.BodyOK D df Γ ss₂ := by
-  intro q₂ md ss₂ hq₂ hb₂
-  obtain ⟨fac, q₀, md₀, lay, r, hd₀, hb₀, hfac, hr, rfl, hio⟩ :=
+  intro q₂ md ss₂ o hq₂ hb₂
+  obtain ⟨fac, q₀, md₀, lay, lo, r, hd₀, hb₀, hfac, hr, rfl, hio⟩ :=
     wpRewriteLoopPipeline_proc h₁ h₂ hq₂ hb₂
-  obtain ⟨htree, harms, hfv, ρ₀, ρ₀', hrel, hwf⟩ := hgate _ hfac q₀ _ lay hd₀ hb₀
-  obtain ⟨Γ₀, ⟨⟨hR₀, -, hW₀⟩, -⟩, hty₀⟩ := hwt q₀ _ lay hd₀ hb₀
+  obtain ⟨htree, harms, hfv, ρ₀, ρ₀', hrel, hwf⟩ := hgate _ hfac q₀ _ lay _ hd₀ hb₀
+  obtain ⟨Γ₀, ⟨⟨hR₀, -, hW₀⟩, -⟩, hty₀⟩ := hwt q₀ _ lay _ hd₀ hb₀
   have hT1 : (WP.ssaEntry fac (Imperative.WP.IdSet.ofList
       (WP.avoidOf [] (fac.toArray.toList.map (·.name) ++ WP.declNames mid))) q₀.paramTys
       q₀.entryParams q₀.oldAliases lay).toOption.map (·.2.out) = some r.2.out := by

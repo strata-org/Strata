@@ -40,7 +40,7 @@ private def procProg (body : List Statement) : Core.Program :=
       header := { name := ⟨"P", ()⟩, typeArgs := [], inputs := [],
                   outputs := [] }
       spec := { preconditions := [], postconditions := [] }
-      body := .structured body } #[]] }
+      body := .structured body false } #[]] }
 
 /-- Declares an uninitialized variable of type `Set int`. -/
 private def setVarProg : Core.Program :=

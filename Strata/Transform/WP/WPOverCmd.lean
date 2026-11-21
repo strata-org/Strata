@@ -233,13 +233,23 @@ private theorem spec_check (hF : WellFormedSemanticEvalBase F) (Lc : List P.Iden
         | obtain ⟨_, -, ⟨⟩⟩ := (Except.bind_is_ok _ _ _).1 hi
           exact ⟨[], .side .nil, nofun⟩
         | obtain ⟨a', ha', rfl⟩ := resolveItem_assume hi
-          first
+          unfold kAssume at ha'
+          split at ha' <;> first
+            | exact run_assume (ev_kMarkImp_fails hF hO.canonL hO.reach ha'
+                (ResTy.bool tE (OffInv.resTy hF hO hO.canonL (fun _ _ => id)
+                  (hΓ (.inl rfl)) hwt.2.1.1 hwt.2.2.1
+                  (fun p hp => ⟨(hren p hp).1, (hren p hp).2.1⟩)
+                  (fun y hy => (hrd y hy).imp fun _ h => ⟨h.1, h.2.2⟩) hwfS
+                  (fv_contFV fun _ => id))) hO.bools)
             | exact run_assume (ev_kImp_fails hF hO.canonL hO.reach ha'
                 (ResTy.bool tE (OffInv.resTy hF hO hO.canonL (fun _ _ => id)
                   (hΓ (.inl rfl)) hwt.2.1.1 hwt.2.2.1
                   (fun p hp => ⟨(hren p hp).1, (hren p hp).2.1⟩)
                   (fun y hy => (hrd y hy).imp fun _ h => ⟨h.1, h.2.2⟩) hwfS
                   (fv_contFV fun _ => id))) hO.bools)
+            | exact run_assume (ev_kMarkImp_holds hF hOn.canonL hOn.reach ha' (fun _ h => (ev_ren_onInv
+                hF hOn hOn.canonL (fun _ _ => rfl) hren hrd hwfS (fv_contFV fun _ => id) h).trans
+                (hfe _ (List.mem_singleton_self _))) (.inl rfl))
             | exact run_assume (ev_kImp_holds hF hOn.canonL hOn.reach ha' (fun _ h => (ev_ren_onInv
                 hF hOn hOn.canonL (fun _ _ => rfl) hren hrd hwfS (fv_contFV fun _ => id) h).trans
                 (hfe _ (List.mem_singleton_self _))) (.inl rfl))

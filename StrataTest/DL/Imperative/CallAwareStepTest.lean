@@ -38,7 +38,7 @@ private def callee : Procedure :=
   { header := { name := ⟨"callee", ()⟩, typeArgs := [], inputs := [], outputs := [] }
     spec := { preconditions := [("pre", { expr := HasBool.tt })],
               postconditions := [("post", { expr := HasBool.tt })] }
-    body := .structured [bodyStmt] }
+    body := .structured [bodyStmt] false }
 
 /-- A procedure environment resolving only `"callee"`. -/
 private def calleeEnv : String → Option Procedure :=
@@ -83,7 +83,7 @@ private theorem callCmd_sem (fac : Expression.Factory)
     (π := calleeEnv) (fac := fac) (σ := σ) (σ' := σ) (σAO := emptyStore)
     (by simp [Calls.typeInstantiatedCallee, calleeEnv, ProcedureTypeInstantiation.instantiate,
       Procedure.instantiateTypes, callee])
-    ⟨[], [], .eval_none, .read_none, ⟨emptyStore, emptyStore, .init_none, .init_none, rfl⟩⟩
+    rfl ⟨[], [], .eval_none, .read_none, ⟨emptyStore, emptyStore, .init_none, .init_none, rfl⟩⟩
     hbody ⟨(by simp [Imperative.CallArg.getLhs]), [], .read_none, .update_none, .nil⟩
   simpa [Calls.defaultAssertEvents, Calls.checksAtCall, MetaData.setCallSiteFileRange_empty,
     ListMap.toList, callee, callCmd, callTrace, trueEvent,
@@ -102,7 +102,7 @@ private theorem callCmd_semCore
     (π := calleeEnv) (fac := fac) (σ := σ) (σ' := σ) (σAO := emptyStore)
     (by simp [Calls.typeInstantiatedCallee, calleeEnv, ProcedureTypeInstantiation.instantiate,
       Procedure.instantiateTypes, callee])
-    ⟨[], [], .eval_none, .read_none, ⟨emptyStore, emptyStore, .init_none, .init_none, rfl⟩⟩
+    rfl ⟨[], [], .eval_none, .read_none, ⟨emptyStore, emptyStore, .init_none, .init_none, rfl⟩⟩
     hbody ⟨(by simp [Imperative.CallArg.getLhs]), [], .read_none, .update_none, .nil⟩
   simpa [Core.defaultAssertEvents, Calls.defaultAssertEvents, Calls.checksAtCall,
     MetaData.setCallSiteFileRange_empty, ListMap.toList, callee, callCmd,

@@ -566,10 +566,10 @@ end
     parameter, so its facts are dropped first. -/
 def rewriteProc (fs : Facts) (fuel : Nat) (proc : Procedure) : Procedure :=
   match proc.body with
-  | .structured ss =>
+  | .structured ss o =>
     let fs := fs.forget (proc.header.inputs.keys ++ proc.header.outputs.keys)
-    { proc with body := .structured (stepStmts F fs fuel ss).1 }
-  | .cfg _ => proc
+    { proc with body := .structured (stepStmts F fs fuel ss).1 o }
+  | .cfg _ _ | .abstract => proc
 
 /-- Rewrite every lemma of `p`, and the goal of every `assert` and `cover` in
     its procedure bodies. Facts are collected in declaration order, as

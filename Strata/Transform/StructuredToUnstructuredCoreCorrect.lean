@@ -301,11 +301,11 @@ private theorem structuredToUnstructuredDecls_proc_mem
     {q : Procedure} {md : MetaData Expression} {ss : Statements}
     {cfg : CFG String (DetBlock String Command Expression)}
     (h : decls.mapM structuredToUnstructuredDecl = .ok results)
-    (hq : Decl.proc q md ∈ decls) (hb : q.body = .structured ss)
+    (hq : Decl.proc q md ∈ decls) (hb : q.body = .structured ss opq)
     (hne : ss ≠ []) (hcfg : Core.stmtsToCFG ss = some cfg) :
     (Imperative.Block.checkExitsCoveredByBlocks [] ss = Bool.true
       ∧ userLabelsOk ss = Bool.true)
-    ∧ (Decl.proc { q with body := .cfg cfg } md, Bool.true) ∈ results := by
+    ∧ (Decl.proc { q with body := .cfg cfg opq } md, Bool.true) ∈ results := by
   have hempty : ss.isEmpty = Bool.false := List.isEmpty_eq_false_iff.mpr hne
   induction decls generalizing results with
   | nil => simp at hq
@@ -339,11 +339,11 @@ private theorem structuredToUnstructured_proc_mem
     {q : Procedure} {md : MetaData Expression} {ss : Statements}
     {cfg : CFG String (DetBlock String Command Expression)}
     (h : (structuredToUnstructured program).run s = (.ok (changed, out), s'))
-    (hq : Decl.proc q md ∈ program.decls) (hb : q.body = .structured ss)
+    (hq : Decl.proc q md ∈ program.decls) (hb : q.body = .structured ss opq)
     (hne : ss ≠ []) (hcfg : Core.stmtsToCFG ss = some cfg) :
     (Imperative.Block.checkExitsCoveredByBlocks [] ss = Bool.true
       ∧ userLabelsOk ss = Bool.true)
-    ∧ Decl.proc { q with body := .cfg cfg } md ∈ out.decls := by
+    ∧ Decl.proc { q with body := .cfg cfg opq } md ∈ out.decls := by
   cases hmap : program.decls.mapM structuredToUnstructuredDecl with
   | error error =>
       simp only [structuredToUnstructured, hmap, liftExcept, pure] at h
@@ -375,10 +375,10 @@ theorem structuredToUnstructuredPipelinePhase_over
     (hnoLoopInvariantsProgram : ProgramFact.noLoopInvariants.holds program)
     (hnoLoopMeasuresProgram : ProgramFact.noLoopMeasures.holds program)
     {q : Procedure} {md : MetaData Expression} {ss : Statements}
-    (hq : Decl.proc q md ∈ program.decls) (hb : q.body = .structured ss)
+    (hq : Decl.proc q md ∈ program.decls) (hb : q.body = .structured ss opq)
     (hne : ss ≠ []) :
     ∃ cfg, Core.stmtsToCFG ss = some cfg
-      ∧ Decl.proc { q with body := .cfg cfg } md ∈ out.decls
+      ∧ Decl.proc { q with body := .cfg cfg opq } md ∈ out.decls
       ∧ ∀ (base : InitEnvWFParams) {I : ConditionInterp Expression},
         I.StableUnder
           (EventArg.WithWF (P := Expression) (EventArg.ExtendsEnv (fun _ => True))) →

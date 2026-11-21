@@ -330,8 +330,8 @@ private def cseVarRanges (p : Core.Program) : List (Nat × Nat) :=
   match p.decls.findSome? (fun | .proc pr _ => some pr | _ => none) with
   | some pr =>
     match pr.body with
-    | .structured ss => (Statements.collectExprs ss).flatMap go
-    | .cfg _ => []
+    | .structured ss _ => (Statements.collectExprs ss).flatMap go
+    | .cfg _ _ | .abstract => []
   | none => []
 
 -- The duplicate is found, and its three uses have three distinct ranges: each
@@ -423,10 +423,10 @@ private def progAgree (p : Core.Program) : Bool := Id.run do
     match d with
     | .proc proc _ =>
       match proc.body with
-      | .structured ss =>
+      | .structured ss _ =>
         ok := ok && agree ss idx
         idx := (stmtRunCSE ss idx).2
-      | .cfg _ => pure ()
+      | .cfg _ _ | .abstract => pure ()
     | _ => pure ()
   return ok
 

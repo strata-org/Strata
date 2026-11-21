@@ -555,7 +555,7 @@ private def rproc (name : String) (body : List Statement) : Decl :=
   .proc { header := { name := ⟨name, ()⟩, typeArgs := [], inputs := [(⟨"x", ()⟩, .int)],
                       outputs := [(⟨"r", ()⟩, .int)] }
           spec := { preconditions := [], postconditions := [] }
-          body := .structured body } #[]
+          body := .structured body false } #[]
 
 open _root_.Core Imperative in
 /-- `P1 { assume x > 0; cover [c]: x < 0 }` and `P2 { cover [c]: x > 0 }`. -/

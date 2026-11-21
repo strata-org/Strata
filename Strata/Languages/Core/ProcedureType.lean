@@ -727,7 +727,7 @@ def typeCheckCore (scope progSigs : Thunk (Std.HashSet String))
     let chk' ← checkCondition C' bodyEnv name sk label chk
     .ok (label, chk'))
   let body' ← match proc.body with
-    | .cfg c => do
+    | .cfg c o => do
       let cSk := if sk.isEmpty then c
         else DetCFG.mapCmdsGuards c (skolemizeCmd none sk) (skolemizeBody none sk)
       let (cOut, bodyEnv') ← (CFG.typeCheck C' bodyEnv p proc cSk fileRange).mapError
@@ -735,14 +735,15 @@ def typeCheckCore (scope progSigs : Thunk (Std.HashSet String))
       let _ ← ensureAmbientRigidVarsFixed name C'.rigidTypeVars bodyEnv'.stateSubstInfo.subst
       .ok (Procedure.Body.cfg (if sk.isEmpty then cOut
         else DetCFG.mapCmdsGuards cOut (mapCmdTys (deskolemizeTy sk))
-          (mapExprTys (deskolemizeTy sk))))
-    | .structured ss => do
+          (mapExprTys (deskolemizeTy sk))) o)
+    | .structured ss o => do
       let ssSk := if sk.isEmpty then ss else skolemizeStmts none sk ss
       let (ssOut, bodyEnv') ← (Statement.typeCheck C' bodyEnv p (some proc) ssSk).mapError
         (bodyErrorMessage (withLocalTypes C'.knownTypes ss) name sk)
       let _ ← ensureAmbientRigidVarsFixed name C'.rigidTypeVars bodyEnv'.stateSubstInfo.subst
       .ok (Procedure.Body.structured
-        (if sk.isEmpty then ssOut else mapStmtsTys (deskolemizeTy sk) ssOut))
+        (if sk.isEmpty then ssOut else mapStmtsTys (deskolemizeTy sk) ssOut) o)
+    | .abstract => .ok .abstract
   checkDeclTyVarsBound name md h.typeArgs body'
   let proc' : Procedure :=
     { proc with

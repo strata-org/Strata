@@ -125,16 +125,16 @@ namespace NondetElim
 open Imperative Lambda
 
 /-- Rewrite one declaration for nondeterminism elimination. Non-procedure
-declarations and CFG procedure bodies pass through unchanged: a CFG branch condition is
-deterministic. -/
+declarations, CFG procedure bodies and abstract procedures pass through unchanged: a CFG branch
+condition is deterministic, and an abstract procedure has no body. -/
 def nondetElimDecl (d : Decl) : Except Strata.Message (Decl × Bool) :=
   match d with
   | .proc proc md =>
     match proc.body with
-    | .structured ss =>
+    | .structured ss o =>
       let ss' := Block.nondetElim ss
-      pure (Decl.proc { proc with body := .structured ss' } md, ss' != ss)
-    | .cfg _ => pure (d, false)
+      pure (Decl.proc { proc with body := .structured ss' o } md, ss' != ss)
+    | .cfg _ _ | .abstract => pure (d, false)
   | _ => pure (d, false)
 
 /-- Nondet-elimination pass for Core: `nondetElimDecl` on every declaration. The returned flag

@@ -237,9 +237,10 @@ theorem ProcBodyWellTyped.withRigid {P : Program} {C : LContext CoreLParams}
     (h : ProcBodyWellTyped P C ts body) :
     ProcBodyWellTyped P { C with rigidTypeVars := r } ts body :=
   match h with
-  | .structured _ _ _ hss =>
-    .structured _ _ _ (StatementsWellTyped.withRigid r hss)
-  | .cfg c => .cfg c
+  | .structured _ _ _ _ hss =>
+    .structured _ _ _ _ (StatementsWellTyped.withRigid r hss)
+  | .cfg c o => .cfg c o
+  | .abstract => .abstract
 
 /-! ### Well-typed programs have well-formed calls -/
 
@@ -292,7 +293,7 @@ end
     its CFG bodies is. -/
 private theorem DeclsWellTyped.callsWF {P : Program} {C C' : LContext CoreLParams}
     {ts : TypeScopes} {ds : List Decl} (h : DeclsWellTyped P C ts ds C')
-    (hcfg : ∀ q md (g : DetCFG), Decl.proc q md ∈ ds → q.body = .cfg g →
+    (hcfg : ∀ q md (g : DetCFG) opq, Decl.proc q md ∈ ds → q.body = .cfg g opq →
       ∀ c ∈ q.callSites, WF.WFcallProp P c.procName c.args) :
     ∀ c ∈ ds.flatMap Decl.callSites, WF.WFcallProp P c.procName c.args := by
   induction h with
@@ -301,26 +302,27 @@ private theorem DeclsWellTyped.callsWF {P : Program} {C C' : LContext CoreLParam
     intro c hc
     simp only [List.flatMap_cons, List.mem_append] at hc
     refine hc.elim (fun hc => ?_)
-      (ih (fun q md g hmem => hcfg q md g (List.mem_cons_of_mem _ hmem)) c)
+      (ih (fun q md g o hmem => hcfg q md g o (List.mem_cons_of_mem _ hmem)) c)
     cases hd with
     | proc _ proc md hp =>
       simp only [Decl.callSites] at hc
       cases hbody : proc.body with
-      | cfg g => exact hcfg proc md g (List.mem_cons_self ..) hbody c hc
+      | cfg g o => exact hcfg proc md g o (List.mem_cons_self ..) hbody c hc
+      | abstract => simp [Procedure.callSites, hbody] at hc
       | structured _ =>
         simp only [Procedure.callSites] at hc
         rw [hbody] at hc
         have hbt := hp.bodyTyped
         rw [hbody] at hbt
         cases hbt with
-        | structured _ _ _ hss => exact StatementsWellTyped.callsWF hss c hc
+        | structured _ _ _ _ hss => exact StatementsWellTyped.callsWF hss c hc
     | _ => simp [Decl.callSites] at hc
 
 /-- A well-typed program has only well-formed calls, given that every call of its CFG bodies is
     well-formed. -/
 theorem ProgramWellTyped.callsWellFormed {C : LContext CoreLParams} {ts : TypeScopes}
     {P : Program} (h : ProgramWellTyped C ts P)
-    (hcfg : ∀ q md (g : DetCFG), Decl.proc q md ∈ P.decls → q.body = .cfg g →
+    (hcfg : ∀ q md (g : DetCFG) opq, Decl.proc q md ∈ P.decls → q.body = .cfg g opq →
       ∀ c ∈ q.callSites, WF.WFcallProp P c.procName c.args) :
     P.callsWellFormed := by
   obtain ⟨-, _, hds⟩ := h
@@ -574,7 +576,7 @@ theorem StatementsWellTyped.initTypes_mono {P : Program} {C C' : LContext CoreLP
     stated for structured bodies. -/
 theorem ProcWellTyped.initTypesMono {P : Program} {C : LContext CoreLParams} {ts : TypeScopes}
     {proc : Procedure} {ss : List Statement} (h : ProcWellTyped P C ts proc)
-    (hss : proc.body = .structured ss) : proc.initTypesMono = true := by
+    {opq : Bool} (hss : proc.body = .structured ss opq) : proc.initTypesMono = true := by
   have hbody : ProcBodyWellTyped P C (procBodyScopes ts proc) proc.body := h.bodyTyped
   rw [hss] at hbody
   cases hbody with
@@ -586,8 +588,8 @@ theorem ProcWellTyped.initTypesMono {P : Program} {C : LContext CoreLParams} {ts
 /-- In a well-typed procedure with a structured body, every type variable in a local
     declaration's type or a call type argument is a type parameter of the procedure. -/
 theorem ProcWellTyped.declTysScoped {P : Program} {C : LContext CoreLParams} {ts : TypeScopes}
-    {proc : Procedure} {ss : List Statement} (h : ProcWellTyped P C ts proc)
-    (hss : proc.body = .structured ss) :
+    {proc : Procedure} {ss : List Statement} {opq : Bool} (h : ProcWellTyped P C ts proc)
+    (hss : proc.body = .structured ss opq) :
     Statements.AllDeclTys (fun ty => ∀ τ, ty = .forAll [] τ →
       ∀ a ∈ LMonoTy.freeVars τ, a ∈ proc.header.typeArgs) ss := by
   have hbound := h.declTyVarsBound

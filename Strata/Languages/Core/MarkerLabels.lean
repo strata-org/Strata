@@ -56,8 +56,10 @@ def Program.labelWithPrefix? (pfx : String) (p : Program) : Option String :=
     | .proc d _ =>
       ((d.spec.preconditions.keys ++ d.spec.postconditions.keys).find? (·.startsWith pfx)).or
         (match d.body with
-          | .structured ss => Statements.labelWithPrefix? pfx ss
-          | .cfg g => g.blocks.findSome? fun (_, b) => b.cmds.findSome? (Command.labelWithPrefix? pfx))
+          | .structured ss _ => Statements.labelWithPrefix? pfx ss
+          | .cfg g _ => g.blocks.findSome? fun (_, b) => b.cmds.findSome? (Command.labelWithPrefix?
+              pfx)
+          | .abstract => none)
     | _ => none
 
 /-- Fails on a program with a label that starts with `pfx`, the label prefix of the marker

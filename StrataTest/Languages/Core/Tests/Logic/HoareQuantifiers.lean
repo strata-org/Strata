@@ -141,15 +141,15 @@ private def pReqProc : Core.Procedure :=
 
 /-- The inferred (metadata-carrying) structured body of `pAssume`. -/
 private def pAssumeBody : Core.Statements :=
-  match pAssumeProc.body with | .structured b => b | _ => []
+  match pAssumeProc.body with | .structured b false => b | _ => []
 
 /-- The inferred (metadata-carrying) structured body of `pNoAssume`. -/
 private def pNoAssumeBody : Core.Statements :=
-  match pNoAssumeProc.body with | .structured b => b | _ => []
+  match pNoAssumeProc.body with | .structured b false => b | _ => []
 
 /-- The inferred (metadata-carrying) structured body of `pReq`. -/
 private def pReqBody : Core.Statements :=
-  match pReqProc.body with | .structured b => b | _ => []
+  match pReqProc.body with | .structured b false => b | _ => []
 
 /-- The expected inferred identifier and expression shapes used by the
 operational and denotational proofs. -/
@@ -221,15 +221,15 @@ private theorem pReqBody_eq :
          (iteMdOf pReqBody)] := by native_decide
 
 /-- The inferred `pAssume` body is `.structured pAssumeBody`. -/
-private theorem pAssumeProc_body : pAssumeProc.body = .structured pAssumeBody := by
+private theorem pAssumeProc_body : pAssumeProc.body = .structured pAssumeBody false := by
   native_decide
 
 /-- The inferred `pNoAssume` body is `.structured pNoAssumeBody`. -/
-private theorem pNoAssumeProc_body : pNoAssumeProc.body = .structured pNoAssumeBody := by
+private theorem pNoAssumeProc_body : pNoAssumeProc.body = .structured pNoAssumeBody false := by
   native_decide
 
 /-- The inferred `pReq` body is `.structured pReqBody`. -/
-private theorem pReqProc_body : pReqProc.body = .structured pReqBody := by
+private theorem pReqProc_body : pReqProc.body = .structured pReqBody false := by
   native_decide
 
 /-- Procedure lookup resolves `pAssume`. -/

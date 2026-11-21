@@ -176,7 +176,9 @@ precondition, body trace interpretation, and postcondition. -/
     environment is universally quantified and pinned in the precondition
     (`ρ = ρEntry`) so the postcondition predicate, which only sees the final
     environment, can still refer to the entry store.
-    Both readings use the same contract precondition and postcondition.
+    Both readings use the same contract precondition and postcondition. An abstract
+    procedure has no body to check against its contract, which is trusted: its judgement is
+    `True`.
 
     A polymorphic procedure must meet its contract at every instance a call can run: for every
     list of type arguments `tys` that instantiates it (`Procedure.instantiateTypes`), the
@@ -207,14 +209,14 @@ precondition, body trace interpretation, and postcondition. -/
     ∀ tys proc, proc₀.instantiateTypes tys = some proc →
     Procedure.contractChecksTyped proc ∧
       match proc.body with
-      | .structured bss =>
+      | .structured bss _ =>
           Triple p.findProcByString? params
             (fun ρ => Procedure.contractPre (p.factoryBeforeProcedure procName) proc ρ ∧
               Core.Specification.AxiomsBeforeProcedureDecl procName p ρ)
             [Imperative.Stmt.block "" bss #[]]
             (Procedure.contractPost (p.factoryBeforeProcedure procName) proc)
             (factory := p.factoryBeforeProcedure procName)
-      | .cfg cfg =>
+      | .cfg cfg _ =>
           ∀ ρEntry, TripleUnstructured p.findProcByString? params
             (fun ρ => (Procedure.contractPre (p.factoryBeforeProcedure procName) proc ρ ∧
               Core.Specification.AxiomsBeforeProcedureDecl procName p ρ) ∧
@@ -222,6 +224,7 @@ precondition, body trace interpretation, and postcondition. -/
             (fun ρ' => Procedure.contractPost (p.factoryBeforeProcedure procName) proc
               { ρ' with store := Imperative.projectStore ρEntry.store ρ'.store })
             (factory := p.factoryBeforeProcedure procName)
+      | .abstract => True
 
 /-- **The total-correctness Hoare triple a procedure's contract asserts about its body.**
 
@@ -240,14 +243,14 @@ precondition, body trace interpretation, and postcondition. -/
     ∀ tys proc, proc₀.instantiateTypes tys = some proc →
     Procedure.contractChecksTyped proc ∧
       match proc.body with
-      | .structured bss =>
+      | .structured bss _ =>
           HoareTotal.Triple p.findProcByString? params
             (fun ρ => Procedure.contractPre (p.factoryBeforeProcedure procName) proc ρ ∧
               Core.Specification.AxiomsBeforeProcedureDecl procName p ρ)
             [Imperative.Stmt.block "" bss #[]]
             (Procedure.contractPost (p.factoryBeforeProcedure procName) proc)
             (factory := p.factoryBeforeProcedure procName)
-      | .cfg cfg =>
+      | .cfg cfg _ =>
           ∀ ρEntry, HoareTotal.TripleUnstructured p.findProcByString? params
             (fun ρ => (Procedure.contractPre (p.factoryBeforeProcedure procName) proc ρ ∧
               Core.Specification.AxiomsBeforeProcedureDecl procName p ρ) ∧
@@ -255,6 +258,7 @@ precondition, body trace interpretation, and postcondition. -/
             (fun ρ' => Procedure.contractPost (p.factoryBeforeProcedure procName) proc
               { ρ' with store := Imperative.projectStore ρEntry.store ρ'.store })
             (factory := p.factoryBeforeProcedure procName)
+      | .abstract => True
 
 /-- **The body of the procedure named `procName` in `p` terminates with valid assertions**, at
     every instance of the procedure (`Procedure.instantiateTypes`), from
@@ -267,19 +271,20 @@ precondition, body trace interpretation, and postcondition. -/
   ∃ proc₀, p.findProcByString? procName = some proc₀ ∧
     ∀ tys proc, proc₀.instantiateTypes tys = some proc →
       match proc.body with
-      | .structured bss =>
+      | .structured bss _ =>
           ∀ ρ, Procedure.contractPre (p.factoryBeforeProcedure procName) proc ρ ∧
               Core.Specification.AxiomsBeforeProcedureDecl procName p ρ →
             BlockInitEnvWF params [Imperative.Stmt.block "" bss #[]] ρ →
             (EventLang.coreBlock p.findProcByString?).TerminatesAndAssertsValid
               (DenoteBasedInterp (p.factoryBeforeProcedure procName))
               [Imperative.Stmt.block "" bss #[]] ρ
-      | .cfg cfg =>
+      | .cfg cfg _ =>
           ∀ ρ, Procedure.contractPre (p.factoryBeforeProcedure procName) proc ρ ∧
               Core.Specification.AxiomsBeforeProcedureDecl procName p ρ →
             CFGInitEnvWF params cfg ρ →
             (EventLang.coreCFG p.findProcByString?).TerminatesAndAssertsValid
               (DenoteBasedInterp (p.factoryBeforeProcedure procName)) cfg ρ
+      | .abstract => True
 
 /-- Every non-`free` `ensures` expression also occurs among the `requires`. -/
 @[expose] def Procedure.ensuresAmongRequires (proc : Procedure) : Bool :=

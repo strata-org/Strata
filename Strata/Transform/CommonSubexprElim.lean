@@ -715,15 +715,16 @@ def runCSE (p : Program) : Transform.CoreTransformM (Bool × Program) := do
     match decl with
     | .proc proc md =>
       match proc.body with
-      | .structured ss =>
+      | .structured ss o =>
         let (body', idx') := stmtRunCSESinglePass ss idx
-        pure (.proc { proc with body := .structured body' } md :: acc, idx', changed || idx' > idx)
-      | .cfg _ =>
+        pure (.proc { proc with body := .structured body' o } md :: acc, idx', changed || idx' > idx)
+      | .cfg _ _ =>
         -- A CFG body cannot be walked here; reject it rather than silently
         -- skipping.
         throw (Strata.Message.fromFormat
           f!"❌ CommonSubexprElim: procedure {proc.header.name.name} has a CFG body; \
              common subexpressions can only be eliminated from structured bodies.")
+      | .abstract => pure (decl :: acc, idx, changed)
     | other => pure (other :: acc, idx, changed)
   ) ([], 0, false)
   return (changed, { decls := revDecls.reverse })

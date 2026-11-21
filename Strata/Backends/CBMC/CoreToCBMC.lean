@@ -313,7 +313,8 @@ def createImplementationSymbolFromAST (func : Core.Procedure) : Except String CB
 
   -- For now, keep the hardcoded implementation but use function name from AST
   let loc : SourceLoc := { functionName := (func.header.name.toPretty), lineNum := "1" }
-  let bodyStmts ← func.body.getStructured
+  -- An abstract procedure is exported with an empty body.
+  let bodyStmts ← func.body.getStructuredOrEmpty
   let stmtJsons ← (bodyStmts.mapM (stmtToJson (I:=CoreLParams) · loc))
 
   let implValue := Json.mkObj [

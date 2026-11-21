@@ -38,7 +38,7 @@ private def proc (name : String) (body : List Statement)
     spec := {
       preconditions := pre.zipIdx.map fun (e, i) => (s!"{name}_requires_{i}", { expr := e })
       postconditions := post.zipIdx.map fun (e, i) => (s!"{name}_ensures_{i}", { expr := e }) }
-    body := .structured body } md
+    body := .structured body false } md
 
 /-- The verifier's results for `p` under `options`. -/
 private def verify (p : Program) (options : VerifyOptions := .quiet) : IO Core.VCResults :=
