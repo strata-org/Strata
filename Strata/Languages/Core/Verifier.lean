@@ -3544,7 +3544,7 @@ def verifyPipeline (program : Program)
     if p.phase.name == (recursiveAxiomsPhase).phase.name then recursiveAxiomsPhase options
     else p
   let (oblProgram, factory, pipelineStats, inputs) ← pctx.withPhase "programTransformations" do
-    let (prog, state, inputs) ← runTransformsRecording program pipelinePhases
+    let (prog, state, _, inputs) ← runTransformsRecording false program pipelinePhases
       (initState := { Transform.CoreTransformState.emp with factory := factory })
       (pipelineCtx := some pctx)
       (keepAllFilesPrefix := options.keepAllFilesPrefix)

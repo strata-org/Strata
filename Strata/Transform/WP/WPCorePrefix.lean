@@ -80,7 +80,7 @@ private theorem wfl_facts {Lc : List Expression.Ident} : ∀ {S : List Expressio
     run. -/
 theorem wp_prefix (π : String → Option Procedure) (params : InitEnvWFParams)
     {G : IdSet Expression} {tys : Tys Expression} {ss : Statements} {w : WOut Expression}
-    (h : wpEntry G tys ss = .ok w) (hpre : WPPre tys ss) {ρ₀ ρ₀' : Env Expression}
+    (h : wpEntry G tys ss = .ok w) (hpre : WPPre tys ss) {ρ₀ ρ₀' : Imperative.Env Expression}
     (hR : EntryRel tys ρ₀ ρ₀') (hwf : BlockInitEnvWF params ss ρ₀)
     (htyp : Statements.WellTyped (fun x => tys.get? x) ss)
     (hdecl : ∀ y ∈ Block.definedVars w.lay false, ρ₀.store y = none) :

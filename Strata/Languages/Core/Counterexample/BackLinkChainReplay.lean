@@ -6,6 +6,8 @@
 module
 
 public import Strata.Languages.Core.InterpreterReplay
+public import Strata.DL.Imperative.InterpreterNested
+public import Strata.Util.DecidableEqProps
 public import Strata.Languages.Core.InterpreterInterruptBridge
 public import Strata.Languages.Core.ReplayWF
 public import Strata.DL.Imperative.Counterexample.Run
@@ -299,6 +301,19 @@ def isTopLevelAtB (stmts : List (Stmt Expression Command))
   | .stmts ss _ => decide (ss = stmts)
   | _ => false
 
+/-- `isTopLevelAtB` comparing the statement lists by pointer first (`ptrFastEq`). -/
+def isTopLevelAtBPtr (stmts : List (Stmt Expression Command))
+    (cfg : IConfig Expression Command) : Bool :=
+  match cfg with
+  | .stmts ss _ => ptrFastEq ss stmts
+  | _ => false
+
+/-- `isTopLevelAtB` is `isTopLevelAtBPtr`, which the compiler runs in its place. -/
+@[csimp] theorem isTopLevelAtB_eq_ptr : @isTopLevelAtB = @isTopLevelAtBPtr := by
+  funext stmts cfg
+  cases cfg <;> try rfl
+  exact (ptrFastEq_eq_decide _ _).symm
+
 /-- The guessed replay fuel used whenever a counterexample must be replayed without a
     fuel derived from the obligation.  A guess, not derived from the program: a replay
     that needs more is reported unconfirmed, never wrongly confirmed. -/
@@ -330,6 +345,53 @@ def replayFuelGuess : Nat := 10000
         | .genuine => some (cex, fuel)
         | _ => none
       | _ => none
+
+/-- `runCoreInterp` in `ReplayM`, computed by `runInterpNested`, which runs the inner
+    configuration of each block context on its own: the run of a candidate in a tower of
+    nested blocks is then linear, not quadratic, in the tower's depth. -/
+def runCoreInterpNested (π : String → Option Procedure) (fuel : Nat)
+    (cfg : IConfig Expression Command) : ReplayM Expression (IConfig Expression Command) :=
+  (·.1) <$> runInterpNested (replayStepCmd π defaultMaxCallDepth) fuel cfg
+    { parent := cfg.getEnv.store, defined := none }
+
+/-- `replayCandidate` with its interpreter runs computed by `runCoreInterpNested`. -/
+def replayCandidateNested (π : String → Option Procedure) (target : AssertId Expression)
+    (defaults : @Lambda.Factory CoreLParams → RStore Expression → Expression.Ty → Option
+        Expression.Expr)
+    (candidate : CexCandidateA Expression Command) (fuel : Nat) :
+    Option (CexA Expression Command × Nat) :=
+  if !candidate.sourceRelation candidate.cfg then none
+  else
+      let cfg : ReplayCfg Expression :=
+        { interruptOn := enforceInterrupt target fuel,
+          oracleConfig := .withDefaults defaults }
+      match (runReplay (runCoreInterpNested π fuel candidate.cfg)
+               cfg (assertFailureHalt target fuel) candidate.oracle) with
+      | (.genuine, used) =>
+        let cex : CexA Expression Command :=
+          { cfg := candidate.cfg, oracle := used }
+        match (runReplay (runCoreInterpNested π fuel cex.cfg)
+                 { interruptOn := enforceInterrupt target fuel,
+                   oracleConfig := .strict }
+                 (assertFailureHalt target fuel) cex.oracle).1 with
+        | .genuine => some (cex, fuel)
+        | _ => none
+      | _ => none
+
+/-- A `throw` in `ReplayM` ends the computation. -/
+private theorem replayM_throw_bind {α β : Type} (e : StopReason)
+    (f : α → ReplayM Expression β) : (throw e : ReplayM Expression α) >>= f = throw e := rfl
+
+/-- `replayCandidate` is `replayCandidateNested`, which the compiler runs in its place. -/
+@[csimp] theorem replayCandidate_eq_nested : @replayCandidate = @replayCandidateNested := by
+  funext π target defaults candidate fuel
+  have hrun : ∀ (sc : StepCmdM Expression Command (ReplayM Expression)) fuel cfg,
+      runInterp sc fuel cfg = (·.1) <$> runInterpNested sc fuel cfg
+        { parent := cfg.getEnv.store, defined := none } := fun sc fuel cfg =>
+    runInterp_eq_nested replayM_throw_bind sc fuel cfg _
+  simp only [replayCandidate, replayCandidateNested, runCoreInterpNested, runCoreInterp,
+    Calls.runCallInterp, hrun]
+  rfl
 
 /-- Search an ordered candidate list (outermost first); first that validates. -/
 @[expose] def replayCandidateLadder (π : String → Option Procedure) (target : AssertId Expression)

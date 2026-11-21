@@ -56,6 +56,8 @@ state satisfying `Q`). Key results:
 - `runProgram_postGen`, `runProgramUntil_postGen` — the same, following the generator state,
   so that a transformation can show that the names it draws in different passes differ; the
   two results above are their instances.
+- `Post.forIn_list`, `Post.forIn_loop`, `Post.mapM`, `Post.filterMapM` — `Post` through `for`
+  loops over lists, `while` loops (with a decreasing measure), `mapM` and `filterMapM`.
 
 - `freshenTypeArgsSubst_fresh` — every type in the substitution's range is a
   nullary type constant with a fresh `<prefix>_<n>` name, present in the output
@@ -206,6 +208,77 @@ theorem Post.loop {β : Type} {f : Unit → β → CoreTransformM (ForInStep β)
     cases r with
     | done b' => exact Post.pure hr
     | yield b' => exact ih b' (by have := hr.2; omega) hr.1
+
+/-- `for x in xs` preserves an invariant `I` of its accumulator: if `I init` holds and,
+    for every element `x` of `xs` and accumulator `b` with `I b`, every successful run of
+    the body returns a step whose accumulator satisfies `I`, every successful run of the
+    loop returns an accumulator satisfying `I`. -/
+theorem Post.forIn_list {α β : Type} (xs : List α) {init : β}
+    {f : α → β → CoreTransformM (ForInStep β)} (I : β → Prop) (hinit : I init)
+    (hstep : ∀ x ∈ xs, ∀ b, I b → Post (f x b) (fun r => I r.value)) :
+    Post (ForIn.forIn xs init f) I := by
+  induction xs generalizing init with
+  | nil => exact .pure hinit
+  | cons x _ ih =>
+    rw [List.forIn_cons]
+    exact .bind (hstep x (.head _) _ hinit) fun
+      | .done _, hr => .pure hr
+      | .yield _, hr => ih hr fun y hy => hstep y (.tail _ hy)
+
+/-- If, for every element `x` of `xs`, every successful run of `f x` returns `none` or a
+    value satisfying `P`, every successful run of `xs.filterMapM f` returns a list whose
+    elements all satisfy `P`. -/
+theorem Post.filterMapM {α β : Type} (xs : List α) {f : α → CoreTransformM (Option β)}
+    (P : β → Prop) (hf : ∀ x ∈ xs, Post (f x) (fun o => ∀ y, o = some y → P y)) :
+    Post (xs.filterMapM f) (fun ys => ∀ y ∈ ys, P y) := by
+  induction xs with
+  | nil => exact .pure nofun
+  | cons x _ ih =>
+    rw [List.filterMapM_cons]
+    have hrest := ih fun y hy => hf y (.tail _ hy)
+    exact .bind (hf x (.head _)) fun
+      | none, _ => hrest
+      | some _, _ => .bind hrest fun _ _ => .pure (by grind)
+
+/-- If every successful run of `f x` returns a value related to `x` by `R`, every
+    successful run of `xs.mapM f` returns a list related to `xs` elementwise by `R`
+    (`List.Rel₂ R`). -/
+theorem Post.mapM {α β : Type} {f : α → CoreTransformM β} (R : α → β → Prop)
+    (hf : ∀ x, Post (f x) (R x)) :
+    ∀ xs : List α, Post (xs.mapM f) (List.Rel₂ R xs) := fun xs => by
+  induction xs with
+  | nil => exact .pure .nil
+  | cons x xs ih =>
+    simp only [List.mapM_cons, bind_pure_comp]
+    exact .bind (hf x) fun y hy => .bind ih fun _ hys => .pure (.cons hy hys)
+
+/-- A `while` loop (`Loop.forIn`): let `I init` hold, and let every successful run of an
+    iteration from an accumulator `b` with `I b` either stop with an accumulator
+    satisfying `J`, or continue with an accumulator satisfying `I` whose measure `μ` is
+    smaller than `μ b`.  Then every successful run of the loop returns an accumulator
+    satisfying `J`. -/
+theorem Post.forIn_loop {β : Type} {init : β}
+    {f : Unit → β → CoreTransformM (ForInStep β)} (I J : β → Prop) (μ : β → Nat)
+    (hinit : I init)
+    (hstep : ∀ b, I b → Post (f () b) (fun r => match r with
+      | .done b' => J b'
+      | .yield b' => I b' ∧ μ b' < μ b)) :
+    Post (ForIn.forIn Lean.Loop.mk init f) J := by
+  have hne : Nonempty β := ⟨init⟩
+  suffices H : ∀ n b, μ b = n → I b → Post (repeatM (fun b => do
+      match ← f () b with
+      | .done i => .pure (.inr i)
+      | .yield i => .pure (.inl i)) b) J from
+    H _ _ rfl hinit
+  intro n
+  induction n using Nat.strongRecOn with
+  | ind n ih =>
+    intro b hμ hb
+    rw [repeatM.Internal.eq_of_monadTail]
+    exact .bind (Q₁ := fun x => match x with | .inl a => I a ∧ μ a < μ b | .inr c => J c)
+      (.bind (hstep b hb) fun r hr => by cases r <;> exact .pure hr) fun
+        | .inl a, hr => ih _ (hμ ▸ hr.2) a rfl hr.1
+        | .inr _, hr => .pure hr
 
 /-! ## Successful runs and the generator state
 

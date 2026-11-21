@@ -327,6 +327,17 @@ def makeVCResult (label : String) (outcome : VCOutcome)
   let vcr := makeVCResult "satsat" (mkOutcome (.sat m1) (.sat m2)) (lexprModel := lexprCex)
   (vcResultToSarifResult .deductive (makeFilesMap "/test/cex.st") vcr).message.text
 
+-- Without per-check models, a `sat` result's own model of two bindings prints as a recorded model
+-- does (`sarifModelFormat`): its values as Core expressions, one space between bindings.
+/-- info: "Always false and reachable with counterexample: (x, 1) (y, int.neg(1))" -/
+#guard_msgs in
+#eval
+  let cex : List (Core.Expression.Ident × Strata.SMT.Term) :=
+    [({ name := "x", metadata := () }, .prim (.int 1)),
+     ({ name := "y", metadata := () }, .prim (.int (-1)))]
+  let vcr := makeVCResult "fallback2" (mkOutcome .unsat (.sat cex))
+  (vcResultToSarifResult .deductive (makeFilesMap "/test/cex.st") vcr).message.text
+
 -- Without per-check models, an empty satisfiability model prints nothing in the true slot and the
 -- validity check's model in the false slot.
 /-- info: "True or false depending on inputs (false: (x, 2))" -/
@@ -400,6 +411,23 @@ def makeVCResult (label : String) (outcome : VCOutcome)
   let l2 : LExprModel := [({ name := "y", metadata := () }, .intConst testLoc 2)]
   let vcr := { makeVCResult "partial" (mkOutcome (.sat m1) (.sat m2)) with
     checkModels := (some l1, some l2), checkModelMissing := (["y"], ["x"]) }
+  (vcResultToSarifResult .deductive (makeFilesMap "/test/cex.st") vcr).message.text
+
+-- Recorded per-check models of two bindings each print with one space between bindings and
+-- none before `,` or `)`.
+/-- info: "True or false depending on inputs (true: (x, 1) (y, 1), false: (x, 2) (y, 2))" -/
+#guard_msgs in
+#eval
+  let m1 : List (Core.Expression.Ident × Strata.SMT.Term) :=
+    [({ name := "x", metadata := () }, .prim (.int 1)), ({ name := "y", metadata := () }, .prim (.int 1))]
+  let m2 : List (Core.Expression.Ident × Strata.SMT.Term) :=
+    [({ name := "x", metadata := () }, .prim (.int 2)), ({ name := "y", metadata := () }, .prim (.int 2))]
+  let l1 : LExprModel := [({ name := "x", metadata := () }, .intConst testLoc 1),
+    ({ name := "y", metadata := () }, .intConst testLoc 1)]
+  let l2 : LExprModel := [({ name := "x", metadata := () }, .intConst testLoc 2),
+    ({ name := "y", metadata := () }, .intConst testLoc 2)]
+  let vcr := { makeVCResult "twoVars" (mkOutcome (.sat m1) (.sat m2)) with
+    checkModels := (some l1, some l2) }
   (vcResultToSarifResult .deductive (makeFilesMap "/test/cex.st") vcr).message.text
 
 /-! ## JSON Output Tests -/

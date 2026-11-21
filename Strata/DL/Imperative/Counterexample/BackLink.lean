@@ -70,6 +70,28 @@ def composeBackLinks [HasBool P] [DecidableEq P.Expr] [InterpLang P]
   name := link.name
   lift st o := if st.isEmpty then .empty else link.lift st o
 
+/-- Use `fallback` where `primary` translates nothing of a non-empty chain (e.g. an
+    exact back-link whose checker rejects the unit). -/
+@[expose] def BackLink.orElseIfEmpty [HasBool P] [DecidableEq P.Expr] [InterpLang P]
+    {CmdIn CmdOut : Type} (primary fallback : BackLink P CmdIn CmdOut) :
+    BackLink P CmdIn CmdOut where
+  name := primary.name
+  lift st o :=
+    let r := primary.lift st o
+    if r.chain.isEmpty && !o.chain.isEmpty then fallback.lift st o else r
+
+/-- Use `fallback`'s outcome where `primary` claims nothing and `fallback` does. -/
+@[expose] def BackLink.preferClaim [HasBool P] [DecidableEq P.Expr] [InterpLang P]
+    {CmdIn CmdOut : Type} (primary fallback : BackLink P CmdIn CmdOut) :
+    BackLink P CmdIn CmdOut where
+  name := primary.name
+  lift st o :=
+    let r := primary.lift st o
+    if r.claim.isNone then
+      let r' := fallback.lift st o
+      if r'.claim.isSome then r' else r
+    else r
+
 /-- The sticky per-link fold step used by `composeBackLinks`: thread the outcome
     through one back-link, keeping the empty outcome sticky. -/
 def composeStep [HasBool P] [DecidableEq P.Expr] [InterpLang P]

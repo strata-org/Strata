@@ -208,6 +208,25 @@ theorem stepInterp_block_unfold_gen (stepCmd : StepCmdM P CmdT m) (fuel : Nat)
           pure (.block label (frame.record inner.levelCmd?) i)) := by
   cases inner <;> simp_all!
 
+omit [HasBoolOps P] [HasFvar P] [LawfulMonad m] in
+/-- `stepInterp` on a `.seq` whose inner configuration is not done (`IConfig.Done`) steps the
+    inner configuration, keeping the tail. -/
+theorem stepInterp_seq_notDone (stepCmd : StepCmdM P CmdT m) (fuel : Nat)
+    {inner : IConfig P CmdT} (h : ¬ inner.Done) (rest : List (Stmt P CmdT)) :
+    stepInterp stepCmd fuel (.seq inner rest)
+      = (stepInterp stepCmd fuel inner >>= fun i => pure (.seq i rest)) := by
+  cases inner <;> simp_all!
+
+omit [HasBoolOps P] [HasFvar P] [LawfulMonad m] in
+/-- `stepInterp` on a `.block` whose inner configuration is not done (`IConfig.Done`) steps the
+    inner configuration, recording the step in the frame. -/
+theorem stepInterp_block_notDone (stepCmd : StepCmdM P CmdT m) (fuel : Nat)
+    {inner : IConfig P CmdT} (h : ¬ inner.Done) (label : Option String) (frame : ScopeFrame P) :
+    stepInterp stepCmd fuel (.block label frame inner)
+      = (stepInterp stepCmd fuel inner >>= fun i =>
+          pure (.block label (frame.record inner.levelCmd?) i)) := by
+  cases inner <;> simp_all!
+
 end StepGeneric
 end
 end Imperative

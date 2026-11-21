@@ -57,13 +57,19 @@ def outcomePrintedChecks (outcome : VCOutcome) : Bool × Bool :=
   | .unsat, .sat _ | .unknown _, .sat _ => (false, true)
   | _, _ => (false, false)
 
+/-- The text of a converted model in a SARIF message: its bindings `(x, v)`, separated by one
+    space, with no space after the last. -/
+def sarifModelFormat (m : LExprModel) : Std.Format :=
+  Std.Format.joinSep (m.map fun (id, e) => f!"({id}, {Std.format e})") " "
+
 /-- The model a message prints for a check with result `r`, given that check's component `model`
     of `VCResult.checkModels`: `model` when it is `some`, else the model `r` carries when it is
-    `sat`; `none` when that model is empty or there is none. -/
+    `sat`, converted to Core expressions (`convertModel`); either is printed by
+    `sarifModelFormat`, and is `none` when it is empty or there is none. -/
 def printedCheckModel (r : SMT.Result) : Option LExprModel → Option Std.Format
-  | some m => if m.isEmpty then none else some (Std.format m)
+  | some m => if m.isEmpty then none else some (sarifModelFormat m)
   | none => match r with
-    | .sat m => if m.isEmpty then none else some (Std.format m)
+    | .sat m => if m.isEmpty then none else some (sarifModelFormat (convertModel m))
     | _ => none
 
 /-- Convert VCOutcome to a descriptive message. Each check's model the message prints
