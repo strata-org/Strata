@@ -739,3 +739,53 @@ procedure main() entry
     assert y == 2
 };
 #end
+
+/-! A type constrained over a class holds the instances of the class that meet its constraint. A
+reference to no object, such as a field nobody has written, stops the run at a type test: at the
+dispatch of a call and at an `is`. -/
+
+/--
+error: cortex-interpret: 'dispatchOnNoObject': an expression did not evaluate; 'isOnNoObject': an expression did not evaluate (diagnostics: [the interpreter fails here: an expression did not evaluate, the interpreter fails here: an expression did not evaluate])
+-/
+#guard_msgs in
+#eval testLaurelExecution { skipVerification := true, skipCoreInterpreter := true, skipLaurelInterpreter := true, skipCortexInterpreter := false } <|
+#strata
+program Laurel;
+composite A {
+  procedure m(self: A) returns (r: int) opaque { r := 1 };
+}
+composite B extends A {
+  procedure m(self: B) returns (r: int) opaque { r := 2 };
+}
+constrained AnyB = b: B where true witness new B
+constrained NoB = b: B where false witness new B
+composite Holder { var a: A }
+
+procedure constrainedTypes() entry
+  opaque
+  modifies *
+{
+    var a: A := new A;
+    var b: B := new B;
+    assert b is AnyB;
+    assert !(b is NoB);
+    assert !(a is AnyB)
+};
+
+procedure dispatchOnNoObject() entry
+  opaque
+  modifies *
+{
+    var h: Holder := new Holder;
+    var x: int := h#a#m();
+    assert x == 1
+};
+
+procedure isOnNoObject() entry
+  opaque
+  modifies *
+{
+    var h: Holder := new Holder;
+    assert h#a is AnyB
+};
+#end
