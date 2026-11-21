@@ -199,8 +199,8 @@ procedure Vars(d : int, out x : int, out y : int)
 #end
 
 /--
-info: symbolic: unreachable_cover1 failed, unreachable_cover2 failed, unreachable_assert proved, reachable_cover unknown, unsatisfiable_cover failed, reachable_assert proved
-wp: unreachable_cover1 failed, unreachable_cover2 failed, unreachable_assert proved, reachable_cover unknown, unsatisfiable_cover failed, reachable_assert proved
+info: symbolic: unreachable_cover1 uncovered, unreachable_cover2 uncovered, unreachable_assert proved, reachable_cover covered, unsatisfiable_cover uncovered, reachable_assert proved
+wp: unreachable_cover1 uncovered, unreachable_cover2 uncovered, unreachable_assert proved, reachable_cover covered, unsatisfiable_cover uncovered, reachable_assert proved
 -/
 #guard_msgs in
 #eval printModesVerdicts falseBranchPgm
@@ -213,17 +213,51 @@ wp: a1 proved, a3 proved, a4 proved, a6 proved, a7 proved
 #eval printModesVerdicts exitPgm
 
 /--
-info: symbolic: a37 proved, early failed, min1 proved, min2 proved
-wp: a37 proved, early failed, min1 proved, min2 proved
+info: symbolic: a37 proved, early refuted, min1 proved, min2 proved
+wp: a37 proved, early refuted, min1 proved, min2 proved
 -/
 #guard_msgs in
 #eval printModesVerdicts earlyExitPgm (sorted := true)
 
 /--
-info: symbolic: both failed, deep failed, two failed, vars failed
-wp: both failed, deep failed, two failed, vars failed
+info: symbolic: both refuted, deep refuted, two refuted, vars refuted
+wp: both refuted, deep refuted, two refuted, vars refuted
 -/
 #guard_msgs in
 #eval printModesVerdicts earlyExitVariantsPgm (sorted := true)
+
+/-! ## The labels of `verdict`
+
+One result of each kind that `verdict` names, and one it does not claim: a validity check that
+is `unsat` is `proved`; one that is `sat` is `refuted`; `unknown` to both checks is `unknown`;
+an encoding error, a solver crash and a timeout are `error`; a solver error on a check, which
+none of these claims, is `other`, and so is an unsatisfiable assertion whose validity check gave
+up, which has no counterexample. A cover is `covered` when satisfiable and `uncovered` when
+unsatisfiable. -/
+
+/-- The result of an obligation of kind `prop`, an assertion by default, with the outcome `o`. -/
+private def resultOf (o : Except Core.VCError Core.VCOutcome)
+    (prop : Imperative.PropertyType := .assert) : Core.VCResult :=
+  { obligation := { label := "a", property := prop, assumptions := [],
+                    obligation := .boolConst Core.valueLoc true, metadata := {} },
+    outcome := o }
+
+#guard verdict (resultOf (.ok { satisfiabilityProperty := .unknown, validityProperty := .unsat }))
+  == "proved"
+#guard verdict (resultOf (.ok { satisfiabilityProperty := .unknown, validityProperty := .sat [] }))
+  == "refuted"
+#guard verdict (resultOf (.ok { satisfiabilityProperty := .unknown, validityProperty := .unknown }))
+  == "unknown"
+#guard verdict (resultOf (.error (.encoding ""))) == "error"
+#guard verdict (resultOf (.error (.solverCrash ""))) == "error"
+#guard verdict (resultOf (.error (.solverTimeout ""))) == "error"
+#guard verdict (resultOf (.ok { satisfiabilityProperty := .unknown, validityProperty := .err "" }))
+  == "other"
+#guard verdict (resultOf (.ok { satisfiabilityProperty := .unsat, validityProperty := .unknown }))
+  == "other"
+#guard verdict (resultOf (.ok { satisfiabilityProperty := .sat [], validityProperty := .unknown })
+  (prop := .cover)) == "covered"
+#guard verdict (resultOf (.ok { satisfiabilityProperty := .unsat, validityProperty := .unknown })
+  (prop := .cover)) == "uncovered"
 
 end Strata.WPVerdictTest
