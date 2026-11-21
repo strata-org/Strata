@@ -774,7 +774,10 @@ all claims hold
 -- Common subexpression elimination after symbolic execution, under each mode that merges.
 /--
 info: noCFGBodies required: holds
+noCalls required: holds
+noLoops required: holds
 staticSingleAssignment required: holds
+noPrecondsFromFuncs required: holds
 typeAnnotated required: no check
 noInits required: holds
 noCFGBodies preserved: holds -> holds

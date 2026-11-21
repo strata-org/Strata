@@ -718,7 +718,7 @@ phase                           CF  Lo  LM  LB  BR  NG  PC  Po  In  EC  Cb
 11 nondetElim                   | + | | |       : | V   : | | +     |   :
 12 symbolicEval                 + V + | |     V   | - V V | | + V   |
 13 betaReduce                   | | | | |     | V | : | | | | + | : | : :
-14 commonSubexprElim            + | | | |     + | | : | | | | + -   |
+14 commonSubexprElim            + + + | |     + | + : | | | | + -   |
    the backend                  + + +         + + +   + + + + +
 
 established and preserved, name it once: none
