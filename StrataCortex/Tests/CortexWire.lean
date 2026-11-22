@@ -7,12 +7,12 @@ module
 meta import StrataCortex.Implementation.Pipeline
 meta import StrataCortex.Implementation.Interpret
 meta import StrataCortex.Implementation.Cli
+meta import StrataCortex.Tests.Util.TestCortex
 
 open Strata Cortex.Wire
+open Cortex.TestCortex (at_ blk noLoc proc)
 
 namespace Cortex.WireTest
-
-meta def at_ (n : Nat) : FileRange := { file := .file "T.java", range := { start := ⟨n⟩, stop := ⟨n + 1⟩ } }
 
 meta def int32 : Constrained :=
   { name := "int32", base := .int, binder := "$v",
@@ -20,8 +20,6 @@ meta def int32 : Constrained :=
     witness := some (.int 0) }
 
 meta def i32 : Ty := .named "int32"
-
-meta def blk (label : String) (cmds : List Cmd) (t : Transfer) : Block := { label, cmds, transfer := t }
 
 meta def program : Wire.Program :=
   { composites := [
@@ -127,8 +125,6 @@ info: 15: assertion does not hold
 #guard_msgs in
 #eval interpret (runParameterless program)
 
-meta def noLoc : FileRange := { file := .file "", range := { start := ⟨0⟩, stop := ⟨0⟩ } }
-
 meta def inInt32 (e : Wire.Expr) : Wire.Expr :=
   .op "Bool.And" [.op "Int.Le" [.int (-2147483648), e], .op "Int.Le" [e, .int 2147483647]]
 
@@ -175,11 +171,6 @@ info: Core type checking succeeded.
 -/
 #guard_msgs in
 #eval typeCheck helperProgram
-
-/-- A procedure without inputs or outputs at `source`, whose one block runs `cmds`: an entry unless `entry := false`. -/
-meta def proc (name : String) (source : FileRange) (cmds : List Cmd) (entry := true) : Wire.Procedure :=
-  { name, inputs := [], outputs := [], throws := none, requires := [], entry, source,
-    body := some { entry := "b0", handlers := [], blocks := [blk "b0" cmds (.finish source)] } }
 
 /-- Reads a field through a variable that refers to no object, at `r`. -/
 meta def readsNoObject (r : FileRange) : List Cmd :=
