@@ -552,6 +552,46 @@ theorem HasType_of_HasTypeA_of_annots {T : LExprParams}
   HasType_of_HasTypeA_of_annots_aux hsigwf hsig e.sizeOf e τ Γ (Nat.le_refl _)
     hA ⟨hop, hdecl, hctx, hconst, hbind⟩ hfresh
 
+/-- Every free-variable occurrence in a well-typed annotated expression carries an annotation. -/
+theorem LExpr.HasTypeA.freeVars_annotated {T : LExprParams} {Δ : List LMonoTy}
+    {e : LExpr T.mono} {τ : LMonoTy} (h : LExpr.HasTypeA Δ e τ) :
+    ∀ x ty, (x, ty) ∈ LExpr.freeVars e → ty.isSome = true := by
+  induction h with
+  | const => intro x ty hx; simp only [LExpr.freeVars, List.not_mem_nil] at hx
+  | op => intro x ty hx; simp only [LExpr.freeVars, List.not_mem_nil] at hx
+  | fvar =>
+    intro x ty hx
+    simp only [LExpr.freeVars, List.mem_singleton, Prod.mk.injEq] at hx
+    obtain ⟨-, rfl⟩ := hx
+    rfl
+  | bvar => intro x ty hx; simp only [LExpr.freeVars, List.not_mem_nil] at hx
+  | abs _ ih => exact ih
+  | quant _ _ ihtr ihbody =>
+    intro x ty hx
+    simp only [LExpr.freeVars, List.mem_append] at hx
+    rcases hx with hx | hx
+    · exact ihtr x ty hx
+    · exact ihbody x ty hx
+  | app _ _ ihfn iharg =>
+    intro x ty hx
+    simp only [LExpr.freeVars, List.mem_append] at hx
+    rcases hx with hx | hx
+    · exact ihfn x ty hx
+    · exact iharg x ty hx
+  | ite _ _ _ ihc iht ihe =>
+    intro x ty hx
+    simp only [LExpr.freeVars, List.mem_append] at hx
+    rcases hx with (hx | hx) | hx
+    · exact ihc x ty hx
+    · exact iht x ty hx
+    · exact ihe x ty hx
+  | eq _ _ ih1 ih2 =>
+    intro x ty hx
+    simp only [LExpr.freeVars, List.mem_append] at hx
+    rcases hx with hx | hx
+    · exact ih1 x ty hx
+    · exact ih2 x ty hx
+
 end -- public section
 
 end Lambda

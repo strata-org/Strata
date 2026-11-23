@@ -383,6 +383,36 @@ def allStmtsTys (p : LMonoTy → Bool) (ss : List Statement) : Bool :=
   | s :: rest => allStmtTys p s && allStmtsTys p rest
 end
 
+mutual
+
+/-- Every type an `init` in the statement declares a variable at, and every type argument a
+    call in it carries, satisfies `p`. -/
+@[expose] def Statement.AllDeclTys (p : LTy → Prop) : Statement → Prop
+  | .cmd (.cmd (.init _ ty _ _)) => p ty
+  | .cmd (.cmd _) => True
+  | .cmd (.call _ tyArgs _ _) => ∀ tys, tyArgs = some tys → ∀ ty ∈ tys, p ty
+  | .block _ body _ => Statements.AllDeclTys p body
+  | .ite _ thenb elseb _ => Statements.AllDeclTys p thenb ∧ Statements.AllDeclTys p elseb
+  | .loop _ _ _ body _ => Statements.AllDeclTys p body
+  | .exit _ _ => True
+  | .typeDecl _ _ => True
+
+/-- Every statement of the list satisfies `Statement.AllDeclTys p`. -/
+@[expose] def Statements.AllDeclTys (p : LTy → Prop) : List Statement → Prop
+  | [] => True
+  | s :: ss => Statement.AllDeclTys p s ∧ Statements.AllDeclTys p ss
+
+end
+
+/-- Every `init` in the statement declares a ground monotype, and every call that carries type
+    arguments carries ground monotypes. -/
+@[expose] def Statement.Ground (s : Statement) : Prop :=
+  Statement.AllDeclTys LTy.GroundMono s
+
+/-- Every statement of the list is ground (`Statement.Ground`). -/
+@[expose] def Statements.Ground (ss : List Statement) : Prop :=
+  Statements.AllDeclTys LTy.GroundMono ss
+
 /-! ## Collectors over commands and statements
 
 Each collector lists, in syntax order, what `fe` gives for the expressions of a command or

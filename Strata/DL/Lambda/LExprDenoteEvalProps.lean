@@ -14,6 +14,7 @@ import all Strata.DL.Lambda.Denote.LExprAnnotated
 import all Strata.DL.Lambda.LExprWF
 import Strata.DL.Lambda.LExprWFProps
 import Strata.DL.Lambda.LExprTProps
+import Strata.DL.Lambda.LTyProps
 import Strata.DL.Lambda.OperationalSemanticsProps
 
 /-!
@@ -266,6 +267,62 @@ theorem LSort.toMonoTy_isGround (s : LSort) : s.toMonoTy.IsGround := by
 theorem LMonoTy.IsGround.substTyVars_eq {τ : LMonoTy} (h : τ.IsGround) (ρ ρ' : TyVarVal) :
     τ.substTyVars ρ = τ.substTyVars ρ' := by
   rw [← h, LSort.toMonoTy_substTyVars, LSort.toMonoTy_substTyVars]
+
+/-- A type constructor applied to ground types is ground. -/
+private theorem LMonoTy.IsGround.tcons {name : String} {args : List LMonoTy}
+    (h : ∀ a ∈ args, a.IsGround) : (LMonoTy.tcons name args).IsGround := by
+  have hmap : ∀ as : List LMonoTy, (∀ a ∈ as, a.IsGround) →
+      LSort.toMonoTy.map (LMonoTy.substTyVars.map refTyVarVal as) = as := by
+    intro as
+    induction as with
+    | nil => intro _; rfl
+    | cons a rest ih =>
+      intro hg
+      simp only [LMonoTy.substTyVars.map, LSort.toMonoTy.map, List.cons.injEq]
+      exact ⟨hg a List.mem_cons_self,
+        ih (fun b hb => hg b (List.mem_cons_of_mem _ hb))⟩
+  simp only [LMonoTy.IsGround, LMonoTy.substTyVars, LSort.toMonoTy, LMonoTy.tcons.injEq,
+    true_and]
+  exact hmap args h
+
+/-- Substituting for the free type variables of a type, ground types for all of them, gives a
+    ground type. -/
+theorem LMonoTy.subst_isGround {S : Subst} {ty : LMonoTy}
+    (h : ∀ a ∈ LMonoTy.freeVars ty, (LMonoTy.subst S (.ftvar a)).IsGround) :
+    (LMonoTy.subst S ty).IsGround := by
+  induction ty with
+  | ftvar x => exact h x (by simp only [LMonoTy.freeVars, List.mem_singleton])
+  | bitvec n =>
+    rw [LMonoTy.subst_bitvec]
+    rfl
+  | tcons name args ih =>
+    rw [LMonoTy.subst_tcons, LMonoTys.subst_eq_map]
+    apply LMonoTy.IsGround.tcons
+    intro a ha
+    obtain ⟨b, hb, rfl⟩ := List.mem_map.1 ha
+    refine ih b hb (fun v hv => h v ?_)
+    exact LMonoTys.freeVars_mem_subset hb hv
+
+/-- A type whose free type variables are sent by `σ` and then by `S` to ground types is ground
+    after `σ` and then `S` are applied. -/
+theorem LMonoTy.subst_subst_isGround {S σ : Subst} {ty : LMonoTy}
+    (h : ∀ a ∈ LMonoTy.freeVars ty,
+      (LMonoTy.subst S (LMonoTy.subst σ (.ftvar a))).IsGround) :
+    (LMonoTy.subst S (LMonoTy.subst σ ty)).IsGround := by
+  induction ty with
+  | ftvar x => exact h x (by simp only [LMonoTy.freeVars, List.mem_singleton])
+  | bitvec n =>
+    rw [LMonoTy.subst_bitvec, LMonoTy.subst_bitvec]
+    rfl
+  | tcons name args ih =>
+    rw [LMonoTy.subst_tcons, LMonoTys.subst_eq_map, LMonoTy.subst_tcons,
+      LMonoTys.subst_eq_map]
+    apply LMonoTy.IsGround.tcons
+    intro a ha
+    obtain ⟨b, hb, rfl⟩ := List.mem_map.1 ha
+    obtain ⟨c, hc, rfl⟩ := List.mem_map.1 hb
+    refine ih c hc (fun v hv => h v ?_)
+    exact LMonoTys.freeVars_mem_subset hc hv
 
 /-! ### Characterization -/
 

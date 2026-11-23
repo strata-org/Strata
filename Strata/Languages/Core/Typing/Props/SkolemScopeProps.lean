@@ -714,30 +714,7 @@ theorem deskolKeeps_of_notRigidConst {σ : RigidNames} (t : LMonoTy)
   rw [deskolemizeTy_eq_self_of_notRigidConst t h]
   exact hv
 
-/-! ### Reading annotations off an expression under a type map -/
-
-/-- Any annotation map fixes an unannotated operator. -/
-private theorem mapExprTys_op_none (F : LMonoTy → LMonoTy) (m : CoreLParams.Metadata)
-    (op : CoreLParams.Identifier) :
-    mapExprTys F (LExpr.op m op none) = LExpr.op m op none := by
-  simp [mapExprTys, LExpr.replaceUserProvidedType]
-
-/-- Mapping annotations applies the map to an annotated variable's annotation. -/
-private theorem mapExprTys_fvar_some (F : LMonoTy → LMonoTy) (m : ExpressionMetadata)
-    (x : CoreIdent)
-    (ann : LMonoTy) :
-    mapExprTys (T := CoreLParams) F (.fvar m x (some ann))
-      = .fvar m x (some (F ann)) := by
-  simp [mapExprTys, LExpr.replaceUserProvidedType]
-
-/-- Mapping annotations applies the map to an annotated operator's annotation. -/
-private theorem mapExprTys_op_some (F : LMonoTy → LMonoTy) (m : ExpressionMetadata) (o : CoreIdent)
-    (ann : LMonoTy) :
-    mapExprTys (T := CoreLParams) F (.op m o (some ann))
-      = .op m o (some (F ann)) := by
-  simp [mapExprTys, LExpr.replaceUserProvidedType]
-
-/-! #### Reading a condition on annotations off a compound expression -/
+/-! ### Reading a condition on annotations off a compound expression -/
 
 /-- If the `annotNoRigidClash` sweep accepts an abstraction, its bound-variable annotation
     satisfies `annotNoRigidClash`. -/

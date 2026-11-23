@@ -6,6 +6,7 @@
 module
 
 public import Strata.Languages.Core.Program
+import Strata.Util.ListUtilsProps
 import all Strata.Languages.Core.Program
 
 /-! # Properties of Core programs
@@ -17,6 +18,8 @@ Key results:
 - `Program.Procedure.find?_eq_go` — procedure lookup is a scan of the declarations.
 - `Program.Procedure.find?_of_mem_of_getNames_nodup`, `Program.Procedure.find?_of_mem_of_suffix`
   — with distinct declared names, a procedure in the program is found under its own name.
+- `Program.Procedure.find?_of_mem_of_procNames_nodup` — the same with only the procedure names
+  distinct.
 - `Program.factoryBeforeProcedure_eq_core_of_noFunctions` — when no user
   functions precede a procedure, its visible factory is `Core.Factory`.
 - `Program.declsBeforeProcedure_eq` — the declarations before the first procedure
@@ -222,43 +225,72 @@ theorem Program.Procedure.find?_singleton_proc (p : Procedure) (md : MetaData Ex
 /-! ### Locating a procedure from a membership fact -/
 
 /-- A procedure that occurs in a declaration list is what `Program.Procedure.find?` returns
-    for its own name, provided the list's declared names are distinct. -/
-theorem Program.Procedure.find?_of_mem_of_getNames_nodup
+    for its own name, provided the names that the list's procedure declarations introduce are
+    distinct. -/
+theorem Program.Procedure.find?_of_mem_of_procNames_nodup
     (L : Decls) (q : Procedure) (mdq : MetaData Expression)
-    (hnodup : (Program.getNames.go L).Nodup)
+    (hnodup : ((L.filter (fun d => d.kind == DeclKind.proc)).flatMap Decl.names).Nodup)
     (hmem : Decl.proc q mdq ∈ L) :
     Program.Procedure.find? { decls := L } q.header.name = some q := by
-  have key : ∀ (M : Decls), (Program.getNames.go M).Nodup → Decl.proc q mdq ∈ M →
+  have key : ∀ (M : Decls),
+      ((M.filter (fun d => d.kind == DeclKind.proc)).flatMap Decl.names).Nodup →
+      Decl.proc q mdq ∈ M →
       Program.find?.go DeclKind.proc q.header.name M = some (Decl.proc q mdq) := by
     intro M
     induction M with
     | nil => intro _ hm; simp at hm
     | cons d rest ih =>
       intro hnd hm
-      have hndFlat : (List.flatMap Decl.names (d :: rest)).Nodup := by
-        simpa only [Program.getNames.go] using hnd
-      rw [List.flatMap_cons] at hndFlat
-      obtain ⟨-, hrestNodup, hdisj⟩ := List.nodup_append.mp hndFlat
       rw [Program.find?_go_cons]
       rcases List.mem_cons.mp hm with heq | htl
       · rw [← heq]
         simp [Decl.kind, Decl.name]
-      · have hcond : ¬ ((d.kind == DeclKind.proc && d.name == q.header.name) = true) := by
-          intro hc
-          simp only [Bool.and_eq_true, beq_iff_eq] at hc
-          obtain ⟨hk, hn⟩ := hc
-          have hdn : Decl.names d = [d.name] := by
-            cases d <;> simp_all [Decl.kind, Decl.names]
-          have hmemSelf : d.name ∈ Decl.names d := by rw [hdn]; simp
-          have hmemRest : q.header.name ∈ List.flatMap Decl.names rest :=
-            List.mem_flatMap.mpr ⟨Decl.proc q mdq, htl, by simp [Decl.names, Decl.name]⟩
-          exact hdisj d.name hmemSelf q.header.name hmemRest hn
+      · obtain ⟨hndRest, hcond⟩ : ((rest.filter (fun d => d.kind == DeclKind.proc)).flatMap
+            Decl.names).Nodup ∧
+            ¬ ((d.kind == DeclKind.proc && d.name == q.header.name) = true) := by
+          by_cases hk : d.kind = DeclKind.proc
+          · have hkb : (d.kind == DeclKind.proc) = true := beq_iff_eq.2 hk
+            rw [List.filter_cons_of_pos (p := fun (d : Decl) => d.kind == DeclKind.proc) hkb,
+              List.flatMap_cons] at hnd
+            obtain ⟨-, hndRest, hdisj⟩ := List.nodup_append.mp hnd
+            refine ⟨hndRest, fun hc => ?_⟩
+            simp only [Bool.and_eq_true, beq_iff_eq] at hc
+            have hdn : Decl.names d = [d.name] := by
+              cases d <;> simp_all [Decl.kind, Decl.names]
+            have hmemSelf : d.name ∈ Decl.names d := by rw [hdn]; simp
+            have hqk : ((Decl.proc q mdq).kind == DeclKind.proc) = true := by simp [Decl.kind]
+            have hqn : q.header.name ∈ Decl.names (Decl.proc q mdq) := by
+              simp [Decl.names, Decl.name]
+            have hmemRest : q.header.name ∈
+                (rest.filter (fun d => d.kind == DeclKind.proc)).flatMap Decl.names :=
+              List.mem_flatMap.mpr ⟨Decl.proc q mdq, List.mem_filter.2 ⟨htl, hqk⟩, hqn⟩
+            exact hdisj d.name hmemSelf q.header.name hmemRest hc.2
+          · have hkb : ¬ (d.kind == DeclKind.proc) = true := fun h => hk (beq_iff_eq.1 h)
+            rw [List.filter_cons_of_neg (p := fun (d : Decl) => d.kind == DeclKind.proc)
+              hkb] at hnd
+            refine ⟨hnd, fun hc => hk ?_⟩
+            simp only [Bool.and_eq_true, beq_iff_eq] at hc
+            exact hc.1
         rw [ite_eq_right hcond]
-        exact ih (by simpa only [Program.getNames.go] using hrestNodup) htl
+        exact ih hndRest htl
   rw [Program.Procedure.find?_eq_go]
   show (Program.find?.go DeclKind.proc q.header.name L).bind Decl.getProc? = some q
   rw [key L hnodup hmem]
   rfl
+
+/-- A procedure that occurs in a declaration list is what `Program.Procedure.find?` returns
+    for its own name, provided the list's declared names are distinct. -/
+theorem Program.Procedure.find?_of_mem_of_getNames_nodup
+    (L : Decls) (q : Procedure) (mdq : MetaData Expression)
+    (hnodup : (Program.getNames.go L).Nodup)
+    (hmem : Decl.proc q mdq ∈ L) :
+    Program.Procedure.find? { decls := L } q.header.name = some q := by
+  have hsub : List.Sublist ((L.filter (fun d => d.kind == DeclKind.proc)).flatMap Decl.names)
+      (List.flatMap Decl.names L) :=
+    List.Sublist.flatMap_of_sublist Decl.names List.filter_sublist
+  have hnodupFlat : (List.flatMap Decl.names L).Nodup := by
+    simpa only [Program.getNames.go] using hnodup
+  exact Program.Procedure.find?_of_mem_of_procNames_nodup L q mdq (hnodupFlat.sublist hsub) hmem
 
 /-- In a program with distinct declared names, a procedure in a suffix of its declarations is
     found under its own name. -/

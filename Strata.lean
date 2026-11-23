@@ -321,6 +321,7 @@ import Strata.Languages.Core.Typing.Spec.ProgramTypeSpec
 import Strata.Languages.Core.Typing.Spec.NamesWF
 import Strata.Languages.Core.Typing.Spec.TypeSpecShared
 import Strata.Languages.Core.Typing.Spec.TypingSpec
+import Strata.Languages.Core.Typing.Spec.ConfigTyping
 import Strata.Languages.Core.FactoryProps
 import Strata.Languages.Core.Typing.Props.CmdTypeProps
 import Strata.Languages.Core.Typing.Props.DatatypeTypeProps
@@ -339,6 +340,8 @@ import Strata.Languages.Core.Typing.Props.StatementTypeProps
 import Strata.Languages.Core.Typing.Props.TypeSkolemProps
 import Strata.Languages.Core.Typing.Props.TypingSpecProps
 import Strata.Languages.Core.Typing.Props.WrittenTyVarScopeProps
+import Strata.Languages.Core.Typing.Preservation.SmallStep
+import Strata.Languages.Core.Typing.Preservation.Progress
 import Strata.Languages.Core.Typing.Soundness
 import Strata.Util.Random
 

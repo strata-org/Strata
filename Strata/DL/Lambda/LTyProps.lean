@@ -192,6 +192,48 @@ theorem mapLTyTys_of_isMonoType (f : LMonoTy → LMonoTy) (t : LTy) (h : LTy.isM
     subst hvs
     rfl
 
+/-- Reading monotypes off a list of schemes with no bound variables, whose bodies are `g` of the
+    elements of `l`, gives `g` of the elements of `l`. -/
+theorem mapM_toMonoType?_map_forAll {α : Type _} (g : α → LMonoTy) (l : List α) :
+    (l.map fun a => LTy.forAll [] (g a)).mapM LTy.toMonoType? = some (l.map g) := by
+  induction l with
+  | nil => rfl
+  | cons a rest ih =>
+    simp only [List.map_cons, List.mapM_cons, LTy.toMonoType?, ih]
+    rfl
+
+/-- Reading monotypes off a list of schemes gives one monotype per scheme, each read off from
+    some scheme of the list. -/
+theorem mapM_toMonoType?_spec {l : List LTy} {ms : List LMonoTy}
+    (h : l.mapM LTy.toMonoType? = some ms) :
+    ms.length = l.length ∧ ∀ m ∈ ms, ∃ t ∈ l, t.toMonoType? = some m := by
+  induction l generalizing ms with
+  | nil =>
+    simp only [List.mapM_nil, Option.pure_def, Option.some.injEq] at h
+    subst h
+    exact ⟨rfl, fun m hm => absurd hm List.not_mem_nil⟩
+  | cons t rest ih =>
+    obtain ⟨vs, m0⟩ := t
+    cases vs with
+    | cons v vs =>
+      simp only [List.mapM_cons, LTy.toMonoType?, Option.pure_def, Option.bind_eq_bind,
+        Option.bind_none, reduceCtorEq] at h
+    | nil =>
+      cases hr : rest.mapM LTy.toMonoType? with
+      | none =>
+        simp only [List.mapM_cons, LTy.toMonoType?, hr, Option.pure_def, Option.bind_eq_bind,
+          Option.bind_none, Option.bind_fun_none, reduceCtorEq] at h
+      | some ms' =>
+        simp only [List.mapM_cons, LTy.toMonoType?, hr] at h
+        have hms : m0 :: ms' = ms := Option.some.inj h
+        subst hms
+        obtain ⟨hlen, hmem⟩ := ih hr
+        refine ⟨by simp only [List.length_cons, hlen], fun m hm => ?_⟩
+        rcases List.mem_cons.1 hm with rfl | hm'
+        · exact ⟨_, List.mem_cons_self, rfl⟩
+        · obtain ⟨t, ht, htm⟩ := hmem m hm'
+          exact ⟨t, List.mem_cons_of_mem _ ht, htm⟩
+
 /-! ### Free variables of arrow types -/
 
 /-- A function type has exactly the type variables of its argument and result. -/

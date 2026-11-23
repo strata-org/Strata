@@ -9,6 +9,9 @@ public import Strata.Languages.Core.Statement
 public import Strata.DL.Imperative.StmtProps
 import Strata.DL.Imperative.CmdProps
 import Strata.DL.Lambda.LExprWFProps
+import Strata.DL.Lambda.LExprEvalFuelProps
+import Strata.DL.Lambda.LExprDenoteEvalProps
+import Strata.DL.Lambda.LTyUnifyProps
 import all Strata.DL.Lambda.LExprWF
 import all Strata.Languages.Core.Statement
 import all Strata.DL.Imperative.Stmt
@@ -18,11 +21,17 @@ import all Strata.DL.Imperative.Cmd
 
 Per-constructor equations for `calledProcedureNames`, for call arguments, for `mapStmtTys` and
 `mapStmtsTys` (defined through the well-founded `Stmt.mapExpr` and `Block.mapExpr`), the
-identity laws `mapCmdTys_id` and `mapStmtsTys_id`, and equations for
-`Statement.noCalls` and `Statements.noCalls`.
+identity laws `mapCmdTys_id` and `mapStmtsTys_id`, the inversions
+`mapStmtTys_eq_*`, `mapStmtsTys_eq_*` and `mapCmdTys_eq_*` (a statement equal to an image under
+`mapStmtTys` has the same constructor, with each part an image), and equations for
+`Statement.noCalls` and `Statements.noCalls`. Mapping a statement list by the empty substitution
+is the identity, and substituting ground types for every type variable of its declared types and
+call type arguments makes it ground.
 
 Key theorems: `Statements.calledProcedureNames_cons`, `Statement.calledProcedureNames_ite`,
-`CallArg.getInputExprs_cons_*` and `CallArg.getLhs_cons_*`. -/
+`CallArg.getInputExprs_cons_*` and `CallArg.getLhs_cons_*`. `Statement.AllDeclTys.and_imp`
+combines two properties of every declared type; `Statement.AllDeclTys.of_mem_initTypes` carries
+a property of every declared type to the list `initTypes`. -/
 
 namespace Core
 
@@ -281,6 +290,85 @@ theorem mapStmtTys_cmd (f : LMonoTy → LMonoTy) (c : Command) :
     mapStmtTys f (.cmd c) = .cmd (mapCmdTys f c) := by
   simp only [mapStmtTys, Stmt.mapExpr]
 
+/-- Mapping type annotations over an `init` command maps its type and its initializer. -/
+theorem mapCmdTys_init (f : LMonoTy → LMonoTy) (x : Expression.Ident) (ty : LTy)
+    (e : ExprOrNondet Expression) (md : MetaData Expression) :
+    mapCmdTys f (.cmd (.init x ty e md)) =
+      .cmd (.init x (mapLTyTys f ty) (e.map (mapExprTys f)) md) := by
+  simp only [mapCmdTys, mapCmdWith]
+
+/-- Mapping type annotations over a `set` command maps its right-hand side. -/
+theorem mapCmdTys_set (f : LMonoTy → LMonoTy) (x : Expression.Ident)
+    (e : ExprOrNondet Expression) (md : MetaData Expression) :
+    mapCmdTys f (.cmd (.set x e md)) = .cmd (.set x (e.map (mapExprTys f)) md) := by
+  simp only [mapCmdTys, mapCmdWith]
+
+/-- Mapping type annotations over an `assert` command maps its condition. -/
+theorem mapCmdTys_assert (f : LMonoTy → LMonoTy) (l : String) (b : Expression.Expr)
+    (md : MetaData Expression) :
+    mapCmdTys f (.cmd (.assert l b md)) = .cmd (.assert l (mapExprTys f b) md) := by
+  simp only [mapCmdTys, mapCmdWith]
+
+/-- Mapping type annotations over an `assume` command maps its condition. -/
+theorem mapCmdTys_assume (f : LMonoTy → LMonoTy) (l : String) (b : Expression.Expr)
+    (md : MetaData Expression) :
+    mapCmdTys f (.cmd (.assume l b md)) = .cmd (.assume l (mapExprTys f b) md) := by
+  simp only [mapCmdTys, mapCmdWith]
+
+/-- Mapping type annotations over a `cover` command maps its condition. -/
+theorem mapCmdTys_cover (f : LMonoTy → LMonoTy) (l : String) (b : Expression.Expr)
+    (md : MetaData Expression) :
+    mapCmdTys f (.cmd (.cover l b md)) = .cmd (.cover l (mapExprTys f b) md) := by
+  simp only [mapCmdTys, mapCmdWith]
+
+/-- Mapping type annotations over a call maps its type arguments and its input expressions. -/
+theorem mapCmdTys_call (f : LMonoTy → LMonoTy) (n : String) (tyArgs : Option (List LTy))
+    (args : List (CallArg Expression)) (md : MetaData Expression) :
+    mapCmdTys f (.call n tyArgs args md) =
+      .call n (tyArgs.map (·.map (mapLTyTys f))) (args.map (CallArg.mapInput (mapExprTys f)))
+        md := by
+  simp only [mapCmdTys, mapCmdWith]
+
+/-- Mapping type annotations over a base command gives a base command. -/
+theorem mapCmdTys_cmd_exists (f : LMonoTy → LMonoTy) (c0 : Imperative.Cmd Expression) :
+    ∃ c, mapCmdTys f (.cmd c0) = (.cmd c : Command) := by
+  cases c0 with
+  | init x ty e md => exact ⟨_, mapCmdTys_init ..⟩
+  | set x e md => exact ⟨_, mapCmdTys_set ..⟩
+  | assert l b md => exact ⟨_, mapCmdTys_assert ..⟩
+  | assume l b md => exact ⟨_, mapCmdTys_assume ..⟩
+  | cover l b md => exact ⟨_, mapCmdTys_cover ..⟩
+
+/-- A base command that is the type-annotation image of a command comes from a base command. -/
+theorem mapCmdTys_eq_cmd {f : LMonoTy → LMonoTy} {c0 : Command} {c : Imperative.Cmd Expression}
+    (h : (.cmd c : Command) = mapCmdTys f c0) : ∃ c1, c0 = .cmd c1 := by
+  cases c0 with
+  | cmd c1 => exact ⟨c1, rfl⟩
+  | call n tyArgs args md => rw [mapCmdTys_call] at h; cases h
+
+/-- A call that is the type-annotation image of a command comes from a call of the same
+    procedure, by the image of its type arguments and its input expressions. -/
+theorem mapCmdTys_eq_call {f : LMonoTy → LMonoTy} {c0 : Command} {n : String}
+    {tyArgs' : Option (List LTy)} {args' : List (CallArg Expression)} {md : MetaData Expression}
+    (h : (.call n tyArgs' args' md : Command) = mapCmdTys f c0) :
+    ∃ tyArgs args, c0 = .call n tyArgs args md ∧
+      tyArgs' = tyArgs.map (·.map (mapLTyTys f)) ∧
+      args' = args.map (CallArg.mapInput (mapExprTys f)) := by
+  cases c0 with
+  | cmd c1 =>
+    obtain ⟨c2, hc2⟩ := mapCmdTys_cmd_exists f c1
+    rw [hc2] at h
+    cases h
+  | call n0 tyArgs0 args0 md0 =>
+    rw [mapCmdTys_call] at h
+    obtain ⟨rfl, htyArgs, hargs, rfl⟩ := CmdExt.call.inj h
+    exact ⟨tyArgs0, args0, rfl, htyArgs, hargs⟩
+
+/-- Mapping an expression's type annotations preserves its free term variables. -/
+theorem getFvars_mapExprTys (f : LMonoTy → LMonoTy) (e : Expression.Expr) :
+    HasFvars.getFvars (mapExprTys f e) = HasFvars.getFvars e :=
+  Lambda.getVars_replaceUserProvidedType e f
+
 /-- Mapping type annotations over a labeled block maps them over its body. -/
 theorem mapStmtTys_block (f : LMonoTy → LMonoTy) (l : String) (bss : List Statement)
     (md : MetaData Expression) :
@@ -359,6 +447,278 @@ theorem mapStmtsTys_id (ss : List Statement) : mapStmtsTys id ss = ss := by
   | _ =>
     simp_all [mapStmtTys_block, mapStmtTys_ite, mapStmtTys_loop, mapStmtTys_exit,
       mapStmtTys_typeDecl, mapStmtsTys_nil, mapStmtsTys_cons, ExprOrNondet.map]
+
+/-- Mapping the type annotations of a list of statements by the empty substitution leaves it
+    unchanged. -/
+theorem Statements.mapStmtsTys_subst_empty (ss : List Statement) :
+    mapStmtsTys (LMonoTy.subst Subst.empty) ss = ss := by
+  have hid : LMonoTy.subst Subst.empty = id := by
+    funext m
+    exact LMonoTy.subst_nil m
+  rw [hid]
+  exact mapStmtsTys_id ss
+
+mutual
+
+/-- Substituting ground monotypes for the type parameters `as` in a statement whose declared
+    types and call type arguments are monotypes over `as` leaves it ground. -/
+theorem Statement.ground_mapStmtTys {S : Subst} {as : List TyIdentifier}
+    (hS : ∀ a ∈ as, (LMonoTy.subst S (.ftvar a)).IsGround) :
+    ∀ s : Statement,
+      Statement.AllDeclTys
+        (fun ty => ∃ τ, ty = .forAll [] τ ∧ ∀ a ∈ LMonoTy.freeVars τ, a ∈ as) s →
+        Statement.Ground (mapStmtTys (LMonoTy.subst S) s)
+  | .cmd (.cmd (.init x ty e md)), hs => by
+    obtain ⟨τ, rfl, hτ⟩ := hs
+    rw [mapStmtTys_cmd, mapCmdTys_init]
+    exact ⟨_, rfl, LMonoTy.subst_isGround fun a ha => hS a (hτ a ha)⟩
+  | .cmd (.cmd (.set x e md)), _ => by
+    rw [mapStmtTys_cmd, mapCmdTys_set]; trivial
+  | .cmd (.cmd (.assert l b md)), _ => by
+    rw [mapStmtTys_cmd, mapCmdTys_assert]; trivial
+  | .cmd (.cmd (.assume l b md)), _ => by
+    rw [mapStmtTys_cmd, mapCmdTys_assume]; trivial
+  | .cmd (.cmd (.cover l b md)), _ => by
+    rw [mapStmtTys_cmd, mapCmdTys_cover]; trivial
+  | .cmd (.call pname tyArgs args md), hs => by
+    rw [mapStmtTys_cmd, mapCmdTys_call]
+    intro tys htys ty hty
+    cases tyArgs with
+    | none => exact nomatch htys
+    | some tys0 =>
+      simp only [Option.map_some, Option.some.injEq] at htys
+      subst htys
+      obtain ⟨ty0, hty0, rfl⟩ := List.mem_map.1 hty
+      obtain ⟨τ, rfl, hτ⟩ := hs tys0 rfl ty0 hty0
+      exact ⟨_, rfl, LMonoTy.subst_isGround fun a ha => hS a (hτ a ha)⟩
+  | .block l body md, hs => by
+    rw [mapStmtTys_block]
+    exact Statements.ground_mapStmtsTys hS body hs
+  | .ite c thenb elseb md, hs => by
+    rw [mapStmtTys_ite]
+    exact ⟨Statements.ground_mapStmtsTys hS thenb hs.1,
+      Statements.ground_mapStmtsTys hS elseb hs.2⟩
+  | .loop g m i body md, hs => by
+    rw [mapStmtTys_loop]
+    exact Statements.ground_mapStmtsTys hS body hs
+  | .exit l md, _ => by
+    rw [mapStmtTys_exit]; trivial
+  | .typeDecl t md, _ => by
+    rw [mapStmtTys_typeDecl]; trivial
+
+/-- Substituting ground monotypes for the type parameters `as` in a list of statements whose
+    declared types and call type arguments are monotypes over `as` leaves it ground. -/
+theorem Statements.ground_mapStmtsTys {S : Subst} {as : List TyIdentifier}
+    (hS : ∀ a ∈ as, (LMonoTy.subst S (.ftvar a)).IsGround) :
+    ∀ ss : List Statement,
+      Statements.AllDeclTys
+        (fun ty => ∃ τ, ty = .forAll [] τ ∧ ∀ a ∈ LMonoTy.freeVars τ, a ∈ as) ss →
+        Statements.Ground (mapStmtsTys (LMonoTy.subst S) ss)
+  | [], _ => by
+    rw [mapStmtsTys_nil]; trivial
+  | s :: ss, hs => by
+    rw [mapStmtsTys_cons]
+    exact ⟨Statement.ground_mapStmtTys hS s hs.1, Statements.ground_mapStmtsTys hS ss hs.2⟩
+
+end
+
+/-! ## Statements whose annotations were mapped, one constructor at a time -/
+
+/-- A command statement that is the type-annotation image of a statement comes from a command
+    statement, by the image of its command. -/
+theorem mapStmtTys_eq_cmd {f : LMonoTy → LMonoTy} {s0 : Statement} {c : Command}
+    (h : (.cmd c : Statement) = mapStmtTys f s0) : ∃ c0, s0 = .cmd c0 ∧ c = mapCmdTys f c0 := by
+  cases s0 with
+  | cmd c0 =>
+    rw [mapStmtTys_cmd] at h
+    exact ⟨c0, rfl, Stmt.cmd.inj h⟩
+  | block => rw [mapStmtTys_block] at h; cases h
+  | ite => rw [mapStmtTys_ite] at h; cases h
+  | loop => rw [mapStmtTys_loop] at h; cases h
+  | exit => rw [mapStmtTys_exit] at h; cases h
+  | typeDecl => rw [mapStmtTys_typeDecl] at h; cases h
+
+/-- A block statement that is the type-annotation image of a statement comes from a block
+    statement with the same label, by the image of its body. -/
+theorem mapStmtTys_eq_block {f : LMonoTy → LMonoTy} {s0 : Statement} {l : String}
+    {body : List Statement} {md : MetaData Expression}
+    (h : (.block l body md : Statement) = mapStmtTys f s0) :
+    ∃ body0, s0 = .block l body0 md ∧ body = mapStmtsTys f body0 := by
+  cases s0 with
+  | cmd => rw [mapStmtTys_cmd] at h; cases h
+  | block l0 body0 md0 =>
+    rw [mapStmtTys_block] at h
+    obtain ⟨rfl, hbody, rfl⟩ := Stmt.block.inj h
+    exact ⟨body0, rfl, hbody⟩
+  | ite => rw [mapStmtTys_ite] at h; cases h
+  | loop => rw [mapStmtTys_loop] at h; cases h
+  | exit => rw [mapStmtTys_exit] at h; cases h
+  | typeDecl => rw [mapStmtTys_typeDecl] at h; cases h
+
+/-- A conditional statement that is the type-annotation image of a statement comes from a
+    conditional statement, by the image of its condition and both branches. -/
+theorem mapStmtTys_eq_ite {f : LMonoTy → LMonoTy} {s0 : Statement}
+    {c : ExprOrNondet Expression} {tss ess : List Statement} {md : MetaData Expression}
+    (h : (.ite c tss ess md : Statement) = mapStmtTys f s0) :
+    ∃ c0 tss0 ess0, s0 = .ite c0 tss0 ess0 md ∧ c = c0.map (mapExprTys f ·) ∧
+      tss = mapStmtsTys f tss0 ∧ ess = mapStmtsTys f ess0 := by
+  cases s0 with
+  | cmd => rw [mapStmtTys_cmd] at h; cases h
+  | block => rw [mapStmtTys_block] at h; cases h
+  | ite c0 tss0 ess0 md0 =>
+    rw [mapStmtTys_ite] at h
+    obtain ⟨hc, htss, hess, rfl⟩ := Stmt.ite.inj h
+    exact ⟨c0, tss0, ess0, rfl, hc, htss, hess⟩
+  | loop => rw [mapStmtTys_loop] at h; cases h
+  | exit => rw [mapStmtTys_exit] at h; cases h
+  | typeDecl => rw [mapStmtTys_typeDecl] at h; cases h
+
+/-- A loop statement that is the type-annotation image of a statement comes from a loop
+    statement, by the image of its guard, measure, invariants and body. -/
+theorem mapStmtTys_eq_loop {f : LMonoTy → LMonoTy} {s0 : Statement}
+    {g : ExprOrNondet Expression} {m : Option Expression.Expr}
+    {i : List (String × Expression.Expr)} {bss : List Statement} {md : MetaData Expression}
+    (h : (.loop g m i bss md : Statement) = mapStmtTys f s0) :
+    ∃ g0 m0 i0 bss0, s0 = .loop g0 m0 i0 bss0 md ∧ g = g0.map (mapExprTys f ·) ∧
+      m = m0.map (mapExprTys f ·) ∧ i = i0.map (fun (l, e) => (l, mapExprTys f e)) ∧
+      bss = mapStmtsTys f bss0 := by
+  cases s0 with
+  | cmd => rw [mapStmtTys_cmd] at h; cases h
+  | block => rw [mapStmtTys_block] at h; cases h
+  | ite => rw [mapStmtTys_ite] at h; cases h
+  | loop g0 m0 i0 bss0 md0 =>
+    rw [mapStmtTys_loop] at h
+    obtain ⟨hg, hm, hi, hbss, rfl⟩ := Stmt.loop.inj h
+    exact ⟨g0, m0, i0, bss0, rfl, hg, hm, hi, hbss⟩
+  | exit => rw [mapStmtTys_exit] at h; cases h
+  | typeDecl => rw [mapStmtTys_typeDecl] at h; cases h
+
+/-- An exit statement that is the type-annotation image of a statement comes from the same
+    exit statement. -/
+theorem mapStmtTys_eq_exit {f : LMonoTy → LMonoTy} {s0 : Statement} {l : String}
+    {md : MetaData Expression} (h : (.exit l md : Statement) = mapStmtTys f s0) :
+    s0 = .exit l md := by
+  cases s0 with
+  | cmd => rw [mapStmtTys_cmd] at h; cases h
+  | block => rw [mapStmtTys_block] at h; cases h
+  | ite => rw [mapStmtTys_ite] at h; cases h
+  | loop => rw [mapStmtTys_loop] at h; cases h
+  | exit l0 md0 =>
+    rw [mapStmtTys_exit] at h
+    obtain ⟨rfl, rfl⟩ := Stmt.exit.inj h
+    rfl
+  | typeDecl => rw [mapStmtTys_typeDecl] at h; cases h
+
+/-- A type declaration statement that is the type-annotation image of a statement comes from
+    the same type declaration statement. -/
+theorem mapStmtTys_eq_typeDecl {f : LMonoTy → LMonoTy} {s0 : Statement} {t : TypeConstructor}
+    {md : MetaData Expression} (h : (.typeDecl t md : Statement) = mapStmtTys f s0) :
+    s0 = .typeDecl t md := by
+  cases s0 with
+  | cmd => rw [mapStmtTys_cmd] at h; cases h
+  | block => rw [mapStmtTys_block] at h; cases h
+  | ite => rw [mapStmtTys_ite] at h; cases h
+  | loop => rw [mapStmtTys_loop] at h; cases h
+  | exit => rw [mapStmtTys_exit] at h; cases h
+  | typeDecl t0 md0 =>
+    rw [mapStmtTys_typeDecl] at h
+    obtain ⟨rfl, rfl⟩ := Stmt.typeDecl.inj h
+    rfl
+
+/-- The type-annotation image of a statement list is empty exactly when the list is. -/
+theorem mapStmtsTys_eq_nil {f : LMonoTy → LMonoTy} {ss0 : List Statement}
+    (h : ([] : List Statement) = mapStmtsTys f ss0) : ss0 = [] := by
+  cases ss0 with
+  | nil => rfl
+  | cons s0 rest0 => rw [mapStmtsTys_cons] at h; cases h
+
+/-- A nonempty list that is the type-annotation image of a statement list comes from a
+    nonempty list, by the image of its head and its tail. -/
+theorem mapStmtsTys_eq_cons {f : LMonoTy → LMonoTy} {ss0 : List Statement} {s : Statement}
+    {rest : List Statement} (h : s :: rest = mapStmtsTys f ss0) :
+    ∃ s0 rest0, ss0 = s0 :: rest0 ∧ s = mapStmtTys f s0 ∧ rest = mapStmtsTys f rest0 := by
+  cases ss0 with
+  | nil => rw [mapStmtsTys_nil] at h; cases h
+  | cons s0 rest0 =>
+    rw [mapStmtsTys_cons] at h
+    obtain ⟨hs, hrest⟩ := List.cons.inj h
+    exact ⟨s0, rest0, rfl, hs, hrest⟩
+
+/-! ## Statements whose declared types are all ground -/
+
+mutual
+
+/-- If every type of a statement satisfies `p` and every type satisfies `q`, and `p` and `q`
+    together give `r`, then every type of the statement satisfies `r`. -/
+theorem Statement.AllDeclTys.and_imp {p q r : LTy → Prop} (h : ∀ ty, p ty → q ty → r ty) :
+    ∀ s : Statement, Statement.AllDeclTys p s → Statement.AllDeclTys q s →
+      Statement.AllDeclTys r s
+  | .cmd (.cmd (.init _ ty _ _)), hp, hq => h ty hp hq
+  | .cmd (.cmd (.set ..)), _, _ => trivial
+  | .cmd (.cmd (.assert ..)), _, _ => trivial
+  | .cmd (.cmd (.assume ..)), _, _ => trivial
+  | .cmd (.cmd (.cover ..)), _, _ => trivial
+  | .cmd (.call ..), hp, hq => fun tys htys ty hty => h ty (hp tys htys ty hty)
+      (hq tys htys ty hty)
+  | .block _ body _, hp, hq => Statements.AllDeclTys.and_imp h body hp hq
+  | .ite _ thenb elseb _, hp, hq =>
+    ⟨Statements.AllDeclTys.and_imp h thenb hp.1 hq.1,
+      Statements.AllDeclTys.and_imp h elseb hp.2 hq.2⟩
+  | .loop _ _ _ body _, hp, hq => Statements.AllDeclTys.and_imp h body hp hq
+  | .exit _ _, _, _ => trivial
+  | .typeDecl _ _, _, _ => trivial
+
+/-- The list version of `Statement.AllDeclTys.and_imp`. -/
+theorem Statements.AllDeclTys.and_imp {p q r : LTy → Prop} (h : ∀ ty, p ty → q ty → r ty) :
+    ∀ ss : List Statement, Statements.AllDeclTys p ss → Statements.AllDeclTys q ss →
+      Statements.AllDeclTys r ss
+  | [], _, _ => trivial
+  | s :: ss, hp, hq =>
+    ⟨Statement.AllDeclTys.and_imp h s hp.1 hq.1, Statements.AllDeclTys.and_imp h ss hp.2 hq.2⟩
+
+end
+
+mutual
+
+/-- If every declared type of a statement (`Statement.AllDeclTys`) satisfies `p`, so does every
+    type in `Imperative.Stmt.initTypes` of it, nested blocks included. -/
+theorem Statement.AllDeclTys.of_mem_initTypes {p : LTy → Prop} :
+    ∀ s : Statement, Statement.AllDeclTys p s → ∀ ty ∈ Imperative.Stmt.initTypes s, p ty
+  | .cmd (.cmd (.init _ ty' _ _)), hp, ty, hty => by
+    simp only [Imperative.Stmt.initTypes, HasInitTypesImp.initTypes, CmdExt.initTypes,
+      Cmd.initTypes, List.mem_singleton] at hty
+    exact hty ▸ hp
+  | .cmd (.cmd (.set ..)), _, ty, hty | .cmd (.cmd (.assert ..)), _, ty, hty
+  | .cmd (.cmd (.assume ..)), _, ty, hty | .cmd (.cmd (.cover ..)), _, ty, hty => by
+    simp only [Imperative.Stmt.initTypes, HasInitTypesImp.initTypes, CmdExt.initTypes,
+      Cmd.initTypes, List.not_mem_nil] at hty
+  | .cmd (.call ..), _, ty, hty => by
+    simp only [Imperative.Stmt.initTypes, HasInitTypesImp.initTypes, CmdExt.initTypes,
+      List.not_mem_nil] at hty
+  | .block _ body _, hp, ty, hty => by
+    simp only [Imperative.Stmt.initTypes] at hty
+    exact Statements.AllDeclTys.of_mem_initTypes body hp ty hty
+  | .ite _ thenb elseb _, hp, ty, hty => by
+    simp only [Imperative.Stmt.initTypes, List.mem_append] at hty
+    exact hty.elim (Statements.AllDeclTys.of_mem_initTypes thenb hp.1 ty)
+      (Statements.AllDeclTys.of_mem_initTypes elseb hp.2 ty)
+  | .loop _ _ _ body _, hp, ty, hty => by
+    simp only [Imperative.Stmt.initTypes] at hty
+    exact Statements.AllDeclTys.of_mem_initTypes body hp ty hty
+  | .exit _ _, _, ty, hty | .typeDecl _ _, _, ty, hty => by
+    simp only [Imperative.Stmt.initTypes, List.not_mem_nil] at hty
+
+/-- The list version of `Statement.AllDeclTys.of_mem_initTypes`. -/
+theorem Statements.AllDeclTys.of_mem_initTypes {p : LTy → Prop} :
+    ∀ ss : List Statement, Statements.AllDeclTys p ss → ∀ ty ∈ Imperative.Block.initTypes ss, p ty
+  | [], _, ty, hty => by
+    simp only [Imperative.Block.initTypes, List.not_mem_nil] at hty
+  | s :: ss, hp, ty, hty => by
+    simp only [Imperative.Block.initTypes, List.mem_append] at hty
+    exact hty.elim (Statement.AllDeclTys.of_mem_initTypes s hp.1 ty)
+      (Statements.AllDeclTys.of_mem_initTypes ss hp.2 ty)
+
+end
 
 /-! ## No procedure call, one constructor at a time -/
 

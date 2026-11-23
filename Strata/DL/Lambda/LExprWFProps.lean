@@ -80,7 +80,9 @@ annotation (`freeVars_isSome_of_fullyAnnotated`, `exists_opAnnots_of_fullyAnnota
 Rewriting annotations keeps the operators (`getOps_replaceUserProvidedType`), rewrites the
 annotations of free variables and operators (`freeVars_replaceUserProvidedType`,
 `opAnnots_replaceUserProvidedType`), and is the identity at the identity
-(`replaceUserProvidedType_id`, `mapExprTys_id`).
+(`replaceUserProvidedType_id`, `mapExprTys_id`). `mapExprTys_fvar_none`, `mapExprTys_fvar_some`,
+`mapExprTys_op_none` and `mapExprTys_op_some` give the effect on a free variable and an operator
+without and with an annotation.
 -/
 
 namespace Lambda
@@ -1461,6 +1463,30 @@ end LExpr
 /-- Mapping the type annotations of an expression by the identity leaves it unchanged. -/
 @[simp] theorem mapExprTys_id {T : LExprParams} : mapExprTys (T := T) id = id :=
   funext LExpr.replaceUserProvidedType_id
+
+/-- Mapping type annotations leaves a free variable without an annotation unchanged. -/
+theorem mapExprTys_fvar_none {T : LExprParams} (f : LMonoTy → LMonoTy) (m : T.Metadata)
+    (x : T.Identifier) :
+    mapExprTys f (LExpr.fvar m x none : LExpr T.mono) = LExpr.fvar m x none := by
+  simp only [mapExprTys, LExpr.replaceUserProvidedType, Option.map_none]
+
+/-- Mapping type annotations applies the map to the annotation of an annotated free variable. -/
+theorem mapExprTys_fvar_some {T : LExprParams} (f : LMonoTy → LMonoTy) (m : T.Metadata)
+    (x : T.Identifier) (ann : LMonoTy) :
+    mapExprTys f (LExpr.fvar m x (some ann) : LExpr T.mono) = LExpr.fvar m x (some (f ann)) := by
+  simp only [mapExprTys, LExpr.replaceUserProvidedType, Option.map_some]
+
+/-- Mapping type annotations leaves an operator without an annotation unchanged. -/
+theorem mapExprTys_op_none {T : LExprParams} (f : LMonoTy → LMonoTy) (m : T.Metadata)
+    (o : T.Identifier) :
+    mapExprTys f (LExpr.op m o none : LExpr T.mono) = LExpr.op m o none := by
+  simp only [mapExprTys, LExpr.replaceUserProvidedType, Option.map_none]
+
+/-- Mapping type annotations applies the map to the annotation of an annotated operator. -/
+theorem mapExprTys_op_some {T : LExprParams} (f : LMonoTy → LMonoTy) (m : T.Metadata)
+    (o : T.Identifier) (ann : LMonoTy) :
+    mapExprTys f (LExpr.op m o (some ann) : LExpr T.mono) = LExpr.op m o (some (f ann)) := by
+  simp only [mapExprTys, LExpr.replaceUserProvidedType, Option.map_some]
 
 /-- Every user-provided annotation of `e` satisfies `p` exactly when every type
     `exprAnnotTys e` lists does: both visit the same operator, free-variable and
