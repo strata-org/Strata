@@ -188,11 +188,24 @@ def cortexWireInterpretBinaryCommand : Command where
   callback := fun _ pflags => do
     runWireInterpret (← (← IO.getStdin).readBinToEnd) pflags
 
+def cortexWireCheckBinaryCommand : Command where
+  name := "cortexWireCheckBinary"
+  args := []
+  help := "Check a Cortex program in the Cortex wire format, read as Ion from stdin, without \
+           running it: translate it to Core and type-check it. Exit with an error naming the \
+           step that rejected it."
+  callback := fun _ _ => do
+    let program ← readWireProgram (← (← IO.getStdin).readBinToEnd)
+    match Cortex.checkWire program with
+    | .ok () => IO.println "Core type checking succeeded."
+    | .error e => exitFailure e
+
 def cortexFrontend : CliFrontend where
   dialects := []
   group := fun _ =>
     { name := "Cortex"
-      commands := [cortexInterpretBinaryCommand, cortexToCoreCommand, cortexWireInterpretBinaryCommand] }
+      commands := [cortexInterpretBinaryCommand, cortexToCoreCommand, cortexWireInterpretBinaryCommand,
+                   cortexWireCheckBinaryCommand] }
 
 end
 
