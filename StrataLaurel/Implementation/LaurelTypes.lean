@@ -266,6 +266,10 @@ def classifyModifiesHighType (isValueTypeName : Identifier → Bool) :
   | .Applied ⟨.UserDefined n, _⟩ _ => if isValueTypeName n then none else some .composite
   | _ => none
 
+def modifiesValueSetElem? : HighType → Option HighTypeMd
+  | .Applied ⟨.UserDefined n, _⟩ [elem] => if n.text == "Set" then some elem else none
+  | _ => none
+
 
 end Strata.Laurel
 

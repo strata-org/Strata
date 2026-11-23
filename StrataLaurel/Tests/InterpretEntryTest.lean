@@ -458,15 +458,16 @@ private def procedureOp (prog : StrataDDM.Program) : Option StrataDDM.Operation 
   | _ => none
 
 /-- Reproduce the legacy pre-`typeParams`, pre-`throws`, pre-`entry` 8-argument procedure
-    shape from the current 11-argument op (`name, typeParams, parameters, returnType,
-    returnParameters, throws, requires, invokeOn, entry, opaqueSpec, body`) by keeping only
-    `name, parameters, returnType, returnParameters, requires, invokeOn, opaqueSpec, body`
-    (indices 0,2,3,4,6,7,9,10 — dropping the `typeParams`, `throws`, and `entry` slots). An
+    shape from the current 13-argument op (`name, typeParams, parameters, returnType,
+    returnParameters, throws, requires, invokeOn, entry, implicit, frame, opaqueSpec, body`) by
+    keeping only `name, parameters, returnType, returnParameters, requires, invokeOn, opaqueSpec,
+    body` (indices 0,2,3,4,6,7,11,12 — dropping the `typeParams`, `throws`, `entry`, `implicit`
+    and `frame` slots). An
     older producer — before those clauses were added — would emit exactly this shape; the
     transitional shim in the concrete-to-abstract translator upgrades it back to the current
     form. -/
 private def dropEntryArg (op : StrataDDM.Operation) : StrataDDM.Operation :=
-  { op with args := #[0, 2, 3, 4, 6, 7, 9, 10].filterMap (fun i => op.args[i]?) }
+  { op with args := #[0, 2, 3, 4, 6, 7, 11, 12].filterMap (fun i => op.args[i]?) }
 
 -- The legacy 8-arg shape parses without error and yields `isInterpretEntry := false`
 -- (no entry clause present): the transitional shim upgrades the pre-typeParams/throws/entry
@@ -492,12 +493,12 @@ absent exception clauses while keeping `entry` — so, unlike the 8-arg shape
 9-arg → 10-arg shim arm, distinct from the 8-arg arm above. -/
 
 /-- Reproduce the pre-`typeParams`, pre-`throws` 9-argument procedure shape (with `entry`
-    but without the polymorphism or exceptional-contract clauses) from the current 11-argument
+    but without the polymorphism or exceptional-contract clauses) from the current 13-argument
     op by keeping only `name, parameters, returnType, returnParameters, requires, invokeOn,
-    entry, opaqueSpec, body` (indices 0,2,3,4,6,7,8,9,10 — dropping the `typeParams` and
-    `throws` slots). -/
+    entry, opaqueSpec, body` (indices 0,2,3,4,6,7,8,11,12 — dropping the `typeParams`,
+    `throws`, `implicit` and `frame` slots). -/
 private def drop9ArgShape (op : StrataDDM.Operation) : StrataDDM.Operation :=
-  { op with args := #[0, 2, 3, 4, 6, 7, 8, 9, 10].filterMap (fun i => op.args[i]?) }
+  { op with args := #[0, 2, 3, 4, 6, 7, 8, 11, 12].filterMap (fun i => op.args[i]?) }
 
 -- The legacy 9-arg shape parses without error and preserves `isInterpretEntry := true`,
 -- since the entry clause is kept (only the exceptional-contract clauses are absent).
@@ -521,21 +522,21 @@ arm from the procedure-level ones above: the arity that differs is the *nested*
 `opaqueSpec` operation's, not the enclosing `procedure`'s. -/
 
 /-- Reproduce the 2-argument `opaqueSpec` shape by dropping the `throwsOn` slot
-    from the procedure's `opaqueSpec` argument (index 9 in the 11-arg op), leaving
-    `#[ensures, modifies]`. The enclosing `procedure` keeps its current 11-arg
+    from the procedure's `opaqueSpec` argument (index 11 in the 13-arg op), leaving
+    `#[ensures, modifies]`. The enclosing `procedure` keeps its current 13-arg
     form, so this isolates the `opaqueSpec` shim arm. -/
 private def drop2ArgOpaqueSpec (op : StrataDDM.Operation) : StrataDDM.Operation :=
-  match (op.args[9]? : Option StrataDDM.Arg) with
+  match (op.args[11]? : Option StrataDDM.Arg) with
   | some (.option ann (some (.op os))) =>
     let os' := { os with args := os.args.take 2 }
-    { op with args := op.args.set! 9 (.option ann (some (.op os'))) }
+    { op with args := op.args.set! 11 (.option ann (some (.op os'))) }
   | _ => op
 
-/-- The arity of the `opaqueSpec` operation nested at index 9, or `none` when that
+/-- The arity of the `opaqueSpec` operation nested at index 11, or `none` when that
     argument is not a present `opaqueSpec`. Reported by the test below so the
     shape being parsed is pinned, rather than assumed. -/
 private def opaqueSpecArity (op : StrataDDM.Operation) : Option Nat :=
-  match (op.args[9]? : Option StrataDDM.Arg) with
+  match (op.args[11]? : Option StrataDDM.Arg) with
   | some (.option _ (some (.op os))) => some os.args.size
   | _ => none
 
@@ -553,6 +554,32 @@ opaqueSpec 2-arg parse ok, throwsOn cases = 0
   IO.println s!"opaqueSpec arity before = {opaqueSpecArity op}, after = {opaqueSpecArity legacy}"
   match Laurel.TransM.run (Strata.Uri.file "<#strata>") (Laurel.parseProcedure (.op legacy)) with
   | .ok proc => IO.println s!"opaqueSpec 2-arg parse ok, throwsOn cases = {proc.throwsOn.length}"
+  | .error e => IO.println s!"parse error: {e}"
+
+private def dropImplicitArg (op : StrataDDM.Operation) : StrataDDM.Operation :=
+  { op with args := #[0, 1, 2, 3, 4, 5, 6, 7, 8, 11, 12].filterMap (fun i => op.args[i]?) }
+
+/-- info: 11-arg parse ok, isInterpretEntry = true, isImplicit = false
+-/
+#guard_msgs in
+#eval do
+  let some op := procedureOp entryProc | IO.println "no procedure op"
+  let legacy := dropImplicitArg op
+  match Laurel.TransM.run (Strata.Uri.file "<#strata>") (Laurel.parseProcedure (.op legacy)) with
+  | .ok proc => IO.println s!"{legacy.args.size}-arg parse ok, isInterpretEntry = {proc.isInterpretEntry}, isImplicit = {proc.isImplicit}"
+  | .error e => IO.println s!"parse error: {e}"
+
+private def dropFrameArg (op : StrataDDM.Operation) : StrataDDM.Operation :=
+  { op with args := #[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 12].filterMap (fun i => op.args[i]?) }
+
+/-- info: 12-arg parse ok, isInterpretEntry = true, isFrame = false
+-/
+#guard_msgs in
+#eval do
+  let some op := procedureOp entryProc | IO.println "no procedure op"
+  let legacy := dropFrameArg op
+  match Laurel.TransM.run (Strata.Uri.file "<#strata>") (Laurel.parseProcedure (.op legacy)) with
+  | .ok proc => IO.println s!"{legacy.args.size}-arg parse ok, isInterpretEntry = {proc.isInterpretEntry}, isFrame = {proc.isFrame}"
   | .error e => IO.println s!"parse error: {e}"
 
 end StrataTest.Laurel.InterpretEntry

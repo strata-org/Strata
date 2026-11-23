@@ -40,6 +40,7 @@ Generates, quantifying over heap references:
 where notModified($obj, $fld) conjoins, per entry:
 - `$obj != ref(e)`                                single object `e`
 - `!(exists $c: Composite => select(s, $c) && ref($c) == $obj)`   Set `s`
+- `!(exists m: Composite :: setContains(s, m) && ref(m) == $obj)`   `Set<T>` value `s` (frame procedure result)
 - `!($obj == r && $fld == f)`                     field `r#f`, `r` already a reference
 
 Under array theory, for a procedure that names only individual refs and cannot
@@ -61,6 +62,7 @@ Composite expressions, or a single `(object, field)` pair (field-granular).
 inductive ModifiesEntry where
   | single (expr : StmtExprMd)       -- a single Composite reference
   | set (expr : StmtExprMd)          -- a Set Composite expression
+  | valueSet (expr : StmtExprMd)
   -- field-granular: only `fieldConst` of `objExpr` may change
   | field (objExpr : StmtExprMd) (fieldConst : StmtExprMd)
 
@@ -71,11 +73,13 @@ type classification, with `model` deciding value-vs-reference for a nominal head
 -/
 def classifyModifiesType (model : SemanticModel) (expr : StmtExprMd) (ty : HighType) :
     Option ModifiesEntry :=
-  match classifyModifiesHighType
-      (fun n => n.text != compositeTypeName.text && (model.get n).isValueType) ty with
+  let isValue := fun n => n.text != compositeTypeName.text && (model.get n).isValueType
+  match classifyModifiesHighType isValue ty with
   | some .composite    => some (.single expr)
   | some .compositeSet => some (.set expr)
-  | none               => none
+  | none               =>
+    if (modifiesValueSetElem? ty).any fun e => (classifyModifiesHighType isValue e.val).isSome
+    then some (.valueSet expr) else none
 
 /-- Extract modifies entries: a field target `r#f` (kept symbolic by heap
 parameterization, its owner already a reference and its field a heap field)
@@ -106,6 +110,15 @@ def buildNotModifiedForEntry (obj : StmtExprMd) (fld : StmtExprMd) (entry : Modi
     let memberName : Identifier := "$modifies_member"
     let member := mkMd (.Var (.Local memberName)) source
     let membership := mkMd (.Call none "select" [expr, member] []) source
+    let sameRef := mkMd (.Call none (mkId Operation.Eq.procName) [refOf member, obj] []) source
+    let both := mkMd (.Call none (mkId Operation.And.procName) [membership, sameRef] []) source
+    let someMember := mkMd (.Quantifier .Exists
+      ⟨memberName, { val := .UserDefined compositeTypeName, source }⟩ none both) source
+    mkMd (.Call none (mkId Operation.Not.procName) [someMember] []) source
+  | .valueSet expr =>
+    let memberName : Identifier := "$modifies_member"
+    let member := mkMd (.Var (.Local memberName)) source
+    let membership := mkMd (.Call none "setContains" [expr, member] []) source
     let sameRef := mkMd (.Call none (mkId Operation.Eq.procName) [refOf member, obj] []) source
     let both := mkMd (.Call none (mkId Operation.And.procName) [membership, sameRef] []) source
     let someMember := mkMd (.Quantifier .Exists

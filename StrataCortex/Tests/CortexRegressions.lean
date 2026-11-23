@@ -342,6 +342,42 @@ procedure uninitialisedComposite() entry
 };
 #end
 
+#eval testLaurelExecution { skipVerification := true, skipCoreInterpreter := true, skipLaurelInterpreter := true, skipCortexInterpreter := false } <|
+#strata
+program Laurel;
+datatype Maybe<T> { Nothing(), Just(value: T) }
+composite Node { var v: int }
+
+procedure uninitialisedGenericOfInt() entry
+  opaque
+{
+    var m: Maybe<int>;
+    assert Maybe..isNothing(m)
+};
+
+procedure uninitialisedGenericOfComposite() entry
+  opaque
+{
+    var m: Maybe<Node>;
+    assert Maybe..isNothing(m)
+};
+
+procedure uninitialisedNullableRef() entry
+  opaque
+{
+    var n: NullableRef<Node>;
+    assert NullableRef..isNull(n)
+};
+
+procedure reassignedNullableRef() entry
+  opaque
+{
+    var n: NullableRef<Node>;
+    n := Null();
+    assert NullableRef..isNull(n)
+};
+#end
+
 -- A call to a procedure without a body fails the run there: the interpreter has nothing to
 -- run, and does not make up the callee's results. A contract on the callee does not change that.
 /-- error: cortex-interpret: 'main': a call to 'lib', which has no body to run (diagnostics: [the interpreter fails here: a call to 'lib', which has no body to run]) -/

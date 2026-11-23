@@ -99,7 +99,7 @@ def conjoinConditions (src : FileRange) (cs : List Condition) : StmtExprMd :=
     a method that overrides `parent`'s same-named method. Produces up to two
     checkers (pre, post); each is an ordinary opaque procedure whose verification
     is the refinement VC. Returns `[]` when there is nothing to check. -/
-def refinementCheckers (model : SemanticModel) (childTypeName : Identifier)
+def refinementCheckers (ctx : TypeLattice) (model : SemanticModel) (childTypeName : Identifier)
     (childTypeArgs : List Identifier)
     (parentTypeName : Identifier) (parent child : Procedure) : List Procedure :=
   -- SIGNATURE GUARD: an override whose input count, or whose OUTPUT SIGNATURE (arity or a
@@ -118,7 +118,7 @@ def refinementCheckers (model : SemanticModel) (childTypeName : Identifier)
     | .compositeType ct => ct.typeArgs
     | _ => []
   if parent.inputs.length != child.inputs.length
-     || ! outputSignatureCompatible model parent child
+     || ! outputSignatureCompatible ctx model parent child
      || renamesBaseTypeParams parentTypeArgs childTypeArgs then []
   else
   let src := child.name.source
@@ -255,11 +255,12 @@ def refinementCheckers (model : SemanticModel) (childTypeName : Identifier)
     enumerator the dispatcher generator uses — see its docstring for the gate-parity
     invariant that makes this sound). -/
 def checkOverrideRefinement (model : SemanticModel) (program : LaurelProgram) : LaurelProgram :=
+  let ctx := TypeLattice.ofTypes program.types
   let checkers : List Procedure :=
     (virtualDispatchFamilies model program).flatMap fun fam =>
       -- Emit a checker set for EVERY parent, not just the nearest (see `findOverriddenParents`).
       (findOverriddenParents model fam.owner.name fam.method).flatMap fun (parentName, parentProc) =>
-        refinementCheckers model fam.owner.name fam.owner.typeArgs parentName parentProc fam.method
+        refinementCheckers ctx model fam.owner.name fam.owner.typeArgs parentName parentProc fam.method
   if checkers.isEmpty then program
   else { program with staticProcedures := program.staticProcedures ++ checkers }
 

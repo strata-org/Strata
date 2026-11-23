@@ -285,6 +285,12 @@ op invokeOnClause(trigger: StmtExpr): InvokeOnClause => "\n  invokeOn " trigger:
 category EntryClause;
 op entryClause: EntryClause => "\n  entry";
 
+category ImplicitClause;
+op implicitClause: ImplicitClause => "\n  implicit";
+
+category FrameClause;
+op frameClause: FrameClause => "\n  frame";
+
 // `requires`/`ensures` lower to both an assertion and an assumption by default.
 // `free` keeps only the assumption (assumed but never checked); `checked` keeps
 // only the assertion (checked but never exposed as an assumption).
@@ -377,9 +383,11 @@ op procedure (name : Ident, typeParams: Option TypeParams, parameters: CommaSepB
   requires: Seq RequiresClause,
   invokeOn: Option InvokeOnClause,
   entry: Option EntryClause,
+  implicit: Option ImplicitClause,
+  frame: Option FrameClause,
   opaqueSpec: Option OpaqueSpec,
   body : Option Body) : Procedure =>
-  "procedure " name typeParams "(" parameters ")" returnType returnParameters throws requires invokeOn entry opaqueSpec body ";";
+  "procedure " name typeParams "(" parameters ")" returnType returnParameters throws requires invokeOn entry implicit frame opaqueSpec body ";";
 
 op composite (name: Ident, typeParams: Option TypeParams, extending: Option Extends, fields: Seq Field, procedures: Seq Procedure): Composite => "composite " name typeParams extending " {" fields procedures " }";
 

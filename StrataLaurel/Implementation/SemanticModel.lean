@@ -162,7 +162,9 @@ structure SemanticModel where
       duplicate (conflicting signature with an existing overload). These must
       not be renamed by `UniqueOverloadNames`. -/
   conflictingOverloads: Std.HashSet Nat := {}
-  deriving Repr
+  /-- The implicit casts declared by the authored program, which `resolve` consumes and then
+      clears from the procedures it returns. A re-resolution carries them over unchanged. -/
+  implicitCasts: List ImplicitCast := []
 
 /-- The diagnostic noun and declared type-parameter count when this node declares a value type
     (a datatype or an `opaque` type); `none` for anything else. The noun is paired with the

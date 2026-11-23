@@ -650,6 +650,87 @@ procedure runMe()
 };
 #end
 
+#guard_msgs in
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+composite C { var x: int }
+var s: NullableRef<C> := Null()
+procedure runMe()
+//        ^^^^^ error: entry procedure 'runMe' cannot use constrained-typed global 's': the global's type constraint is enforced through hidden-parameter contracts, which entry procedures do not receive
+  entry
+  opaque
+{
+  s := Null()
+};
+#end
+
+#guard_msgs in
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+constrained nat = x: int where x >= 0 witness 0
+var s: NullableRef<nat> := Null()
+procedure runMe()
+//        ^^^^^ error: entry procedure 'runMe' cannot use constrained-typed global 's': the global's type constraint is enforced through hidden-parameter contracts, which entry procedures do not receive
+  entry
+  opaque
+{
+  s := Null()
+};
+#end
+
+#guard_msgs in
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+constrained nat = x: int where x >= 0 witness 0
+datatype Box<T> { MkBox(v: T) }
+var b: Box<nat> := MkBox(0)
+procedure runMe()
+//        ^^^^^ error: entry procedure 'runMe' cannot use constrained-typed global 'b': the global's type constraint is enforced through hidden-parameter contracts, which entry procedures do not receive
+  entry
+  opaque
+{
+  assert Box..v!(b) == 0
+};
+#end
+
+#guard_msgs in
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+constrained nat = x: int where x >= 0 witness 0
+type Count = nat
+var n: Count := 0
+procedure runMe()
+//        ^^^^^ error: entry procedure 'runMe' cannot use constrained-typed global 'n': the global's type constraint is enforced through hidden-parameter contracts, which entry procedures do not receive
+  entry
+  opaque
+{
+  n := 1
+};
+#end
+
+#guard_msgs in
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+constrained nat = x: int where x >= 0 witness 0
+datatype Box<T> { MkBox(v: T) }
+var s: NullableRef<int> := Null()
+var b: Box<int> := MkBox(0)
+var flag: bool := false
+procedure runMe()
+  entry
+  opaque
+{
+  s := Null();
+  b := MkBox(1);
+  flag := true
+};
+#end
+
 
 #guard_msgs in
 #eval testLaurelResolution <|

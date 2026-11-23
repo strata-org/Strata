@@ -2520,4 +2520,479 @@ completed
 #guard_msgs in
 #eval interpret targetFirstInBlock
 
+private def nullJoin := r"
+composite C { var v: int }
+procedure pick(c: C, keep: bool) returns (r: NullableRef<C>)
+  opaque
+  ensures keep ==> NullableRef..isNonNull(r)
+{
+  if keep then { stk := c } else { stk := Null() };
+  return stk
+};
+"
+
+/-- info: verified -/
+#guard_msgs in
+#eval verify nullJoin
+
+private def nullJoinReversed := r"
+composite C { var v: int }
+procedure pick(c: C, keep: bool) returns (r: NullableRef<C>)
+  opaque
+  ensures !keep ==> NullableRef..isNonNull(r)
+{
+  if keep then { stk := Null() } else { stk := c };
+  return stk
+};
+"
+
+/-- info: verified -/
+#guard_msgs in
+#eval verify nullJoinReversed
+
+private def nullJoinDeref := r"
+composite C { var v: int }
+procedure deref(c: C, keep: bool) returns (r: int)
+  opaque
+{
+  if keep then { stk := c } else { stk := Null() };
+  var k: int := stk#v;
+  return k
+};
+"
+
+/-- info: userError: the reference is not null does not hold -/
+#guard_msgs in
+#eval verify nullJoinDeref
+
+private def covariantCastJoin := r"
+composite Animal { }
+composite Dog extends Animal { }
+procedure pick(a: Animal, d: NullableRef<Dog>, keep: bool) returns (r: NullableRef<Animal>)
+  opaque
+  ensures keep ==> NullableRef..isNonNull(r)
+{
+  if keep then { stk := a } else { stk := d };
+  return stk
+};
+"
+
+/-- info: verified -/
+#guard_msgs in
+#eval verify covariantCastJoin
+
+private def covariantCastJoinReversed := r"
+composite Animal { }
+composite Dog extends Animal { }
+procedure pick(a: Animal, d: NullableRef<Dog>, keep: bool) returns (r: NullableRef<Animal>)
+  opaque
+  ensures !keep ==> NullableRef..isNonNull(r)
+{
+  if keep then { stk := d } else { stk := a };
+  return stk
+};
+"
+
+/-- info: verified -/
+#guard_msgs in
+#eval verify covariantCastJoinReversed
+
+private def noUniqueAncestor := r"
+composite Obj { }
+composite Ser extends Obj { }
+composite Cmp extends Obj { }
+composite Str extends Obj, Ser, Cmp { }
+composite Int2 extends Obj, Ser, Cmp { }
+procedure p(s: Str, i: Int2, keep: bool) returns (r: Obj)
+  opaque
+{
+  if keep then { stk := s } else { stk := i };
+  var x: Obj := stk;
+  return x
+};
+"
+
+/-- info: verified -/
+#guard_msgs in
+#eval verify noUniqueAncestor
+
+private def nullJoinAtLabel := r"
+composite C { var v: int }
+procedure pick(c: C, keep: bool) returns (r: NullableRef<C>)
+  opaque
+  ensures keep ==> NullableRef..isNonNull(r)
+{
+  { if keep then { stk := c; goto join }; stk := Null() } start;
+  { r := stk } join
+};
+"
+
+/-- info: verified -/
+#guard_msgs in
+#eval verify nullJoinAtLabel
+
+private def nullJoinAtLabelReversed := r"
+composite C { var v: int }
+procedure pick(c: C, keep: bool) returns (r: NullableRef<C>)
+  opaque
+  ensures !keep ==> NullableRef..isNonNull(r)
+{
+  { if keep then { stk := Null(); goto join }; stk := c } start;
+  { r := stk } join
+};
+"
+
+/-- info: verified -/
+#guard_msgs in
+#eval verify nullJoinAtLabelReversed
+
+private def throwGuarded := r"
+composite E { var v: int }
+procedure thrower(e: NullableRef<E>) throws (x: E) opaque {
+  stki := 1;
+  var k: int := stki;
+  if NullableRef..isNonNull(e) then { throw e }
+};
+"
+
+/-- info: verified -/
+#guard_msgs in
+#eval verify throwGuarded
+
+private def throwUnguarded := r"
+composite E { var v: int }
+procedure thrower(e: NullableRef<E>) throws (x: E) opaque {
+  stki := 1;
+  var k: int := stki;
+  throw e
+};
+"
+
+/-- info: userError: the reference is not null does not hold -/
+#guard_msgs in
+#eval verify throwUnguarded
+
+private def throwStackValue := r"
+composite E { var v: int }
+procedure thrower(e: NullableRef<E>) throws (x: E) opaque {
+  if NullableRef..isNonNull(e) then { stk := e; throw stk }
+};
+"
+
+/-- info: verified -/
+#guard_msgs in
+#eval verify throwStackValue
+
+private def throwInferredCaught := r"
+composite E { var v: int }
+procedure thrower(e: NullableRef<E>) throws (x: inferred) opaque {
+  stki := 1;
+  var k: int := stki;
+  if NullableRef..isNonNull(e) then { throw e }
+};
+procedure catcher(e: NullableRef<E>) returns (r: int) opaque {
+  try {
+    thrower(e);
+    r := 1
+  } catch c when c is E {
+    r := 0
+  }
+};
+"
+
+/-- info: verified -/
+#guard_msgs in
+#eval verify throwInferredCaught
+
+private def throwInferredUncaught := r"
+composite E { var v: int }
+procedure thrower(e: NullableRef<E>) throws (x: inferred) opaque {
+  stki := 1;
+  var k: int := stki;
+  if NullableRef..isNonNull(e) then { throw e }
+};
+procedure caller(e: NullableRef<E>) opaque {
+  thrower(e)
+};
+"
+
+/-- info: userError: call does not throw an uncaught 'E' does not hold -/
+#guard_msgs in
+#eval verify throwInferredUncaught
+
+private def asGuarded := r"
+composite C { var x: int }
+composite D extends C { }
+procedure f(n: NullableRef<C>) returns (r: int) opaque {
+  stki := 1;
+  var j: int := stki;
+  if n is D then { return (n as D)#x };
+  return 0
+};
+"
+
+/-- info: verified -/
+#guard_msgs in
+#eval verify asGuarded
+
+private def asUnguarded := r"
+composite C { var x: int }
+composite D extends C { }
+procedure f(n: NullableRef<C>) returns (r: int) opaque {
+  stki := 1;
+  var j: int := stki;
+  return (n as D)#x
+};
+"
+
+/--
+info: userError: the reference is not null does not hold
+userError: precondition does not hold
+-/
+#guard_msgs in
+#eval verify asUnguarded
+
+private def asGuardedInTernary := r"
+composite C { var x: int }
+composite D extends C { }
+procedure f(n: NullableRef<C>) returns (r: int) opaque {
+  stki := 1;
+  var j: int := stki;
+  return if n is D then (n as D)#x else 0
+};
+"
+
+/-- info: verified -/
+#guard_msgs in
+#eval verify asGuardedInTernary
+
+private def assignAsValue := r"
+composite C { var x: int }
+procedure takesC(c: C) returns (r: int) opaque { return c#x };
+procedure assignExpr(m: NullableRef<C>) returns (r: int) opaque {
+  stki := 1;
+  var j: int := stki;
+  var n: NullableRef<C> := Null();
+  var k: int := takesC(n := m);
+  return k
+};
+"
+
+/-- info: userError: the reference is not null does not hold -/
+#guard_msgs in
+#eval verify assignAsValue
+
+private def assignAsValueGuarded := r"
+composite C { var x: int }
+procedure takesC(c: C) returns (r: int) opaque { return c#x };
+procedure assignExpr(m: NullableRef<C>) returns (r: int) opaque {
+  stki := 1;
+  var j: int := stki;
+  var n: NullableRef<C> := Null();
+  if NullableRef..isNull(m) then { return 0 };
+  var k: int := takesC(n := m);
+  return k
+};
+"
+
+/-- info: verified -/
+#guard_msgs in
+#eval verify assignAsValueGuarded
+
+private def throwingCallKept := r"
+composite C { var x: int }
+composite E { var m: int }
+procedure g(b: bool) returns (r: C) throws (e: E) opaque {
+  if b then { throw new E };
+  return new C
+};
+procedure h(b: bool) returns (r: int) throws (e: E) opaque {
+  stk := g(b);
+  var x: NullableRef<C> := stk;
+  if NullableRef..isNull(x) then { return 0 };
+  var y: C := x;
+  return y#x
+};
+"
+
+/-- info: verified -/
+#guard_msgs in
+#eval verify throwingCallKept
+
+private def throwingCallToField := r"
+composite C { var x: int }
+composite E { var m: int }
+composite Holder { var maybe: NullableRef<C> }
+procedure g(b: bool) returns (r: C) throws (e: E) opaque {
+  if b then { throw new E };
+  return new C
+};
+procedure h(o: Holder, b: bool) returns (r: int) throws (e: E) opaque modifies * {
+  stk := g(b);
+  o#maybe := stk;
+  return 0
+};
+"
+
+/-- info: verified -/
+#guard_msgs in
+#eval verify throwingCallToField
+
+private def throwingNullableToNonNull := r"
+composite C { var x: int }
+composite E { var m: int }
+procedure gn(b: bool) returns (r: NullableRef<C>) throws (e: E) opaque {
+  if b then { throw new E };
+  return Null()
+};
+procedure h(b: bool) returns (r: int) throws (e: E) opaque {
+  stk := gn(b);
+  var y: C := stk;
+  return y#x
+};
+"
+
+/-- info: userError: the reference is not null could not be proved -/
+#guard_msgs in
+#eval verify throwingNullableToNonNull
+
+private def throwingNullableToField := r"
+composite C { var x: int }
+composite E { var m: int }
+composite Holder { var sure: C }
+procedure gn(b: bool) returns (r: NullableRef<C>) throws (e: E) opaque {
+  if b then { throw new E };
+  return Null()
+};
+procedure h(o: Holder, b: bool) returns (r: int) throws (e: E) opaque modifies * {
+  stk := gn(b);
+  o#sure := stk;
+  return 0
+};
+"
+
+/-- info: userError: the reference is not null could not be proved -/
+#guard_msgs in
+#eval verify throwingNullableToField
+
+private def joinNullableWithNull := r"
+composite C { var x: int }
+procedure pick(a: NullableRef<C>, keep: bool) returns (r: NullableRef<C>)
+  opaque
+  ensures keep ==> r == a
+  ensures !keep ==> NullableRef..isNull(r)
+{
+  if keep then { stk := a } else { stk := Null() };
+  return stk
+};
+"
+
+/-- info: verified -/
+#guard_msgs in
+#eval verify joinNullableWithNull
+
+private def joinNullWithNullable := r"
+composite C { var x: int }
+procedure pick(a: NullableRef<C>, keep: bool) returns (r: NullableRef<C>)
+  opaque
+  ensures !keep ==> r == a
+  ensures keep ==> NullableRef..isNull(r)
+{
+  if keep then { stk := Null() } else { stk := a };
+  return stk
+};
+"
+
+/-- info: verified -/
+#guard_msgs in
+#eval verify joinNullWithNullable
+
+private def joinNullableWithNullDeref := r"
+composite C { var x: int }
+procedure deref(a: NullableRef<C>, keep: bool) returns (r: int) opaque {
+  if keep then { stk := a } else { stk := Null() };
+  var k: int := stk#x;
+  return k
+};
+"
+
+/-- info: userError: the reference is not null does not hold -/
+#guard_msgs in
+#eval verify joinNullableWithNullDeref
+
+private def joinNullableWithNullAtLabel := r"
+composite C { var x: int }
+procedure pick(a: NullableRef<C>, keep: bool) returns (r: NullableRef<C>)
+  opaque
+  ensures keep ==> r == a
+{
+  { if keep then { stk := a; goto join }; stk := Null() } start;
+  { r := stk } join
+};
+"
+
+/-- info: verified -/
+#guard_msgs in
+#eval verify joinNullableWithNullAtLabel
+
+private def joinGenericCtor := r"
+datatype Opt<T> { None(), Some(v: T) }
+procedure pick(a: Opt<int>, keep: bool) returns (r: Opt<int>)
+  opaque
+  ensures keep ==> r == a
+  ensures !keep ==> r == None()
+{
+  if keep then { stk := a } else { stk := None() };
+  return stk
+};
+"
+
+/-- info: verified -/
+#guard_msgs in
+#eval verify joinGenericCtor
+
+private def joinGenericCtorReversed := r"
+datatype Opt<T> { None(), Some(v: T) }
+procedure pick(a: Opt<int>, keep: bool) returns (r: Opt<int>)
+  opaque
+  ensures !keep ==> r == a
+  ensures keep ==> r == None()
+{
+  if keep then { stk := None() } else { stk := a };
+  return stk
+};
+"
+
+/-- info: verified -/
+#guard_msgs in
+#eval verify joinGenericCtorReversed
+
+private def joinGenericCtorMismatch := r"
+datatype Opt<T> { None(), Some(v: T) }
+procedure pick(a: Opt<int>, keep: bool) returns (r: Opt<bool>) opaque {
+  if keep then { stk := a } else { stk := None() };
+  return stk
+};
+"
+
+/-- info: userError: expected 'Opt<bool>', got 'Opt<int>' -/
+#guard_msgs in
+#eval verify joinGenericCtorMismatch
+
+private def diamondNullable := r"
+composite A { var v: int }
+composite B extends A { }
+composite C extends A { }
+composite D extends B, C { }
+procedure f(n: NullableRef<D>) returns (r: int) opaque {
+  stki := 1;
+  var j: int := stki;
+  return n#v
+};
+"
+
+/-- info: userError: fields that are inherited multiple times can not be accessed. -/
+#guard_msgs in
+#eval verify diamondNullable
+
 end Strata.Laurel

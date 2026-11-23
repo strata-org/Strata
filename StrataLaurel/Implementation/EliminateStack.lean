@@ -80,6 +80,13 @@ private def LaurelProgram.pureCallee (p : LaurelProgram) : String → Bool :=
   let procNames : Std.HashSet String := procs.foldl (·.insert ·.name.text) {}
   fun c => c != "$quantifierBody" && (pure.contains c || !procNames.contains c)
 
+private def LaurelProgram.throwingCallee (p : LaurelProgram) : String → Bool :=
+  let procs := p.staticProcedures ++ p.types.flatMap fun
+    | .Composite ct => ct.instanceProcedures
+    | _ => []
+  let names : Std.HashSet String := procs.foldl (fun s q => if q.throwsType.isSome then s.insert q.name.text else s) {}
+  names.contains
+
 private structure StackState where
   stack : List (Identifier × Option HighTypeMd) := []
   counter : Nat := 0
@@ -91,6 +98,7 @@ private structure StackState where
   wrapOld : StmtExprMd → Bool := fun _ => true
   heapWriters : Option (Std.HashSet Nat) := none
   pure : String → Bool := fun _ => true
+  throwing : String → Bool := fun _ => false
   globals : Std.HashSet String := {}
   openLabels : List String := []
   exits : List (String × Nat × List (Identifier × Option HighTypeMd)) := []
@@ -743,33 +751,40 @@ private def rootRead? (name : String) (u : StmtExprMd) : Option (StmtExprMd → 
     if x.text == name then some fun v => ⟨.Assign [t] v, u.source⟩ else none
   | _ => none
 
-private partial def inlineList (pure : String → Bool) (writers : Option (Std.HashSet Nat))
+private def callsThrowing (throwing : String → Bool) (e : StmtExprMd) : Bool :=
+  anyStmtExpr (fun n => match n.val with
+    | .Call _ callee _ _ => throwing callee.text
+    | _ => false) e
+
+private partial def inlineList (pure throwing : String → Bool) (writers : Option (Std.HashSet Nat))
     (globals : Std.HashSet String) (uses : Std.HashMap String Nat) :
     List StmtExprMd → List StmtExprMd
   | [] => []
   | s :: rest =>
     match s.val with
     | .Assign [⟨.Declare ⟨name, _⟩, _⟩] v =>
-      if !isStackTemp name || uses.getD name.text 0 != 1 then s :: inlineList pure writers globals uses rest else
+      if !isStackTemp name || uses.getD name.text 0 != 1 then s :: inlineList pure throwing writers globals uses rest else
       match rest.findIdx? (fun u => (localNames u).contains name.text) with
-      | none => s :: inlineList pure writers globals uses rest
+      | none => s :: inlineList pure throwing writers globals uses rest
       | some j =>
         let between := rest.take j
         let u := rest[j]!
         let after := rest.drop (j + 1)
-        if usedAsReceiver name.text u && !receiverValue v then s :: inlineList pure writers globals uses rest
+        if usedAsReceiver name.text u && !receiverValue v then s :: inlineList pure throwing writers globals uses rest
         else if !callLike pure v then
           let simple := !compoundUse name.text u
           if stableAcross writers globals v (if simple then between else between ++ [u])
               && !(readsHeapOutsideOld v && callsHeapWriter writers u)
               && !(readsGlobal globals v && callsHeapWriter none u) then
-            inlineList pure writers globals uses (between ++ substLocal name.text v u :: after)
-          else s :: inlineList pure writers globals uses rest
+            inlineList pure throwing writers globals uses (between ++ substLocal name.text v u :: after)
+          else s :: inlineList pure throwing writers globals uses rest
         else
           match between, rootRead? name.text u with
-          | [], some rebuild => inlineList pure writers globals uses (rebuild v :: after)
-          | _, _ => s :: inlineList pure writers globals uses rest
-    | _ => s :: inlineList pure writers globals uses rest
+          | [], some rebuild =>
+            if callsThrowing throwing v then s :: inlineList pure throwing writers globals uses rest
+            else inlineList pure throwing writers globals uses (rebuild v :: after)
+          | _, _ => s :: inlineList pure throwing writers globals uses rest
+    | _ => s :: inlineList pure throwing writers globals uses rest
 
 private def armValue? (arm : StmtExprMd) : Option (String × List StmtExprMd × StmtExprMd) :=
   let stmts := match arm.val with
@@ -872,21 +887,21 @@ private def unwrapValue (pure : String → Bool) (e : StmtExprMd) : StmtExprMd :
   | .Block [x] none [] none => if callLike pure x then e else x
   | _ => e
 
-private partial def simplify (pure : String → Bool) (writers : Option (Std.HashSet Nat))
+private partial def simplify (pure throwing : String → Bool) (writers : Option (Std.HashSet Nat))
     (globals : Std.HashSet String) (uses : Std.HashMap String Nat)
     (e : StmtExprMd) : StmtExprMd :=
-  let list (ss : List StmtExprMd) := inlineList pure writers globals uses (distributeJump (foldDeclAssign (foldMerges (flattenBlocks (ss.map (simplify pure writers globals uses))))))
-  let spec (c : StmtExprMd) := unwrapValue pure (simplify pure writers globals uses c)
+  let list (ss : List StmtExprMd) := inlineList pure throwing writers globals uses (distributeJump (foldDeclAssign (foldMerges (flattenBlocks (ss.map (simplify pure throwing writers globals uses))))))
+  let spec (c : StmtExprMd) := unwrapValue pure (simplify pure throwing writers globals uses c)
   match e.val with
   | .Block ss label invs dec => ⟨.Block (list ss) label (invs.map spec) (dec.map spec), e.source⟩
-  | .IfThenElse c th el => ⟨.IfThenElse c (simplify pure writers globals uses th) (el.map (simplify pure writers globals uses)), e.source⟩
-  | .While c invs dec body post => ⟨.While c invs dec (simplify pure writers globals uses body) post, e.source⟩
+  | .IfThenElse c th el => ⟨.IfThenElse c (simplify pure throwing writers globals uses th) (el.map (simplify pure throwing writers globals uses)), e.source⟩
+  | .While c invs dec body post => ⟨.While c invs dec (simplify pure throwing writers globals uses body) post, e.source⟩
   | .Assign targets v => match v.val with
     | .Block .. => ⟨.Assign targets (spec v), e.source⟩
     | _ => e
   | .Try body catches fin =>
-    ⟨.Try (simplify pure writers globals uses body) (catches.map fun c => { c with body := simplify pure writers globals uses c.body })
-      (fin.map (simplify pure writers globals uses)), e.source⟩
+    ⟨.Try (simplify pure throwing writers globals uses body) (catches.map fun c => { c with body := simplify pure throwing writers globals uses c.body })
+      (fin.map (simplify pure throwing writers globals uses)), e.source⟩
   | _ => e
 
 private def reassignedNames (e : StmtExprMd) : List String :=
@@ -905,12 +920,13 @@ private def tempUses (e : StmtExprMd) : Std.HashMap String Nat :=
 private def inlinePushes (e : StmtExprMd) : StackM StmtExprMd := do
   let writers := (← get).heapWriters
   let isPure := (← get).pure
+  let throwing := (← get).throwing
   let globals := (← get).globals
   let simplifyQuantifiers (e : StmtExprMd) : StmtExprMd :=
     mapStmtExpr (fun n => match n.val with
       | .Quantifier mode param trig body =>
         let inBody (c : String) : Bool := c == "$quantifierBody" || isPure c
-        ⟨.Quantifier mode param trig (unwrapValue inBody (simplify inBody writers globals (tempUses body) body)), n.source⟩
+        ⟨.Quantifier mode param trig (unwrapValue inBody (simplify inBody throwing writers globals (tempUses body) body)), n.source⟩
       | _ => n) e
   let single (a : StmtExprMd) : StmtExprMd := match a.val with
     | .Block [x] none [] none => x
@@ -921,9 +937,9 @@ private def inlinePushes (e : StmtExprMd) : StackM StmtExprMd := do
         if (single x).val matches .LiteralBool _ || (single y).val matches .LiteralBool _ then
           boolIte c (single x) (single y) n.source
         else n
-      | .Block _ none [] none => unwrapValue isPure (simplify isPure writers globals (tempUses n) n)
+      | .Block _ none [] none => unwrapValue isPure (simplify isPure throwing writers globals (tempUses n) n)
       | _ => n) e
-  let step (e : StmtExprMd) := boolSimplify (simplifyQuantifiers (unwrapValue isPure (simplify isPure writers globals (tempUses e) e)))
+  let step (e : StmtExprMd) := boolSimplify (simplifyQuantifiers (unwrapValue isPure (simplify isPure throwing writers globals (tempUses e) e)))
   pure ((List.range 4).foldl (fun e _ => step e) e)
 
 private def annotatePoints (targets : Std.HashSet String) (e : StmtExprMd) : StackM Unit := do
@@ -960,7 +976,7 @@ def eliminateStack (program : LaurelProgram) (wrapOld : StmtExprMd → Bool := f
     | _ => none
   let globals : Std.HashSet String := program.staticFields.foldl (·.insert ·.name.text) {}
   let (program', st) := (mapLaurelProgramProceduresM run program).run
-    { witnesses, wrapOld, heapWriters, pure := program.pureCallee, globals }
+    { witnesses, wrapOld, heapWriters, pure := program.pureCallee, throwing := program.throwingCallee, globals }
   (program', st.diags)
 
 def eliminateStackPass : LaurelPass where
