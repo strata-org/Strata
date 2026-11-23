@@ -21,7 +21,7 @@ Key results:
 - `Program.Procedure.find?_of_mem_of_procNames_nodup` — the same with only the procedure names
   distinct.
 - `Program.factoryBeforeProcedure_eq_core_of_noFunctions` — when no user
-  functions precede a procedure, its visible factory is `Core.Factory`.
+  function and no datatype precedes a procedure, its visible factory is `Core.Factory`.
 - `Program.declsBeforeProcedure_eq` — the declarations before the first procedure
   of a name are `declsBeforeProcedure` of that name.
 -/
@@ -305,13 +305,13 @@ theorem Program.Procedure.find?_of_mem_of_suffix
   simpa using
     Program.Procedure.find?_of_mem_of_getNames_nodup program.decls q mdq hnodup hmemDecls
 
-/-- If no user functions precede `procName`, its visible factory is exactly
-    `Core.Factory`. -/
+/-- If no function and no datatype is declared before `procName`, its visible factory is
+    exactly `Core.Factory`. -/
 theorem Program.factoryBeforeProcedure_eq_core_of_noFunctions
     {p : Program} {procName : String}
     (h : (p.declsBeforeProcedure procName).all fun d =>
       match d with
-      | .func _ _ | .recFuncBlock _ _ => false
+      | .func _ _ | .recFuncBlock _ _ | .type (.data _) _ => false
       | _ => true) :
     p.factoryBeforeProcedure procName = Core.Factory := by
   simp only [List.all_eq_true] at h
@@ -319,9 +319,9 @@ theorem Program.factoryBeforeProcedure_eq_core_of_noFunctions
   have go : ∀ decls : List Decl,
       (∀ d ∈ decls,
         (match d with
-         | .func _ _ | .recFuncBlock _ _ => false
+         | .func _ _ | .recFuncBlock _ _ | .type (.data _) _ => false
          | _ => true) = true) →
-      decls.foldl Decl.addFunctionsToFactory Core.Factory = Core.Factory := by
+      decls.foldl Decl.addToRuntimeFactory Core.Factory = Core.Factory := by
     intro decls hdecls
     induction decls with
     | nil => rfl
@@ -330,11 +330,11 @@ theorem Program.factoryBeforeProcedure_eq_core_of_noFunctions
         have hd := hdecls d (List.mem_cons_self)
         have hds : ∀ d ∈ ds,
             (match d with
-             | .func _ _ | .recFuncBlock _ _ => false
+             | .func _ _ | .recFuncBlock _ _ | .type (.data _) _ => false
              | _ => true) = true :=
           fun d hdmem => hdecls d (List.mem_cons_of_mem _ hdmem)
-        cases d <;> simp at hd
-        all_goals simpa [Decl.addFunctionsToFactory] using ih hds
+        cases d <;> (try cases ‹TypeDecl›) <;> simp at hd <;>
+          simpa [Decl.addToRuntimeFactory, Decl.addFunctionsToFactory] using ih hds
   exact go (p.declsBeforeProcedure procName) h
 
 /-- **The declarations before `q` are those the verifier gives it.** If `q` is the first
