@@ -946,15 +946,15 @@ where
   go (acc : Array Nat) (v : Nat) : Array Nat :=
     (l.children.getD v #[]).foldl go (acc.push v)
 
-/-- Record a goal's outcome. Under `--stop-on-first-error`, any
-    result short of success stops the schedule, as it stops the per-obligation loop. -/
+/-- Record a goal's outcome. Under `--stop-on-first-error`, a result that stops a run
+    (`VCResult.stopsRun`) stops the schedule, as it stops the per-obligation loop. -/
 private def Schedule.finish (st : Schedule) (options : VerifyOptions) (item : WorkItem) (g : Nat)
     (by_ : Nat) (outcome : Except VCError VCOutcome) (model : LExprModel)
     (missing : ModelReport) : Schedule :=
   -- The result is built only under `--stop-on-first-error`, since this runs under the lock.
   let failed := fun (_ : Unit) =>
     ({ obligation := obligationOf item, outcome, verbose := options.verbose,
-       checkLevel := options.checkLevel, checkMode := options.checkMode } : VCResult).isNotSuccess
+       checkLevel := options.checkLevel, checkMode := options.checkMode } : VCResult).stopsRun
   { st with claims := st.claims.setIfInBounds g (Claim.done by_ outcome model missing),
             stopped := st.stopped || (options.stopOnFirstError && failed ()) }
 
@@ -1271,7 +1271,7 @@ def run {τ σ : Type} (factory : @Lambda.Factory CoreLParams)
         let r ← try send item catch e => pure (crashed e)
         Schedule.update shared fun st =>
           ((), { st with claims := st.claims.setIfInBounds g (Claim.sent j r),
-                         stopped := st.stopped || (options.stopOnFirstError && r.isNotSuccess) })
+                         stopped := st.stopped || (options.stopOnFirstError && r.stopsRun) })
     | _, _ => pure ()
   -- The next session sent alone nobody has taken yet, if the run goes on.
   let takeAlone : IO (Option Nat) := Schedule.update shared fun st =>
@@ -1348,10 +1348,14 @@ def run {τ σ : Type} (factory : @Lambda.Factory CoreLParams)
   -- verdict; they report its failure, and every goal another worker proved keeps its result.
   do
     let st ← Schedule.update shared fun st => (st, st)
-    -- A stopped run reports the goals it reached, as the per-obligation loop does when it stops.
-    let tasks := if st.stopped then
+    -- A stopped run reports a result for every goal: the goals it did not reach as not checked
+    -- (`VCResult.ofNotChecked`), after the goal it stopped at, as the per-obligation loop does.
+    -- `stopped` is set only under `stopOnFirstError`; the option is tested too so that, without
+    -- it, the results are visibly one per goal, with no goal reported as not checked.
+    let stopped := options.stopOnFirstError && st.stopped
+    let reached := if stopped then
       tasks.filter fun t => !(st.claims.getD t.id default).isUnclaimed else tasks
-    let results : VCResults := tasks.map fun t =>
+    let resultOf (t : WorkItem) : VCResult :=
       match st.claims.getD t.id default with
       | .sent _ r => r
       | .done _ outcome model missing =>
@@ -1374,11 +1378,17 @@ def run {τ σ : Type} (factory : @Lambda.Factory CoreLParams)
         { obligation := obligationOf t, outcome,
           verbose := options.verbose, checkLevel := options.checkLevel,
           checkMode := options.checkMode }
+    let stoppedAt := (reached.map resultOf).find? (·.stopsRun) |>.map (·.obligation.label)
+    let results : VCResults := tasks.map fun t =>
+      if stopped && (st.claims.getD t.id default).isUnclaimed then
+        VCResult.ofNotChecked (obligationOf t) options stoppedAt
+      else resultOf t
     let trace : Trace :=
       { perGoal := tasks.map fun t =>
           (t.pos, t.goal.label, match st.claims.getD t.id default with
             | .done by_ _ _ _ | .sent by_ _ => by_
-            -- Only a run whose workers failed reports a goal without an outcome.
+            -- A goal without an outcome: a run whose workers failed, or a stopped run that did
+            -- not reach it.
             | .unclaimed => 0),
         -- A session no worker took, in a stopped run, is left out.
         perSession := (List.range sessions.size).toArray.filterMap fun j =>
@@ -1428,6 +1438,19 @@ private def pruneFor (options : VerifyOptions) (program : Program) (axiomProgram
             (unread := item.unreadDefs))
       pure labels
 
+/-- The type error of `program`, when `check` is on and `program` does not type check. A program
+    that does not type check gets no verdict, as from `Core.verify`: its obligations need not mean
+    what they say (a front end may put an undeclared operator where it rejected a construct).
+    A caller that passes a program the pipeline has already type checked and transformed turns
+    `check` off. The gate only decides whether to proceed; the walk
+    verifies the caller's program as given. -/
+def typeCheckGate (check : Bool) (options : VerifyOptions) (program : Program)
+    (factory : @Lambda.Factory CoreLParams) : Except Format Unit :=
+  if !check then .ok () else
+  match Core.typeCheck options program factory with
+  | .ok _ => .ok ()
+  | .error e => .error f!"❌ Type checking error.\n{e.format none}"
+
 /-- Where the solvers a run walks the tree with come from. Any `AbstractSolver` will do, so a
     remote service can stand in for the local processes: each call to `spawn` is one solver,
     kept for the whole walk and reset when a worker returns to the root. `prelude` is the
@@ -1448,8 +1471,11 @@ def verifyProgramWith (session : SessionFactory) (program : Program) (sessions :
     (options : VerifyOptions := VerifyOptions.quiet)
     (factory : @Lambda.Factory CoreLParams := Factory)
     (axiomProgram : Option Program := none)
-    (sendAlone : Option (WorkItem → IO VCResult) := none) :
+    (sendAlone : Option (WorkItem → IO VCResult) := none)
+    (typeCheckFirst : Bool := false) :
     IO (Except Format (VCResults × Statistics × Trace)) := do
+  if let .error e := typeCheckGate typeCheckFirst options program factory then
+    return .error e
   match buildEnv options program factory (registerCustomFunctions := true) with
   | .error e => return .error f!"{e.message}"
   | .ok (E, _) =>
@@ -1482,8 +1508,11 @@ def verifyProgram (program : Program) (sessions : Nat := 1)
     (hook : Hook := noHook) (resetPerGoal : Bool := false)
     (wrapSolver : AbstractSolver Term TermType IO → AbstractSolver Term TermType IO := id)
     (axiomProgram : Option Program := none)
-    (sendAlone : Option (WorkItem → IO VCResult) := none) :
+    (sendAlone : Option (WorkItem → IO VCResult) := none)
+    (typeCheckFirst : Bool := false) :
     IO (Except Format (VCResults × Statistics × Trace)) := do
+  if let .error e := typeCheckGate typeCheckFirst options program factory then
+    return .error e
   match buildEnv options program factory (registerCustomFunctions := true) with
   | .error e => return .error f!"{e.message}"
   | .ok (E, _) =>
@@ -1511,6 +1540,7 @@ def verifyProgram (program : Program) (sessions : Nat := 1)
     checked only for satisfiability reports `unknown` here and its verdict is the outcome's
     other field. -/
 def verdictOf (r : VCResult) : String :=
+  if r.isNotChecked then "not checked" else
   match r.outcome with
   | .error (.solverTimeout _) => "timeout"
   | .error _ => "error"
@@ -1529,7 +1559,9 @@ def allProved (results : VCResults) : Bool :=
     the interleaving is scripted or there is one worker. -/
 def Trace.format (t : Trace) (results : VCResults) : String :=
   let goals := (t.perGoal.zip results).toList.map fun (g, r) =>
-    s!"{g.2.1}: session {g.2.2} {verdictOf r}"
+    -- No session checked a goal a stopped run did not reach.
+    if r.isNotChecked then s!"{g.2.1}: {verdictOf r}"
+    else s!"{g.2.1}: session {g.2.2} {verdictOf r}"
   let sess := t.perSession.toList.map fun p =>
     s!"session {p.1}: {p.2.1} checks, {p.2.2} contexts"
   String.intercalate "\n" (goals ++ sess)
@@ -1579,7 +1611,11 @@ def Trace.shape (t : Trace) (results : VCResults) : String :=
 
     With `sendAlone := false`, the sessions of one goal are walked too, which is how the tests
     compare the walk itself with the per-obligation path on programs whose goals would otherwise
-    all be sent alone. -/
+    all be sent alone.
+
+    It returns the solver's answers and models as they are: like every back end, it knows nothing
+    of the phases that produced the program, and `verifyPipeline` validates its models against
+    them. -/
 def coreSMTSolver (sessions : Nat := 1) (options : VerifyOptions := VerifyOptions.quiet)
     (axiomProgram : Option Program := none)
     (session : Option SessionFactory := none)
@@ -1596,7 +1632,8 @@ def coreSMTSolver (sessions : Nat := 1) (options : VerifyOptions := VerifyOption
     -- The per-obligation path, for a run that can start no solver at all.
     let perObligation : IO (VCResults × Statistics) :=
       EIO.toIO ofMsg ((mkDefaultCoreSMTSolver options counter tempDir axiomCache axiomNames
-        (axiomProgram := axProg) (mkDischarge := mkDischarge) (pctx := pctx) : CoreSMTSolver)
+        (axiomProgram := axProg) (mkDischarge := mkDischarge)
+        (pctx := pctx) : CoreSMTSolver)
         factory oblProgram)
     -- A goal sent alone is discharged against the environment of the whole program, as the
     -- per-obligation path discharges it, and with that path's dropping of unused generated
@@ -1629,10 +1666,10 @@ def coreSMTSolver (sessions : Nat := 1) (options : VerifyOptions := VerifyOption
         pure (Sum.inl (← match session with
           | some f =>
             verifyProgramWith f oblProgram sessions options factory
-              (axiomProgram := axiomProgram) (sendAlone := alone)
+              (axiomProgram := axiomProgram) (sendAlone := alone) (typeCheckFirst := false)
           | none =>
             verifyProgram oblProgram sessions options factory
-              (axiomProgram := axiomProgram) (sendAlone := alone)))
+              (axiomProgram := axiomProgram) (sendAlone := alone) (typeCheckFirst := false)))
       catch e => pure (Sum.inr e)
     match walked with
     | .inr e =>

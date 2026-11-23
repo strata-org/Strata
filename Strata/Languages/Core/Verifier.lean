@@ -1321,12 +1321,12 @@ Unreachable covers display as ❌ (error) instead of ⛔ (warning).
 structure VCOutcome where
   satisfiabilityProperty : SMT.Result
   validityProperty : SMT.Result
-  /-- Ordered log of solver results per path. Each inner array is one path's
-      log: the raw solver results followed by per-phase adjusted results
-      (e.g. sat→unknown when a phase cannot validate the model).
-      When outcomes from multiple paths are merged, each path's log is
-      preserved as a separate entry in the outer array. Consumed by future
-      diagnostic and traceability tooling. -/
+  /-- Ordered log of solver results. Each path contributes two inner arrays: the back end's raw
+      answers (`solver.sat`, `solver.val`), then what each phase decided when the result was
+      validated (e.g. sat→unknown when a phase cannot validate the model), which is empty when
+      no phase read a model (both checks `unsat`). When outcomes from multiple paths are merged,
+      each path's entries are kept in the outer array. Consumed by future diagnostic and
+      traceability tooling. -/
   solverLog : Array (Array SolverPhaseLog) := #[]
   /-- When this outcome was produced by merging multiple paths, stores the
       pre-merge per-path outcomes. Empty for unmerged (single-path) results.
@@ -1649,6 +1649,15 @@ instance : ToString VCError where
     | .solverTimeout msg => s!"Solver Timeout! {msg}"
     | .solverCrash msg   => s!"SMT Solver Crash! {msg}"
 
+/-- What a per-obligation back end needs to read a counterexample in Core's terms: the solver's
+    constructor names (to read datatype values), the names its definitions bind (left out of a
+    counterexample), and the variables the solver was asked for. Kept on a result, so that a model
+    a phase's validation refines after the back end returns is read the same way. -/
+structure ModelReading where
+  constructorNames : Std.HashSet String := {}
+  definedNames : Std.HashSet String := {}
+  requested : List String := []
+
 /--
 A collection of all information relevant to a verification condition's
 analysis.
@@ -1675,6 +1684,18 @@ structure VCResult where
       that check's model (by a custom back end or by hand); the SARIF message then prints, for
       that check, the model the outcome's check carries (`Sarif.sarifMessage`). -/
   checkModels : Option LExprModel × Option LExprModel := (none, none)
+  /-- Why the obligation was not asked, when a run stopped at an earlier one
+      (`stopOnFirstError`, `VCResult.ofNotChecked`); its outcome is then `unknown` for both
+      checks. `none`, the default, means the obligation was asked, which is right for every
+      result a back end produces from an answer. -/
+  notChecked : Option String := none
+  /-- How the back end read this result's counterexample (`ModelReading`), so that a model a
+      phase's validation refines is read again the same way. The per-obligation back end sets
+      it (and so does the incremental walk for a goal it sends alone). `none` means the
+      counterexample is not read again: a goal the walk checks in a shared session keeps the
+      solver's counterexample even when a phase refines the model, though its verdict follows
+      the phase. -/
+  modelReading : Option ModelReading := none
 
 /-- The marker of a partial counterexample model, ` (partial; no value for …)` naming the
     variables `missing` the model has no value for, or the empty string when `missing` is
@@ -1733,6 +1754,7 @@ instance : ToFormat VCResult where
     and check mode stored in the result. -/
 def VCResult.formatOutcome (r : VCResult) : String :=
   let prop := r.obligation.property
+  if let some why := r.notChecked then s!"❓ not checked: {why}" else
   match r.outcome with
   | .ok o =>
     let suffix := o.pathSummary prop r.checkLevel r.checkMode
@@ -1772,6 +1794,31 @@ def VCResult.isTimeout (vr : VCResult) : Bool :=
 
 def VCResult.isNotSuccess (vcResult : Core.VCResult) :=
   !Core.VCResult.isSuccess vcResult
+
+/-- Whether a result stops a run under `stopOnFirstError`: it is not a success, unless it is a
+    cover a path satisfies, which the report shows as passing. -/
+def VCResult.stopsRun (vr : VCResult) : Bool :=
+  vr.isNotSuccess && !(vr.obligation.property == .cover &&
+    match vr.outcome with
+    | .ok o => o.isSatisfiable
+    | .error _ => false)
+
+/-- An obligation a run stopped at its first error did not ask (`VCResult.notChecked`). -/
+def VCResult.isNotChecked (vr : VCResult) : Bool :=
+  vr.notChecked.isSome
+
+/-- The result of an obligation a run did not ask because it stopped at an earlier one, `after`
+    when it is known (`stopOnFirstError`): `unknown` for both checks, so neither a pass nor a
+    failure, marked with the reason (`VCResult.notChecked`). -/
+def VCResult.ofNotChecked (obligation : ProofObligation Expression) (options : VerifyOptions)
+    (after : Option String) : VCResult :=
+  let why := match after with
+    | some l => s!"the run stopped after {l}"
+    | none => "the run stopped at the first error"
+  { obligation,
+    outcome := .ok { satisfiabilityProperty := .unknown none, validityProperty := .unknown none },
+    verbose := options.verbose, checkLevel := options.checkLevel, checkMode := options.checkMode,
+    notChecked := some why }
 
 def VCResult.isUnreachable (vr : VCResult) : Bool :=
   match vr.outcome with
@@ -1838,7 +1885,16 @@ def VCResult.merge (a b : VCResult) : VCResult :=
                 (if oa.validityProperty.isSat then a else b).checkModelMissing.2),
              checkModels :=
                ((if oa.satisfiabilityProperty.isSat then a else b).checkModels.1,
-                (if oa.validityProperty.isSat then a else b).checkModels.2) }
+                (if oa.validityProperty.isSat then a else b).checkModels.2),
+             -- The line keeps the reason a piece was not checked when that is why it is
+             -- undecided: every other piece passed.
+             notChecked :=
+               let explained (r : VCResult) (o : VCOutcome) :=
+                 r.notChecked.isSome || o.validityProperty == .unsat
+               -- A cover a checked path already satisfies is decided.
+               let decided := a.obligation.property == .cover && merged.isSatisfiable
+               if explained a oa && explained b ob && !decided then a.notChecked <|> b.notChecked
+               else none }
 
 /-- The grouping key of a `VCResult` (`mergeByAssertion`). A result with a source range is keyed
     by its display label (property summary, else label), its primary `FileRange` and the related
@@ -1883,11 +1939,16 @@ def VCResults.mergeByAssertion (rs : VCResults) : VCResults :=
 
 /-- The counterexample a pair of check results carries: the satisfiability check's model first,
     then the validity check's, a candidate model from `unknown` counting too. -/
-def modelOfResults (ctx : SMT.Context) (satResult validityResult : SMT.Result) : LExprModel :=
+def modelOfResultsWith (constructorNames : Std.HashSet String)
+    (satResult validityResult : SMT.Result) : LExprModel :=
   match satResult, validityResult with
   | .sat m, _ | _, .sat m | .unknown (some m), _ | _, .unknown (some m) =>
-    convertModel m (SMT.Context.getConstructorNames ctx)
+    convertModel m constructorNames
   | _, _ => []
+
+/-- `modelOfResultsWith` with the constructor names of `ctx`. -/
+def modelOfResults (ctx : SMT.Context) (satResult validityResult : SMT.Result) : LExprModel :=
+  modelOfResultsWith (SMT.Context.getConstructorNames ctx) satResult validityResult
 
 /-- What a check reports about its counterexample beside the model reported: the variables
     asked for that the model reported has no value for (`VCResult.modelMissing`), the same for
@@ -1902,15 +1963,39 @@ structure ModelReport where
     model only the variables `keep` accepts: the model reported (`modelOfResults`) and its
     `ModelReport`, whose lists of missing variables name, in `requested` order, the names in
     `requested` the model has no value for, and are empty for an empty model. -/
-def reportModels (ctx : SMT.Context) (satResult validityResult : SMT.Result)
+def reportModelsWith (constructorNames : Std.HashSet String)
+    (satResult validityResult : SMT.Result)
     (requested : List String) (keep : String → Bool) : LExprModel × ModelReport :=
   let kept (m : LExprModel) : LExprModel := m.filter fun (name, _) => keep name.name
   let missingOf (m : LExprModel) : List String := if m.isEmpty then [] else
     requested.filter fun v => !m.any (·.1.name == v)
-  let model := kept (modelOfResults ctx satResult validityResult)
-  let checkModels := (kept (modelOfResults ctx satResult .unsat),
-    kept (modelOfResults ctx .unsat validityResult))
+  let model := kept (modelOfResultsWith constructorNames satResult validityResult)
+  let checkModels := (kept (modelOfResultsWith constructorNames satResult .unsat),
+    kept (modelOfResultsWith constructorNames .unsat validityResult))
   (model, ⟨missingOf model, (missingOf checkModels.1, missingOf checkModels.2), checkModels⟩)
+
+/-- `reportModelsWith` with the constructor names of `ctx`. -/
+def reportModels (ctx : SMT.Context) (satResult validityResult : SMT.Result)
+    (requested : List String) (keep : String → Bool) : LExprModel × ModelReport :=
+  reportModelsWith (SMT.Context.getConstructorNames ctx) satResult validityResult requested keep
+
+/-- `r` with its counterexample read from its outcome as `reading` says (`reportModelsWith`), in
+    the program's variables (`LExprModel.atCheck`): what a per-obligation back end reports. -/
+def VCResult.withModelsRead (r : VCResult) (reading : ModelReading) : VCResult :=
+  match r.outcome with
+  | .error _ => r
+  | .ok o =>
+    let isReported := Core.SMT.isReportedName reading.definedNames
+    let (model, report) := reportModelsWith reading.constructorNames o.satisfiabilityProperty
+      o.validityProperty (reading.requested.filter isReported) isReported
+    let atCheck := LExprModel.atCheck r.obligation.metadata
+    let missingAt := LExprModel.missingAtCheck r.obligation.metadata
+    { r with lexprModel := atCheck model, modelMissing := missingAt report.missing,
+             checkModelMissing :=
+               (missingAt report.checkMissing.1, missingAt report.checkMissing.2),
+             checkModels :=
+               (some (atCheck report.checkModels.1), some (atCheck report.checkModels.2)),
+             modelReading := some reading }
 
 /-- Which of the two solver checks an obligation needs, shared by every back end so they agree on
     what a verdict means. It is asked per obligation: an obligation
@@ -2483,15 +2568,14 @@ def coreAbstractedPhases
     (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default) : List AbstractedPhase :=
   (corePipelinePhases options moreFns).map (·.phase) ++ [externalCallsAbstractedPhase]
 
-/-- Build the solver log from raw results and phase validation logs. -/
+/-- Build the solver log entry of the back end's raw results. -/
 private def buildSolverLog (satResult valResult : SMT.Result)
-    (satisfiabilityCheck validityCheck : Bool)
-    (satPhaseLog valPhaseLog : List SolverPhaseLog) : Array SolverPhaseLog :=
+    (satisfiabilityCheck validityCheck : Bool) : Array SolverPhaseLog :=
   let sat : Array SolverPhaseLog :=
     if satisfiabilityCheck then #[{ phase := "solver.sat", result := satResult }] else #[]
   let val : Array SolverPhaseLog :=
     if validityCheck then #[{ phase := "solver.val", result := valResult }] else #[]
-  sat ++ val ++ satPhaseLog.toArray ++ valPhaseLog.toArray
+  sat ++ val
 
 /-- Adjust an SMT result through pipeline phase validation. A `.sat` result
     may be demoted to `.unknown` if a phase cannot validate the model, and
@@ -2528,8 +2612,9 @@ def VCOutcome.afterPruning (mode : IrrelevantAxiomsMode)
   let dropsHere := mode == .Directed && !dropped.isEmpty
   { o with axiomsDropped := o.axiomsDropped || dropsHere }.withAxiomsDropped
 
-/-- Pass a result's two verdicts through the phases' model validation, as the default back end
-    does for each obligation it discharges, and record what each phase decided. -/
+/-- Pass a result's two verdicts back through the phases' model validation and record what each
+    phase decided. Back ends return answers unvalidated; this is the one step that validates them
+    against the phases that produced the program. -/
 def VCResult.validateModels (r : VCResult) (phases : List AbstractedPhase) : VCResult :=
   match r.outcome with
   | .error _ => r
@@ -2538,10 +2623,18 @@ def VCResult.validateModels (r : VCResult) (phases : List AbstractedPhase) : VCR
       o.satisfiabilityProperty.adjustForPhases phases r.obligation (holds := true)
     let (valid, validLog) := o.validityProperty.adjustForPhases phases r.obligation
     -- A model a phase accepts may still violate an axiom pruning dropped.
-    { r with outcome := .ok ({ o with
+    let r' := { r with outcome := .ok ({ o with
         satisfiabilityProperty := sat, validityProperty := valid,
         solverLog := o.solverLog.push (satLog ++ validLog).toArray }
         |>.withAxiomsDropped) }
+    -- A phase that confirms a model may report a refined one: it is read as the back end read
+    -- the solver's.
+    match r.modelReading with
+    | some reading =>
+      if sat != o.satisfiabilityProperty || valid != o.validityProperty then
+        r'.withModelsRead reading
+      else r'
+    | none => r'
 
 /-- A discharge function encapsulates the solver backend. It takes assumption
     terms, the obligation term, the SMT context, and the satisfiability/validity
@@ -2614,20 +2707,17 @@ def mkDischargeFn : MkDischargeFn := fun (options : VerifyOptions) (counter : IO
 
 open CSE (isCSEGeneratedName)
 
-/-- The outcome `getObligationResult` reports for the solver's two answers: each passed through
-    the phases' model validation (`adjustForPhases`), the checks not asked for masked
-    (`maskOutcome`), and pruning's effect applied (`VCOutcome.afterPruning`). The solver log
-    holds the raw answers followed by what each phase decided. -/
-def outcomeOfAnswers (satResult validityResult : SMT.Result) (phases : List AbstractedPhase)
-    (obligation : ProofObligation Expression) (satisfiabilityCheck validityCheck : Bool)
+/-- The outcome `getObligationResult` reports for the solver's two answers: the answers as the
+    solver gave them, the checks not asked for masked (`maskOutcome`), and pruning's effect
+    applied (`VCOutcome.afterPruning`). The solver log holds the raw answers; the phases'
+    model validation comes later (`VCResult.validateModels`). -/
+def outcomeOfAnswers (satResult validityResult : SMT.Result)
+    (satisfiabilityCheck validityCheck : Bool)
     (pruning : IrrelevantAxiomsMode) (prunedAxiomLabels : List String) : VCOutcome :=
-  let (adjSat, satPhaseLog) := satResult.adjustForPhases phases obligation (holds := true)
-  let (adjVal, valPhaseLog) := validityResult.adjustForPhases phases obligation
-  let smtLog := buildSolverLog satResult validityResult
-    satisfiabilityCheck validityCheck satPhaseLog valPhaseLog
+  let smtLog := buildSolverLog satResult validityResult satisfiabilityCheck validityCheck
   let rawOutcome : VCOutcome := {
-    satisfiabilityProperty := adjSat,
-    validityProperty := adjVal,
+    satisfiabilityProperty := satResult,
+    validityProperty := validityResult,
     solverLog := #[smtLog] }
   maskOutcome rawOutcome satisfiabilityCheck validityCheck
     |>.afterPruning pruning prunedAxiomLabels
@@ -2689,18 +2779,6 @@ def traceSolverError
                    {if options.verbose >= VerboseMode.debug then prog () else ""}"
       pure ()
 
-/-- The models a result reports for the solver's two answers (`reportModels`): the one a `sat`
-    or `unknown` answer offers (`unknown (some m)` arises when the solver returns a candidate
-    model it cannot certify, e.g. cvc5 with quantified bridge axioms; phases may promote it to
-    `sat`, and the model stays available for display), restricted to the variables
-    `Core.SMT.isReportedName` names, with the requested variables each model misses. -/
-def reportedModels (ctx : SMT.Context) (satResult validityResult : SMT.Result)
-    (varDefinitions : List VarDefinition) (requestedVars : List Expression.TypedIdent) :
-    LExprModel × ModelReport :=
-  let isReported := Core.SMT.isReportedName (definedNameSet varDefinitions)
-  reportModels ctx satResult validityResult
-    ((requestedVars.map (·.1.name)).filter isReported) isReported
-
 /-- The result `getObligationResult` reports for the backend's answer `ans`: an error for a
     failure (`vcErrorOf`), and otherwise the outcome of the two answers (`outcomeOfAnswers`) with
     the model they offer. -/
@@ -2708,7 +2786,7 @@ def reportedModels (ctx : SMT.Context) (satResult validityResult : SMT.Result)
     (ans : Except Imperative.SMT.SolverError (SMT.Result × SMT.Result × EncoderState))
     (ctx : SMT.Context) (obligation : ProofObligation Expression)
     (options : VerifyOptions) (satisfiabilityCheck validityCheck : Bool)
-    (phases : List AbstractedPhase) (varDefinitions : List VarDefinition)
+    (varDefinitions : List VarDefinition)
     (prunedAxiomLabels : List String) (requestedVars : List Expression.TypedIdent) : VCResult :=
   match ans with
   | .error solverError =>
@@ -2719,23 +2797,22 @@ def reportedModels (ctx : SMT.Context) (satResult validityResult : SMT.Result)
       checkMode := options.checkMode,
       lexprModel := [] }
   | .ok (satResult, validityResult, estate) =>
-    let outcome := outcomeOfAnswers satResult validityResult phases obligation
+    let outcome := outcomeOfAnswers satResult validityResult
       satisfiabilityCheck validityCheck options.removeIrrelevantAxioms prunedAxiomLabels
-    -- The models of the validated answers: a phase that confirms a model may report a
-    -- refined one. A counterexample is given in the program's variables (`atCheck`).
-    let (model, report) := reportedModels ctx outcome.satisfiabilityProperty
-      outcome.validityProperty varDefinitions requestedVars
-    let atCheck := LExprModel.atCheck obligation.metadata
-    let missingAt := LExprModel.missingAtCheck obligation.metadata
-    { obligation,
-      outcome := .ok outcome,
-      estate,
-      verbose := options.verbose,
-      checkLevel := options.checkLevel,
-      checkMode := options.checkMode,
-      lexprModel := atCheck model, modelMissing := missingAt report.missing,
-      checkModelMissing := (missingAt report.checkMissing.1, missingAt report.checkMissing.2),
-      checkModels := (some (atCheck report.checkModels.1), some (atCheck report.checkModels.2)) }
+    -- A counterexample is given in the program's variables (`atCheck`); the reading is kept,
+    -- so a model a phase refines later is read the same way.
+    let reading : ModelReading :=
+      { constructorNames := SMT.Context.getConstructorNames ctx,
+        definedNames := varDefinitions.foldl (fun s d => s.insert d.name) ∅,
+        requested := requestedVars.map (·.1.name) }
+    let r : VCResult :=
+      { obligation := obligation
+        outcome := .ok outcome
+        estate := estate
+        verbose := options.verbose
+        checkLevel := options.checkLevel
+        checkMode := options.checkMode }
+    r.withModelsRead reading
 
 /--
 Invoke a backend engine and get the analysis result for a
@@ -2747,7 +2824,6 @@ given proof obligation. The result depends only on the backend's answer.
     (options : VerifyOptions)
     (discharge : DischargeFn)
     (satisfiabilityCheck validityCheck : Bool)
-    (phases : List AbstractedPhase)
     (varDefinitions : List VarDefinition := [])
     (varDeclarations : List VarDeclaration := [])
     -- Labels of the axioms pruning dropped from this query.
@@ -2761,7 +2837,7 @@ given proof obligation. The result depends only on the backend's answer.
   exportObligation ans assumptionTerms obligationTerm ctx obligation p options validityCheck
     varDefinitions varDeclarations
   traceSolverError ans obligation p options
-  return obligationResultOf ans ctx obligation options satisfiabilityCheck validityCheck phases
+  return obligationResultOf ans ctx obligation options satisfiabilityCheck validityCheck
     varDefinitions prunedAxiomLabels requestedVars
 
 /-- Data needed to dispatch a single obligation to the solver. Produced by the
@@ -2793,7 +2869,6 @@ private inductive ObligationDisposition where
 /-- Dispatch a single solver job. Spawns a solver process and reads the result. -/
 private def dispatchSolverJob (job : SolverJob) (p : Program)
     (options : VerifyOptions) (counter : IO.Ref Nat) (tempDir : System.FilePath)
-    (phases : List AbstractedPhase)
     (mkDischarge : MkDischargeFn := mkDischargeFn)
     (pctx : PipelineContext)
     : IO (Except Message VCResult) := do
@@ -2802,7 +2877,7 @@ private def dispatchSolverJob (job : SolverJob) (p : Program)
   let discharge := mkDischarge options counter tempDir
     job.typedVarsInObligation job.obligation.metadata job.obligation.label none none pctx
   let resultOrErr ← (getObligationResult job.assumptionTerms job.obligationTerm job.ctx
-    job.obligation p options discharge job.needSatCheck job.needValCheck phases
+    job.obligation p options discharge job.needSatCheck job.needValCheck
     (varDefinitions := job.varDefs) (varDeclarations := job.varDecls)
     (prunedAxiomLabels := job.prunedAxiomLabels)
     (requestedVars := job.typedVarsInObligation)).toBaseIO
@@ -2830,7 +2905,7 @@ private def dispatchSolverJob (job : SolverJob) (p : Program)
     metrics have the same shape as a sequential run's. -/
 private def dispatchJobsParallel (jobs : List SolverJob) (p : Program)
     (options : VerifyOptions) (counter : IO.Ref Nat) (tempDir : System.FilePath)
-    (phases : List AbstractedPhase) (workers : Nat)
+    (workers : Nat)
     (mkDischarge : MkDischargeFn := mkDischargeFn)
     (pctx : PipelineContext)
     : IO (List (Option (Except Message VCResult))) := do
@@ -2848,11 +2923,11 @@ private def dispatchJobsParallel (jobs : List SolverJob) (p : Program)
       match entry with
       | none => running := false
       | some (job, idx) =>
-        let result ← dispatchSolverJob job p options counter tempDir phases mkDischarge workerCtx
+        let result ← dispatchSolverJob job p options counter tempDir mkDischarge workerCtx
         resultMap.modify (·.insert idx result)
         if options.stopOnFirstError then
           match result with
-          | .ok r => if r.isNotSuccess then shouldStop.set true
+          | .ok r => if r.stopsRun then shouldStop.set true
           | .error _ => shouldStop.set true
   let numWorkers := min workers jobs.length
   -- Fork on this thread, before any worker starts, so the forks see a stable
@@ -3063,15 +3138,18 @@ def pruneUnusedDefinitions (obligation : Imperative.ProofObligation Expression) 
 /-- Discharge `obligations`, in order, against the environment `E` built for the program they
     come from: each is asked of the solver `mkDischarge` gives, after the evaluator and the
     pruning the options ask for. `verifySingleEnv` sends a whole program's obligations through
-    here; a back end that has already read the obligations sends one at a time. -/
+    here; a back end that has already read the obligations sends one at a time.
+
+    Under `stopOnFirstError`, the run stops at the first obligation the solver or the evaluator
+    does not prove, judged on the raw answer (no phase has validated it yet), and every obligation
+    after it is reported as not checked (`VCResult.ofNotChecked`), so each obligation has a
+    result. -/
 def dischargeObligations (E : Env) (obligations : ProofObligations Expression)
     (options : VerifyOptions)
     (counter : IO.Ref Nat) (tempDir : System.FilePath)
     (axiomCache : Option IrrelevantAxioms.Cache := .none)
     (axiomNames : List String := [])
     (axiomProgram : Option Program := .none)
-    (externalPhases : List AbstractedPhase := [])
-    (corePhases : List AbstractedPhase := coreAbstractedPhases)
     (mkDischarge : MkDischargeFn := mkDischargeFn)
     (pctx : PipelineContext) :
     EIO Message (VCResults × Statistics) := do
@@ -3160,14 +3238,10 @@ def dischargeObligations (E : Env) (obligations : ProofObligations Expression)
     -- If evaluator resolved both checks, we're done, unless we always want to generate SMT queries
     if not options.alwaysGenerateSMT then
       if let (some peSat, some peVal) := (peSatResult?, peValResult?) then
-        let phases := externalPhases ++ corePhases
-        let (adjPeSat, satPhaseLog) := peSat.adjustForPhases phases obligation (holds := true)
-        let (adjPeVal, valPhaseLog) := peVal.adjustForPhases phases obligation
-        let peLog := buildSolverLog peSat peVal
-          satisfiabilityCheck validityCheck satPhaseLog valPhaseLog
+        let peLog := buildSolverLog peSat peVal satisfiabilityCheck validityCheck
         let outcome : VCOutcome := {
-          satisfiabilityProperty := adjPeSat,
-          validityProperty := adjPeVal,
+          satisfiabilityProperty := peSat,
+          validityProperty := peVal,
           solverLog := #[peLog] }
         let result : VCResult := { obligation, outcome := .ok outcome, verbose := options.verbose,
                                     checkLevel := options.checkLevel, checkMode := options.checkMode, lexprModel := [] }
@@ -3255,7 +3329,7 @@ def dischargeObligations (E : Env) (obligations : ProofObligations Expression)
             typedVarsInObligation obligation.metadata obligation.label (some termCache)
             captured pctx
           let result ← getObligationResult assumptionTerms obligationTerm ctx obligation p options
-                        discharge needSatCheck needValCheck (externalPhases ++ corePhases)
+                        discharge needSatCheck needValCheck
                         (varDefinitions := varDefs) (varDeclarations := varDecls)
                         (prunedAxiomLabels := prunedAxiomLabels)
                         (requestedVars := typedVarsInObligation)
@@ -3278,7 +3352,7 @@ def dischargeObligations (E : Env) (obligations : ProofObligations Expression)
     match disposition with
     | .resolved result =>
       results := results.push result
-      if result.isNotSuccess then
+      if result.stopsRun then
         if options.verbose >= .debug then
           let prog := f!"\n\n[DEBUG] Evaluated program:\n{Core.formatProgram p}"
           dbg_trace f!"\n\nResult: {result}\n{prog}"
@@ -3289,11 +3363,21 @@ def dischargeObligations (E : Env) (obligations : ProofObligations Expression)
       results := results.push { obligation, outcome := .error (.encoding "pending parallel dispatch"),
                                 verbose := options.verbose, checkLevel := options.checkLevel,
                                 checkMode := options.checkMode, lexprModel := [] }
+  -- A run stopped at its first error reports each obligation it did not take up as not checked.
+  -- Each obligation it took up has one result, and the last is the one it stopped at.
+  if options.stopOnFirstError then
+    let asked := match options.obligationsToVerify with
+      | some labels => obligations.filter fun (ob : ProofObligation Expression) =>
+          labels.contains ob.label
+      | none => obligations
+    let after := results.back?.map (·.obligation.label)
+    results := results ++ (asked.extract results.size asked.size).map fun ob =>
+      VCResult.ofNotChecked ob options after
   -- Phase 2: Parallel solver dispatch
   if useParallel && !solverJobs.isEmpty then
-    let phases := externalPhases ++ corePhases
     let jobResults ← IO.toEIO (fun e => Message.fromFormat f!"{e}")
-      (dispatchJobsParallel solverJobs.reverse p options counter tempDir phases options.parallelWorkers mkDischarge pctx)
+      (dispatchJobsParallel solverJobs.reverse p options counter tempDir options.parallelWorkers
+        mkDischarge pctx)
     let mut firstError : Option Message := none
     for (jobResult?, jobIdx) in jobResults.zip solverJobIndices.reverse do
       match jobResult? with
@@ -3303,6 +3387,15 @@ def dischargeObligations (E : Env) (obligations : ProofObligations Expression)
         if firstError.isNone then firstError := some diag
       | none => pure ()
     if let some diag := firstError then throw diag
+    -- A job no worker took, in a run stopped at its first error, is reported as not checked.
+    if options.stopOnFirstError then
+      let unasked := (jobResults.zip solverJobIndices.reverse).filterMap fun (r?, i) =>
+        if r?.isNone then some i else none
+      -- The run stopped at the first dispatched job, in obligation order, that did not pass.
+      let after := (solverJobIndices.reverse.filter (!unasked.contains ·)).findSome? fun i =>
+        results[i]?.bind fun r => if r.stopsRun then some r.obligation.label else none
+      results := unasked.foldl (init := results) fun rs i =>
+        rs.modify i fun r => VCResult.ofNotChecked r.obligation options after
   return (results, stats)
 
 /-- The obligations `extractObligations` reads from a program, each without the generated
@@ -3321,8 +3414,6 @@ def verifySingleEnv (oblProgram : Program)
     (axiomCache : Option IrrelevantAxioms.Cache := .none)
     (axiomNames : List String := [])
     (axiomProgram : Option Program := .none)
-    (externalPhases : List AbstractedPhase := [])
-    (corePhases : List AbstractedPhase := coreAbstractedPhases)
     (mkDischarge : MkDischargeFn := mkDischargeFn)
     (pctx : PipelineContext) :
     EIO Message (VCResults × Statistics) := do
@@ -3330,16 +3421,8 @@ def verifySingleEnv (oblProgram : Program)
   let E ← EIO.ofExcept
     (Core.buildEnv options oblProgram factory (registerCustomFunctions := true) |>.map (·.1))
   let obligations ← EIO.ofExcept (obligationsOf oblProgram)
-  -- Symbolic evaluation lists the obligations it builds (`toCoreProofObligationProgram`); the
-  -- obligations of any other VC generator are listed here, at `debug` verbosity, with the
-  -- definitions each reads.
-  if options.verbose >= .debug &&
-      !(externalPhases ++ corePhases).any (·.name == "symbolicEval") then do
-    dbg_trace f!"{Std.Format.line}VCs:"
-    dbg_trace f!"{formatProofObligationsWithReads obligations}"
-    pure ()
   dischargeObligations E obligations options counter tempDir axiomCache axiomNames axiomProgram
-    externalPhases corePhases mkDischarge pctx
+    mkDischarge pctx
 
 /-- Construct the default `CoreSMTSolver` that discharges obligations
     sequentially using the batch or incremental SMT-LIB backend (selected
@@ -3351,15 +3434,12 @@ def mkDefaultCoreSMTSolver
     (axiomCache : Option IrrelevantAxioms.Cache := .none)
     (axiomNames : List String := [])
     (axiomProgram : Option Program := .none)
-    (externalPhases : List AbstractedPhase := [])
-    (corePhases : List AbstractedPhase := coreAbstractedPhases)
     (mkDischarge : MkDischargeFn := mkDischargeFn)
     (pctx : PipelineContext) :
     CoreSMTSolver :=
   fun factory oblProgram =>
     verifySingleEnv oblProgram factory options counter tempDir axiomCache
-      axiomNames axiomProgram externalPhases corePhases
-      (mkDischarge := mkDischarge) pctx
+      axiomNames axiomProgram (mkDischarge := mkDischarge) pctx
 
 /-- Run the Strata Core verification pipeline on a program: transform,
 type-check, partially evaluate, and discharge proof obligations via SMT, on
@@ -3450,18 +3530,22 @@ def verifyPipeline (program : Program)
     if options.checkOnly then
       pure []
     else
-      match solver with
-      | none =>
-        let coreSMTSolver := mkDefaultCoreSMTSolver options counter tempDir axiomCache?
-          axiomNames (axiomProgram := program) externalPhases phases
-          (mkDischarge := mkDischarge) pctx
-        pure [← coreSMTSolver factory oblProgram]
-      | some coreSMTSolver =>
-        -- A back end passed in does not know which phases produced the program it is given,
-        -- so its models are validated here, against the phases the default back end validates
-        -- them against, so a `sat` a phase cannot vouch for reports as `unknown`.
-        let (results, stats) ← coreSMTSolver factory oblProgram
-        pure [(results.map (·.validateModels (externalPhases ++ phases)), stats)]
+      -- Symbolic evaluation lists the obligations it builds (`toCoreProofObligationProgram`);
+      -- the obligations of any other VC generator are listed here, at `debug` verbosity, with
+      -- the definitions each reads, when the default back end discharges them.
+      if options.verbose >= .debug && solver.isNone &&
+          !(externalPhases ++ phases).any (·.name == "symbolicEval") then
+        if let .ok obligations := obligationsOf oblProgram then
+          dbg_trace f!"{Std.Format.line}VCs:"
+          dbg_trace f!"{formatProofObligationsWithReads obligations}"
+          pure ()
+      -- A back end decides obligations and knows nothing of the phases that produced them.
+      -- Its models are validated here, walking back through the phases, so a `sat` a phase
+      -- cannot vouch for reports as `unknown`.
+      let coreSMTSolver := solver.getD (mkDefaultCoreSMTSolver options counter tempDir
+        axiomCache? axiomNames (axiomProgram := program) (mkDischarge := mkDischarge) pctx)
+      let (results, stats) ← coreSMTSolver factory oblProgram
+      pure [(results.map (·.validateModels (externalPhases ++ phases)), stats)]
   let allStats := VCss.foldl (fun acc (_, s) => acc.merge s) allStats
   if profile then
     let _ ← (IO.println allStats.format |>.toBaseIO)
@@ -3497,6 +3581,9 @@ def Core.getProgram
 def toMessage (vcr : Core.VCResult)
     (phases : List Core.AbstractedPhase := []) : Option Message :=
   let fileRange := (Imperative.getFileRange vcr.obligation.metadata).getD default
+  -- A goal a stopped run did not ask is neither a failure nor an error of Strata.
+  if let some why := vcr.notChecked then
+    some { fileRange, message := s!"not checked: {why}", kind := MessageKind.warning } else
   match vcr.outcome with
   | .error err =>
     let diagType := match err with

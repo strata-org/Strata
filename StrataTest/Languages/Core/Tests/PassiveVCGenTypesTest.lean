@@ -180,7 +180,9 @@ The solver log keeps the raw answer: for the quantified invariant it is
     if r.obligation.label != "cfgLoopElimAssert_maintain_loop_body_1" then none else
     match r.outcome with
     | .ok o => some (r.obligation.label,
-        (o.solverLog.toList.map fun path => match path[0]? with
+        -- The solver's own entries; the phases' decisions are logged after them, apart.
+        ((o.solverLog.toList.filter fun (path : Array Core.SolverPhaseLog) =>
+            path.any (·.phase.startsWith "solver.")).map fun path => match path[0]? with
           | some entry => match entry.result with
             | .sat _ => "sat"
             | .unsat => "unsat"
@@ -189,6 +191,22 @@ The solver log keeps the raw answer: for the quantified invariant it is
           | none => "none"))
     | .error _ => none
   IO.println rawAnswers
+
+/-! The phases' decisions on that result are logged too, as an entry after the solver's: each
+phase that read the model, with what it made of it. -/
+
+/-- info: [(cfgLoopElimAssert_maintain_loop_body_1, true)] -/
+#guard_msgs in
+#eval show IO Unit from do
+  let r ← Core.verify typesPgm (options := { Core.VerifyOptions.quiet with vcgen := .uwp })
+  let phaseLogged := r.toList.filterMap fun r =>
+    if r.obligation.label != "cfgLoopElimAssert_maintain_loop_body_1" then none else
+    match r.outcome with
+    | .ok o => some (r.obligation.label,
+        o.solverLog.toList.any fun (path : Array Core.SolverPhaseLog) =>
+          !path.isEmpty && path.all fun e => !e.phase.startsWith "solver.")
+    | .error _ => none
+  IO.println phaseLogged
 
 end Strata.PassiveVCGenTypesTest
 
