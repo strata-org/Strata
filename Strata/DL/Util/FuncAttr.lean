@@ -35,6 +35,11 @@ inductive FuncAttr where
       Concrete evaluation either decides the result from the first argument or
       returns the rest of the computation, which is then evaluated once. -/
   | shortCircuit
+  /-- The function is the copy monomorphization made of the factory function `base` at an
+      instantiation, and denotes `base` there, so the SMT encoder encodes it as `base`. The
+      attribute is what identifies a copy, never its name, since a user function can be named
+      like one; only monomorphization sets it, and Core's syntax cannot state it. -/
+  | monoCopyOf (base : String)
   deriving DecidableEq, Repr, Inhabited, BEq
 
 open Std (ToFormat Format format)
@@ -47,6 +52,7 @@ instance : ToFormat FuncAttr where
     | .evalIfValue i => f!"evalIfValue {i}"
     | .inlineIfAllValues => "inlineIfAllValues"
     | .shortCircuit => "shortCircuit"
+    | .monoCopyOf base => f!"monoCopyOf {base}"
 
 instance : ToFormat (Array FuncAttr) where
   format attrs := Format.joinSep (attrs.toList.map format) ", "
@@ -70,6 +76,14 @@ def FuncAttr.hasInlineIfAllValues (attrs : Array FuncAttr) : Bool :=
 /-- Return `true` if the attributes contain `shortCircuit`. -/
 @[expose] def FuncAttr.hasShortCircuit (attrs : Array FuncAttr) : Bool :=
   attrs.toList.any fun | .shortCircuit => true | _ => false
+
+/-- `base` if these attributes carry `monoCopyOf base`. -/
+def FuncAttr.findMonoCopyOf (attrs : Array FuncAttr) : Option String :=
+  attrs.findSome? fun | .monoCopyOf base => some base | _ => none
+
+/-- These attributes without `monoCopyOf`. -/
+def FuncAttr.withoutMonoCopyOf (attrs : Array FuncAttr) : Array FuncAttr :=
+  attrs.filter fun | .monoCopyOf _ => false | _ => true
 
 end Strata.DL.Util
 end

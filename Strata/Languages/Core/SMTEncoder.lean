@@ -670,9 +670,10 @@ def toSMTOp (factory : @Lambda.Factory CoreLParams) (fn : CoreIdent) (fnty : LMo
     | .error _ => ctx
   let (smt_outty, ctx) ← LMonoTy.toSMTType outty ctx
 
-  -- Demangle so a specialized datatype op (e.g. `$__mono#Cons#int`) matches its
-  -- `datatypeFuns` key and the solver sees the native constructor/selector name.
-  let baseFn := Core.NameMangling.demangledBaseName fn.name
+  -- A monomorphized copy is encoded as the function its factory entry's mark records
+  -- (`FuncAttr.monoCopyOf`), not one read off its name. A copy that lost its mark is encoded
+  -- as an uninterpreted function: weaker, never unsound.
+  let baseFn := ((factory[fn.name]?).bind (Strata.DL.Util.FuncAttr.findMonoCopyOf ·.attr)).getD fn.name
   match ctx.datatypeFuns.get? baseFn with
   | some (kind, c) =>
     let adtApp := fun (args : List Term) (retty : TermType) =>
@@ -691,8 +692,8 @@ def toSMTOp (factory : @Lambda.Factory CoreLParams) (fn : CoreIdent) (fnty : LMo
     match factory[fn.name]? with
     | none => .error f!"Cannot find function {fn} in Strata Core's Factory!"
     | some func =>
-      -- Demangle so built-in dispatch keys on the base name (see above).
-      let baseName := Core.NameMangling.demangledBaseName func.name.name
+      -- Built-in dispatch keys on the function a copy specializes (see above).
+      let baseName := baseFn
       match corePredefinedOpToSMTOp (CoreOp.ofString baseName) ctx with
       | some (op, retty, ctx) => .ok (op, retty, ctx, pending)
       | none => do
@@ -752,16 +753,17 @@ def toSMTOp (factory : @Lambda.Factory CoreLParams) (fn : CoreIdent) (fnty : LMo
 
 /-- Does `tr` denote a *structured* Core trigger list (a `Triggers.empty` /
     `Triggers.addGroup` spine, or `LExpr.noTrigger`)? If not, the trigger is a bare
-    pattern term supplied directly and forms a single `:pattern` group. -/
+    pattern term supplied directly and forms a single `:pattern` group. The trigger operators
+    are matched by name: `MonomorphizeFunctions` never copies them (`isTriggerMetaOp`). -/
 def isCoreTriggerListExpr (tr : LExpr CoreLParams.mono) : Bool :=
   match tr with
   | .bvar _ _ => true  -- LExpr.noTrigger
   | .op _ opId _ =>
-    match CoreOp.ofString (Core.NameMangling.demangledBaseName opId.name) with
+    match CoreOp.ofString opId.name with
     | .trigger .EmptyTriggers | .trigger .EmptyGroup => true
     | _ => false
   | .app _ (.app _ (.op _ opId _) _) _ =>
-    match CoreOp.ofString (Core.NameMangling.demangledBaseName opId.name) with
+    match CoreOp.ofString opId.name with
     | .trigger .AddGroup => true
     | _ => false
   | _ => false
@@ -1003,7 +1005,7 @@ def encodeTriggerGroup (factory : @Lambda.Factory CoreLParams) (bvs : BoundVars)
     -- `TriggerGroup.empty`: end of the group spine.
     .ok (acc, ctx, pending)
   | .app _ (.app _ (.op _ opId _) t) rest =>
-    match CoreOp.ofString (Core.NameMangling.demangledBaseName opId.name) with
+    match CoreOp.ofString opId.name with
     | .trigger .AddTrigger =>
       let (tt, ctx, pending) ← toSMTTerm factory bvs t ctx pending
       encodeTriggerGroup factory bvs rest (tt :: acc) ctx pending
@@ -1031,7 +1033,7 @@ def encodeTriggerGroups (factory : @Lambda.Factory CoreLParams) (bvs : BoundVars
     -- `Triggers.empty`: end of the group-list spine.
     .ok (acc, ctx, pending)
   | .app _ (.app _ (.op _ opId _) g) rest =>
-    match CoreOp.ofString (Core.NameMangling.demangledBaseName opId.name) with
+    match CoreOp.ofString opId.name with
     | .trigger .AddGroup =>
       let (group, ctx, pending) ← encodeTriggerGroup factory bvs g [] ctx pending
       encodeTriggerGroups factory bvs rest (group :: acc) ctx pending

@@ -250,6 +250,10 @@ def Env.addFactoryFunc (E : Env) (func : (Lambda.LFunc CoreLParams)) : Except Me
   if func.isRecursive && (Strata.DL.Util.FuncAttr.findInlineIfConstr func.attr).isNone
       && func.measure.isNone then
     .error (.fromFormat f!"Recursive function '{func.name}' requires a @[cases] parameter or 'decreases' clause")
+  -- A function the program declares is never a copy `MonomorphizeFunctions` made of a factory
+  -- function (those it adds to the factory), so a copy mark on it, which only a program built
+  -- through the API could carry, is dropped: the encoder reads it from its own declaration.
+  let func := { func with attr := Strata.DL.Util.FuncAttr.withoutMonoCopyOf func.attr }
   let exprEnv ← E.exprEnv.addFactoryFunc func
   .ok { E with exprEnv := exprEnv }
 

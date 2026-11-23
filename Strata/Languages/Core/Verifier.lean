@@ -3120,6 +3120,10 @@ def verifyPipeline (program : Program)
       (PipelineContext.create (outputMode := mode) : BaseIO _)
   let profile := pctx.outputMode.showsProfiling
 
+  -- Only monomorphization marks a function as a copy (`FuncAttr.monoCopyOf`), so a mark on a
+  -- function the caller supplies is dropped, as `Env.addFactoryFunc` drops it from a program's.
+  let moreFns := Lambda.Factory.ofArray (moreFns.toArray.map fun f =>
+    { f with attr := Strata.DL.Util.FuncAttr.withoutMonoCopyOf f.attr })
   let factory ← EIO.ofExcept (Core.Factory.addFactory moreFns)
   -- The transforms that run and the phases that adjust solver results both come
   -- from the validated pipeline, so the two cannot drift apart. A pipeline's type
