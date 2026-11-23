@@ -114,6 +114,15 @@ structure Precondition where
   cond : Expr
   md : MD := .empty
 
+/-- A postcondition, checked when its procedure returns normally, with this
+postcondition's location and property summary. Its condition reads the outputs and
+the globals at return, an input that is not an output at entry, and `old x` (the
+variable `CoreIdent.mkOld x`) at entry for a global or an input and output `x`. -/
+structure Postcondition where
+  label : String
+  cond : Expr
+  md : MD := .empty
+
 structure Procedure where
   name : ProcName
   inputs : List (Core.Expression.Ident × Core.Expression.Ty)
@@ -128,6 +137,7 @@ structure Procedure where
   failure. A procedure that is not external, such as a primitive of the API, means exactly its
   contract, with or without a body. -/
   external : Bool := false
+  ensures : List Postcondition := []
 
 structure UnorderedProgram where
   composites : List CompositeDecl

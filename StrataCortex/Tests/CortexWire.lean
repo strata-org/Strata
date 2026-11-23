@@ -750,4 +750,246 @@ meta def externals (ion : Ion.Ion String) : IO Unit :=
 #guard_msgs in
 #eval externals (externalIon #[("external", .bool true)])
 
+/-! ## Postconditions -/
+
+/-- `dec` assigns its input `x`; its postconditions read `x` at entry, so `below`
+holds and `wrong` does not. `caller` calls it. -/
+meta def ensuresProgram : Wire.Program :=
+  { composites := [], constrained := [],
+    procedures := [
+      { name := "dec", inputs := [{ name := "x", ty := .int }],
+        outputs := [{ name := "r", ty := .int }], throws := none, requires := [], entry := false,
+        source := at_ 110,
+        ensures := [{ label := "below", cond := .op "Int.Lt" [.var "r", .var "x"], summary := none,
+                      source := at_ 114 },
+                    { label := "wrong", cond := .eq (.var "r") (.var "x"), summary := none,
+                      source := at_ 115 }],
+        body := some { entry := "b0", handlers := [], blocks := [
+          blk "b0" [.set "x" (some (.op "Int.Sub" [.var "x", .int 1])) (at_ 111),
+                    .set "r" (some (.var "x")) (at_ 112)] (.finish (at_ 113))] } },
+      { name := "caller", inputs := [], outputs := [], throws := none, requires := [],
+        entry := true, source := at_ 116,
+        body := some { entry := "b0", handlers := [], blocks := [
+          blk "b0" [.init "y" .int none (at_ 117),
+                    .call ["y"] "dec" [.int 5] (at_ 117)] (.finish (at_ 118))] } }] }
+
+/--
+info: Core type checking succeeded.
+-/
+#guard_msgs in
+#eval typeCheck ensuresProgram
+
+/-- `half` throws when `x` is `0`, with `r` still `0`, and returns `1` otherwise. Its
+postconditions hold only on a normal return: `pos` holds, and `two` does not. `caller`
+calls it with `1`. -/
+meta def throwingEnsuresProgram : Wire.Program :=
+  { composites := [{ name := "Throwable", extending := [], fields := [] },
+                   { name := "Arith", extending := ["Throwable"], fields := [] }],
+    constrained := [],
+    procedures := [
+      { name := "half", inputs := [{ name := "x", ty := .int }],
+        outputs := [{ name := "r", ty := .int }], throws := some "Arith", requires := [],
+        entry := false, source := at_ 120,
+        ensures := [{ label := "pos", cond := .op "Int.Gt" [.var "r", .int 0], summary := none,
+                      source := at_ 121 },
+                    { label := "two", cond := .eq (.var "r") (.int 2), summary := none,
+                      source := at_ 122 }],
+        body := some { entry := "b0", handlers := [], blocks := [
+          blk "b0" [.init "e" (.named "Arith") none noLoc, .set "r" (some (.int 0)) noLoc]
+            (.condGoto (.eq (.var "x") (.int 0)) "thr" "ok" noLoc),
+          blk "thr" [.new "e" "Arith" noLoc, .throw (.var "e") none noLoc] (.finish noLoc),
+          blk "ok" [.set "r" (some (.int 1)) noLoc] (.finish noLoc)] } },
+      { name := "caller", inputs := [], outputs := [], throws := none, requires := [],
+        entry := true, source := at_ 123,
+        body := some { entry := "b0", handlers := [], blocks := [
+          blk "b0" [.init "y" .int none (at_ 124),
+                    .call ["y"] "half" [.int 1] (at_ 124)] (.finish (at_ 125))] } }] }
+
+/--
+info: Core type checking succeeded.
+-/
+#guard_msgs in
+#eval typeCheck throwingEnsuresProgram
+
+/-- `dec` returns `x - 1`, which its postcondition `wrong` contradicts, and its
+precondition rejects the argument `main` passes. `main` ends with a postcondition that is
+false. -/
+meta def contractProgram : Wire.Program :=
+  { composites := [], constrained := [],
+    procedures := [
+      { name := "dec", inputs := [{ name := "x", ty := .int }],
+        outputs := [{ name := "r", ty := .int }], throws := none, entry := false,
+        source := at_ 130,
+        requires := [{ cond := .op "Int.Le" [.int 0, .var "x"],
+                       summary := some "x is not negative" }],
+        ensures := [{ label := "wrong", cond := .eq (.var "r") (.var "x"),
+                      summary := some "dec keeps its input", source := at_ 132 }],
+        body := some { entry := "b0", handlers := [], blocks := [
+          blk "b0" [.set "r" (some (.op "Int.Sub" [.var "x", .int 1])) (at_ 133)]
+            (.finish (at_ 134))] } },
+      { name := "main", inputs := [], outputs := [], throws := none, requires := [],
+        entry := true, source := at_ 140,
+        ensures := [{ label := "never", cond := .bool false, summary := some "main returns well",
+                      source := at_ 141 }],
+        body := some { entry := "b0", handlers := [], blocks := [
+          blk "b0" [.init "t" .int (some (.int (-1))) (at_ 142),
+                    .init "u" .int none (at_ 143),
+                    .call ["u"] "dec" [.var "t"] (at_ 144)] (.finish (at_ 145))] } }] }
+
+/--
+info: Core type checking succeeded.
+-/
+#guard_msgs in
+#eval typeCheck contractProgram
+
+/-- `lib` has no body and a postcondition over its output. -/
+meta def bodilessEnsures : Wire.Program :=
+  { composites := [], constrained := [],
+    procedures := [
+      { name := "lib", inputs := [], outputs := [{ name := "r", ty := .int }], throws := none,
+        requires := [], body := none, entry := false, source := at_ 150,
+        ensures := [{ label := "positive", cond := .op "Int.Lt" [.int 0, .var "r"],
+                      summary := some "lib returns a positive number", source := at_ 151 }] },
+      { name := "main", inputs := [], outputs := [], throws := none, requires := [],
+        entry := true, source := at_ 152,
+        body := some { entry := "b0", handlers := [], blocks := [
+          blk "b0" [.init "y" .int none (at_ 153),
+                    .call ["y"] "lib" [] (at_ 153)] (.finish (at_ 154))] } }] }
+
+/--
+info: Core type checking succeeded.
+-/
+#guard_msgs in
+#eval typeCheck bodilessEnsures
+
+/-- `inc` has no body and its postcondition relates its result to its argument. -/
+meta def bodilessEnsuresInc : Wire.Program :=
+  { composites := [], constrained := [],
+    procedures := [
+      { name := "inc", inputs := [{ name := "x", ty := .int }],
+        outputs := [{ name := "r", ty := .int }], throws := none, requires := [], body := none,
+        entry := false, source := at_ 160,
+        ensures := [{ label := "successor", summary := some "inc returns x+1",
+                      cond := .eq (.var "r") (.op "Int.Add" [.var "x", .int 1]),
+                      source := at_ 161 }] },
+      { name := "main", inputs := [], outputs := [], throws := none, requires := [],
+        entry := true, source := at_ 162,
+        body := some { entry := "b0", handlers := [], blocks := [
+          blk "b0" [.init "y" .int none (at_ 163),
+                    .call ["y"] "inc" [.int 4] (at_ 163)] (.finish (at_ 164))] } }] }
+
+/--
+info: Core type checking succeeded.
+-/
+#guard_msgs in
+#eval typeCheck bodilessEnsuresInc
+
+/-- The label and outcome of each obligation of the Core program that the wire program `p`
+lowers to, verified by symbolic execution. -/
+meta def verifyWire (p : Wire.Program) : IO Unit := do
+  let m ← IO.ofExcept ((wireToCortex p).mapError (s!"invalid Cortex program: {·}"))
+  let core ← IO.ofExcept ((toCoreProgram m).mapError (s!"Cortex lowering failed: {·}"))
+  let opts := { Core.VerifyOptions.quiet with symExec := some .default }
+  let rs ← EIO.toIO (fun e => IO.Error.userError (toString e)) (Core.verifyProgram core opts)
+  IO.println s!"obligations: {rs.toList.map (·.obligation.label)}"
+  for r in rs do IO.println s!"{r.obligation.label}: {r.formatOutcome}"
+
+-- A procedure without a body is abstract in Core: its postconditions are its contract, assumed
+-- at each call and never checked, so `lib`'s `positive` gives no obligation.
+/-- info: obligations: [] -/
+#guard_msgs in
+#eval verifyWire bodilessEnsures
+
+/-- `bodilessEnsuresInc` with `main` asserting `five`, which follows from `inc`'s contract. -/
+meta def bodilessIncFive : Wire.Program :=
+  { bodilessEnsuresInc with procedures := bodilessEnsuresInc.procedures.map fun q =>
+    if q.name != "main" then q else
+    { q with body := some { entry := "b0", handlers := [], blocks := [
+      blk "b0" [.init "y" .int none (at_ 163), .call ["y"] "inc" [.int 4] (at_ 163),
+                .assert "five" (.eq (.var "y") (.int 5)) none (at_ 165)] (.finish (at_ 164))] } } }
+
+-- The call to the bodiless `inc` assumes `successor`, so `five` holds, and `successor` itself
+-- gives no obligation.
+/--
+info: obligations: [five]
+five: ✅ pass
+-/
+#guard_msgs in
+#eval verifyWire bodilessIncFive
+
+-- An entry procedure's postcondition over a global is refused, as its precondition is.
+/--
+info: invalid Cortex program: 'main': the postcondition of an entry procedure reads global 'g', which is a local of its body there
+-/
+#guard_msgs in
+#eval typeCheck { requiresGlobal with procedures := requiresGlobal.procedures.map fun q =>
+  if q.name != "main" then q else
+  { q with ensures := [{ label := "gPositive", cond := .op "Int.Lt" [i32v 0, .var "g"],
+                         summary := none, source := at_ 129 }] } }
+
+/--
+info: invalid Cortex program: 'main': the postcondition of an entry procedure reads the entry value of global 'g', which is a local of its body there
+-/
+#guard_msgs in
+#eval typeCheck { requiresGlobal with procedures := requiresGlobal.procedures.map fun q =>
+  if q.name != "main" then q else
+  { q with ensures := [{ label := "gKept", cond := .eq (.var "old g") (i32v 0),
+                         summary := none, source := at_ 130 }] } }
+
+-- Only a global has an entry value: a postcondition may not read `old` of a parameter.
+meta def oldParam : Wire.Program :=
+  { composites := [], constrained := [],
+    procedures := [
+      { name := "f", inputs := [{ name := "x", ty := .int }],
+        outputs := [{ name := "r", ty := .int }], throws := none, requires := [],
+        entry := false, source := at_ 170,
+        ensures := [{ label := "kept", cond := .eq (.var "r") (.var "old x"), summary := none,
+                      source := at_ 171 }],
+        body := some { entry := "b0", handlers := [], blocks := [
+          blk "b0" [.set "r" (some (.var "x")) (at_ 172)] (.finish (at_ 173))] } }] }
+
+/--
+info: invalid Cortex program: 'f': the postcondition reads the entry value of 'x', but only a global has one
+-/
+#guard_msgs in
+#eval typeCheck oldParam
+
+/-- `f`'s postcondition reads `v`. A name that is neither a parameter nor a global, such as
+a misspelled one or a local of the body, is out of scope there and refused. -/
+meta def postScope (v : String) : Wire.Program :=
+  { composites := [], constrained := [],
+    procedures := [
+      { name := "f", inputs := [{ name := "x", ty := .int }],
+        outputs := [{ name := "r", ty := .int }], throws := none, requires := [],
+        entry := false, source := at_ 180,
+        ensures := [{ label := "bound", cond := .op "Int.Le" [.var v, .var "r"], summary := none,
+                      source := at_ 181 }],
+        body := some { entry := "b0", handlers := [], blocks := [
+          blk "b0" [.init "t" .int (some (.int 0)) (at_ 182), .set "r" (some (.var "x")) (at_ 182)]
+            (.finish (at_ 183))] } },
+      { name := "main", inputs := [], outputs := [], throws := none, requires := [],
+        entry := true, source := at_ 184,
+        body := some { entry := "b0", handlers := [], blocks := [
+          blk "b0" [.init "y" .int none (at_ 185), .call ["y"] "f" [.int 4] (at_ 185)]
+            (.finish (at_ 186))] } }] }
+
+/--
+info: invalid Cortex program: 'f': the postcondition reads 'typo', which is not a parameter or a global
+-/
+#guard_msgs in
+#eval typeCheck (postScope "typo")
+
+/--
+info: invalid Cortex program: 'f': the postcondition reads 't', which is not a parameter or a global
+-/
+#guard_msgs in
+#eval typeCheck (postScope "t")
+
+-- The same postcondition over the input is in scope.
+/--
+info: Core type checking succeeded.
+-/
+#guard_msgs in
+#eval typeCheck (postScope "x")
+
 end Cortex.WireTest

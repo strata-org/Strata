@@ -99,11 +99,14 @@ def procedureHeader (p : Procedure) : Except String Core.Procedure.Header := do
   let outputs ← p.outputs.mapM fun (x, t) => do return (x, ← toMono t)
   return { name := ⟨p.name, ()⟩, typeArgs := [], inputs, outputs }
 
-/-- A procedure's preconditions as Core's, labelled `requires_<i>`. -/
+/-- A procedure's preconditions as Core's, labelled `requires_<i>`, and its
+postconditions as Core's, with their own labels. -/
 def procedureSpec (p : Procedure) : Core.Procedure.Spec :=
   let preconditions := (p.requires.zipIdx).map fun (pre, i) =>
     ((s!"requires_{i}" : Core.CoreLabel), ({ expr := pre.cond, md := pre.md } : Core.Procedure.Check))
-  { preconditions, postconditions := [] }
+  let postconditions := p.ensures.map fun post =>
+    ((post.label : Core.CoreLabel), ({ expr := post.cond, md := post.md } : Core.Procedure.Check))
+  { preconditions, postconditions }
 
 /-- A Cortex CFG as a Core CFG with the same labels and transfers. -/
 private def cfgToCore (sigs : Std.HashMap String Sig) (cfg : LCFG) : Except String Core.DetCFG := do

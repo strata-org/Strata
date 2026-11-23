@@ -14,3 +14,10 @@ public import Strata.Languages.Cortex.Interpreter
 public import Strata.Languages.Cortex.DirectInterpreter
 public import Strata.Languages.Cortex.Wire
 public import Strata.Languages.Cortex.JavaPrelude
+public import Strata.Languages.Cortex.Semantics
+public import Strata.Languages.Cortex.SemanticsProps
+public import Strata.Languages.Cortex.HeapProps
+public import Strata.Languages.Cortex.LangDef
+public import Strata.Languages.Cortex.LangDefProps
+public import Strata.Languages.Cortex.OrderingCorrect
+public import Strata.Languages.Cortex.SafeRefsProps
