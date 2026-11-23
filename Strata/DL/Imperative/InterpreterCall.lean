@@ -114,11 +114,12 @@ theorem withOldSnapshotsV_eq (snapshot : List P.Ident) (σ : SemanticStore P) :
     else
       none
 
+omit [ProcedureTypeInstantiation P Hdr] in
 /-- The callee's entry frame `σAO`: a fresh, empty store in which the input formals
     hold the evaluated input values, the output-only formals hold the caller's
     `out`-actual values, and each inout formal is snapshotted under `old`.
     Executable counterpart of `InitCallFrame`. -/
-@[expose] def callEntryStore (p : Procedure P (CmdExt P) Hdr)
+@[expose] def callEntryStore {C : Type} (p : Procedure P C Hdr)
     {V : Type _} (inputVals outOnlyVals : List V) : P.Ident → Option V :=
   let σA := bindPositional (fun _ => none) (ProcedureHeader.inputParams (P := P) p.header)
     inputVals
@@ -138,7 +139,7 @@ variable [HasBool P] [DecidableEq P.Expr] [InterpLang P] [HasFvar P]
     in `BigStepE`.  A body that does not end in a terminal configuration stops with
     `programCallBodyExited`. -/
 @[expose] def runCallee {m : Type → Type} [Monad m] [InterpEffects P m] [MonadExcept StopReason m]
-    (step : StepCmdM P (CmdExt P) m) (procName : String) (body : Body P (CmdExt P))
+    {CmdT : Type} [CmdDefs P CmdT] (step : StepCmdM P CmdT m) (procName : String) (body : Body P CmdT)
     (fac : InterpLang.RFactory P) (fuel : Nat) (entryStore : RStore P) : m (RStore P) :=
   match body with
   | .structured ss => do
@@ -155,25 +156,44 @@ variable [HasBool P] [DecidableEq P.Expr] [InterpLang P] [HasFvar P]
       | throw (.programCallBodyExited procName)
     pure (RStore.project entryStore ρEnd.store.get)
 
-/-- The call-aware command stepper, generic over the effect monad `m`. `depth` is the remaining
-    call-depth budget: how many more calls may nest inside this one. Base commands go through
-    `stepBaseCmdStore` (presented as `.terminal`). `.call` at fuel `fuel' + 1` stops with
-    `callDepthExceeded` at budget `0`; at budget `depth' + 1` it instantiates the callee at the
-    call's type arguments (`programCallTypeArgsMismatch` if they do not instantiate it, as in
-    `Calls.typeInstantiatedCallee`), evaluates its arguments, builds the callee frame, emits the
-    non-free preconditions with their site metadata (`checksAtCall md`), runs the callee body
-    (`runCallee`) at the caller's factory with this stepper baked at budget `depth'` and fuel
-    `fuel'`, emits the non-free postconditions at the callee's final store, checks that each output
-    has the type of the value its target held (`writeBackTyped`; `illTypedValue` otherwise), and
-    writes the outputs back. -/
-def stepCmd {m : Type → Type} [Monad m] [InterpEffects P m] [MonadExcept StopReason m]
-    (π : String → Option (Procedure P (CmdExt P) Hdr)) (depth : Nat)
-    (fuel : Nat) (env : IEnv P) (cmd : CmdExt P) : m (IConfig P (CmdExt P)) :=
-  match cmd with
-  | .cmd base => do
+inductive CmdView (P : PureExpr) [InterpLang P] (CmdT : Type) (Hdr : Type) [DecidableEq Hdr]
+    [Inhabited Hdr] (m : Type → Type) where
+  | base (c : Cmd P)
+  | call (procName : String) (args : List (CallArg P)) (md : MetaData P)
+      (inst : Procedure P CmdT Hdr → Option (Procedure P CmdT Hdr))
+  | ext (run : Nat → IEnv P → m (IConfig P CmdT))
+
+@[expose] def CmdExt.view {m : Type → Type} :
+    CmdExt P → CmdView P (CmdExt P) Hdr m
+  | .cmd c => .base c
+  | .call procName tyArgs args md =>
+    .call procName args md fun p => ProcedureTypeInstantiation.instantiate p (tyArgs.getD [])
+
+omit [ProcedureTypeInstantiation P Hdr] in
+/-- The call-aware command stepper over any command type `CmdT`, generic over the effect monad
+    `m`, with `view` telling it what each command is.  `depth` is the remaining call-depth
+    budget: how many more calls may nest inside this one.  `around c` wraps the step of each
+    command `c` of a callee body; whoever steps a command itself wraps it.  Base commands go through
+    `stepBaseCmdStore` (presented as `.terminal`).  An extension command runs and becomes the
+    configuration it gives.  A call at fuel `fuel' + 1` stops with
+    `callDepthExceeded` at budget `0`; at budget `depth' + 1` it instantiates the callee with the
+    call's `inst` (`programCallTypeArgsMismatch` if `inst` gives none; for `CmdExt.view` this is the
+    instantiation at the call's type arguments, as in `Calls.typeInstantiatedCallee`), evaluates
+    its arguments, builds the callee frame, emits the non-free preconditions with their site
+    metadata (`checksAtCall md`), runs the callee body (`runCallee`) at the caller's factory with
+    this stepper baked at budget `depth'` and fuel `fuel'`, emits the non-free postconditions at the
+    callee's final store, checks that each output has the type of the value its target held
+    (`writeBackTyped`; `illTypedValue` otherwise), and writes the outputs back. -/
+def stepCmdWith {m : Type → Type} [Monad m] [InterpEffects P m] [MonadExcept StopReason m]
+    {CmdT : Type} [CmdDefs P CmdT] (view : CmdT → CmdView P CmdT Hdr m)
+    (around : CmdT → m (IConfig P CmdT) → m (IConfig P CmdT))
+    (π : String → Option (Procedure P CmdT Hdr)) (depth : Nat)
+    (fuel : Nat) (env : IEnv P) (cmd : CmdT) : m (IConfig P CmdT) :=
+  match view cmd with
+  | .base base => do
     let store ← stepBaseCmdStore fuel env.factory env.store base
     return .terminal { env with store }
-  | .call procName tyArgs args md =>
+  | .call procName args md inst =>
     match fuel with
     | 0 => throw .replayFuelExhausted
     | fuel' + 1 =>
@@ -183,7 +203,7 @@ def stepCmd {m : Type → Type} [Monad m] [InterpEffects P m] [MonadExcept StopR
       match π procName with
       | none => throw (.unsupportedCalleeNotFound procName)
       | some p₀ =>
-      match ProcedureTypeInstantiation.instantiate p₀ (tyArgs.getD []) with
+      match inst p₀ with
       | none => throw (.programCallTypeArgsMismatch procName)
       | some p =>
         do
@@ -204,7 +224,8 @@ def stepCmd {m : Type → Type} [Monad m] [InterpEffects P m] [MonadExcept StopR
           let entryStore := callEntryStore p inputVals outOnlyVals
           (rDefaultAssertEvents env.factory entryStore
               (checksAtCall md p.spec.preconditions)).forM (InterpEffects.emit (P := P))
-          let finalStore ← runCallee (fun _ e c => stepCmd π depth' fuel' e c) procName p.body
+          let finalStore ← runCallee
+            (fun _ e c => around c (stepCmdWith view around π depth' fuel' e c)) procName p.body
             env.factory fuel' entryStore
           (rDefaultAssertEvents env.factory finalStore p.spec.postconditions).forM
             (InterpEffects.emit (P := P))
@@ -218,8 +239,14 @@ def stepCmd {m : Type → Type} [Monad m] [InterpEffects P m] [MonadExcept StopR
             throw .illTypedValue
           let store' := env.store.bindPositional lhs modvals
           return .terminal { env with store := store' }
+  | .ext run => run fuel env
 termination_by fuel
-decreasing_by omega
+decreasing_by all_goals omega
+
+abbrev stepCmd {m : Type → Type} [Monad m] [InterpEffects P m] [MonadExcept StopReason m]
+    (π : String → Option (Procedure P (CmdExt P) Hdr)) (depth : Nat)
+    (fuel : Nat) (env : IEnv P) (cmd : CmdExt P) : m (IConfig P (CmdExt P)) :=
+  stepCmdWith CmdExt.view (fun _ x => x) π depth fuel env cmd
 
 /-- The call-aware driver: `runInterp` over `stepCmd π maxCallDepth`, nesting at most
     `maxCallDepth` calls. -/
@@ -252,6 +279,15 @@ variable [HasBool P] [DecidableEq P.Expr] [DecidableEq P.Ident] [InterpLang P]
        | some v => InterpLang.eqModuloMeta v (HasBool.tt (P := P))
        | none => false)
   | _ => false
+
+/-- Does `e` evaluate under the bounded evaluator at fuel `fuel`, with factory `factory` and
+    store `store`, to the false literal, up to metadata (`InterpLang.eqModuloMeta`)? It is the
+    condition check `assertFailureHalt` applies to an `.assert` event. -/
+@[expose] def evalsFalse (fuel : Nat) (factory : InterpLang.RFactory P) (store : RStore P)
+    (e : P.Expr) : Bool :=
+  match InterpLang.boundedEval (P := P) fuel factory store e with
+  | some v => InterpLang.eqModuloMeta v (HasBool.ff (P := P))
+  | none => false
 
 /-- Target-id match of an event (an `.assert`/`.cover` with the target's label and
     metadata), with no evaluation of the condition. -/
@@ -297,6 +333,16 @@ variable [HasBool P] [DecidableEq P.Expr] [DecidableEq P.Ident] [InterpLang P]
   ∀ arg, REvent.assume arg ∈ evs →
     (InterpLang.boundedEval (P := P) fuel arg.factory arg.store arg.expr).bind
       InterpLang.boolLit? = some true
+
+/-- The decision procedure of `PathFeasible`: every `.assume` event of `evs` evaluates under
+    the bounded evaluator at fuel `fuel` to `tt` up to metadata (`InterpLang.boolLit?`). -/
+@[expose] def PathFeasibleB (fuel : Nat) (evs : List (IEvent P)) : Bool :=
+  evs.all fun ev =>
+    match ev with
+    | .assume arg =>
+      (InterpLang.boundedEval (P := P) fuel arg.factory arg.store arg.expr).bind
+        InterpLang.boolLit? == some true
+    | _ => true
 
 variable [HasOldIdent P] [HasFvar P]
   {Hdr : Type} [DecidableEq Hdr] [Inhabited Hdr] [ProcedureHeader P Hdr]

@@ -6,6 +6,8 @@
 module
 
 public import Strata.DL.Imperative.EvalContext
+public import Strata.DL.Imperative.Counterexample.Run
+public import Strata.DL.Imperative.Counterexample.BackLink
 import all Strata.DL.Imperative.EvalContext
 public import Strata.Languages.Core.Program
 /-! # Proof Obligation Extraction
@@ -21,6 +23,10 @@ nested under `if *` to any depth.
 
 This pass reconstructs path conditions by tracking `assume` statements
 encountered on the path to each `assert`/`cover`.
+
+The linked extraction (`extractGoLinked`, `extractLinkedObligations`) takes its obligations
+from `extractGo` and `extractDecl` and computes only the back-links itself. Its properties are
+in `ObligationExtractionProps.lean`.
 -/
 
 public section
@@ -28,6 +34,26 @@ public section
 namespace Core.ObligationExtraction
 
 open Lambda Imperative
+
+/-- Oracle-relevant event on the path from a passive unit entry to one
+    extracted assertion. -/
+inductive ExtractReplayEvent where
+  | branch (takeThen : Bool)
+  | nondetWrite (name : CoreIdent) (expectedType : Option Lambda.LTy)
+  deriving Repr, BEq, DecidableEq
+
+/-- Thin, reified (b)→(a) link emitted adjacent to a proof obligation.
+    It stores no source locator: the entry statements are the replay focus and
+    `events` is exactly the nondeterministic path to the target (assert or cover).
+    `targetLabel` is the obligation's label; the kind (assert vs cover) is carried
+    by the obligation's `property`, not by the link. -/
+structure ExtractBackLink where
+  entryStatements : Statements
+  targetLabel : String
+  events : List ExtractReplayEvent
+
+/-- Every obligation — assert *and* cover — carries a reconstruction link. -/
+abbrev LinkedObligation := ProofObligation Expression × ExtractBackLink
 
 mutual
 /-- Core recursive worker for `extractFromStatements`. Walks the statement list,
@@ -108,6 +134,67 @@ def renameShadowingParams (taken : List String) (proc : Procedure) (ss : Stateme
       (Block.renameLhs (Block.substFvar ss x (.fvar valueLoc x' (some ty))) x x', name :: used)
     else (ss, used)).1
 
+mutual
+/-- Deterministic completion path through a statement, used when an assertion is after a
+    nondeterministic join: choose else at each nested branch and retain all choices needed
+    to reach the continuation. -/
+def completionEventsForStatement : Statement → List ExtractReplayEvent
+  | .cmd (.cmd (.init name ty .nondet _)) => [.nondetWrite name (some ty)]
+  | .ite .nondet _ elseBody _ =>
+    .branch false :: completionEventsForStatements elseBody
+  | .block _ body _ => completionEventsForStatements body
+  | _ => []
+
+/-- Deterministic completion path through a statement list: the completion paths of its
+    statements in order (`completionEventsForStatement`). -/
+def completionEventsForStatements : Statements → List ExtractReplayEvent
+  | [] => []
+  | statement :: rest =>
+    completionEventsForStatement statement ++ completionEventsForStatements rest
+end
+
+/-- The back-link events of the obligations `extractGo` emits from `ss`, one per obligation
+    and in the same order. `events` is the path of oracle-relevant events up to `ss`: an
+    `assert` or `cover` gets the path itself, a nondeterministic `init` extends it with its
+    write, a nondeterministic `if` extends it with the branch taken inside each branch and with
+    the else-branch completion path after the join. -/
+def linkEventsGo (events : List ExtractReplayEvent) : Statements → Array (List ExtractReplayEvent)
+  | [] => #[]
+  | s :: rest =>
+    match s with
+    | .cmd (.cmd (.assert ..)) | .cmd (.cmd (.cover ..)) => #[events] ++ linkEventsGo events rest
+    | .ite .nondet thenSs elseSs _ =>
+      linkEventsGo (events ++ [.branch true]) thenSs ++
+        linkEventsGo (events ++ [.branch false]) elseSs ++
+        linkEventsGo (events ++ [.branch false] ++ completionEventsForStatements elseSs) rest
+    | .cmd (.cmd (.init name ty value _)) =>
+      let events := match value with
+        | .det _ => events
+        | .nondet => events ++ [.nondetWrite name (some ty)]
+      linkEventsGo events rest
+    | _ => linkEventsGo events rest
+
+/-- Pair each obligation of `obs` with its back-link: entry statements `entry`, the
+    obligation's label as target, and the entry of `events` at the obligation's index (empty
+    past the end of `events`). -/
+def attachLinks (entry : Statements) (obs : Array (ProofObligation Expression))
+    (events : Array (List ExtractReplayEvent)) : Array LinkedObligation :=
+  obs.mapIdx fun i ob =>
+    (ob, { entryStatements := entry, targetLabel := ob.label, events := events.getD i [] })
+
+/-- `extractGo` that also emits, with each obligation, its reconstruction link: the
+    obligations are those of `extractGo pc ss`, appended to `acc`; `entry` is the unit's
+    statements and `events` the oracle-relevant events on the path to `ss`. -/
+def extractGoLinked (entry : Statements) (pc : RevPathConditions Expression)
+    (events : List ExtractReplayEvent) (ss : Statements) (acc : Array LinkedObligation) :
+    Except String (Array LinkedObligation) :=
+  (extractGo pc ss #[]).map fun obs => acc ++ attachLinks entry obs (linkEventsGo events ss)
+
+/-- Extract obligations and their reconstruction links. -/
+def extractLinkedFromStatements (pathConditions : RevPathConditions Expression)
+    (statements : Statements) : Except String (Array LinkedObligation) :=
+  extractGoLinked statements pathConditions [] statements #[]
+
 /-- The statements a procedure's obligations are read from: its structured body, with the
     parameters named like a function in `funcNames` renamed apart. A procedure that still
     carries a contract is refused, since only the body is read: an `ensures` would be left
@@ -180,50 +267,28 @@ def extractObligations (p : Program) : Except String (ProofObligations Expressio
     (([] : PathCondition Expression), (#[] : Array (ProofObligation Expression)))
   return allObs
 
-@[simp] theorem extractFromStatements_eq (pc : RevPathConditions Expression) (ss : Statements) :
-    extractFromStatements pc ss = extractGo pc ss #[] := by
-  unfold extractFromStatements; rfl
+/-- One step of `extractLinkedObligations`: `extractDecl` on the declaration `decl`, the
+    obligations it adds paired with their back-links into the procedure body they come from.
+    A lemma is refused: symbolic evaluation turns each lemma into an obligation, so a lemma
+    reaching this pass was never checked, and its obligation would carry no back-link. -/
+def extractLinkedDecl (funcNames : List String) :
+    PathCondition Expression × Array LinkedObligation → Decl →
+    Except String (PathCondition Expression × Array LinkedObligation)
+  | _, .lemma l _ => .error ("ObligationExtraction: lemma '" ++ toString l.name ++
+      "' reached linked obligation extraction; lemmas must be turned into \
+      obligations before extraction")
+  | (globalPc, allObs), decl => do
+    let (globalPc', obs) ← extractDecl funcNames (globalPc, #[]) decl
+    let entry ← match decl with
+      | .proc proc _ => procedureStatements funcNames proc
+      | _ => pure []
+    pure (globalPc', allObs ++ attachLinks entry obs (linkEventsGo [] entry))
 
-/-- `extractGo` succeeds on any body satisfying `hasObligationForm`, for any path
-    conditions and accumulator. -/
-private theorem extractGo_ok (pc : RevPathConditions Expression) (ss : Statements)
-    (acc : Array (ProofObligation Expression))
-    (h : Statements.hasObligationForm ss = true) :
-    (extractGo pc ss acc).isOk = true := by
-  match ss with
-  | [] => unfold extractGo; rfl
-  | s :: rest =>
-    -- Split into: `s` itself, the statements nested in `s`, and `rest`.
-    unfold Statements.hasObligationForm Imperative.Block.allSubstmts
-      Imperative.Stmt.allSubstmts at h
-    simp only [Bool.and_eq_true] at h
-    obtain ⟨⟨hs, hsub⟩, hrest⟩ := h
-    unfold extractGo; split
-    · exact extractGo_ok _ _ _ hrest
-    · exact extractGo_ok _ _ _ hrest
-    · exact extractGo_ok _ _ _ hrest
-    · rename_i thenSs elseSs _
-      simp only [Bool.and_eq_true] at hsub
-      obtain ⟨hthen, helse⟩ := hsub
-      simp only [extractFromStatements]
-      have h1 := extractGo_ok pc thenSs #[] hthen
-      have h2 := extractGo_ok pc elseSs #[] helse
-      revert h1 h2
-      cases extractGo pc thenSs #[] with
-      | error => intro h; simp [Except.isOk, Except.toBool] at h
-      | ok v1 =>
-        cases extractGo pc elseSs #[] with
-        | error => intro _ h; simp [Except.isOk, Except.toBool] at h
-        | ok v2 => intro _ _; simp only [Array.append_assoc]; exact extractGo_ok _ _ _ hrest
-    · exact extractGo_ok _ _ _ hrest
-    · -- `isObligationForm` rejects every statement that reaches this case.
-      unfold Statement.isObligationForm at hs; simp at hs
-
-/-- `extractFromStatements` succeeds on any body satisfying `hasObligationForm`. -/
-theorem extractFromStatements_ok (pc : RevPathConditions Expression) (ss : Statements)
-    (h : Statements.hasObligationForm ss = true) :
-    (extractFromStatements pc ss).isOk = true := by
-  unfold extractFromStatements; exact extractGo_ok pc ss #[] h
+/-- Program-level extraction retaining one adjacent link for every assertion and cover. -/
+def extractLinkedObligations (p : Program) : Except String (Array LinkedObligation) := do
+  let (_, allObs) ← p.decls.foldlM (extractLinkedDecl p.funcNames)
+    (([] : PathCondition Expression), (#[] : Array LinkedObligation))
+  return allObs
 
 end Core.ObligationExtraction
 

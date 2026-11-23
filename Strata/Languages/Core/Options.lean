@@ -218,15 +218,41 @@ structure VerifyOptions where
   solver : String
   /-- Solver time limit in seconds. -/
   solverTimeout : Nat
-  /-- Directory to store generated SMT-Lib (`.smt2`) files. -/
+  /-- Directory to store generated SMT-Lib (`.smt2`) files. Concurrent runs may share it: each
+      verdict answers its own run's query, and a file name both runs use holds the query of the
+      run that wrote it last. -/
   vcDirectory : Option System.FilePath
   /-- Always generate SMT-Lib files, even if the verification
       condition is trivial (i.e. resolved by symbolic evaluation
       without needing the solver). -/
   alwaysGenerateSMT : Bool
   -- Encoding options
-  /-- Use SMT-LIB Array theory instead of axiomatized maps. -/
+  /-- Use SMT-LIB Array theory instead of axiomatized maps.
+
+      With it, `Map` and `Set` encode as SMT arrays, which are extensional: two maps
+      equal at every key, or two sets with the same members, are equal. Without it,
+      they are declared sorts whose axioms speak only about `select` or membership,
+      so such an equality is not provable. `Core.verify` defaults to `false`;
+      `MetaVerifier.Options` (for `gen_smt_vcs`) defaults to `true`. -/
   useArrayTheory : Bool
+  /-- With cvc5, fall back to enumerative quantifier instantiation once E-matching saturates
+      (`--full-saturate-quant`). cvc5 then proves some goals whose quantifiers have no usable
+      trigger, which it otherwise reports `unknown` (incomplete). It applies to every cvc5 query,
+      the satisfiability check of `checkLevel := .full` included, where enumerative
+      instantiation may run until the time limit on a satisfiable property, so the obligation
+      reports a solver timeout. `cvc5RetryFullSaturateQuant` applies the fallback to the validity
+      check only. Off by default. -/
+  cvc5FullSaturateQuant : Bool := false
+  /-- With cvc5, when a validity check answers `unknown` because the procedure is incomplete
+      (`:reason-unknown incomplete`), rerun that one query with `--full-saturate-quant`. Other
+      queries keep the default instantiation. Applies to the per-obligation backend only: with
+      `incremental` the option has no effect. The rerun asks only the validity check. Off by
+      default. -/
+  cvc5RetryFullSaturateQuant : Bool := false
+  /-- The time limit of that retry, in seconds; `0` means the query's own limit
+      (`solverTimeout`), or the default solver timeout when the query has none
+      (`solverTimeout := 0`), so the retry always stops. -/
+  cvc5RetryTimeout : Nat := 0
   -- Verification behavior
   /-- Exit after the first verification error instead of
       continuing. -/

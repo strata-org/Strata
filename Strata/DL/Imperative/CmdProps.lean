@@ -9,6 +9,7 @@ public import Strata.DL.Imperative.Cmd
 public import Strata.DL.Imperative.Stmt
 public import Strata.DL.Imperative.StmtProps
 public import Strata.Util.ListMap
+import all Strata.DL.Imperative.Cmd
 
 /-! # Properties of Imperative commands
 
@@ -313,6 +314,14 @@ theorem Stmt.initVars_cmd_substIdentMany_cover [HasSubstFvar P] [HasFvars P]
     (b : P.Expr) (md : MetaData P) :
     Stmt.initVars (P := P) (Stmt.cmd (Cmd.substIdentMany scope (Cmd.cover label b md))) = [] :=
   Stmt.initVars_cmd_substIdentMany_of_definedVars_nil scope _ rfl
+
+/-- Mapping a function that fixes every expression over a guard or right-hand side changes
+    nothing. -/
+theorem ExprOrNondet.map_id (f : P.Expr → P.Expr) (hf : ∀ e, f e = e) (e : ExprOrNondet P) :
+    e.map f = e := by
+  cases e with
+  | det e => simp only [ExprOrNondet.map, hf]
+  | nondet => rfl
 
 section
 variable [HasFvars P]

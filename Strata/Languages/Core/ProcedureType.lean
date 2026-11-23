@@ -169,6 +169,18 @@ def checkDomScoped (dom : Std.HashMap String (List String)) (reachable : Std.Has
     f!"[{procName}]: a CFG-local is read or assigned on a path where its \
        declaration does not dominate."
 
+/-- Error unless every `loopInvariant` annotation of a reachable block is on a loop
+    header (`CFG.misplacedInvariants`). CFG loop elimination cuts loops at their headers, so
+    an invariant elsewhere would mean nothing; rejecting it here makes every generator
+    report it. -/
+def checkLoopInvariantsAtHeaders (dom : Std.HashMap String (List String))
+    (reachable : Std.HashSet String) (procName : CoreIdent) (cfg : DetCFG)
+    (sourceLoc : FileRange) : Except Message Unit := do
+  if let some l := (Imperative.CFG.misplacedInvariants dom reachable cfg).head? then
+      throw <| Message.withRange sourceLoc
+        f!"[{procName}]: block \"{l}\" has a `{Imperative.MetaData.loopInvariantKey}` but \
+           is not a loop header (the target of an edge from a block it dominates)."
+
 /-- Error unless same-local declarers are dominance-incomparable. Runs before the
 per-block loop (over the order-independent dominance oracle) so this CFG-level
 message surfaces for a comparable pair ahead of the low-level in-loop error. -/
@@ -352,16 +364,17 @@ Steps, in order:
      (`checkInitsNotHeader`);
    * no local declared at two different types (`checkInitTypesAgree`).
 4. Each reachable block is type-checked against the base environment plus the
-   locals declared by its strict dominators. Type information solved in one
-   reachable block is carried to the others, and the final substitution is
-   applied to every reachable block. An unreachable block is checked against the
-   base environment alone, in its own substitution, and is annotated with that
-   substitution; only its fresh-name state is carried forward. So an unreachable
-   block is checked only in isolation: it may use a written type variable of its
-   own local at a type that conflicts with the reachable blocks' use of that
-   variable, it may not read a local declared in any other block (even another
-   unreachable one), and the returned body is well-typed as a whole only on its
-   reachable blocks.
+   locals declared by its strict dominators. Expression-valued block metadata
+   is checked first, in that start-of-block scope, at any type. Type information
+   solved in one reachable block is carried to the others, and the final
+   substitution is applied to every reachable block. An unreachable block is
+   checked against the base environment alone, in its own substitution, and is
+   annotated with that substitution; only its fresh-name state is carried
+   forward. So an unreachable block is checked only in isolation: it may use a
+   written type variable of its own local at a type that conflicts with the
+   reachable blocks' use of that variable, it may not read a local declared in
+   any other block (even another unreachable one), and the returned body is
+   well-typed as a whole only on its reachable blocks.
 
 Steps 1 and 2 are the conditions of `WF.WFCFGProp`; the step-3 checks are plain
 rejections beyond it. -/
@@ -382,6 +395,7 @@ def typeCheck (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv)
   checkBlockInitsNodup proc.header.name cfg sourceLoc
   checkInitsIncomparable dom reachable proc.header.name cfg sourceLoc
   checkDomScoped dom reachable proc.header.name cfg sourceLoc
+  checkLoopInvariantsAtHeaders dom reachable proc.header.name cfg sourceLoc
   checkNoLoopInits proc.header.name reachable
     (cycleLabelsWith succs cfg.labels) cfg sourceLoc
   checkInitsNotReachable proc.header.name declBlocks reachable succs sourceLoc
@@ -469,6 +483,37 @@ def typeCheck (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv)
     let mut currentEnv :=
       if blockReachable then carryEnv.updateContext (scopeCtx.getD lbl Env.context)
       else (carryEnv.updateContext Env.context).updateSubst Env.stateSubstInfo
+    -- Expression-valued block metadata (e.g. `@[loopInvariant = (e)]`) is checked
+    -- in the scope at the start of the block, before its commands: the
+    -- procedure's formals and the locals of the block's strict dominators, not
+    -- the block's own locals. A `loopInvariant` must be boolean, since CFG loop
+    -- elimination makes it the condition of an `assert` and an `assume`; any other
+    -- key accepts any type.
+    let mut mdRev : List (Imperative.MetaDataElem Expression) := []
+    for elem in blk.md do
+      match elem.value with
+      | .expr e =>
+        let key := match elem.fld with
+          | .label l => l
+          | .var v => v.toPretty
+        -- Resolved as a branch guard is, so a quantifier binder cannot capture an
+        -- undeclared free variable of the expression.
+        let pfx := f!"[{proc.header.name}]: in metadata `{key}` of block \"{lbl}\":"
+        let (ea, newEnv) ←
+          (SourceExpr.orFreeVarError (fun _ => currentEnv.freeVarCheck e (fun _ => pfx))
+            ((SourceExpr.resolve C currentEnv e).mapError fun err => f!"{pfx} {err}")).mapError
+          fun err => (Message.fromFormat err).withRangeIfUnknown sourceLoc
+        currentEnv := newEnv
+        if key == Imperative.MetaData.loopInvariantKey then
+          -- Unified rather than compared, as a branch condition is.
+          let boolS ← (Constraints.unify [(ea.toLMonoTy, mty[bool])]
+              currentEnv.stateSubstInfo).mapError fun _ => Message.withRange sourceLoc
+            f!"[{proc.header.name}]: in metadata `{key}` of block \"{lbl}\": the \
+               invariant is not of type bool, got {ea.toLMonoTy}"
+          currentEnv := currentEnv.updateSubst boolS
+        mdRev := { elem with value := .expr ea.unresolved } :: mdRev
+      | _ => mdRev := elem :: mdRev
+    let md' : Imperative.MetaData Expression := mdRev.reverse.toArray
     -- Accumulate in reverse and reverse once, avoiding the quadratic tail append.
     let mut cmdsRev := []
     for cmd in blk.cmds do
@@ -496,7 +541,7 @@ def typeCheck (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv)
         pure (Imperative.DetTransferCmd.condGoto pa.unresolved lt lf md)
       | .finish md => pure (.finish md)
     let blk' : Imperative.DetBlock String Command Expression :=
-      { cmds := cmds', transfer := transfer' }
+      { cmds := cmds', transfer := transfer', md := md' }
     if blockReachable then
       annotated := annotated.insert lbl blk'
       carryEnv := currentEnv

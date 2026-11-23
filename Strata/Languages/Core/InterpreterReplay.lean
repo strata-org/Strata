@@ -59,6 +59,10 @@ abbrev enforceInterrupt (target : AssertId Expression) (fuel : Nat) :
 abbrev PathFeasible (fuel : Nat) (evs : List (IEvent Expression)) : Prop :=
   Calls.PathFeasible fuel evs
 
+/-- The decision procedure of `PathFeasible` (`Calls.PathFeasibleB` at `Expression`). -/
+abbrev PathFeasibleB (fuel : Nat) (evs : List (IEvent Expression)) : Bool :=
+  Calls.PathFeasibleB fuel evs
+
 /-- Replay `cex` with `runCoreInterp π` at the single fuel `fuel` and call-depth limit
     `maxCallDepth`, halting on `assertFailureHalt target fuel` (`Calls.replayWith` at
     `Expression`). -/

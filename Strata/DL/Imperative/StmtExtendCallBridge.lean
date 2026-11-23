@@ -60,7 +60,7 @@ variable {P : PureExpr}
 command with `CmdExt.cmd`. -/
 @[expose] def embedDetBlock (b : DetBlock String (Cmd P) P) :
     DetBlock String (CmdExt P) P :=
-  { cmds := b.cmds.map embedCommand, transfer := b.transfer }
+  { cmds := b.cmds.map embedCommand, transfer := b.transfer, md := b.md }
 
 /-- Embed a base CFG into an extended CFG, block by block; labels and the entry
 are unchanged. -/

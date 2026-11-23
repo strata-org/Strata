@@ -44,6 +44,8 @@ Available, not in the default order:
   foldAxioms
   equalitySimplification
   symExec
+  hoistNondetChoices
+  cfgLoopElim
 -/
 #guard_msgs in
 #eval IO.println (displayPhasesFor {} { Core.VerifyOptions.quiet with vcgen := .wp })

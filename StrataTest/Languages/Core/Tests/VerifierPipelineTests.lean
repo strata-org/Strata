@@ -7,6 +7,7 @@ module
 
 meta import Strata.Languages.Core
 meta import Strata.Languages.Core.Verifier
+meta import Strata.Languages.Core.Typing.Soundness.Core
 meta import Strata.Transform.CallElim
 meta import Strata.Transform.ProcedureInlining
 meta import Strata.Transform.LoopElim
@@ -386,6 +387,10 @@ bodies included. -/
 #guard match Core.typeCheck .quiet identity with
   | .ok p => (ProgramFact.wellFormedCalls.check?.get rfl) p
   | .error _ => false
+
+/-- The checker's output has only well-formed calls. -/
+example (p p' : Program) (h : Core.typeCheck .quiet p = .ok p') : p'.callsWellFormed :=
+  typeCheck_callsWellFormed .quiet p p' none Lambda.Factory.default h
 
 end VerifierPipelineTests
 

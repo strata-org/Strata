@@ -101,7 +101,26 @@ def selectWireEntry (program : Wire.Program) (entry : String) : Except String Wi
   | [p] =>
     if !p.inputs.isEmpty then .error s!"entry procedure '{entry}' takes arguments"
     else if p.body.isNone then .error s!"entry procedure '{entry}' has no body"
-    else .ok { program with procedures := program.procedures.map fun q => { q with entry := q.name == entry } }
+    else
+      let taken : Std.HashSet String := Std.HashSet.ofList <|
+        program.procedures.map (·.name) ++ program.globals.map (·.name) ++
+        program.composites.map (·.name) ++ program.constrained.map (·.name)
+      let src := p.source
+      let harnessName := Strata.Name.findUnique s!"{entry}?entry" 1 taken
+      let copy? : Option Wire.Procedure := if p.requires.isEmpty then none else
+        some { p with name := Strata.Name.findUnique s!"{entry}?entered" 1 (taken.insert harnessName),
+                      requires := [], entry := false }
+      let callee := (copy?.map (·.name)).getD entry
+      let harness : Wire.Procedure :=
+        { name := harnessName
+          inputs := [], outputs := [], throws := p.throws, requires := [], entry := true, source := src
+          body := some { entry := "entry", handlers := [], blocks := [
+            { label := "entry"
+              cmds := p.outputs.map (fun o => .init o.name o.ty none src) ++
+                [.call (p.outputs.map (·.name)) callee [] src]
+              transfer := .finish src }] } }
+      .ok { program with procedures :=
+        program.procedures.map ({ · with entry := false }) ++ copy?.toList ++ [harness] }
   | [] => .error s!"entry procedure '{entry}' not found"
   | _ => .error s!"entry procedure '{entry}' is ambiguous"
 
@@ -128,7 +147,7 @@ def runWireInterpret (ionBytes : ByteArray) (pflags : ParsedFlags) : IO Unit := 
     | .error msg => exitFailure msg
   printDiagnostics outcome.diagnostics
   for (procName, reason) in outcome.errors do
-    IO.eprintln s!"'{procName}': {reason}"
+    IO.eprintln s!"'{(pflags.getString "entry").getD procName}': {reason}"
   unless outcome.errors.isEmpty do
     IO.Process.exit ExitCode.failuresFound
 

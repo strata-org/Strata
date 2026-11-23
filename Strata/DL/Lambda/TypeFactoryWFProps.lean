@@ -7,7 +7,15 @@ module
 
 public import Strata.DL.Lambda.TypeFactoryWF
 import all Strata.DL.Lambda.TypeFactoryWF
+public import Strata.DL.Lambda.TypeFactory
+public import Strata.DL.Lambda.LExprTypeEnv
+public import Strata.DL.Lambda.FactoryWF
+import Strata.DL.Lambda.TypeFactoryProps
+import Strata.DL.Lambda.DatatypeFactoryWFProps
 import all Strata.DL.Lambda.TypeFactory
+import Strata.DL.Lambda.LExprTypeEnvProps
+import Strata.DL.Lambda.FactoryWFProps
+import Strata.Util.ListUtilsProps
 
 /-!
 ## Properties of `Lambda.TypeFactoryWF`
@@ -16,6 +24,8 @@ import all Strata.DL.Lambda.TypeFactory
   datatype names are unique), two datatypes drawn from it with the same name are
   equal.
 - `TypeFactoryWF.default` — the empty type factory is well-formed.
+- `addMutualBlock_preserves_FactorySigWF` — registering an accepted mutual datatype
+  block keeps every function signature of the context well formed.
 -/
 
 namespace Lambda
@@ -60,4 +70,38 @@ theorem TypeFactoryWF.eq_of_name_eq {IDMeta : Type} {tf : @TypeFactory IDMeta}
         exact absurd (hab.symm ▸ h_a_mem) hnotmem
       | inr hb_mem => exact ih hnd_tl a ha_mem b hb_mem hab
 
+/-! ## Well-formedness properties of executable type-factory validation -/
+
+public section
+
+/-- After registering an accepted mutual datatype block, every function of the context is one
+    the context held before or is well formed. -/
+private theorem mem_addMutualBlock_functions {T : LExprParams}
+    [DecidableEq T.IDMeta]
+    [Inhabited T.IDMeta] [Inhabited T.Metadata] [Std.ToFormat T.IDMeta]
+    (C C' : LContext T) (block : MutualDatatype T.IDMeta)
+    (h : C.addMutualBlock block = .ok C') (lf : LFunc T) (hlf : lf ∈ C'.functions.toArray) :
+    lf ∈ C.functions.toArray ∨ LFuncWF lf := by
+  obtain ⟨fgen, hfgen, hlist⟩ := LContext.addMutualBlock_functions_toList h
+  obtain ⟨fac, hfac, hgenwf⟩ := LContext.addMutualBlock_genBlockFactory_wf h
+  rw [hfgen, Except.ok.injEq] at hfac
+  subst hfac
+  rw [Array.mem_def, hlist, List.mem_append] at hlf
+  rcases hlf with hold | hnew
+  · exact .inl (Array.mem_def.mpr hold)
+  · exact .inr (hgenwf lf (Array.mem_def.mpr hnew))
+
+/-- Registering an accepted mutual datatype block preserves `FactorySigWF` of the context's
+    functions. -/
+theorem addMutualBlock_preserves_FactorySigWF {T : LExprParams}
+    [DecidableEq T.IDMeta]
+    [Inhabited T.IDMeta] [Inhabited T.Metadata] [Std.ToFormat T.IDMeta]
+    (C C' : LContext T) (block : MutualDatatype T.IDMeta)
+    (hwf : FactorySigWF C.functions)
+    (h : C.addMutualBlock block = .ok C') :
+    FactorySigWF C'.functions :=
+  ⟨fun lf hlf => (mem_addMutualBlock_functions C C' block h lf hlf).elim (hwf.lfuncs_wf lf)
+    LFuncWF.toSig⟩
+
+end
 end Lambda

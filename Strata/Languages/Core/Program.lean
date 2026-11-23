@@ -5,6 +5,7 @@
 -/
 module
 
+public import Strata.DL.Imperative.CFG
 public import Strata.Languages.Core.Function
 public import Strata.Languages.Core.Factory
 public import Strata.Languages.Core.TypeDecl
@@ -179,6 +180,20 @@ def Decl.eraseTypes (d : Decl) : Decl :=
   | .recFuncBlock fs md => .recFuncBlock (fs.map (·.eraseTypes)) md
   | .type _ _ | .distinct _ _ _ => d
 
+/-- Erase every annotation of a declaration: expression types, declared and signature types, and
+    the type parameters of functions, procedures and lemmas, which the checker renames. Datatype
+    and synonym type parameters are kept, since the checker never renames them. The expressions
+    of a `distinct` declaration are erased, since the checker elaborates them. -/
+def Decl.eraseAnnots (d : Decl) : Decl :=
+  match d with
+  | .type t md => .type t.eraseAnnots md
+  | .ax a md => .ax a.eraseTypes md
+  | .lemma l md => .lemma l.eraseAnnots md
+  | .distinct n es md => .distinct n (es.map Lambda.LExpr.eraseTypes) md
+  | .proc p md => .proc p.eraseAnnots md
+  | .func f md => .func f.eraseAnnots md
+  | .recFuncBlock fs md => .recFuncBlock (fs.map Function.eraseAnnots) md
+
 /-- Remove all metadata from a declaration. -/
 def Decl.stripMetaData (d : Decl) : Decl :=
   match d with
@@ -291,6 +306,11 @@ def Program.typeNamesWithPrefix (p : Program) (pfx : String) : Std.HashSet Strin
 def Program.eraseTypes (p : Program) : Program :=
   { p with decls := p.decls.map Decl.eraseTypes }
 
+/-- Erase every annotation of a program: expression types, declared types, and the type
+    parameters of functions, procedures and lemmas. -/
+def Program.eraseAnnots (p : Program) : Program :=
+  { p with decls := p.decls.map Decl.eraseAnnots }
+
 /-- Remove all metadata from a program. -/
 def Program.stripMetaData (p : Program) : Program :=
   { p with decls := p.decls.map Decl.stripMetaData }
@@ -337,20 +357,6 @@ def Program.funcNames (p : Program) : List String :=
 def Program.getNames (P: Program) : List Expression.Ident :=
   go P.decls
   where go decls := decls.flatMap Decl.names
-
-/-- The type parameters of the program's datatypes. The SMT encoder declares a datatype with
-    its parameters bound by name (`par`), so a sort a pass generates must not reuse one. -/
-def Program.dataTypeParams (p : Program) : List String :=
-  p.decls.flatMap fun
-    | .type (.data block) _ => block.flatMap (·.typeArgs)
-    | _ => []
-
-/-- The names `p` declares: the names of its declarations, the types its procedure bodies
-    declare, and its datatypes' type parameters. Types, functions, axioms, lemmas and procedures share one
-    namespace of declaration names, so a pass that names a new declaration with a prefix
-    avoids every one of these names with that prefix, not only the type names. -/
-def Program.declaredNames (p : Program) : List String :=
-  p.getNames.map (·.name) ++ (p.typeNames ++ p.dataTypeParams)
 
 def Program.Type.find? (P : Program) (x : Expression.Ident) : Option TypeDecl :=
   match P.find? .type x with
@@ -474,8 +480,9 @@ statement. -/
   p.decls.all (Decl.allStatements f)
 
 /-- The expressions `d` carries outside its statements: a procedure's contract
-    and the guards of its CFG transfers, a function's body, axioms,
-    preconditions and measure, an axiom, a `distinct` fact. -/
+    and, in a CFG body, the guards of its transfers and the expressions in its
+    blocks' metadata (`@[loopInvariant = (e)]`); a function's body, axioms,
+    preconditions and measure; an axiom; a `distinct` fact. -/
 @[expose] def Decl.ownExprs (d : Decl) : List Expression.Expr :=
   match d with
   | Core.Decl.proc q _md =>
@@ -484,6 +491,7 @@ statement. -/
     (match q.body with
      | .structured _ => []
      | .cfg g => g.blocks.flatMap fun (_, blk) =>
+         blk.md.exprs ++
          match blk.transfer with
          | .condGoto p _ _ _ => [p]
          | .finish _ => [])
@@ -554,6 +562,15 @@ def Program.funcAttrs (p : Program) : Std.HashMap String (Array Strata.DL.Util.F
 /-- Does every procedure in `p` have a structured body? -/
 @[expose] def Program.allStructured (p : Program) : Bool :=
   p.decls.all Decl.isStructuredOrNonProc
+
+/-- Does no CFG body in `p` have a cycle reachable from its entry? A structured
+    body has no CFG, so it passes whatever loops it holds. -/
+@[expose] def Program.noCFGCycles (p : Program) : Bool :=
+  p.decls.all fun d => match d with
+    | Core.Decl.proc q _md => match q.body with
+      | .cfg g => (Imperative.CFG.cycleLabelsWith g.succMap [g.entry]).isEmpty
+      | .structured _ => true
+    | _ => true
 
 /-- The calls in a declaration: a procedure's calls, and nothing for any other
     declaration. -/

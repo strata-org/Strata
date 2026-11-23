@@ -7,6 +7,7 @@ module
 
 public import Strata.Languages.Core.PipelinePhase
 public import Strata.Languages.Core.Program
+public import Strata.Languages.Core.NameSets
 public import Strata.Languages.Core.Statement
 public import Strata.Languages.Core.StatementType
 public import Strata.DL.Lambda.LTyUnify
@@ -221,7 +222,8 @@ def genOpaqueTypeParamsPipelinePhase : PipelinePhase :=
                          .noLoopMeasures, .staticSingleAssignment,
                          .noBetaRedexes, .noPrecondsFromFuncs, .noNondetGuards,
                          .noProcedureContracts,
-                         .noPolymorphicFunctions, .typeAnnotated, .noInits, .exitsCovered])
+                         .noPolymorphicFunctions, .typeAnnotated, .noInits, .exitsCovered,
+                         .noCFGCycles])
     fun prog =>
       genOpaqueTypeParams prog
 

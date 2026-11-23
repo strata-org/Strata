@@ -1527,6 +1527,15 @@ theorem List.Rel₂.append {R : α → β → Prop} {l₁ l₂ : List α} {l₁'
   | .nil, h => h
   | .cons hab h1, h2 => .cons hab (h1.append h2)
 
+/-- Two relations that each hold between corresponding elements of two lists hold together. -/
+theorem List.Rel₂.and {R S : α → β → Prop} {l : List α} {l' : List β}
+    (hR : Rel₂ R l l') (hS : Rel₂ S l l') : Rel₂ (fun a b => R a b ∧ S a b) l l' := by
+  induction hR with
+  | nil => exact .nil
+  | cons hab _ ih =>
+    cases hS with
+    | cons hab' hS' => exact .cons ⟨hab, hab'⟩ (ih hS')
+
 /-- A list related position by position to a nonempty list is nonempty. -/
 theorem List.Rel₂.ne_nil {R : α → β → Prop} {l : List α} {l' : List β} (h : Rel₂ R l l')
     (hl : l ≠ []) : l' ≠ [] := by
@@ -1573,6 +1582,14 @@ theorem List.Rel₂.refl {α : Type _} {R : α → α → Prop} (hR : ∀ a, R a
     ∀ l : List α, List.Rel₂ R l l
   | [] => .nil
   | a :: l => .cons (hR a) (List.Rel₂.refl hR l)
+
+/-- A list is related pointwise to its image under `f` when each member is related to its
+    image. -/
+theorem List.Rel₂.self_map {α β : Type _} {R : α → β → Prop} (f : α → β) :
+    ∀ l : List α, (∀ a ∈ l, R a (f a)) → List.Rel₂ R l (l.map f)
+  | [], _ => .nil
+  | a :: l, h => .cons (h a List.mem_cons_self)
+      (List.Rel₂.self_map f l fun b hb => h b (List.mem_cons_of_mem a hb))
 
 /-- `flatMap` preserves the sublist relation. -/
 theorem List.Sublist.flatMap_of_sublist {α β : Type _} (f : α → List β) {l1 l2 : List α}
@@ -1710,6 +1727,50 @@ theorem List.Rel₂.exists_of_mem_right {α β : Type _} {R : α → β → Prop
     · exact ⟨_, List.mem_cons_self, hab⟩
     · obtain ⟨a, ha, hr⟩ := ih hmem
       exact ⟨a, List.mem_cons_of_mem _ ha, hr⟩
+
+/-- Mapping the right list keeps a pointwise relation when the map carries related pairs to
+    pairs related by the new relation. -/
+theorem List.Rel₂.map_right {α β γ : Type _} {R : α → β → Prop} {S : α → γ → Prop}
+    {l1 : List α} {l2 : List β} (g : β → γ) (hg : ∀ a b, R a b → S a (g b))
+    (h : Rel₂ R l1 l2) : Rel₂ S l1 (l2.map g) := by
+  induction h with
+  | nil => exact .nil
+  | cons hab _ ih => exact .cons (hg _ _ hab) ih
+
+/-- A relation between the mapped left list and the right list is a relation between the left
+    list and the right list through the map. -/
+theorem List.Rel₂.of_map_left {α β γ : Type _} {R : β → γ → Prop} (f : α → β) :
+    ∀ (l1 : List α) (l2 : List γ), Rel₂ R (l1.map f) l2 → Rel₂ (fun a c => R (f a) c) l1 l2
+  | [], l2, h => by
+    cases l2 with
+    | nil => exact .nil
+    | cons c l2 => cases h
+  | a :: l1, l2, h => by
+    cases l2 with
+    | nil => cases h
+    | cons c l2 =>
+      cases h with
+      | cons hac hrest => exact .cons hac (List.Rel₂.of_map_left f l1 l2 hrest)
+
+/-- Two pointwise relations compose: the left list is related to the right one by the composite
+    relation. -/
+theorem List.Rel₂.comp {α β γ : Type _} {R : α → β → Prop} {S : β → γ → Prop}
+    {l1 : List α} {l2 : List β} {l3 : List γ} (h12 : Rel₂ R l1 l2) (h23 : Rel₂ S l2 l3) :
+    Rel₂ (fun a c => ∃ b, R a b ∧ S b c) l1 l3 := by
+  induction h12 generalizing l3 with
+  | nil => cases h23; exact .nil
+  | cons hab _ ih =>
+    cases h23 with
+    | cons hbc hrest => exact .cons ⟨_, hab, hbc⟩ (ih hrest)
+
+/-- Pointwise related lists have equal flat images under two maps that agree on related
+    elements. -/
+theorem List.Rel₂.flatMap_eq {α β γ : Type _} {R : α → β → Prop} {l1 : List α} {l2 : List β}
+    {f : α → List γ} {g : β → List γ} (hfg : ∀ a b, R a b → f a = g b) (h : Rel₂ R l1 l2) :
+    l1.flatMap f = l2.flatMap g := by
+  induction h with
+  | nil => rfl
+  | cons hab _ ih => rw [List.flatMap_cons, List.flatMap_cons, hfg _ _ hab, ih]
 
 /-- Reversing both lists preserves a pointwise relation. -/
 theorem List.Rel₂.reverse {α β : Type _} {R : α → β → Prop} {a : List α} {b : List β}
@@ -1982,5 +2043,23 @@ theorem List.append_eq_append_cons {α : Type _} {a b pre post : List α} {e : �
       simp only [List.cons_append, List.cons.injEq] at h2
       obtain ⟨rfl, rfl⟩ := h2
       exact .inl ⟨c'', h1, rfl⟩
+
+/-- The hash set built from a list holds every element of the list. -/
+theorem Std.HashSet.mem_ofList_of_mem {α : Type} [BEq α] [Hashable α] [LawfulBEq α]
+    [LawfulHashable α]
+    {l : List α} : ∀ n ∈ l, n ∈ (Std.HashSet.ofList l : Std.HashSet α) :=
+  fun _ hn => Std.HashSet.mem_ofList.mpr (List.contains_iff_mem.mpr hn)
+
+/-- If the set `S` holds every element of `X`, and every element of `Y` is in `X` or in `l`,
+    then `S` with the elements of `l` added holds every element of `Y`. -/
+theorem Std.HashSet.mem_insertMany_of_cover {α : Type} [BEq α] [Hashable α] [LawfulBEq α]
+    {X Y l : List α} {S : Std.HashSet α}
+    (hcov : ∀ n ∈ X, n ∈ S) (hsub : ∀ n ∈ Y, n ∈ X ∨ n ∈ l) :
+    ∀ n ∈ Y, n ∈ S.insertMany l := by
+  intro n hn
+  refine Std.HashSet.mem_insertMany_list.mpr ?_
+  rcases hsub n hn with hold | hnew
+  · exact Or.inl (hcov n hold)
+  · exact Or.inr (List.contains_iff_mem.mpr hnew)
 
 end

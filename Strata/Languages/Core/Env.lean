@@ -71,7 +71,9 @@ def PathConditions.format (ps : PathConditions Expression) : Format :=
   | p :: prest =>
     f!"{PathCondition.format p}{Format.line}" ++ PathConditions.format prest
 
-private def entryExprs : PathConditionEntry Expression → List Expression.Expr
+/-- The expressions a path-condition entry reads: an assumption's body, a `.det` varDecl's
+    right-hand side, the operands of a `distinct`; a `.nondet` varDecl reads none. -/
+def entryExprs : PathConditionEntry Expression → List Expression.Expr
   | .assumption _ e => [e]
   | .varDecl _ _ (.det e) => [e]
   | .varDecl _ _ .nondet => []

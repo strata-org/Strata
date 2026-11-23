@@ -192,22 +192,22 @@ private def printModesProvedAfterCheck (p : Core.Program) (hp : checkedFacts.hol
       | .error e => IO.println s!"error: {e}"
 
 /--
-info: symbolic pc: not proved
-wp pc: not proved
+info: symbolic pc: refuted
+wp pc: refuted
 -/
 #guard_msgs in
 #eval printModesProvedAfterCheck functionAst functionAst_facts
 
 /--
-info: symbolic pc: not proved
-wp pc: not proved
+info: symbolic pc: refuted
+wp pc: refuted
 -/
 #guard_msgs in
 #eval printModesProvedAfterCheck constAst constAst_facts
 
 /--
-info: symbolic pr: not proved
-wp pr: not proved
+info: symbolic pr: refuted
+wp pr: refuted
 -/
 #guard_msgs in
 #eval printModesProvedAfterCheck assignAst assignAst_facts

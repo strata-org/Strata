@@ -91,6 +91,13 @@ theorem seq_guard_ok_iff {ε α : Type} {g : Except ε Unit} {rest : Except ε �
   rw [bind_is_ok]
   exact ⟨fun ⟨⟨⟩, hg, hr⟩ => ⟨hg, hr⟩, fun ⟨hg, hr⟩ => ⟨(), hg, hr⟩⟩
 
+/-- An invariant kept by every step of a successful `l.foldlM F init` holds of its result. -/
+theorem foldlM_inv {σ α ε : Type} (F : σ → α → Except ε σ) (I : σ → Prop) :
+    ∀ (l : List α) (init r : σ), I init → (∀ s a s', a ∈ l → I s → F s a = .ok s' → I s') →
+      l.foldlM F init = .ok r → I r := fun l => by
+  induction l <;> intro init r hinit hstep h
+  all_goals simp only [List.foldlM_nil, List.foldlM_cons, pure_is_ok, bind_is_ok] at h; grind
+
 end Except
 
 /-- If a `for` loop whose body never returns `done` succeeds, the body yields on every
@@ -117,6 +124,16 @@ theorem List.forIn_yield_ok_mem {α ε} (l : List α)
         rcases List.mem_cons.mp hx with rfl | hx'
         · rw [hb]
         · exact ih (fun y hy => hne y (List.mem_cons_of_mem a hy)) h x hx'
+
+/-- A `for` loop whose body yields on every element succeeds. -/
+theorem List.forIn_ok_of_yield {α ε : Type} (l : List α) (b : α → Except ε (ForInStep PUnit))
+    (h : ∀ x ∈ l, b x = .ok (ForInStep.yield PUnit.unit)) :
+    forIn l PUnit.unit (fun x _ => b x) = .ok PUnit.unit := by
+  induction l with
+  | nil => rfl
+  | cons a as ih =>
+    rw [List.forIn_cons, h a List.mem_cons_self]
+    exact ih fun x hx => h x (List.mem_cons_of_mem a hx)
 
 /-- A successful `mapM` relates each input, in order, to the output `f` returns for it. -/
 theorem mapM_except_rel₂ {α β ε : Type _} (f : α → Except ε β) :

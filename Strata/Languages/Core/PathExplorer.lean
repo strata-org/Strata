@@ -1092,11 +1092,13 @@ def exploreProc (cfg : ExploreCfg) (maxSteps runFuel : Nat) (F : Lambda.Factory 
 /-! ## Programs -/
 
 /-- The program facts symbolic execution requires: `noCalls`, `noLoops`, `noNondetGuards`,
-    `exitsCovered`, `noPolymorphicProcedures` and `typeAnnotated` (symbols need monomorphic
-    types; `typeOf` reads type annotations). All are established by the passes before VC
-    generation. CFG bodies are accepted (`exploreProc`). -/
+    `exitsCovered`, `noPolymorphicProcedures`, `typeAnnotated` (symbols need monomorphic
+    types; `typeOf` reads type annotations) and `noCFGCycles`. All are established by the
+    passes before VC generation. CFG bodies are accepted (`exploreProc`) once their loops are
+    cut (`cfgLoopElim`). -/
 def symExecRequires : List ProgramFact :=
-  [.noCalls, .noLoops, .noNondetGuards, .exitsCovered, .noPolymorphicProcedures, .typeAnnotated]
+  [.noCalls, .noLoops, .noNondetGuards, .exitsCovered, .noPolymorphicProcedures, .typeAnnotated,
+   .noCFGCycles]
 
 /-- The required facts a program fails, among those with an executable check (`typeAnnotated`
     has none; it is trusted, as in the pipeline). -/

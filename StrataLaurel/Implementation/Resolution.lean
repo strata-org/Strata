@@ -7523,22 +7523,21 @@ private def validateEntryContractGlobalUse (model : SemanticModel)
         s!"the contract of entry procedure '{proc.name.text}' cannot use file-scope globals: an entry procedure initializes its globals as locals inside its body, which contracts cannot see"
         MessageKind.userError)
 
-private def validateCallsToGlobalEntryProcedures (program : LaurelProgram)
-    (analysis : InitialEffectAnalysis) : List Message :=
-  let globalEntryIds : Std.HashSet Nat :=
+private def validateCallsToEntryProcedures (analysis : InitialEffectAnalysis) : List Message :=
+  let entryIds : Std.HashSet Nat :=
     analysis.allProcs.foldl (init := {}) fun ids proc =>
-      if proc.isInterpretEntry && !(entryUsedGlobals program analysis proc).isEmpty then
+      if proc.isInterpretEntry then
         match proc.name.uniqueId with
         | some id => ids.insert id
         | none => ids
       else ids
-  if globalEntryIds.isEmpty then [] else
+  if entryIds.isEmpty then [] else
   let errorsIn (expr : StmtExprMd) : List Message :=
     collectStmtExprList (fun node => match node.val with
       | .Call _ callee _ _ =>
-        if containsProcId globalEntryIds callee then
+        if containsProcId entryIds callee then
           [diagnosticFromSource node.source
-            s!"entry procedure '{callee.text}' cannot be called here: it uses file-scope globals, which it initializes as locals rather than accepting as the hidden parameters this call would pass"
+            s!"entry procedure '{callee.text}' cannot be called"
             MessageKind.userError]
         else []
       | _ => []) expr
@@ -7959,7 +7958,7 @@ public def resolve (program : LaurelProgram) (existingModel: Option SemanticMode
     initialAnalysis.map (fun analysis =>
       validateEntryProcedureContracts semanticModel program' analysis ++
       validateEntryContractGlobalUse semanticModel program' analysis ++
-      validateCallsToGlobalEntryProcedures program' analysis ++
+      validateCallsToEntryProcedures analysis ++
       (if entryConstrainedGlobals then [] else validateEntryConstrainedGlobalUse program' analysis))
       |>.getD []
   -- `invokeOn` procedures may not declare outputs (see `validateInvokeOnOutputRefs`).

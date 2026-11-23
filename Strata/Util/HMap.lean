@@ -145,6 +145,11 @@ public theorem find?_empty (a : α) : (empty : HMap α β).find? a = none := by
 public theorem isEmpty_empty : (empty : HMap α β).isEmpty = true := by
   simp [isEmpty, empty]
 
+/-- The map built from no entries is empty. -/
+@[simp]
+public theorem isEmpty_ofList_nil : (ofList ([] : List (α × β))).isEmpty = true := by
+  simp [isEmpty, ofList]
+
 @[simp]
 public theorem keys_empty : (empty : HMap α β).keys = [] := by
   simp [keys, empty]
@@ -395,6 +400,34 @@ public theorem find?_ofList_cons_eq_find?_insert [LawfulBEq α] [LawfulHashable 
   · rw [h]; simp
   · simp only [h, Bool.false_eq_true, ite_false, Option.or_none]
 
+/-- In a list with distinct keys, `ofList` finds the value stored with each key. -/
+public theorem find?_ofList_of_mem_of_nodup [LawfulBEq α] [LawfulHashable α]
+    {l : List (α × β)} (hnd : (l.map Prod.fst).Nodup) {k : α} {v : β} (h : (k, v) ∈ l) :
+    HMap.find? (HMap.ofList l) k = some v := by
+  induction l with
+  | nil => exact absurd h List.not_mem_nil
+  | cons p rest ih =>
+    obtain ⟨k0, v0⟩ := p
+    rw [List.map_cons, List.nodup_cons] at hnd
+    rw [find?_ofList_cons_eq_find?_insert k0 v0 rest hnd.1 k]
+    rcases List.mem_cons.mp h with heq | hmem
+    · obtain ⟨rfl, rfl⟩ := Prod.mk.inj heq
+      exact find?_insert_self _ _ _
+    · have hk : k ∈ rest.map Prod.fst := List.mem_map_of_mem (f := Prod.fst) hmem
+      have hne : (k != k0) = true := by
+        rw [bne_iff_ne]
+        exact fun heq => hnd.1 (heq ▸ hk)
+      rw [find?_insert_ne _ _ _ _ hne]
+      exact ih hnd.2 hmem
+
+/-- Looking up in the `ofList` of an append searches the second list first. -/
+public theorem find?_ofList_append [LawfulBEq α] [LawfulHashable α]
+    (l1 l2 : List (α × β)) (k : α) :
+    HMap.find? (HMap.ofList (l1 ++ l2)) k =
+      (HMap.find? (HMap.ofList l2) k).or (HMap.find? (HMap.ofList l1) k) := by
+  rw [find?_ofList_findSome?, find?_ofList_findSome?, find?_ofList_findSome?,
+    List.reverse_append, List.findSome?_append]
+
 /-- If `find?` returns `none`, the key is not in `keys`. -/
 public theorem find?_of_not_mem_keys [LawfulBEq α] [LawfulHashable α]
     (m : HMap α β) (h : m.find? k = none) : k ∉ m.keys := by
@@ -408,6 +441,11 @@ public theorem not_mem_keys_find?_none [LawfulBEq α] [LawfulHashable α]
   cases hf : m.find? k with
   | none => rfl
   | some v => exact absurd (find?_mem_keys m hf) h
+
+/-- `ofList` finds nothing for a key its list does not have. -/
+public theorem find?_ofList_of_not_mem [LawfulBEq α] [LawfulHashable α]
+    {l : List (α × β)} {k : α} (h : k ∉ l.map Prod.fst) : HMap.find? (HMap.ofList l) k = none :=
+  not_mem_keys_find?_none _ k fun hk => h (mem_keys_ofList l k hk)
 
 /-- Erasing a different key preserves key membership. -/
 public theorem keys_erase_mem_of_ne [LawfulBEq α] [LawfulHashable α]

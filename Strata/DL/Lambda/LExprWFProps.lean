@@ -139,7 +139,10 @@ theorem varOpen_sizeOf {T}:
     simp only [sizeOf]
     grind
 
-theorem varClose_of_varOpen [LawfulBEq T.IDMeta] [BEq T.Metadata] [ReflBEq T.Metadata] [BEq GenericTy] [ReflBEq GenericTy] [LawfulBEq GenericTy]  (h : fresh x e) :
+/-- Closing a variable at the index it was opened at gives back the expression, when the
+    variable is not free in it. -/
+theorem varClose_of_varOpen [LawfulBEq T.IDMeta] [BEq GenericTy] [ReflBEq GenericTy]
+    [LawfulBEq GenericTy] (h : fresh x e) :
   varClose (T := T) (GenericTy := GenericTy) i x (varOpen i x e) = e := by
   induction e generalizing i x
   all_goals try simp_all [fresh, varOpen, LExpr.substK, varClose, freeVars]
@@ -1471,6 +1474,38 @@ theorem allExprTys_eq_all_exprAnnotTys {T : LExprParams} (p : LMonoTy → Bool)
   simp only [allExprTys]
   induction e <;> simp_all only [LExpr.allUserProvidedTypes, exprAnnotTys,
     List.all_append, List.all_nil]
+
+/-- Applying `f` to every user-provided annotation of `e` applies it to every type
+    `exprAnnotTys e` lists. -/
+theorem exprAnnotTys_mapExprTys {T : LExprParams} (f : LMonoTy → LMonoTy)
+    (e : LExpr T.mono) : exprAnnotTys (mapExprTys f e) = (exprAnnotTys e).map f := by
+  unfold mapExprTys
+  induction e <;> simp_all only [LExpr.replaceUserProvidedType, exprAnnotTys,
+    List.map_append, List.map_nil, Option.toList_map]
+
+/-- Applying `f` to the annotations of an expression keeps its literals. -/
+theorem getConsts_mapExprTys {T : LExprParams} (f : LMonoTy → LMonoTy) (e : LExpr T.mono) :
+    LExpr.getConsts (mapExprTys f e) = LExpr.getConsts e := by
+  induction e with
+  | const m c => rfl
+  | op m o ty => rfl
+  | bvar m i => rfl
+  | fvar m x ty => rfl
+  | abs m name ty body ih =>
+    simp only [mapExprTys, LExpr.replaceUserProvidedType, LExpr.getConsts] at ih ⊢
+    rw [ih]
+  | quant m qk name ty tr body ihtr ihbody =>
+    simp only [mapExprTys, LExpr.replaceUserProvidedType, LExpr.getConsts] at ihtr ihbody ⊢
+    rw [ihtr, ihbody]
+  | app m e1 e2 ih1 ih2 =>
+    simp only [mapExprTys, LExpr.replaceUserProvidedType, LExpr.getConsts] at ih1 ih2 ⊢
+    rw [ih1, ih2]
+  | ite m c t e ihc iht ihe =>
+    simp only [mapExprTys, LExpr.replaceUserProvidedType, LExpr.getConsts] at ihc iht ihe ⊢
+    rw [ihc, iht, ihe]
+  | eq m e1 e2 ih1 ih2 =>
+    simp only [mapExprTys, LExpr.replaceUserProvidedType, LExpr.getConsts] at ih1 ih2 ⊢
+    rw [ih1, ih2]
 
 end
 

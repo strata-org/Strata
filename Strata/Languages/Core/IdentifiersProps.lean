@@ -57,6 +57,10 @@ theorem not_isOldIdent_of_ne_mkOld (id : CoreIdent)
 theorem coreIdent_eq_of_name {x y : CoreIdent} (h : x.name = y.name) : x = y := by
   cases x; cases y; simp only at h; subst h; rfl
 
+/-- A Core identifier is determined by its name. -/
+theorem coreIdent_name_injective : Function.Injective (fun (id : CoreIdent) => id.name) :=
+  fun _ _ h => coreIdent_eq_of_name h
+
 /-- An identifier whose name is the name of a member of `xs` is itself a member. -/
 theorem mem_of_name_mem {xs : List CoreIdent} {x : CoreIdent}
     (h : x.name ∈ xs.map (·.name)) : x ∈ xs := by

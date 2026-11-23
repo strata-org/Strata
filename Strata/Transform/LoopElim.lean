@@ -274,7 +274,7 @@ def loopElimPipelinePhase : PipelinePhase where
                       .noLoopMeasures, .noBetaRedexes, .noPrecondsFromFuncs, .noNondetGuards,
                       .noProcedureContracts,
                          .noPolymorphicProcedures,
-                         .noPolymorphicFunctions, .typeAnnotated, .exitsCovered]
+                         .noPolymorphicFunctions, .typeAnnotated, .exitsCovered, .noCFGCycles]
 
 end -- public section
 

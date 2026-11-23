@@ -93,11 +93,11 @@ def interpResult : Option Core.Expression.Expr :=
   match interpProgram.procedures with
   | p :: _ =>
     match Interp.runEntry interpProgram 100 p with
-    | .ok (.terminal ρ, _) => ρ.store (cid "c")
+    | .ok { final := .terminal ρ, .. } => ρ.store.get (cid "c")
     | _ => none
   | [] => none
 
-#guard interpResult == some (.const Core.valueLoc (.intConst 7))
+#guard interpResult matches some (.const _ (.intConst 7))
 
 def refTy (n : String) : Lambda.LTy := .forAll [] (.tcons n [])
 def intTy : Lambda.LTy := .forAll [] .int
@@ -136,7 +136,7 @@ def runMain (m : UnorderedProgram) : Option Core.Expression.Expr :=
   match m.procedures with
   | p :: _ =>
     match Interp.runEntry m 100 p with
-    | .ok (.terminal ρ, _) => ρ.store (cid "r")
+    | .ok { final := .terminal ρ, .. } => ρ.store.get (cid "r")
     | _ => none
   | [] => none
 
@@ -197,7 +197,7 @@ def castRun (v : Int) (mode : CastMode) : Option (Option Core.Expression.Expr ×
   match (castProgram v mode).procedures with
   | p :: _ =>
     match Interp.runEntry (castProgram v mode) 100 p with
-    | .ok (.terminal ρ, t) => some (ρ.store (cid "x"), t)
+    | .ok { final := .terminal ρ, trace := t, .. } => some (ρ.store.get (cid "x"), t)
     | _ => none
   | [] => none
 
@@ -213,9 +213,16 @@ def castEvents (v : Int) (mode : CastMode) : Option (List String) :=
 #guard ((castRun 5 .check).map (·.1)) == some (some (intC 5))
 #guard castFailures 5 .check == some 0
 #guard castFailures 0 .check == some 1
-#guard castEvents 0 .check == some ["assert constraint_pos"]
+#guard castEvents 0 .check == some ["assert constraint_pos_0"]
 #guard castFailures 0 .assume == some 0
-#guard castEvents 0 .assume == some ["assume constraint_pos"]
+#guard castEvents 0 .assume == some ["assume constraint_pos_0"]
+
+def defaultTagProg : UnorderedProgram := { composites, procedures := [] }
+
+#guard (LowerHeapExec.defaultOf defaultTagProg (.forAll [] (.tcons "IOExn" []))) matches
+  .ok (.app _ (.app _ (.op _ ⟨"$MkComposite", _⟩ _) _) (.op _ ⟨"IOExn$TypeTag", _⟩ _))
+#guard (LowerHeapExec.defaultOf defaultTagProg (.forAll [] (.tcons "Other" []))) matches
+  .ok (.app _ (.app _ (.op _ ⟨"$MkComposite", _⟩ _) _) (.op _ ⟨"Other$TypeTag", _⟩ _))
 
 end Cortex.Test
 

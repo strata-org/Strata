@@ -121,6 +121,21 @@ instance : ToFormat TypeDecl where
     | .data [td] => f!"{td}"
     | .data tds => f!"mutual {Std.Format.joinSep (tds.map format) Format.line} end"
 
+/-- Erase the constructor argument types of a datatype; names and type parameters are kept. -/
+def LDatatype.eraseAnnots (d : LDatatype Unit) : LDatatype Unit :=
+  let constrs := d.constrs.map fun c =>
+    { c with args := c.args.map fun (n, _) => (n, LMonoTy.erased) }
+  have hne : constrs.length != 0 := by
+    simpa only [constrs, List.length_map] using d.constrs_ne
+  { d with constrs := constrs, constrs_ne := hne }
+
+/-- Erase the types a declaration mentions: the body of a synonym and the constructor
+argument types of a datatype. Type parameters are kept. -/
+def TypeDecl.eraseAnnots : TypeDecl → TypeDecl
+  | .con tc => .con tc
+  | .syn ts => .syn { ts with type := LMonoTy.erased }
+  | .data ds => .data (ds.map LDatatype.eraseAnnots)
+
 /-- Get all names from a TypeDecl. -/
 @[expose] def TypeDecl.names (d : TypeDecl) : List Expression.Ident :=
   match d with

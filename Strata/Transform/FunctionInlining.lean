@@ -200,7 +200,7 @@ def functionInliningPipelinePhase (maxDepth : Option Nat := none) : PipelinePhas
                          .noLoopMeasures, .staticSingleAssignment, .noPrecondsFromFuncs,
                          .noNondetGuards, .hasObligationForm, .noProcedureContracts,
                          .noPolymorphicProcedures, .noPolymorphicFunctions, .typeAnnotated,
-                         .noInits, .treeForm, .exitsCovered, .armsHaveObligations])
+                         .noInits, .treeForm, .exitsCovered, .armsHaveObligations, .noCFGCycles])
     fun prog => do
       -- The program's functions are in the factory for this pass alone: the encoder
       -- environment registers every `.func` itself and rejects a redefinition.

@@ -8,9 +8,11 @@ module
 public meta import Lean.Elab.Command
 public meta import Strata.Go.Gen
 public meta import StrataTest.Languages.Go.GenTestUtil
+public meta import StrataTest.Util.TestDir
 
 open Strata.Go
 open Strata.Go.TestUtil
+open Strata.TestUtil
 
 /-!
 # `getIonGoSerializer%` smoke tests
@@ -567,61 +569,57 @@ elab "#testGoToolchain" : command => do
     Lean.logWarning "Test skipped: go not found"
     return
 
-  let dir : System.FilePath := "/tmp/strata-go-smoke"
-  prepareTempDir dir
+  withTestDir fun dir => do
+    -- Several closures at once, so the runtime files, the generic types, the
+    -- nested containers and the zero-ctor interface all have to coexist in one
+    -- Go package.
+    let mut allFiles : Std.HashMap String String := {}
+    for files in [getIonGoSerializer% Crate "gotest", getIonGoSerializer% League "gotest",
+                  getIonGoSerializer% Shape "gotest", getIonGoSerializer% Void "gotest",
+                  getIonGoSerializer% Tree "gotest", getIonGoSerializer% Wrapper "gotest",
+                  getIonGoSerializer% Team "gotest", getIonGoSerializer% «Widget?» "gotest",
+                  -- These types exercise flat package names, escaped type
+                  -- parameters and runtime-name capture. Compiling them together
+                  -- asserts that every generated identifier resolves correctly.
+                  getIonGoSerializer% CapturingBox "gotest",
+                  getIonGoSerializer% CapturingPair "gotest",
+                  getIonGoSerializer% GreekPair "gotest",
+                  getIonGoSerializer% IonWriter "gotest",
+                  getIonGoSerializer% Marshal "gotest",
+                  getIonGoSerializer% Unexported "gotest",
+                  getIonGoSerializer% «$writeBigInt» "gotest",
+                  getIonGoSerializer% Root4 "gotest"] do
+      for (name, content) in files.files do allFiles := allFiles.insert name content
 
-  -- Several closures at once, so the runtime files, the generic types, the
-  -- nested containers and the zero-ctor interface all have to coexist in one
-  -- Go package.
-  let mut allFiles : Std.HashMap String String := {}
-  for files in [getIonGoSerializer% Crate "gotest", getIonGoSerializer% League "gotest",
-                getIonGoSerializer% Shape "gotest", getIonGoSerializer% Void "gotest",
-                getIonGoSerializer% Tree "gotest", getIonGoSerializer% Wrapper "gotest",
-                getIonGoSerializer% Team "gotest", getIonGoSerializer% «Widget?» "gotest",
-                -- These types exercise flat package names, escaped type
-                -- parameters and runtime-name capture. Compiling them together
-                -- asserts that every generated identifier resolves correctly.
-                getIonGoSerializer% CapturingBox "gotest",
-                getIonGoSerializer% CapturingPair "gotest",
-                getIonGoSerializer% GreekPair "gotest",
-                getIonGoSerializer% IonWriter "gotest",
-                getIonGoSerializer% Marshal "gotest",
-                getIonGoSerializer% Unexported "gotest",
-                getIonGoSerializer% «$writeBigInt» "gotest",
-                getIonGoSerializer% Root4 "gotest"] do
-    for (name, content) in files.files do allFiles := allFiles.insert name content
+    writeGoFiles dir { files := allFiles.toArray }
+    if let some reason ← writeGoModule dir "gotest" then
+      Lean.logWarning s!"Test skipped: {reason}"
+      return
 
-  writeGoFiles dir { files := allFiles.toArray }
-  if let some reason ← writeGoModule dir "gotest" then
-    Lean.logWarning s!"Test skipped: {reason}"
-    cleanupTempDir dir
-    return
+    if let some err ← checkGoClean dir then Lean.throwError err
 
-  if let some err ← checkGoClean dir then Lean.throwError err
-
-  -- A generic sum type is tied to its type argument: a constructor instantiated
-  -- at one type must not satisfy the interface instantiated at another, or Go
-  -- would marshal a `Box Point` where Lean expects a `Point`. Built from a
-  -- separate package (after `go vet ./...`, which would otherwise see the
-  -- deliberately ill-typed one), with a well-typed twin so a failure is known to
-  -- come from the mismatch rather than from the consumer itself.
-  let consumer (item : String) : String :=
-    s!"package main\n\nimport g \"gotest\"\n\n\
-       var _ g.Holder[g.Point] = g.HolderFull[{item}]\{}\n\nfunc main() \{}\n"
-  IO.FS.createDirAll (dir / "holdermatch")
-  IO.FS.writeFile (dir / "holdermatch" / "main.go") (consumer "g.Point")
-  if let some err ← runTool "go" #["build", "-buildvcs=false", "-o", "/dev/null", "./holdermatch"] dir then
-    Lean.throwError s!"HolderFull[Point] must satisfy Holder[Point]:\n{err}"
-  IO.FS.createDirAll (dir / "holdermismatch")
-  IO.FS.writeFile (dir / "holdermismatch" / "main.go") (consumer "g.Box[g.Point]")
-  match ← runTool "go" #["build", "-buildvcs=false", "-o", "/dev/null", "./holdermismatch"] dir with
-  | none =>
-    Lean.throwError "HolderFull[Box[Point]] was accepted as a Holder[Point]: the \
-                    marker method does not mention the type parameter"
-  | some err =>
-    unless (err.splitOn "isHolder").length > 1 do
-      Lean.throwError s!"HolderFull[Box[Point]] was rejected for an unexpected reason:\n{err}"
-  cleanupTempDir dir
+    -- A generic sum type is tied to its type argument: a constructor instantiated
+    -- at one type must not satisfy the interface instantiated at another, or Go
+    -- would marshal a `Box Point` where Lean expects a `Point`. Built from a
+    -- separate package (after `go vet ./...`, which would otherwise see the
+    -- deliberately ill-typed one), with a well-typed twin so a failure is known to
+    -- come from the mismatch rather than from the consumer itself.
+    let consumer (item : String) : String :=
+      s!"package main\n\nimport g \"gotest\"\n\n\
+         var _ g.Holder[g.Point] = g.HolderFull[{item}]\{}\n\nfunc main() \{}\n"
+    IO.FS.createDirAll (dir / "holdermatch")
+    IO.FS.writeFile (dir / "holdermatch" / "main.go") (consumer "g.Point")
+    if let some err ← runTool "go" #["build", "-buildvcs=false", "-o", "/dev/null", "./holdermatch"] dir then
+      Lean.throwError s!"HolderFull[Point] must satisfy Holder[Point]:\n{err}"
+    IO.FS.createDirAll (dir / "holdermismatch")
+    IO.FS.writeFile (dir / "holdermismatch" / "main.go") (consumer "g.Box[g.Point]")
+    match ← runTool "go" #["build", "-buildvcs=false", "-o", "/dev/null", "./holdermismatch"] dir with
+    | none =>
+      Lean.throwError "HolderFull[Box[Point]] was accepted as a Holder[Point]: the \
+                      marker method does not mention the type parameter"
+    | some err =>
+      unless (err.splitOn "isHolder").length > 1 do
+        Lean.throwError s!"HolderFull[Box[Point]] was rejected for an unexpected reason:\n{err}"
 
 #testGoToolchain
 

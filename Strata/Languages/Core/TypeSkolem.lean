@@ -108,6 +108,28 @@ def procAnnotTys (proc : Procedure) : List LMonoTy :=
 def procLitTyNames (proc : Procedure) : List String :=
   procCollect exprLitTyNames (fun _ => []) proc
 
+/-- The declared types of the variable declarations of a command, as monotypes. -/
+def cmdInitTys (c : Command) : List LMonoTy :=
+  (CmdExt.initTypes c).map LTy.toMonoTypeUnsafe
+
+/-- The declared types of the variable declarations of a statement list, in order, including
+    those in nested blocks, branches and loop bodies. -/
+def Statements.initTys (ss : List Statement) : List LMonoTy :=
+  (Block.initTypes (P := Expression) (C := Command) ss).map LTy.toMonoTypeUnsafe
+
+/-- The declared types of the variable declarations in the commands of a control flow graph's
+    blocks, in order. -/
+def DetCFG.initTys (c : DetCFG) : List LMonoTy :=
+  (Imperative.DetCFG.initTypes (P := Expression) (C := Command) c).map LTy.toMonoTypeUnsafe
+
+/-- The declared types of the variable declarations of a procedure body, in order, including
+    those in nested blocks, branches and loop bodies, or in the blocks of a control flow
+    graph. -/
+def Procedure.initTys (p : Procedure) : List LMonoTy :=
+  match p.body with
+  | .structured ss => Statements.initTys ss
+  | .cfg c => DetCFG.initTys c
+
 /-- The type names a procedure mentions, given the types `annot` it writes: the type
     constructor names of `annot` and of its literals, and the names of the types its body
     declares. -/
@@ -362,7 +384,6 @@ def resolveWithType (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv
   .ok (et, Env.updateSubst S)
 
 /-! ## Annotation maps and sweeps -/
-
 
 /-- Skolemize the annotations of `e`, leaving each operator annotation unchanged unless the
     operator is `selfName`. -/

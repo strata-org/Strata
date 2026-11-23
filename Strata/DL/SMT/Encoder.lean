@@ -103,6 +103,25 @@ def smtReservedKeywords : List String :=
 def smtReservedKeywordsSet : Std.HashSet String :=
   Std.HashSet.ofList smtReservedKeywords
 
+/-- Name prefixes of the theory function symbols of cvc5 and z3 beyond those in
+    `smtReservedKeywords` (sets, bags, sequences, relations, tables, tuples, nullables,
+    finite fields, floating point). cvc5 rejects a `declare-fun` that shadows one. -/
+def solverTheoryPrefixes : List String :=
+  ["set.", "bag.", "seq.", "rel.", "table.", "tuple.", "nullable.", "ff.", "fp.", "char."]
+
+/-- Whether `name` must not be emitted as a user function's SMT-LIB name: it is a
+    reserved keyword, cvc5's tuple constructor `tuple`, or has a theory symbol's
+    prefix. -/
+def isSolverSymbol (name : String) : Bool :=
+  smtReservedKeywordsSet.contains name || name == "tuple" ||
+    solverTheoryPrefixes.any (name.startsWith ·)
+
+/-- `Strata.Name.findUnique` that also avoids `isSolverSymbol` names. A disambiguated
+    name (`set.member@1`) is never a theory symbol, so one suffix is enough. -/
+def findUniqueSMTName (baseName : String) (usedNames : Std.HashSet String) : String :=
+  let used := if isSolverSymbol baseName then usedNames.insert baseName else usedNames
+  Strata.Name.findUnique baseName 1 used
+
 structure EncoderState where
   /-- Maps a `UF` to its abbreviated SMT identifier (e.g., `f.0`, `f.1`).
       Holds every function emitted so far, whether as an uninterpreted
@@ -148,7 +167,7 @@ def ufNum   : EncoderM Nat := do return (← get).functions.size
     registry (and SMT reserved keywords) for collisions, disambiguates via
     `@N` suffixes, registers the result, and returns it. -/
 def uniquify (baseName : String) : EncoderM String := do
-  let id := Strata.Name.findUnique baseName 1 (← get).usedNames
+  let id := findUniqueSMTName baseName (← get).usedNames
   modify fun s => { s with usedNames := s.usedNames.insert id }
   return id
 

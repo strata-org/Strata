@@ -76,6 +76,8 @@ info:
 Obligation: Test_ensures_0
 Property: assert
 Result: ❌ fail
+Model:
+(a@1, |@S_0|) (b@1, |@S_1|)
 -/
 #guard_msgs in
 #eval Core.verify constructorInjection

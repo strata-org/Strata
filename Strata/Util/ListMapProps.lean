@@ -57,6 +57,13 @@ theorem ListMap.values_eq_map_snd (m : ListMap α β) : m.values = m.map Prod.sn
   | nil => rfl
   | cons p t ih => cases p; simp [ListMap.values, ih]
 
+/-- Mapping `g` over the values of a map maps it over its list of values. -/
+theorem ListMap.values_map_snd {γ : Type _} (m : ListMap α β) (g : β → γ) :
+    ListMap.values (List.map (fun p => (p.1, g p.2)) m) = m.values.map g := by
+  induction m with
+  | nil => rfl
+  | cons p t ih => simp only [List.map_cons, ListMap.values, ih]
+
 
 /-- Every value in a map has a key. -/
 theorem ListMap.mem_values {α β : Type _} (m : ListMap α β) (c : β)

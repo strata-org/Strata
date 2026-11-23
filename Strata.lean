@@ -44,6 +44,7 @@ import Strata.DL.Imperative.StmtExtendCallBridge
 import Strata.Languages.Core.StmtExtendCallBridgeProps
 /- Code Transforms -/
 import Strata.Transform.CallElimCorrect
+import Strata.Transform.CFGLoopElimProps
 import Strata.Transform.CoreSpecification
 import Strata.Transform.CoreSpecificationProps
 import Strata.Languages.Core.Analysis.ProcedureCorrectness
@@ -229,6 +230,23 @@ import Strata.Languages.Core.InterpreterDomainProps
 import Strata.Languages.Core.InterpreterEvalSound
 import Strata.Languages.Core.FactoryEvalSoundWF
 import Strata.Languages.Core.InterpreterBridgeStatements
+-- Counterexample lifting (CEL): levels (c) model, (b) valuation, (a) run, and back-links
+-- (translations of runs across program transformations)
+import Strata.Languages.Core.Counterexample.Run
+import Strata.Languages.Core.Counterexample.BackLink
+import Strata.Languages.Core.Counterexample.ValuationToRun
+import Strata.Languages.Core.Counterexample.RunProps
+import Strata.Languages.Core.Counterexample.BackLinkChainReplayProps
+import Strata.DL.Imperative.Counterexample.RunProps
+import Strata.DL.Imperative.Counterexample.BackLinkProps
+import Strata.Languages.Core.Counterexample.ModelToValuation
+import Strata.Languages.Core.Counterexample.ModelToValuationProps
+import Strata.Languages.Core.Counterexample.ModelProps
+import Strata.Languages.Core.Counterexample.ModelAnonymousProps
+import Strata.Languages.Core.Counterexample.BackLinkRelSim
+import Strata.Languages.Core.Counterexample.BackLinkRelSimProps
+import Strata.Languages.Core.Counterexample.BackLinkExactProps
+import Strata.Languages.Core.Counterexample.BackLinkExact
 import Strata.Languages.Core.InterpreterCallComplete
 import Strata.Languages.Core.InterpreterCallSound
 import Strata.Languages.Core.InterpreterComplete
@@ -274,6 +292,7 @@ import Strata.DL.Lambda.Denote.LExprDenoteProps
 import Strata.DL.Lambda.Denote.LExprDenoteSubst
 import Strata.DL.Lambda.Denote.LExprDenoteTySubst
 import Strata.DL.Lambda.Denote.LExprSemanticsConsistent
+import Strata.DL.Lambda.LExprTEraseProps
 import Strata.DL.Lambda.LExprTProps
 import Strata.DL.Lambda.LExprTypeSpec
 import Strata.DL.Lambda.LExprTraversal
@@ -303,13 +322,24 @@ import Strata.Languages.Core.Typing.Spec.NamesWF
 import Strata.Languages.Core.Typing.Spec.TypeSpecShared
 import Strata.Languages.Core.Typing.Spec.TypingSpec
 import Strata.Languages.Core.FactoryProps
+import Strata.Languages.Core.Typing.Props.CmdTypeProps
 import Strata.Languages.Core.Typing.Props.DatatypeTypeProps
+import Strata.Languages.Core.Typing.Props.ExprEraseProps
 import Strata.Languages.Core.Typing.Props.FactoryRegistrationProps
 import Strata.Languages.Core.Typing.Props.FunctionTypeProps
 import Strata.Languages.Core.Typing.Props.NamesWFProps
 import Strata.Languages.Core.Typing.Props.ProcSigAgreementProps
+import Strata.Languages.Core.Typing.Props.ProcedureTypeProps
+import Strata.Languages.Core.Typing.Props.ProgramTypeProps
+import Strata.Languages.Core.Typing.Props.SkolemScopeProps
+import Strata.Languages.Core.Typing.Props.SkolemizerProps
+import Strata.Languages.Core.Typing.Props.SourceExprResolveProps
+import Strata.Languages.Core.Typing.Props.StatementEraseProps
+import Strata.Languages.Core.Typing.Props.StatementTypeProps
 import Strata.Languages.Core.Typing.Props.TypeSkolemProps
 import Strata.Languages.Core.Typing.Props.TypingSpecProps
+import Strata.Languages.Core.Typing.Props.WrittenTyVarScopeProps
+import Strata.Languages.Core.Typing.Soundness
 import Strata.Util.Random
 
 import Strata.Examples.Embedded
