@@ -27,8 +27,13 @@ environments (`mergeEnvs`), which `mergeBranches` runs for every kind of configu
   they don't. Both stores must start from the same base store, as every path of one run does.
 * `mergeEnvs_store_denote`: under any model, that value denotes what the then-branch's value
   denotes where the guard is true, and the else-branch's where it is false.
-* `mergeEnvs_pc`: the merged path condition holds under a model iff the guard holds and the
-  then-branch's path condition does, or the guard fails and the else-branch's does.
+* `mergeEnvs_pc`, `mergeEnvs_pc_of_branch`: if the merged path condition holds under a model,
+  the guard holds and the then-branch's path condition does, or the guard fails and the
+  else-branch's does; conversely when, besides, the join definitions the other branch keeps
+  unguarded (`mergeOwn`) hold.
+* `nameJoinValues_spec`, `pcHolds_append`: naming the merged values adds their definitions
+  `s == v`, with fresh symbols `s`, in front of the path condition, and binds each named variable
+  to its symbol; the path condition then holds iff the old one and the definitions do.
 * `mergeEnvs_shape`: a merge succeeds only on branches whose path conditions end in the guard
   (then-branch) or its negation (else-branch) above one shared prefix of the fork's length.
 * `mergeChoices_nil`: a merge of branches that made no choices keeps the record of choices.
@@ -39,8 +44,9 @@ dominating the join declares, keeping the store's base and every other variable'
 (`cfgShape_forMerge_block`), never one that a block dominating the join declares
 (`cfgOutOfScope_not_dominating`).
 
-And the explorer's options at their defaults: `failedCheckStatus_off` (no failed check ends a
-path) and `overPathLimit_none` (no path limit is reached).
+How a step can end a path: `infeasibleStatus_infeasible` (only as infeasible, at a literal
+`false`), and `infeasibleStatus_sound` (then no model satisfies its path condition). And the
+explorer's options at their defaults: `overPathLimit_none` (no path limit is reached).
 -/
 
 namespace Core.SymExec
@@ -52,8 +58,9 @@ public section
 /-- When `mergeEnvs` succeeds, the comparison of the two stores succeeded, and the merged
     environment and path state are built from its result. -/
 private theorem mergeEnvs_some {scfg : ExploreCfg} {j : Join}
-    {ea eb em : @IEnv Expression (symLang scfg)} {sa sb st : PathState} {n : Nat}
-    (h : mergeEnvs j ea eb sa sb = some (em, st, n)) :
+    {ea eb em : @IEnv Expression (symLang scfg)} {sa sb st : PathState}
+    {ds : List (CoreIdent × Expression.Expr)}
+    (h : mergeEnvs j ea eb sa sb = some (em, st, ds)) :
     letI := symLang scfg
     ∃ diffs,
       List.foldlM
@@ -67,10 +74,12 @@ private theorem mergeEnvs_some {scfg : ExploreCfg} {j : Join}
         [] (ea.store.writes.keys ++ eb.store.writes.keys).eraseDups = some diffs ∧
       em = { ea with store := diffs.foldl (fun σ x => σ.update x.fst x.snd) ea.store } ∧
       st = { sa with
-              pc := (List.take (sb.pc.length - j.basePcLen) sb.pc).dropLast.map
-                      (fun x => (x.fst, LExpr.ite symExecLoc j.guard Core.true x.snd)) ++
-                    (List.take (sa.pc.length - j.basePcLen) sa.pc).dropLast.map
-                      (fun x => (x.fst, LExpr.ite symExecLoc j.guard x.snd Core.true)) ++
+              pc := mergeOwn (LExpr.ite symExecLoc j.guard Core.true ·)
+                      (joinDefsOf (List.drop (sa.pc.length - j.basePcLen) sa.pc))
+                      (List.take (sb.pc.length - j.basePcLen) sb.pc).dropLast ++
+                    mergeOwn (LExpr.ite symExecLoc j.guard · Core.true)
+                      (joinDefsOf (List.drop (sa.pc.length - j.basePcLen) sa.pc))
+                      (List.take (sa.pc.length - j.basePcLen) sa.pc).dropLast ++
                     List.drop (sa.pc.length - j.basePcLen) sa.pc,
               segment := [], merged := true,
               choices := mergeChoices j sa.choices sb.choices,
@@ -87,22 +96,27 @@ private theorem mergeEnvs_some {scfg : ExploreCfg} {j : Join}
     exact ⟨diffs, hd, h.1.symm, h.2.1.symm⟩
 
 /-- `mergeBranches` waits for both branches at the join, takes what each brings to the merge
-    (`ProcBodyShape.forMerge`), merges them with `mergeEnvs`, and continues at the then-branch's
-    configuration. -/
+    (`ProcBodyShape.forMerge`), merges them with `mergeEnvs`, names the merged values
+    (`nameJoinValues`, counting from the join counter `joinNext`, with the types each branch
+    recorded), and continues at the then-branch's configuration. -/
 theorem mergeBranches_eq {scfg : ExploreCfg} {C : Type} {sh : ProcBodyShape scfg C} {j : Join}
-    {a b m : Entry C} {n : Nat} (h : mergeBranches sh j a b = some (m, n)) :
-    ∃ ea eb em, sh.joinEnv a.cfg = some ea ∧ sh.joinEnv b.cfg = some eb ∧
+    {joinNext : Nat} {a b m : Entry C} {n u k : Nat}
+    (h : mergeBranches sh j joinNext a b = some (m, n, u, k)) :
+    ∃ ea eb em st ds, sh.joinEnv a.cfg = some ea ∧ sh.joinEnv b.cfg = some eb ∧
       mergeEnvs j (sh.forMerge j.site ea) (sh.forMerge j.site eb) a.st b.st =
-        some (em, m.st, n) ∧
-      m.cfg = sh.setJoinEnv a.cfg em := by
+        some (em, st, ds) ∧ n = ds.length ∧
+      m.cfg = sh.setJoinEnv a.cfg (nameJoinValues joinNext a.st.types b.st.types ds em st).1 ∧
+      m.st = (nameJoinValues joinNext a.st.types b.st.types ds em st).2.1 ∧
+      u = (nameJoinValues joinNext a.st.types b.st.types ds em st).2.2.1 ∧
+      k = (nameJoinValues joinNext a.st.types b.st.types ds em st).2.2.2 := by
   unfold mergeBranches at h
   split at h
   · rename_i ea eb hea heb
     split at h
-    · rename_i em st k hm
+    · rename_i em st ds hm
       simp only [Option.some.injEq, Prod.mk.injEq] at h
-      obtain ⟨rfl, rfl⟩ := h
-      exact ⟨ea, eb, em, hea, heb, hm, rfl⟩
+      obtain ⟨rfl, rfl, rfl, rfl⟩ := h
+      exact ⟨ea, eb, em, st, ds, hea, heb, hm, rfl, rfl, rfl, rfl, rfl⟩
     · cases h
   · cases h
 
@@ -350,8 +364,9 @@ private theorem foldlM_diffs {scfg : ExploreCfg} (g : Expression.Expr)
     on it (ignoring source locations), and becomes `if guard then va else vb` when they don't.
     Both stores must start from the same base store, as every path of one run does. -/
 theorem mergeEnvs_store {scfg : ExploreCfg} {j : Join}
-    {ea eb em : @IEnv Expression (symLang scfg)} {sa sb st : PathState} {n : Nat}
-    (h : mergeEnvs j ea eb sa sb = some (em, st, n)) :
+    {ea eb em : @IEnv Expression (symLang scfg)} {sa sb st : PathState}
+    {ds : List (CoreIdent × Expression.Expr)}
+    (h : mergeEnvs j ea eb sa sb = some (em, st, ds)) :
     letI := symLang scfg
     ea.store.base = eb.store.base →
     ∀ {x : CoreIdent} {va vb : Expression.Expr},
@@ -390,8 +405,9 @@ theorem mergeEnvs_store {scfg : ExploreCfg} {j : Join}
 /-- When both branches bind `x`, to `va` and `vb`, under every model the merged value of `x`
     denotes `va` where the guard holds and `vb` where it doesn't. -/
 theorem mergeEnvs_store_denote {scfg : ExploreCfg} {j : Join}
-    {ea eb em : @IEnv Expression (symLang scfg)} {sa sb st : PathState} {n : Nat}
-    (h : mergeEnvs j ea eb sa sb = some (em, st, n)) :
+    {ea eb em : @IEnv Expression (symLang scfg)} {sa sb st : PathState}
+    {ds : List (CoreIdent × Expression.Expr)}
+    (h : mergeEnvs j ea eb sa sb = some (em, st, ds)) :
     letI := symLang scfg
     ea.store.base = eb.store.base →
     ∀ {x : CoreIdent} {va vb : Expression.Expr},
@@ -419,24 +435,60 @@ theorem mergeEnvs_store_denote {scfg : ExploreCfg} {j : Join}
   · rw [ite_eq_right_of_eq_false _ _ (eq_false hab)]
     exact ⟨.ite hg ha hb, denote_ite .nil hg ha hb _⟩
 
-/-- The merged path condition holds under a model exactly when the guard and the then-branch's
-    path condition hold, or the guard fails and the else-branch's holds, for branches whose path
-    conditions are given as their own entries, then the guard (then-branch) or its negation
-    (else-branch), then one shared prefix of length `j.basePcLen`; the model's truth predicate
-    must respect `negate`, `if` and `true`. -/
-private theorem mergeEnvs_pc_of_shape {scfg : ExploreCfg} {j : Join}
-    {ea eb em : @IEnv Expression (symLang scfg)} {sa sb st : PathState} {n : Nat}
-    (h : mergeEnvs j ea eb sa sb = some (em, st, n))
-    {holds : Expression.Expr → Prop} (hneg : NegSound holds)
-    (hite : ∀ g t e,
-      holds (LExpr.ite symExecLoc g t e) ↔ (holds g ∧ holds t) ∨ (¬ holds g ∧ holds e))
-    (htrue : holds Core.true)
+/-- Each entry `mergeOwn` returns is an entry of `own`, as it is or under `wrap`, and each entry
+    of `own` is returned in one of those two forms. -/
+private theorem mergeOwn_mem (wrap : Expression.Expr → Expression.Expr)
+    (defined : Std.HashSet String) (own : List (String × Expression.Expr)) :
+    (∀ q ∈ mergeOwn wrap defined own, ∃ p ∈ own, q = p ∨ q = (p.1, wrap p.2)) ∧
+    (∀ p ∈ own, p ∈ mergeOwn wrap defined own ∨ (p.1, wrap p.2) ∈ mergeOwn wrap defined own) := by
+  unfold mergeOwn
+  induction own with
+  | nil => simp [mergeOwn.go]
+  | cons a rest ih =>
+    obtain ⟨ih1, ih2⟩ := ih
+    obtain ⟨l, e⟩ := a
+    simp only [mergeOwn.go]
+    generalize hr : mergeOwn.go wrap defined rest = r at ih1 ih2 ⊢
+    obtain ⟨d, out⟩ := r
+    simp only at ih1 ih2 ⊢
+    split
+    · refine ⟨?_, ?_⟩
+      · intro q hq
+        rcases List.mem_cons.1 hq with rfl | hq
+        · exact ⟨(l, e), List.mem_cons_self .., Or.inl rfl⟩
+        · obtain ⟨p, hp, h⟩ := ih1 q hq
+          exact ⟨p, List.mem_cons_of_mem _ hp, h⟩
+      · intro p hp
+        rcases List.mem_cons.1 hp with rfl | hp
+        · exact Or.inl (List.mem_cons_self ..)
+        · rcases ih2 p hp with h | h
+          · exact Or.inl (List.mem_cons_of_mem _ h)
+          · exact Or.inr (List.mem_cons_of_mem _ h)
+    · refine ⟨?_, ?_⟩
+      · intro q hq
+        rcases List.mem_cons.1 hq with rfl | hq
+        · exact ⟨(l, e), List.mem_cons_self .., Or.inr rfl⟩
+        · obtain ⟨p, hp, h⟩ := ih1 q hq
+          exact ⟨p, List.mem_cons_of_mem _ hp, h⟩
+      · intro p hp
+        rcases List.mem_cons.1 hp with rfl | hp
+        · exact Or.inr (List.mem_cons_self ..)
+        · rcases ih2 p hp with h | h
+          · exact Or.inl (List.mem_cons_of_mem _ h)
+          · exact Or.inr (List.mem_cons_of_mem _ h)
+
+/-- The merged path condition, for branches whose path conditions have the shape merging relies
+    on: each branch's own entries as `mergeOwn` keeps them, then the shared prefix. -/
+private theorem mergeEnvs_pc_eq {scfg : ExploreCfg} {j : Join}
+    {ea eb em : @IEnv Expression (symLang scfg)} {sa sb st : PathState}
+    {ds : List (CoreIdent × Expression.Expr)}
+    (h : mergeEnvs j ea eb sa sb = some (em, st, ds))
     {ownA ownB base : List (String × Expression.Expr)} {la lb : String}
     (hpa : sa.pc = ownA ++ (la, j.guard) :: base)
     (hpb : sb.pc = ownB ++ (lb, negate j.guard) :: base)
     (hlen : base.length = j.basePcLen) :
-    PCHolds holds st ↔
-      (holds j.guard ∧ PCHolds holds sa) ∨ (¬ holds j.guard ∧ PCHolds holds sb) := by
+    st.pc = mergeOwn (LExpr.ite symExecLoc j.guard Core.true ·) (joinDefsOf base) ownB ++
+      mergeOwn (LExpr.ite symExecLoc j.guard · Core.true) (joinDefsOf base) ownA ++ base := by
   obtain ⟨_, _, _, rfl⟩ := mergeEnvs_some h
   have own : ∀ (o : List (String × Expression.Expr)) (l : String) (g : Expression.Expr),
       (List.take ((o ++ (l, g) :: base).length - j.basePcLen) (o ++ (l, g) :: base)).dropLast = o ∧
@@ -449,43 +501,106 @@ private theorem mergeEnvs_pc_of_shape {scfg : ExploreCfg} {j : Join}
     exact ⟨rfl, rfl⟩
   obtain ⟨hoa, hba⟩ := own ownA la j.guard
   obtain ⟨hob, -⟩ := own ownB lb (negate j.guard)
-  simp only [PCHolds, hpa, hpb, hoa, hba, hob, List.mem_append, List.mem_map, List.mem_cons]
+  simp only [hpa, hpb, hoa, hba, hob]
+
+/-- If the merged path condition holds under a model, the guard holds and the then-branch's path
+    condition does, or the guard fails and the else-branch's does. This needs the model's truth
+    predicate to respect `negate` (`NegSound`) and `if`; the form of the two path conditions it
+    relies on, `mergeEnvs` checks (`mergeEnvs_shape`). -/
+private theorem mergeEnvs_pc_of_shape {scfg : ExploreCfg} {j : Join}
+    {ea eb em : @IEnv Expression (symLang scfg)} {sa sb st : PathState}
+    {ds : List (CoreIdent × Expression.Expr)}
+    (h : mergeEnvs j ea eb sa sb = some (em, st, ds))
+    {holds : Expression.Expr → Prop} (hneg : NegSound holds)
+    (hite : ∀ g t e,
+      holds (LExpr.ite symExecLoc g t e) ↔ (holds g ∧ holds t) ∨ (¬ holds g ∧ holds e))
+    {ownA ownB base : List (String × Expression.Expr)} {la lb : String}
+    (hpa : sa.pc = ownA ++ (la, j.guard) :: base)
+    (hpb : sb.pc = ownB ++ (lb, negate j.guard) :: base)
+    (hlen : base.length = j.basePcLen) :
+    PCHolds holds st →
+      (holds j.guard ∧ PCHolds holds sa) ∨ (¬ holds j.guard ∧ PCHolds holds sb) := by
+  have hst := mergeEnvs_pc_eq h hpa hpb hlen
+  intro hm
+  have inSt : ∀ p, p ∈ st.pc → holds p.2 := hm
+  rw [hst] at inSt
   by_cases hg : holds j.guard
-  · constructor
-    · intro hm
-      refine Or.inl ⟨hg, ?_⟩
-      rintro p (hp | hp | hp)
-      · have := hm (p.1, LExpr.ite symExecLoc j.guard p.2 Core.true)
-          (Or.inl (Or.inr ⟨p, hp, rfl⟩))
+  · refine Or.inl ⟨hg, ?_⟩
+    intro p hp
+    rw [hpa] at hp
+    rcases List.mem_append.1 hp with hp | hp
+    · rcases (mergeOwn_mem _ (joinDefsOf base) ownA).2 p hp with hk | hw
+      · exact inSt p (List.mem_append.2 (Or.inl (List.mem_append.2 (Or.inr hk))))
+      · have := inSt _ (List.mem_append.2 (Or.inl (List.mem_append.2 (Or.inr hw))))
         rcases (hite _ _ _).1 this with ⟨_, h⟩ | ⟨h, _⟩
         · exact h
         · exact absurd hg h
-      · rw [hp]; exact hg
-      · exact hm p (Or.inr hp)
-    · rintro (⟨-, ha⟩ | ⟨h, _⟩)
-      · rintro p ((⟨q, -, rfl⟩ | ⟨q, hq, rfl⟩) | hp)
-        · exact (hite _ _ _).2 (Or.inl ⟨hg, htrue⟩)
-        · exact (hite _ _ _).2 (Or.inl ⟨hg, ha q (Or.inl hq)⟩)
-        · exact ha p (Or.inr (Or.inr hp))
-      · exact absurd hg h
-  · have hng : holds (negate j.guard) := (hneg _).2 hg
-    constructor
-    · intro hm
-      refine Or.inr ⟨hg, ?_⟩
-      rintro p (hp | hp | hp)
-      · have := hm (p.1, LExpr.ite symExecLoc j.guard Core.true p.2)
-          (Or.inl (Or.inl ⟨p, hp, rfl⟩))
+    · rcases List.mem_cons.1 hp with rfl | hp
+      · exact hg
+      · exact inSt p (List.mem_append.2 (Or.inr hp))
+  · refine Or.inr ⟨hg, ?_⟩
+    intro p hp
+    rw [hpb] at hp
+    rcases List.mem_append.1 hp with hp | hp
+    · rcases (mergeOwn_mem _ (joinDefsOf base) ownB).2 p hp with hk | hw
+      · exact inSt p (List.mem_append.2 (Or.inl (List.mem_append.2 (Or.inl hk))))
+      · have := inSt _ (List.mem_append.2 (Or.inl (List.mem_append.2 (Or.inl hw))))
         rcases (hite _ _ _).1 this with ⟨h, _⟩ | ⟨_, h⟩
         · exact absurd h hg
         · exact h
-      · rw [hp]; exact hng
-      · exact hm p (Or.inr hp)
-    · rintro (⟨h, _⟩ | ⟨-, hb⟩)
-      · exact absurd h hg
-      · rintro p ((⟨q, hq, rfl⟩ | ⟨q, -, rfl⟩) | hp)
-        · exact (hite _ _ _).2 (Or.inr ⟨hg, hb q (Or.inl hq)⟩)
-        · exact (hite _ _ _).2 (Or.inr ⟨hg, htrue⟩)
-        · exact hb p (Or.inr (Or.inr hp))
+    · rcases List.mem_cons.1 hp with rfl | hp
+      · exact (hneg _).2 hg
+      · exact inSt p (List.mem_append.2 (Or.inr hp))
+
+/-- The merged path condition holds under a model when the guard and the then-branch's path
+    condition hold, or the guard fails and the else-branch's holds, and the entries of the other
+    branch that the merged path condition holds unguarded (its join definitions, `mergeOwn`) hold
+    too. -/
+private theorem mergeEnvs_pc_of_branch_of_shape {scfg : ExploreCfg} {j : Join}
+    {ea eb em : @IEnv Expression (symLang scfg)} {sa sb st : PathState}
+    {ds : List (CoreIdent × Expression.Expr)}
+    (h : mergeEnvs j ea eb sa sb = some (em, st, ds))
+    {holds : Expression.Expr → Prop}
+    (hite : ∀ g t e,
+      holds (LExpr.ite symExecLoc g t e) ↔ (holds g ∧ holds t) ∨ (¬ holds g ∧ holds e))
+    (htrue : holds Core.true)
+    {ownA ownB base : List (String × Expression.Expr)} {la lb : String}
+    (hpa : sa.pc = ownA ++ (la, j.guard) :: base)
+    (hpb : sb.pc = ownB ++ (lb, negate j.guard) :: base)
+    (hlen : base.length = j.basePcLen) :
+    (holds j.guard ∧ PCHolds holds sa ∧ ∀ p ∈ ownB, p ∈ st.pc → holds p.2) ∨
+      (¬ holds j.guard ∧ PCHolds holds sb ∧ ∀ p ∈ ownA, p ∈ st.pc → holds p.2) →
+      PCHolds holds st := by
+  have hst := mergeEnvs_pc_eq h hpa hpb hlen
+  rintro (⟨hg, ha, hB⟩ | ⟨hg, hb, hA⟩) p hp
+  · have hp' := hp
+    rw [hst] at hp'
+    rcases List.mem_append.1 hp' with hp' | hp'
+    · rcases List.mem_append.1 hp' with hq | hq
+      · obtain ⟨q, hq', h⟩ := (mergeOwn_mem _ (joinDefsOf base) ownB).1 p hq
+        rcases h with h | h
+        · subst h; exact hB p hq' hp
+        · subst h; exact (hite _ _ _).2 (Or.inl ⟨hg, htrue⟩)
+      · obtain ⟨q, hq', h⟩ := (mergeOwn_mem _ (joinDefsOf base) ownA).1 p hq
+        have hqa : holds q.2 := ha q (by rw [hpa]; exact List.mem_append.2 (Or.inl hq'))
+        rcases h with h | h
+        · subst h; exact hqa
+        · subst h; exact (hite _ _ _).2 (Or.inl ⟨hg, hqa⟩)
+    · exact ha p (by rw [hpa]; exact List.mem_append.2 (Or.inr (List.mem_cons_of_mem _ hp')))
+  · have hp' := hp
+    rw [hst] at hp'
+    rcases List.mem_append.1 hp' with hp' | hp'
+    · rcases List.mem_append.1 hp' with hq | hq
+      · obtain ⟨q, hq', h⟩ := (mergeOwn_mem _ (joinDefsOf base) ownB).1 p hq
+        have hqb : holds q.2 := hb q (by rw [hpb]; exact List.mem_append.2 (Or.inl hq'))
+        rcases h with h | h
+        · subst h; exact hqb
+        · subst h; exact (hite _ _ _).2 (Or.inr ⟨hg, hqb⟩)
+      · obtain ⟨q, hq', h⟩ := (mergeOwn_mem _ (joinDefsOf base) ownA).1 p hq
+        rcases h with h | h
+        · subst h; exact hA p hq' hp
+        · subst h; exact (hite _ _ _).2 (Or.inr ⟨hg, htrue⟩)
+    · exact hb p (by rw [hpb]; exact List.mem_append.2 (Or.inr (List.mem_cons_of_mem _ hp')))
 
 /-- `isNegationOf ng g` holds only when `ng` is `negate g`. -/
 private theorem isNegationOf_eq {ng g : Expression.Expr} (h : isNegationOf ng g = true) :
@@ -503,8 +618,9 @@ private theorem isNegationOf_eq {ng g : Expression.Expr} (h : isNegationOf ng g 
     `j.basePcLen`; the else-branch's is its own entries, then the guard's negation, then the same
     `base` (`mergeShapeOk`). -/
 theorem mergeEnvs_shape {scfg : ExploreCfg} {j : Join}
-    {ea eb em : @IEnv Expression (symLang scfg)} {sa sb st : PathState} {n : Nat}
-    (h : mergeEnvs j ea eb sa sb = some (em, st, n)) :
+    {ea eb em : @IEnv Expression (symLang scfg)} {sa sb st : PathState}
+    {ds : List (CoreIdent × Expression.Expr)}
+    (h : mergeEnvs j ea eb sa sb = some (em, st, ds)) :
     ∃ (ownA ownB base : List (String × Expression.Expr)) (la lb : String),
       sa.pc = ownA ++ (la, j.guard) :: base ∧ sb.pc = ownB ++ (lb, negate j.guard) :: base ∧
       base.length = j.basePcLen := by
@@ -530,27 +646,231 @@ theorem mergeEnvs_shape {scfg : ExploreCfg} {j : Join}
   | [], _, hok => simp at hok
   | _ :: _, [], hok => simp at hok
 
-/-- The merged path condition holds under a model exactly when the guard and the then-branch's
-    path condition hold, or the guard fails and the else-branch's holds. This needs the model's
-    truth predicate to respect `negate` (`NegSound`), `if`, and `true`; the form of the two path
-    conditions it relies on, `mergeEnvs` checks (`mergeEnvs_shape`). -/
+/-- If the merged path condition holds under a model, the guard and the then-branch's path
+    condition hold, or the guard fails and the else-branch's holds. This needs the model's truth
+    predicate to respect `negate` (`NegSound`) and `if`; the form of the two path conditions it
+    relies on, `mergeEnvs` checks (`mergeEnvs_shape`). -/
 theorem mergeEnvs_pc {scfg : ExploreCfg} {j : Join}
-    {ea eb em : @IEnv Expression (symLang scfg)} {sa sb st : PathState} {n : Nat}
-    (h : mergeEnvs j ea eb sa sb = some (em, st, n))
+    {ea eb em : @IEnv Expression (symLang scfg)} {sa sb st : PathState}
+    {ds : List (CoreIdent × Expression.Expr)}
+    (h : mergeEnvs j ea eb sa sb = some (em, st, ds))
     {holds : Expression.Expr → Prop} (hneg : NegSound holds)
+    (hite : ∀ g t e,
+      holds (LExpr.ite symExecLoc g t e) ↔ (holds g ∧ holds t) ∨ (¬ holds g ∧ holds e)) :
+    PCHolds holds st →
+      (holds j.guard ∧ PCHolds holds sa) ∨ (¬ holds j.guard ∧ PCHolds holds sb) := by
+  obtain ⟨_, _, _, _, _, hpa, hpb, hlen⟩ := mergeEnvs_shape h
+  exact mergeEnvs_pc_of_shape h hneg hite hpa hpb hlen
+
+/-- With the branches' own entries `ownA` and `ownB` (`mergeEnvs_shape`): the merged path
+    condition holds under a model when the guard and the then-branch's path condition hold,
+    or the guard fails and the else-branch's holds, and the other branch's entries that the
+    merged path condition holds unguarded (its join definitions, `mergeOwn`) hold too. This
+    needs the model's truth predicate to respect `if` and `true`. -/
+theorem mergeEnvs_pc_of_branch {scfg : ExploreCfg} {j : Join}
+    {ea eb em : @IEnv Expression (symLang scfg)} {sa sb st : PathState}
+    {ds : List (CoreIdent × Expression.Expr)}
+    (h : mergeEnvs j ea eb sa sb = some (em, st, ds))
+    {holds : Expression.Expr → Prop}
     (hite : ∀ g t e,
       holds (LExpr.ite symExecLoc g t e) ↔ (holds g ∧ holds t) ∨ (¬ holds g ∧ holds e))
     (htrue : holds Core.true) :
-    PCHolds holds st ↔
-      (holds j.guard ∧ PCHolds holds sa) ∨ (¬ holds j.guard ∧ PCHolds holds sb) := by
-  obtain ⟨_, _, _, _, _, hpa, hpb, hlen⟩ := mergeEnvs_shape h
-  exact mergeEnvs_pc_of_shape h hneg hite htrue hpa hpb hlen
+    ∃ (ownA ownB base : List (String × Expression.Expr)) (la lb : String),
+      sa.pc = ownA ++ (la, j.guard) :: base ∧ sb.pc = ownB ++ (lb, negate j.guard) :: base ∧
+      ((holds j.guard ∧ PCHolds holds sa ∧ ∀ p ∈ ownB, p ∈ st.pc → holds p.2) ∨
+        (¬ holds j.guard ∧ PCHolds holds sb ∧ ∀ p ∈ ownA, p ∈ st.pc → holds p.2) →
+        PCHolds holds st) := by
+  obtain ⟨ownA, ownB, base, la, lb, hpa, hpb, hlen⟩ := mergeEnvs_shape h
+  exact ⟨ownA, ownB, base, la, lb, hpa, hpb,
+    mergeEnvs_pc_of_branch_of_shape h hite htrue hpa hpb hlen⟩
 
-/-- With `endOnFailedChecks` off, no failed check ends a path. -/
-theorem failedCheckStatus_off {scfg : ExploreCfg} (h : scfg.endOnFailedChecks = false)
-    (before : List (String × Expression.Expr)) (st : PathState) :
-    failedCheckStatus scfg before st = none := by
-  simp [failedCheckStatus, h]
+/-- One naming step either leaves the store, the path condition, the counter and the named
+    values alone (a function-typed or untyped value; only the unnamed count may change), binds
+    the variable to the symbol of a value named earlier at the join that equals its value up to
+    source locations, or binds it to a fresh symbol numbered `k0` and defines that symbol. -/
+private theorem nameJoinStep_cases {scfg : ExploreCfg}
+    (ta tb : Std.TreeMap CoreIdent LMonoTy identCmp)
+    (σ0 : @IStore Expression (symLang scfg)) (pc0 : List (String × Expression.Expr))
+    (k0 u0 : Nat) (n0 : List (Expression.Expr × Expression.Expr)) (x : CoreIdent)
+    (v : Expression.Expr) :
+    letI := symLang scfg
+    let r := nameJoinStep (scfg := scfg) ta tb (σ0, pc0, k0, u0, n0) (x, v)
+    (r.1 = σ0 ∧ r.2.1 = pc0 ∧ r.2.2.1 = k0 ∧ r.2.2.2.2 = n0) ∨
+    (∃ v' s, (v', s) ∈ n0 ∧ v'.beqIgnoringMetadata v = true ∧
+      r = (σ0.update x s, pc0, k0, u0, n0)) ∨
+    (∃ ty, r = (σ0.update x (mkSym scfg.joinPre k0 ty x.name),
+      (joinValueLabel x, LExpr.eq symExecLoc (mkSym scfg.joinPre k0 ty x.name) v) :: pc0, k0 + 1,
+      u0, (v, mkSym scfg.joinPre k0 ty x.name) :: n0)) := by
+  letI := symLang scfg
+  simp only [nameJoinStep]
+  repeat' split
+  all_goals first
+    | exact Or.inl ⟨rfl, rfl, rfl, rfl⟩
+    | exact Or.inr (Or.inr ⟨_, rfl⟩)
+    | exact Or.inr (Or.inl ⟨_, _, List.mem_of_find?_eq_some ‹List.find? _ n0 = some _›,
+        by have h := List.find?_some ‹List.find? _ n0 = some _›
+           simp only [Bool.and_eq_true] at h
+           exact h.1, rfl⟩)
+
+/-- What naming a join's merged values does, from store `σ0`, path condition `pc0`, counter `k0`
+    and values `n0` named so far (each defined in `pc0`): it adds definitions `defs` in front of
+    `pc0`, each `s == v` for the merged value `v` of some variable of `ds` and a symbol `s`
+    numbered from `k0` up to below the final count; and each variable keeps its value or is bound
+    to a symbol defined in the final path condition as a value equal to its merged value up to
+    source locations. -/
+private theorem nameJoinStep_fold {scfg : ExploreCfg}
+    (ta tb : Std.TreeMap CoreIdent LMonoTy identCmp)
+    (ds : List (CoreIdent × Expression.Expr)) :
+    letI := symLang scfg
+    ∀ (σ0 : IStore Expression) (pc0 : List (String × Expression.Expr)) (k0 u0 : Nat)
+      (n0 : List (Expression.Expr × Expression.Expr)),
+    (∀ p ∈ n0, ∃ l, (l, LExpr.eq symExecLoc p.2 p.1) ∈ pc0) →
+    let r := ds.foldl (nameJoinStep (scfg := scfg) ta tb) (σ0, pc0, k0, u0, n0)
+    ∃ defs : List (String × Expression.Expr),
+      r.2.1 = defs ++ pc0 ∧ k0 ≤ r.2.2.1 ∧
+      (∀ d ∈ defs, ∃ x v ty k, (x, v) ∈ ds ∧ k0 ≤ k ∧ k < r.2.2.1 ∧
+        d = (joinValueLabel x, LExpr.eq symExecLoc (mkSym scfg.joinPre k ty x.name) v)) ∧
+      (∀ y, r.1.get y = σ0.get y ∨
+        ∃ s v v' l, r.1.get y = some s ∧ (y, v) ∈ ds ∧ v'.beqIgnoringMetadata v = true ∧
+          (l, LExpr.eq symExecLoc s v') ∈ r.2.1) := by
+  letI := symLang scfg
+  induction ds with
+  | nil => intro σ0 pc0 k0 u0 n0 _; exact ⟨[], rfl, Nat.le_refl _, by simp, fun _ => Or.inl rfl⟩
+  | cons p ds ih =>
+    intro σ0 pc0 k0 u0 n0 hn
+    obtain ⟨x, v⟩ := p
+    simp only [List.foldl_cons]
+    generalize hr0 : nameJoinStep (scfg := scfg) ta tb (σ0, pc0, k0, u0, n0) (x, v) = r0
+    have hc := nameJoinStep_cases (scfg := scfg) ta tb σ0 pc0 k0 u0 n0 x v
+    simp only [hr0] at hc
+    rcases hc with ⟨h1, h2, h3, h4⟩ | ⟨v', s, hm, hb, hr⟩ | ⟨ty, hr⟩
+    · have hr : r0 = (σ0, pc0, k0, r0.2.2.2.1, n0) := by
+        obtain ⟨a, b, c, d, e⟩ := r0
+        simp only at h1 h2 h3 h4 ⊢
+        rw [h1, h2, h3, h4]
+      rw [hr]
+      obtain ⟨defs, e1, e2, e3, e4⟩ := ih σ0 pc0 k0 _ n0 hn
+      refine ⟨defs, e1, e2, ?_, ?_⟩
+      · intro d hd
+        obtain ⟨x', v'', ty, k, hm', hk1, hk2, he⟩ := e3 d hd
+        exact ⟨x', v'', ty, k, List.mem_cons_of_mem _ hm', hk1, hk2, he⟩
+      · intro y
+        rcases e4 y with h | ⟨s', w, w', l, hs, hm', hb', hd⟩
+        · exact Or.inl h
+        · exact Or.inr ⟨s', w, w', l, hs, List.mem_cons_of_mem _ hm', hb', hd⟩
+    · rw [hr]
+      obtain ⟨defs, e1, e2, e3, e4⟩ := ih (σ0.update x s) pc0 k0 u0 n0 hn
+      refine ⟨defs, e1, e2, ?_, ?_⟩
+      · intro d hd
+        obtain ⟨x', v'', ty, k, hm', hk1, hk2, he⟩ := e3 d hd
+        exact ⟨x', v'', ty, k, List.mem_cons_of_mem _ hm', hk1, hk2, he⟩
+      · intro y
+        rcases e4 y with h | ⟨s', w, w', l, hs, hm', hb', hd⟩
+        · rw [IStore.get_update] at h
+          by_cases hy : y = x
+          · subst hy
+            obtain ⟨l, hl⟩ := hn _ hm
+            refine Or.inr ⟨s, v, v', l, ?_, List.mem_cons_self, hb, ?_⟩
+            · rw [h]; simp [RStore.update]
+            · rw [e1]; exact List.mem_append_right _ hl
+          · left; rw [h]; simp [RStore.update, hy]
+        · exact Or.inr ⟨s', w, w', l, hs, List.mem_cons_of_mem _ hm', hb', hd⟩
+    · rw [hr]
+      generalize hsym : mkSym scfg.joinPre k0 ty x.name = sym
+      have hn' : ∀ p ∈ (v, sym) :: n0,
+          ∃ l, (l, LExpr.eq symExecLoc p.2 p.1) ∈
+            (joinValueLabel x, LExpr.eq symExecLoc sym v) :: pc0 := by
+        intro p hp
+        rcases List.mem_cons.1 hp with rfl | hp
+        · exact ⟨_, List.mem_cons_self⟩
+        · obtain ⟨l, hl⟩ := hn p hp; exact ⟨l, List.mem_cons_of_mem _ hl⟩
+      obtain ⟨defs, e1, e2, e3, e4⟩ := ih (σ0.update x sym)
+        ((joinValueLabel x, LExpr.eq symExecLoc sym v) :: pc0) (k0 + 1) u0 ((v, sym) :: n0) hn'
+      refine ⟨defs ++ [(joinValueLabel x, LExpr.eq symExecLoc sym v)], by simp [e1], by omega,
+        ?_, ?_⟩
+      · intro d hd
+        rcases List.mem_append.1 hd with hd | hd
+        · obtain ⟨x', v'', ty', k, hm', hk1, hk2, he⟩ := e3 d hd
+          exact ⟨x', v'', ty', k, List.mem_cons_of_mem _ hm', by omega, hk2, he⟩
+        · rw [List.mem_singleton] at hd
+          exact ⟨x, v, ty, k0, List.mem_cons_self, Nat.le_refl _, by omega, by rw [hd, hsym]⟩
+      · intro y
+        rcases e4 y with h | ⟨s', w, w', l, hs, hm', hb', hd⟩
+        · rw [IStore.get_update] at h
+          by_cases hy : y = x
+          · subst hy
+            refine Or.inr ⟨sym, v, v, joinValueLabel y, ?_, List.mem_cons_self,
+              LExpr.beqIgnoringMetadata_refl v, ?_⟩
+            · rw [h]; simp [RStore.update]
+            · rw [e1]; exact List.mem_append_right _ List.mem_cons_self
+          · left; rw [h]; simp [RStore.update, hy]
+        · exact Or.inr ⟨s', w, w', l, hs, List.mem_cons_of_mem _ hm', hb', hd⟩
+
+/-- Naming a join's merged values (`nameJoinValues`) adds definitions `defs` in front of the path
+    condition and keeps the rest of the path state; the join counter only grows: each
+    definition is `s == v` for the merged value `v` of a variable of `ds` and a fresh symbol
+    `s` (`ExploreCfg.joinPre`, numbered from `next` up to below the new counter); each variable
+    keeps its value, or is bound to a symbol the new path condition defines as a value equal to
+    its merged value up to source locations. So the named path condition holds under a model
+    iff the unnamed one and the definitions do (`pcHolds_append`). -/
+theorem nameJoinValues_spec {scfg : ExploreCfg} (next : Nat)
+    (ta tb : Std.TreeMap CoreIdent LMonoTy identCmp)
+    (ds : List (CoreIdent × Expression.Expr)) (env : @IEnv Expression (symLang scfg))
+    (st : PathState) :
+    letI := symLang scfg
+    let r := nameJoinValues next ta tb ds env st
+    ∃ defs : List (String × Expression.Expr),
+      r.2.1 = { st with pc := defs ++ st.pc } ∧ next ≤ r.2.2.2 ∧
+      r.1 = { env with store := r.1.store } ∧
+      (∀ d ∈ defs, ∃ x v ty k, (x, v) ∈ ds ∧ next ≤ k ∧ k < r.2.2.2 ∧
+        d = (joinValueLabel x, LExpr.eq symExecLoc (mkSym scfg.joinPre k ty x.name) v)) ∧
+      (∀ y, r.1.store.get y = env.store.get y ∨
+        ∃ s v v' l, r.1.store.get y = some s ∧ (y, v) ∈ ds ∧
+          v'.beqIgnoringMetadata v = true ∧ (l, LExpr.eq symExecLoc s v') ∈ r.2.1.pc) := by
+  letI := symLang scfg
+  obtain ⟨defs, h1, h2, h3, h4⟩ :=
+    nameJoinStep_fold (scfg := scfg) ta tb ds env.store st.pc next 0 [] (by simp)
+  refine ⟨defs, ?_, h2, rfl, h3, h4⟩
+  simp only [nameJoinValues]
+  rw [h1]
+
+/-- A path condition with entries `defs` in front holds under a model iff the path condition
+    without them does and so do the entries: for naming a join's merged values, the named path
+    condition holds iff the unnamed one and the definitions do (`nameJoinValues_spec`). -/
+theorem pcHolds_append {holds : Expression.Expr → Prop} {st : PathState}
+    {defs : List (String × Expression.Expr)} :
+    PCHolds holds { st with pc := defs ++ st.pc } ↔
+      PCHolds holds st ∧ ∀ d ∈ defs, holds d.2 := by
+  simp only [PCHolds, List.mem_append]
+  exact ⟨fun h => ⟨fun p hp => h p (Or.inr hp), fun d hd => h d (Or.inl hd)⟩,
+    fun ⟨h1, h2⟩ p hp => hp.elim (h2 p) (h1 p)⟩
+
+/-- Ending a path as infeasible is sound: if a step ends its path (`infeasibleStatus`), no model
+    satisfies the path condition the step reached, for a model whose truth predicate holds of no
+    literal `false`. So the path stands for no run, and dropping it loses no run's obligations. -/
+theorem infeasibleStatus_sound {before : List (String × Expression.Expr)} {st : PathState}
+    {s : NodeStatus} (h : infeasibleStatus before st = some s) {holds : Expression.Expr → Prop}
+    (hfalse : ∀ c : Expression.Expr, LExpr.isFalse _ c = true → ¬ holds c) :
+    ¬ PCHolds holds st := by
+  intro hpc
+  unfold infeasibleStatus at h
+  split at h
+  · rename_i l c rest hst
+    have hcl : holds c := hpc (l, c) (by rw [hst]; exact List.mem_cons_self ..)
+    by_cases hf : LExpr.isFalse _ c = true
+    · exact hfalse c hf hcl
+    · simp [hf] at h
+  · cases h
+
+/-- A step's outcome that continues ends its path only as infeasible. -/
+theorem infeasibleStatus_infeasible {before : List (String × Expression.Expr)} {st : PathState}
+    {s : NodeStatus} (h : infeasibleStatus before st = some s) : ∃ l, s = .infeasible l := by
+  unfold infeasibleStatus at h
+  split at h
+  · rename_i l c _ _
+    refine ⟨l, ?_⟩
+    split at h <;> simp_all
+  · cases h
 
 /-- Without a path limit, the explorer is never over it. -/
 theorem overPathLimit_none {scfg : ExploreCfg} {C : Type} (h : scfg.maxPaths = none)

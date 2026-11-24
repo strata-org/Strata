@@ -359,15 +359,15 @@ p2_else: proved
 #guard_msgs in
 #eval printProved exitReorderPgm { Core.VerifyOptions.quiet with symExec := some .always }
 
-/-! A pipeline that lists the declaration, WP, SSA and dead-definition phases by name
-(`Core.nameablePhases`) in place of symbolic evaluation is the order `--vcgen wp` runs, and
-gives the same verdicts. -/
+/-! A pipeline that lists the declaration, WP, SSA and rewrite-loop phases by name
+(`Core.nameablePhases`) in place of symbolic evaluation, and drops common-subexpression
+elimination, is the order `--vcgen wp` runs, and gives the same verdicts. -/
 
-/-- The default order's phase names with the declaration, WP, SSA and dead-definition phases in
-    place of symbolic evaluation and no common-subexpression elimination. -/
+/-- The default order's phase names with the declaration, WP, SSA and rewrite-loop phases in
+    place of symbolic evaluation and without common-subexpression elimination. -/
 private def wpPhaseNames : List String :=
   (Core.corePipelinePhases Core.VerifyOptions.quiet).map Core.phaseName |>.flatMap fun n =>
-    if n == "symbolicEval" then ["declObligations", "wp", "ssa", "deadDefElim"]
+    if n == "symbolicEval" then ["declObligations", "wp", "ssa", "wpLoop"]
     else if n == "commonSubexprElim" then [] else [n]
 
 /-- info: true -/

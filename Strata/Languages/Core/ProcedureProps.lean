@@ -7,6 +7,8 @@ module
 
 public import Strata.Languages.Core.Procedure
 public import Strata.DL.Imperative.StmtCFGCallSemantics
+public import Strata.Languages.Core.StatementSemantics
+import Strata.DL.Imperative.StmtCFGCallSemanticsProps
 import all Strata.Languages.Core.Procedure
 import all Strata.Languages.Core.StatementSemanticsProps
 import Strata.Languages.Core.StatementProps
@@ -14,6 +16,7 @@ import Strata.DL.Lambda.LTyUnifyProps
 import Strata.Util.ListUtilsProps
 import Strata.Util.OrderedSetProps
 import Strata.DL.Imperative.MetaDataProps
+import Strata.Util.ListMapProps
 import Strata.Languages.Core.StatementProps
 import Strata.DL.Lambda.LExprWFProps
 import Strata.DL.Lambda.LTyUnifyProps
@@ -27,6 +30,8 @@ Key results:
 - `Procedure.Header.keys_getInoutParams`, `Procedure.Header.keys_getOutputOnlyParams` —
   the keys of Core's inout and output-only formals are the generic
   `Calls.inoutParams` / `Calls.outputOnlyParams`.
+- `Procedure.withOldSnapshots_inoutParams_eq` — saving `old` copies of the in-out parameters
+  leaves every input and output slot unchanged.
 - `Procedure.renameTypeArgs_names` — renaming type parameters keeps a
   procedure's name and parameter names.
 - `DetCFG.CmdsRel.flatMap_eq` — control-flow graphs whose commands correspond one to one agree
@@ -46,6 +51,10 @@ Key results:
   `Procedure.typeInstantiatedCallee_of_typeArgs_singleton` give the procedure a call to it runs,
   and `Procedure.forall_typeInstantiatedCallee_of_typeArgs_nil` does
   the same for every procedure of a table without polymorphic procedures.
+  `Procedure.typeInstantiatedCallee_eq_some_iff` says a call runs an instance of the procedure,
+  `Procedure.instantiateTypes_spec` gives the formals and body of an instance as those of the
+  procedure under a substitution of monotypes for its type parameters, and
+  `Procedure.instantiateTypes_keys` says an instance keeps the names of the formals.
 -/
 
 public section
@@ -58,6 +67,24 @@ open Lambda
 theorem Procedure.Header.keys_getInoutParams (h : Procedure.Header) :
     ListMap.keys h.getInoutParams = Imperative.Calls.inoutParams (P := Expression) h :=
   listMap_keys_filter _ _
+
+/-- Saving `old` copies of the in-out parameters of a procedure whose inputs and outputs are not
+    named like such copies leaves every input and output slot unchanged. -/
+theorem Procedure.withOldSnapshots_inoutParams_eq {p : Procedure}
+    {σ : Imperative.SemanticStore Expression} {z : Expression.Ident}
+    (hold : p.header.oldNamesFresh)
+    (hz : z ∈ p.header.inputs.keys ++ p.header.outputs.keys) :
+    Imperative.Calls.withOldSnapshots (P := Expression)
+        (Imperative.Calls.inoutParams (P := Expression) p.header) σ z = σ z := by
+  apply Imperative.Calls.withOldSnapshots_eq
+  intro g hg hgz
+  have hg1 : g ∈ p.header.getInoutParams.keys := by
+    rw [Procedure.Header.keys_getInoutParams]
+    exact hg
+  refine hold g hg1 ?_
+  have hgz' : CoreIdent.mkOld g.name = z := hgz
+  rw [hgz']
+  exact hz
 
 /-- A name is an in-out parameter exactly when it is both an input and an output. -/
 theorem Procedure.Header.mem_keys_getInoutParams (h : Procedure.Header) (g : CoreIdent) :
@@ -295,6 +322,95 @@ theorem Procedure.instantiateTypes_of_typeArgs_singleton {proc inst : Procedure}
   rintro ⟨T, rfl, rfl⟩
   simp [Procedure.instantiateTypes, h, hm, Lambda.LTy.toMonoType?, hS]
 
+/-- The keys of the inputs and outputs of an instance of a procedure are those of the
+    procedure. -/
+theorem Procedure.instantiateTypes_keys {proc inst : Procedure} {tys : List Expression.Ty}
+    (h : proc.instantiateTypes tys = some inst) :
+    inst.header.inputs.keys = proc.header.inputs.keys ∧
+      inst.header.outputs.keys = proc.header.outputs.keys := by
+  unfold Procedure.instantiateTypes at h
+  split at h
+  · split at h
+    · cases h; exact ⟨rfl, rfl⟩
+    · cases h
+  split at h
+  · cases h
+  split at h
+  · cases h
+  obtain ⟨ms, -, rfl⟩ := Option.map_eq_some_iff.1 h
+  exact ⟨ListMap.keys_map_values _ _, ListMap.keys_map_values _ _⟩
+
+/-- No parameter of an instance of a procedure is named like the saved starting value of an
+    in-out parameter when none of the procedure's is. -/
+theorem Procedure.instantiateTypes_oldNamesFresh {proc inst : Procedure}
+    {tys : List Expression.Ty} (h : proc.instantiateTypes tys = some inst)
+    (hold : proc.header.oldNamesFresh) : inst.header.oldNamesFresh := by
+  obtain ⟨hin, hout⟩ := Procedure.instantiateTypes_keys h
+  intro g hg
+  have hg' : g ∈ proc.header.getInoutParams.keys := by
+    rw [Procedure.Header.mem_keys_getInoutParams] at hg ⊢
+    rwa [hin, hout] at hg
+  rw [hin, hout]
+  exact hold g hg'
+
+/-- A procedure has an instance at `tys` only if it has no type parameters, or `tys` has as many
+    types as the procedure has type parameters. -/
+theorem Procedure.instantiateTypes_length {proc inst : Procedure} {tys : List Expression.Ty}
+    (h : proc.instantiateTypes tys = some inst) :
+    proc.header.typeArgs = [] ∨ tys.length = proc.header.typeArgs.length := by
+  unfold Procedure.instantiateTypes at h
+  split at h
+  · rename_i hempty
+    exact .inl (List.isEmpty_iff.1 hempty)
+  · split at h
+    · cases h
+    · rename_i hlen
+      exact .inr (Decidable.of_not_not hlen)
+
+/-- An instance of a procedure at type arguments `tys` comes from monotypes `ms` for them: its
+    input and output types are those of the procedure with each type parameter replaced by its
+    monotype, and a structured body is mapped the same way.  A procedure without type
+    parameters is its own instance, where the substitution (of no parameters) is the identity. -/
+theorem Procedure.instantiateTypes_spec {proc inst : Procedure} {tys : List Expression.Ty}
+    (h : proc.instantiateTypes tys = some inst) :
+    ∃ ms, tys.mapM Lambda.LTy.toMonoType? = some ms ∧
+      inst.header.inputs = proc.header.inputs.map (fun q => (q.1, Lambda.LMonoTy.subst
+        (Strata.Util.HMaps.ofScopes [proc.header.typeArgs.zip ms]) q.2)) ∧
+      inst.header.outputs = proc.header.outputs.map (fun q => (q.1, Lambda.LMonoTy.subst
+        (Strata.Util.HMaps.ofScopes [proc.header.typeArgs.zip ms]) q.2)) ∧
+      ∀ ss, proc.body = .structured ss → inst.body = .structured (mapStmtsTys
+        (Lambda.LMonoTy.subst (Strata.Util.HMaps.ofScopes [proc.header.typeArgs.zip ms])) ss) := by
+  unfold Procedure.instantiateTypes at h
+  split at h
+  · rename_i hempty
+    split at h
+    · rename_i htys
+      cases h
+      have hnil : proc.header.typeArgs = [] := List.isEmpty_iff.1 hempty
+      have htysnil : tys = [] := List.isEmpty_iff.1 htys
+      subst htysnil
+      have hid : Lambda.LMonoTy.subst
+          (Strata.Util.HMaps.ofScopes [proc.header.typeArgs.zip ([] : List Lambda.LMonoTy)]) =
+          id := by
+        funext m
+        refine Lambda.LMonoTy.subst_of_hasEmptyScopes ?_ m
+        simp [hnil, Lambda.Subst.hasEmptyScopes, Strata.Util.HMaps.ofScopes]
+      refine ⟨[], rfl, ?_, ?_, ?_⟩
+      · rw [hid]; simp only [id_eq, List.map_id_fun']; rfl
+      · rw [hid]; simp only [id_eq, List.map_id_fun']; rfl
+      · intro ss hss
+        rw [hid, mapStmtsTys_id]
+        exact hss
+    · cases h
+  split at h
+  · cases h
+  split at h
+  · cases h
+  obtain ⟨ms, hms, rfl⟩ := Option.map_eq_some_iff.1 h
+  refine ⟨ms, hms, rfl, rfl, ?_⟩
+  intro ss hss
+  simp only [Procedure.mapTys, hss]
+
 /-- Mapping the types of a procedure by the identity changes only its type parameters, to
     `typeArgs`. -/
 theorem Procedure.mapTys_id (proc : Procedure) (typeArgs : List Lambda.TyIdentifier) :
@@ -324,19 +440,15 @@ theorem Procedure.instantiateTypes_own_typeArgs (proc : Procedure)
     (hm : proc.initTypesMono = true) :
     proc.instantiateTypes (proc.header.typeArgs.map fun a => .forAll [] (.ftvar a)) =
       some { proc with header := { proc.header with typeArgs := [] } } := by
-  have hmapM : ∀ as : List Lambda.TyIdentifier,
-      (as.map fun a => Lambda.LTy.forAll [] (.ftvar a)).mapM Lambda.LTy.toMonoType? =
-        some (as.map .ftvar) := by
-    intro as
-    induction as with
-    | nil => rfl
-    | cons a as ih => simp [List.mapM_cons, ih, Lambda.LTy.toMonoType?]
   by_cases h : proc.header.typeArgs = []
   · obtain ⟨⟨name, ta, inputs, outputs, lemmas⟩, spec, body⟩ := proc
     simp only at h
     subst h
     simp [Procedure.instantiateTypes]
-  · have hsubst : Lambda.LMonoTy.subst
+  · have hmapM : (proc.header.typeArgs.map fun a => Lambda.LTy.forAll [] (.ftvar a)).mapM
+        Lambda.LTy.toMonoType? = some (proc.header.typeArgs.map .ftvar) :=
+      Lambda.mapM_toMonoType?_map_forAll .ftvar proc.header.typeArgs
+    have hsubst : Lambda.LMonoTy.subst
         (Strata.Util.HMaps.ofScopes [proc.header.typeArgs.zip (proc.header.typeArgs.map .ftvar)]) =
         id := funext (Lambda.LMonoTy.subst_ofScopes_self _)
     simp [Procedure.instantiateTypes, h, hm, hmapM, hsubst, Procedure.mapTys_id]
@@ -361,6 +473,16 @@ theorem Procedure.forall_instance_of_typeArgs_singleton {proc : Procedure}
   intro tys inst hinst
   obtain ⟨T, -, rfl⟩ := Procedure.instantiateTypes_of_typeArgs_singleton_inv h hinst
   exact hmk T ▸ hq T
+
+/-- A call at type arguments `tyArgs` to the procedure that the table holds under `n` runs `inst`
+    exactly when `inst` is that procedure's instance at `tyArgs`. -/
+theorem Procedure.typeInstantiatedCallee_eq_some_iff {π : String → Option Procedure}
+    {n : String} {proc inst : Procedure} {tyArgs : Option (List Expression.Ty)}
+    (hπ : π n = some proc) :
+    Imperative.Calls.typeInstantiatedCallee π n tyArgs = some inst ↔
+      proc.instantiateTypes (tyArgs.getD []) = some inst := by
+  simp only [Imperative.Calls.typeInstantiatedCallee, hπ, Option.bind_some]
+  exact Iff.rfl
 
 /-- A call at the one type argument `T` to a procedure with one type parameter `a`, whose body
     declares variables only at monotypes, runs `mk T`, the procedure with `T` substituted for
@@ -417,6 +539,45 @@ theorem Procedure.renameTypeArgs_values (proc : Procedure) (ren : List (String �
     | cons p rest ih =>
       simp only [List.map_cons, ListMap.values, ih]
   exact ⟨hmap _, hmap _⟩
+
+/-- Instantiating a procedure with a structured body, whose declarations are all at monotypes,
+    at monotype arguments, one per type parameter, gives a procedure with a structured body. -/
+theorem Procedure.instantiateTypes_structured {proc : Procedure} {tys : List Expression.Ty}
+    {ss : List Statement} (hlen : tys.length = proc.header.typeArgs.length)
+    (hmono : ∀ ty ∈ tys, ∃ m, ty = .forAll [] m) (hinits : proc.initTypesMono = true)
+    (hbody : proc.body = .structured ss) :
+    ∃ inst ss', proc.instantiateTypes tys = some inst ∧ inst.body = .structured ss' := by
+  have hmapM : ∀ tys : List Expression.Ty, (∀ ty ∈ tys, ∃ m, ty = .forAll [] m) →
+      ∃ ms, tys.mapM LTy.toMonoType? = some ms := by
+    intro tys
+    induction tys with
+    | nil => intro _; exact ⟨[], rfl⟩
+    | cons ty rest ih =>
+      intro hm
+      obtain ⟨m, rfl⟩ := hm ty List.mem_cons_self
+      obtain ⟨ms, hms⟩ := ih (fun ty' hty' => hm ty' (List.mem_cons_of_mem _ hty'))
+      have hcons : (LTy.forAll [] m :: rest).mapM LTy.toMonoType? = some (m :: ms) := by
+        simp only [List.mapM_cons, LTy.toMonoType?, hms]
+        rfl
+      exact ⟨m :: ms, hcons⟩
+  obtain ⟨ms, hms⟩ := hmapM tys hmono
+  by_cases hempty : proc.header.typeArgs.isEmpty = true
+  · have hnil : proc.header.typeArgs = [] := List.isEmpty_iff.1 hempty
+    have hzero : proc.header.typeArgs.length = 0 := by
+      rw [hnil]
+      rfl
+    have htys : tys = [] := List.length_eq_zero_iff.1 (hlen.trans hzero)
+    subst htys
+    have hinst : proc.instantiateTypes [] = some proc := by
+      simp only [Procedure.instantiateTypes, hempty, List.isEmpty_nil, ite_true]
+    exact ⟨proc, ss, hinst, hbody⟩
+  · refine ⟨proc.mapTys
+        (LMonoTy.subst (Strata.Util.HMaps.ofScopes [proc.header.typeArgs.zip ms])) [],
+      mapStmtsTys (LMonoTy.subst (Strata.Util.HMaps.ofScopes [proc.header.typeArgs.zip ms])) ss,
+      ?_, ?_⟩
+    · simp only [Procedure.instantiateTypes, hempty, Bool.false_eq_true, ↓reduceIte, hlen,
+        ne_eq, not_true_eq_false, hinits, Bool.not_true, hms, Option.map_some]
+    · simp only [Procedure.mapTys, hbody]
 
 end Core
 

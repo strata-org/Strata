@@ -336,6 +336,11 @@ private theorem runs_forIn [RunRel R] (f : P.Ident → β → WM P (ForInStep β
   | x :: xs, b => by
     rw [List.forIn_cons]
     exact runs_bind (hf x b) fun | .done c => runs_pure c | .yield c => runs_forIn f hf xs c
+/-- `keepInit` relates the state to itself. -/
+private theorem runs_keepInit [RunRel R] (x : P.Ident) (f : Bool) :
+    Runs R (keepInit x f : WM P Bool) :=
+  ⟨fun st _ _ h => (Prod.mk.inj (Except.ok.inj ((keepInit_run x f st).symm.trans h))).2 ▸
+    RunRel.refl st⟩
 end
 
 private local instance (D : List P.Ident) : RunRel (WalkOK D) := ⟨WalkOK.refl D, WalkOK.trans⟩

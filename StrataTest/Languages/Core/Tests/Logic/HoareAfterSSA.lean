@@ -109,7 +109,7 @@ private abbrev xs := growProc.entryParams
 private abbrev al := growProc.oldAliases
 
 /-- The run of the SSA phase on the body, from no names to avoid. -/
-private def growRun := Imperative.WP.ssaEntry ∅ tys xs al growBody
+private def growRun := Imperative.WP.ssaEntry Core.Factory ∅ tys xs al growBody
 
 /-- The entry renaming and the output of the run. -/
 private def growRen : Imperative.WP.Ren Core.Expression := match growRun with
@@ -232,11 +232,11 @@ private theorem int_valueOfTy (f : Core.Expression.Factory) (k : Int) :
 
 /-- The entry of the SSA form is related to the entry of the body by the entry renaming. -/
 private theorem entryEnv_rel {ρ : Env Core.Expression} (h : Entry ρ) :
-    _root_.Core.WP.SSAEntryRel ∅ tys xs al growBody ρ (entryEnv ρ) := by
-  obtain ⟨_, ⟨a, hx, _⟩, b, hy⟩ := h
+    _root_.Core.WP.SSAEntryRel Core.Factory ∅ tys xs al growBody ρ (entryEnv ρ) := by
+  obtain ⟨hp, ⟨a, hx, _⟩, b, hy⟩ := h
   have hx0 : (entryEnv ρ).store x0 = ρ.store xId := by simp [entryEnv]
   have hy1 : (entryEnv ρ).store y1 = ρ.store yId := by simp [entryEnv, show y1 ≠ x0 by decide]
-  refine ⟨rfl, fun z hz => ?_, fun z hz => ?_, fun z hz _ ty hty w hw => ?_, fun z hz => ?_⟩
+  refine ⟨rfl, hp, fun z hz => ?_, fun z hz => ?_, fun z hz _ ty hty w hw => ?_, fun z hz => ?_⟩
   · rw [grow_freeVars] at hz
     simp only [List.mem_cons, List.not_mem_nil, or_false] at hz
     rcases hz with rfl | rfl | rfl | rfl | rfl | rfl <;>
@@ -266,7 +266,8 @@ private theorem entryEnv_rel {ρ : Env Core.Expression} (h : Entry ρ) :
     (`Core.WP.ssa_triple`). -/
 theorem grow_assert_holds :
     Core.Logic.Hoare.Triple π testParams Entry growBody (fun _ => True) :=
-  _root_.Core.WP.ssa_triple π testParams (fun _ h => by simp [testParams] at h) ∅ tys xs al
+  _root_.Core.WP.ssa_triple π testParams (fun _ h => by simp [testParams] at h) Core.Factory ∅
+    tys xs al
     (by rw [al_eq]; simp) grow_run (by native_decide) (by native_decide)
     (by rw [grow_freeVars, xs_eq]; decide)
     (fun _ h => h.1)

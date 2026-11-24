@@ -13,8 +13,9 @@ import StrataDDM.Integration.Lean.HashCommands
 
 * End to end: `Strata.Core.verifyProgram` with `symExec` set, once per merge mode, on a program
   with two branches, an assert that fails on one of them and a cover. The default order picks
-  `symExecPipelinePhase` in place of symbolic evaluation, and common subexpression elimination
-  after it (under `per-path` only on a program with a large expression).
+  `symExecPipelinePhase` in place of symbolic evaluation; under `per-path`, common
+  subexpression elimination after it, on a program with a large expression; when paths can
+  merge, no common subexpression elimination.
 * Checks no path reaches (an `exit` jumps past them) get a result each.
 * The path limit: a procedure with more than 10,000 paths is an error, with a hint that depends
   on the merge mode. The branches of an `if` whose `exit`s leave it meet at the end of the
@@ -22,7 +23,8 @@ import StrataDDM.Integration.Lean.HashCommands
 * Checks without source ranges, on programs built as syntax trees: checks that share a label
   and metadata keep their own results; the per-path results of a check that is the only one
   with its label and metadata are grouped.
-* The facts `symExecPipelinePhase` and the common subexpression elimination after it claim:
+* The facts `symExecPipelinePhase` and the common subexpression elimination after it (per path)
+  claim:
   the default order with `symExec` set, cut right after the phase, followed by the
   `assert<Fact>` phase (`Core.assertPhaseFor`) for every fact the phase claims to establish,
   and for every fact it claims to preserve that held before it; each fact it requires is
@@ -68,8 +70,8 @@ private def vcPhases (mode : Core.MergeMode) : List String :=
   ((Core.corePipelinePhases (symOpts mode)).map Core.phaseName).dropWhile (· != "symExec")
 
 #guard vcPhases .never == ["symExec", "betaReduce", "commonSubexprElim"]
-#guard vcPhases (.pathsAbove 2) == ["symExec", "betaReduce", "commonSubexprElim"]
-#guard vcPhases .always == ["symExec", "betaReduce", "commonSubexprElim"]
+#guard vcPhases (.pathsAbove 2) == ["symExec", "betaReduce"]
+#guard vcPhases .always == ["symExec", "betaReduce"]
 
 /-- Two branches; `pos` fails on the else branch; `big` is reachable. -/
 private def branchPgm :=
@@ -248,6 +250,48 @@ Result: ✅ pass
 -/
 #guard_msgs in
 #eval verifyPgmIn exitPathsPgm .always
+-- Through the whole pipeline every merged value is named: the explorer records the declared
+-- type of each variable (`SymExec.joinValuesUnnamed`).
+#guard (runPhasesStats (parse exitPathsPgm)
+    (Core.corePipelinePhases (symOpts .always))).toOption.map
+    (fun (_, st) => (st.get "SymExec.merges", st.get "SymExec.joinValuesUnnamed")) == some (14, 0)
+
+-- A path ended at an assume of literal `false` is counted in the verify statistics.
+private def infeasiblePgm :=
+#strata
+program Core;
+procedure P(x : int, out r : int) {
+  if (int.gt(x, 0)) { r := 1; } else { assume [no]: false; r := 2; }
+  assert [pos]: int.gt(r, 0);
+};
+#end
+#guard (runPhasesStats (parse infeasiblePgm)
+    (Core.corePipelinePhases (symOpts .always))).toOption.map
+    (fun (_, st) => (st.get "SymExec.infeasible", st.get "SymExec.merges")) == some (1, 0)
+
+-- A regex-typed variable merged at a join gets a join symbol of type `regex`, and the solver
+-- decides the check that reads it.
+private def regexJoinPgm :=
+#strata
+program Core;
+procedure P(c : bool, out ok : bool) {
+  var re : regex;
+  if (c) { re := str.to.re("a"); } else { re := str.to.re("b"); }
+  ok := str.in.re("a", re);
+  assert [a_if_c]: c ==> ok;
+};
+#end
+/--
+info: paths 1, obligations 1, merges 1
+Obligation: a_if_c
+Property: assert
+Result: ✅ pass
+-/
+#guard_msgs in
+#eval verifyPgmIn regexJoinPgm .always
+#guard (runPhasesStats (parse regexJoinPgm)
+    (Core.corePipelinePhases (symOpts .always))).toOption.map
+    (fun (_, st) => st.get "SymExec.joinValuesUnnamed") == some 0
 -- Under `per-path` the run is over the limit.
 /--
 info: ❌ Symbolic execution error.
@@ -687,7 +731,6 @@ noCFGBodies established: holds
 staticSingleAssignment established: holds
 hasObligationForm established: holds
 noProcedureContracts established: holds
-noInits established: holds
 noCalls preserved: holds -> holds
 noLoops preserved: holds -> holds
 noLoopInvariants preserved: holds -> holds
@@ -714,7 +757,6 @@ noCFGBodies established: holds
 staticSingleAssignment established: holds
 hasObligationForm established: holds
 noProcedureContracts established: holds
-noInits established: holds
 noCalls preserved: holds -> holds
 noLoops preserved: holds -> holds
 noLoopInvariants preserved: holds -> holds
@@ -753,30 +795,9 @@ exitsCovered preserved: holds -> holds
 all claims hold
 -/
 #guard_msgs in
-#eval claimedFacts (parse factsPgm) (.pathsAbove 2) "commonSubexprElim"
+#eval claimedFacts (parse factsPgm) .never "commonSubexprElim"
 
-/--
-info: noCFGBodies required: holds
-staticSingleAssignment required: holds
-typeAnnotated required: no check
-noInits required: holds
-noCFGBodies preserved: holds -> holds
-noCalls preserved: holds -> holds
-noLoops preserved: holds -> holds
-noLoopInvariants preserved: holds -> holds
-noLoopMeasures preserved: holds -> holds
-staticSingleAssignment preserved: holds -> holds
-noBetaRedexes preserved: holds -> holds
-noPrecondsFromFuncs preserved: holds -> holds
-noNondetGuards preserved: fails -> fails
-hasObligationForm preserved: holds -> holds
-noProcedureContracts preserved: holds -> holds
-noPolymorphicProcedures preserved: holds -> holds
-noPolymorphicFunctions preserved: holds -> holds
-typeAnnotated preserved: no check -> no check
-exitsCovered preserved: holds -> holds
-all claims hold
--/
+/-- info: no commonSubexprElim phase -/
 #guard_msgs in
 #eval claimedFacts (parse factsPgm) .always "commonSubexprElim"
 
@@ -861,7 +882,6 @@ simplify: all claims hold
 nondetElim: all claims hold
 symExec: all claims hold
 betaReduce: all claims hold
-commonSubexprElim: all claims hold
 -/
 #guard_msgs in
 #eval allClaims (parse cfgFactsPgm) .always
@@ -881,10 +901,62 @@ simplify: all claims hold
 nondetElim: all claims hold
 symExec: all claims hold
 betaReduce: all claims hold
-commonSubexprElim: all claims hold
 -/
 #guard_msgs in
 #eval allClaims (parse cfgFactsPgm) (.pathsAbove 2)
+
+/-! ## Join definitions an obligation does not read
+
+A merged `Map` variable's join definition mentions `Map` updates, whose axioms are quantified
+(without `useArrayTheory`). The discharge leaves it out of the obligations that do not read
+the variable (`Core.pruneUnusedDefinitions`), so `r_bad` fails with a counterexample, as under
+`never`; `m_ok` reads `m`, so its obligation keeps the definition. The inner join's
+definitions stay on the path after the outer join without its guard (`SymExec.mergeOwn`). -/
+
+private def mapJoinPgm :=
+#strata
+program Core;
+procedure P(x : int, y : int, out r : int) {
+  var m : Map int int;
+  if (int.gt(y, 0)) {
+    if (int.gt(x, 0)) { r := 1; m := m[0 := 1]; } else { r := 2; m := m[0 := 2]; }
+  } else { r := 3; m := m[0 := 3]; }
+  assert [r_bad]: r == 1;
+  assert [m_ok]: int.gt(m[0], 0);
+};
+#end
+
+/-- info: "r_bad: ❌ fail\nm_ok: ✅ pass" -/
+#guard_msgs in
+#eval SymExecTestSupport.verifyLines (parse mapJoinPgm) (symOpts .always)
+
+-- The incremental back end also leaves out the definitions a goal does not read
+-- (`WorkItem.unreadDefs`), so `r_bad` fails with a counterexample there too.
+/-- info: "r_bad: ❌ fail\nm_ok: ✅ pass" -/
+#guard_msgs in
+#eval SymExecTestSupport.verifyLines (parse mapJoinPgm) { symOpts .always with incremental := true }
+
+/-- Assumptions about a program variable named like a join symbol are not definitions: both
+    are kept, so the cover after them stays unreachable and the assert passes. -/
+private def joinNamedVarPgm :=
+#strata
+program Core;
+procedure P(x : int, out r : int) {
+  var |$__joinq| : int;
+  assume [a]: |$__joinq| == 5;
+  assume [b]: |$__joinq| == 6;
+  cover [c]: int.gt(x, 0);
+  assert [d]: x == 7;
+};
+#end
+
+/-- info: "c: ❌ fail\nd: ✅ pass" -/
+#guard_msgs in
+#eval SymExecTestSupport.verifyLines (parse joinNamedVarPgm) Core.VerifyOptions.quiet
+
+/-- info: "c: ❌ fail\nd: ✅ pass" -/
+#guard_msgs in
+#eval SymExecTestSupport.verifyLines (parse joinNamedVarPgm) (symOpts .always)
 
 end Strata.SymExecPipelineTest
 

@@ -24,13 +24,14 @@ import Strata.Languages.Core.InstExprTyping
 /-! # The SSA phase over-approximates the traces of a guarded statement list
 
 Over Core's event language for statement lists (`EventLang.coreBlock`), the SSA phase
-(`ssaEntry`) on a guarded statement list `ss₀` is a trace over-approximation in the general form
+(`ssaEntry fac`, evaluating operator applications on constants under the factory `fac`) on a
+guarded statement list `ss₀` is a trace over-approximation in the general form
 `OverapproximatesTracesUptoWhen` (`ssa_overapproximatesTraces`):
 
 * the initial environments are related by the entry renaming of `ss₀` (`SSAEntryRel`): the
   target store holds, under the entry name of each free variable of `ss₀`, the source value of
-  that variable, and binds nothing else; and the type annotations of the output agree with a
-  typing of the target store;
+  that variable, and binds nothing else; the functions of the source factory are those of
+  `fac`; and the type annotations of the output agree with a typing of the target store;
 * a source trace and its target trace correspond event by event under evaluation to `true`
   (`Trace.WeakensAssumes evalInterp`): each assertion and cover keeps its label and metadata and
   holds exactly when the source's does; each assumption is kept, with its label and metadata and
@@ -49,7 +50,7 @@ The entry renaming depends on the statement list (its fresh names avoid the iden
 list), while the framework fixes the input relation before the statement list; the statement is
 therefore one per statement list `ss₀`, with the precondition `· = ss₀`.
 
-The executable pass the phase runs on a procedure `q` is `ssaLoopFree G q`, which is `ssaEntry`
+The executable pass the phase runs on a procedure `q` is `ssaLoopFree fac G q`, which is `ssaEntry`
 with the parameter types, the parameters and the `old` aliases of `q`
 (`ssaLoopFree_overapproximatesTraces`).  A successful run of the pipeline phase
 `ssaPipelinePhase` runs the SSA phase of the program (`ssaPipelinePhase_ok`).
@@ -57,7 +58,7 @@ with the parameter types, the parameters and the `old` aliases of `q`
 TODO: state the soundness of `ssaPipelinePhase` as `OverapproximatesTracesUptoWhen` on each
 procedure body it rewrites.
 
-Assertion validity on completed runs, as a Core Hoare triple with the postcondition `True`,
+Assertion validity on every finite execution, as a Core Hoare triple with the postcondition `True`,
 transports back from the output to the input (`ssa_triple`), from entries related by the entry
 renaming; the final stores are not related, so no postcondition transports.
 
@@ -85,12 +86,16 @@ public section
   (ssaEntryRen (inputAvoid G tys ss) xs al 0).1
 
 /-- The initial environment `ρ'` of the SSA output of `ss₀` corresponds to the initial
-    environment `ρ` of `ss₀`.  The entry renaming is `ρ0 = ssaEntryRenOf G tys xs al ss₀`. -/
-structure SSAEntryRel (G : IdSet Expression) (tys : Tys Expression) (xs : List Expression.Ident)
+    environment `ρ` of `ss₀`, the SSA phase evaluating operator applications under the factory
+    `fac`.  The entry renaming is `ρ0 = ssaEntryRenOf G tys xs al ss₀`. -/
+structure SSAEntryRel (fac : Lambda.Factory CoreLParams) (G : IdSet Expression)
+    (tys : Tys Expression) (xs : List Expression.Ident)
     (al : List (Expression.Ident × Expression.Ident)) (ss₀ : Statements)
     (ρ ρ' : Imperative.Env Expression) : Prop where
   /-- The two environments have the same factory. -/
   factory : ρ'.factory = ρ.factory
+  /-- The functions of the source factory are those of `fac`. -/
+  factoryIs : ρ.factory.factory = fac
   /-- Every free variable `x` of `ss₀` is defined in the source store, with the value the
       target store gives the entry name `ρ0.get x`. -/
   entry : ∀ x ∈ Block.freeVars ss₀,
@@ -116,12 +121,13 @@ private def entryTyping (ren : Ren Expression) (tys : Tys Expression) (ss : Stat
     of `ss₀` be a parameter or an alias (`hfv`).  If `ssaEntry` succeeds, there is a typing that
     the target store conforms to and that the annotations of its output agree with: the typing
     giving each entry name the type `tys` records for the free variable renamed to it. -/
-private theorem ssa_outAnnotated {G : IdSet Expression} {tys : Tys Expression}
+private theorem ssa_outAnnotated {fac : Lambda.Factory CoreLParams} {G : IdSet Expression}
+    {tys : Tys Expression}
     {xs : List Expression.Ident} {al : List (Expression.Ident × Expression.Ident)}
     {ss₀ : Statements} {ρ ρ' : Imperative.Env Expression}
-    (hrel : SSAEntryRel G tys xs al ss₀ ρ ρ') (hal : ∀ q ∈ al, q.2 ∈ xs)
+    (hrel : SSAEntryRel fac G tys xs al ss₀ ρ ρ') (hal : ∀ q ∈ al, q.2 ∈ xs)
     (hfv : ∀ x ∈ Block.freeVars ss₀, x ∈ xs ∨ x ∈ al.map (·.1)) {ρ0 : Ren Expression}
-    {so : SOut Expression} (hss : ssaEntry G tys xs al ss₀ = .ok (ρ0, so)) :
+    {so : SOut Expression} (hss : ssaEntry fac G tys xs al ss₀ = .ok (ρ0, so)) :
     ∃ Γ, StoreHasTyping ρ'.factory ρ'.store Γ ∧ Block.fvarTypesWellAnnotated Γ so.out := by
   obtain ⟨rfl, -⟩ := ssaEntry_ok hss
   have hfind : ∀ y T, entryTyping (ssaEntryRenOf G tys xs al ss₀) tys ss₀ y = some T →
@@ -173,33 +179,32 @@ private theorem ssa_outAnnotated {G : IdSet Expression} {tys : Tys Expression}
 /-- **The SSA phase over-approximates the traces of a guarded statement list.**  For a Core
     statement list `ss₀` in tree form, with an assertion or a cover in every arm of every `ite *`
     and its free variables among the parameters `xs` and the aliases of `al`, on which
-    `ssaEntry G tys xs al` succeeds with the output `out`, every reserved prefix of `params` being free of `@`, every alias of `al`
-    denoting a parameter of `xs`, and all initial environments `ρ₀` of `ss₀` and `ρ₀'` of `out`
-    related by `SSAEntryRel` with `ρ₀` satisfying `BlockInitEnvWF params ss₀`:
+    `ssaEntry fac G tys xs al` succeeds with the output `out`, every reserved prefix of `params`
+    being free of `@`, every alias of `al` denoting a parameter of `xs`, and all initial
+    environments `ρ₀` of `ss₀` and `ρ₀'` of `out` related by `SSAEntryRel fac` (the functions of
+    the factory of `ρ₀` are those of `fac`) with `ρ₀` satisfying `BlockInitEnvWF params ss₀`:
     * every finite trace of `ss₀` from `ρ₀` has a trace of `out` from `ρ₀'` whose assumptions are
       weakened (`Trace.WeakensAssumes evalInterp`);
     * every terminating run of `ss₀` from `ρ₀` has a terminating run of `out` from `ρ₀'` with
       such a trace and the same factory (`ss₀` has no exiting run);
     * `out` satisfies `BlockInitEnvWF params` at `ρ₀'`. -/
 theorem ssa_overapproximatesTraces (π : String → Option Procedure) (params : InitEnvWFParams)
-    (hp : ∀ p ∈ params.prefixIdents, '@' ∉ p.toList) (G : IdSet Expression)
+    (hp : ∀ p ∈ params.prefixIdents, '@' ∉ p.toList) (fac : Lambda.Factory CoreLParams)
+    (G : IdSet Expression)
     (tys : Tys Expression) (xs : List Expression.Ident)
     (al : List (Expression.Ident × Expression.Ident)) (hal : ∀ q ∈ al, q.2 ∈ xs)
     (ss₀ : Statements) :
     OverapproximatesTracesUptoWhen (Trace.WeakensAssumes evalInterp)
-      (SSAEntryRel G tys xs al ss₀) (fun ρ ρ' => ρ'.factory = ρ.factory)
+      (SSAEntryRel fac G tys xs al ss₀) (fun ρ ρ' => ρ'.factory = ρ.factory)
       (EventLang.coreBlock π) (EventLang.coreBlock π)
-      (fun ss => (ssaEntry G tys xs al ss).toOption.map (·.2.out))
+      (fun ss => (ssaEntry fac G tys xs al ss).toOption.map (·.2.out))
       (fun ss => ss = ss₀ ∧ Block.treeForm ss = true ∧ Block.armsHaveChecks ss = true ∧
         ∀ x ∈ Block.freeVars ss, x ∈ xs ∨ x ∈ al.map (·.1)) params params := by
   intro ss out hT ⟨rfl, htf, harm, hfv⟩ ρ₀ ρ₀' hrel hwf
-  obtain ⟨⟨ρ0, so⟩, hss, rfl⟩ : ∃ r, ssaEntry G tys xs al ss = .ok r ∧ r.2.out = out := by
-    cases h : ssaEntry G tys xs al ss with
-    | error => simp only [Except.toOption, h, Option.map] at hT; nomatch hT
-    | ok r =>
-      simp only [Except.toOption, h, Option.map] at hT
-      cases hT
-      exact ⟨r, rfl, rfl⟩
+  obtain ⟨⟨ρ0, so⟩, hss, rfl⟩ : ∃ r, ssaEntry fac G tys xs al ss = .ok r ∧ r.2.out = out := by
+    cases h : ssaEntry fac G tys xs al ss <;>
+      simp only [h, Except.toOption, Option.map, reduceCtorEq] at hT
+    exact ⟨_, rfl, Option.some.inj hT⟩
   have hgate := ssaEntry_blockInitEnvWF hp hal hss htf hfv hrel.factory hrel.entry hrel.params
     hrel.tyOK hrel.dom hwf (ssa_outAnnotated hrel hal hfv hss)
   obtain ⟨rfl, -⟩ := ssaEntry_ok hss
@@ -210,9 +215,10 @@ theorem ssa_overapproximatesTraces (π : String → Option Procedure) (params : 
   have hWB := hwf.bool
   have hnc : Statements.noCalls ss = true :=
     Block.treeForm_allSubstmts (fun _ => rfl) (fun _ _ _ => rfl) htf
-  have hsim := ssaEntry_sim hwf.var hwf.val
-    (coreEvaluator_WellFormedSemanticEvalSubstLits F)
-    hss hal (σL := σ₀) (σS := σ₀') hrel.entry hrel.tyOK hC
+  have hsim := ssaEntry_sim ⟨hwf.var, hwf.val, coreEvaluator_WellFormedSemanticEvalSubstExprs F,
+      hwf.mono, coreEvaluator_WellFormedSemanticEvalOp F fac hrel.factoryIs hwf.bool⟩ hss hal
+    (σL := σ₀) (σS := σ₀')
+    hrel.entry hrel.tyOK hC
     (fun y v hy => by
       obtain ⟨x, hx, rfl⟩ := hrel.dom y (by simp [hy])
       exact hC x v ((hrel.entry x hx).1.trans hy))
@@ -238,63 +244,63 @@ theorem ssa_overapproximatesTraces (π : String → Option Procedure) (params : 
     cases ho
 
 /-- **The executable pass over-approximates traces**: `ssa_overapproximatesTraces` for
-    `ssaLoopFree G q`, the pass the SSA phase runs on each procedure `q` (`ssaProc`). -/
+    `ssaLoopFree fac G q`, the pass the SSA phase runs on each procedure `q` (`ssaProc`). -/
 theorem ssaLoopFree_overapproximatesTraces (π : String → Option Procedure)
     (params : InitEnvWFParams) (hp : ∀ p ∈ params.prefixIdents, '@' ∉ p.toList)
-    (G : IdSet Expression) (q : Procedure) (ss₀ : Statements) :
+    (fac : Lambda.Factory CoreLParams) (G : IdSet Expression) (q : Procedure) (ss₀ : Statements) :
     OverapproximatesTracesUptoWhen (Trace.WeakensAssumes evalInterp)
-      (SSAEntryRel G q.paramTys q.entryParams q.oldAliases ss₀)
+      (SSAEntryRel fac G q.paramTys q.entryParams q.oldAliases ss₀)
       (fun ρ ρ' => ρ'.factory = ρ.factory)
       (EventLang.coreBlock π) (EventLang.coreBlock π)
-      (fun ss => (ssaLoopFree G q ss).toOption.map (·.2.out))
+      (fun ss => (ssaLoopFree fac G q ss).toOption.map (·.2.out))
       (fun ss => ss = ss₀ ∧ Block.treeForm ss = true ∧ Block.armsHaveChecks ss = true ∧
         ∀ x ∈ Block.freeVars ss, x ∈ q.entryParams ∨ x ∈ q.oldAliases.map (·.1))
       params params :=
-  ssa_overapproximatesTraces π params hp G _ _ _ (Procedure.oldAliases_mem q) ss₀
+  ssa_overapproximatesTraces π params hp fac G _ _ _ (Procedure.oldAliases_mem q) ss₀
 
 /-- **The SSA phase transports assertion validity, not postconditions.**  For a Core statement
     list `ss₀` in tree form, with an assertion or a cover in every arm of every `ite *` and its
     free variables among the parameters `xs` and the aliases of `al`, on which
-    `ssaEntry G tys xs al` succeeds with the output `so.out`, every reserved prefix of `params`
+    `ssaEntry fac G tys xs al` succeeds with the output `so.out`, every reserved prefix of `params`
     being free of `@` and every alias of `al` denoting a parameter of `xs`, and a precondition
     admitting only entry environments over `F`: a Core triple `{Pre'} so.out {True}` over `F`
-    at `params`, saying every assertion of `so.out` holds on its completed runs from entries
+    at `params`, saying every assertion of `so.out` holds on its finite executions from entries
     satisfying `Pre'`, gives the triple `{Pre} ss₀ {True}`, when each entry of `ss₀` satisfying
     `Pre` and the gate has an entry of `so.out` related to it by the entry renaming
     (`SSAEntryRel`) that satisfies `Pre'`.  The final stores of the two are not related: the
     output holds every value under a fresh name.  The assertions of `ss₀`, which the WP phase
     makes of its postconditions, are what the triple checks. -/
 theorem ssa_triple (π : String → Option Procedure) (params : InitEnvWFParams)
-    (hp : ∀ p ∈ params.prefixIdents, '@' ∉ p.toList) (G : IdSet Expression)
-    (tys : Tys Expression) (xs : List Expression.Ident)
+    (hp : ∀ p ∈ params.prefixIdents, '@' ∉ p.toList) (fac : Lambda.Factory CoreLParams)
+    (G : IdSet Expression) (tys : Tys Expression) (xs : List Expression.Ident)
     (al : List (Expression.Ident × Expression.Ident)) (hal : ∀ q ∈ al, q.2 ∈ xs)
     {ss₀ : Statements} {ρ0 : Ren Expression} {so : SOut Expression}
-    (hss : ssaEntry G tys xs al ss₀ = .ok (ρ0, so)) (htf : Block.treeForm ss₀ = true)
+    (hss : ssaEntry fac G tys xs al ss₀ = .ok (ρ0, so)) (htf : Block.treeForm ss₀ = true)
     (harm : Block.armsHaveChecks ss₀ = true)
     (hfv : ∀ x ∈ Block.freeVars ss₀, x ∈ xs ∨ x ∈ al.map (·.1))
     {F : Lambda.Factory CoreLParams} {Pre Pre' : Imperative.Env Expression → Prop}
     (hpin : ∀ ρ₀, Pre ρ₀ → ρ₀.factory.factory = F)
     (hin : ∀ ρ₀, Pre ρ₀ → BlockInitEnvWF params ss₀ ρ₀ →
-      ∃ ρ₀', SSAEntryRel G tys xs al ss₀ ρ₀ ρ₀' ∧ Pre' ρ₀')
+      ∃ ρ₀', SSAEntryRel fac G tys xs al ss₀ ρ₀ ρ₀' ∧ Pre' ρ₀')
     (h : Core.Logic.Hoare.Triple π params Pre' so.out (fun _ => True) F) :
     Core.Logic.Hoare.Triple π params Pre ss₀ (fun _ => True) F := by
   have hnc : Statements.noCalls ss₀ = true :=
     Block.treeForm_allSubstmts (fun _ => rfl) (fun _ _ _ => rfl) htf
   have hnc' : Statements.noCalls so.out = true :=
     Block.treeForm_allSubstmts (fun _ => rfl) (fun _ _ _ => rfl) (ssaEntry_treeForm hss htf)
-  have hT : (fun ss => (ssaEntry G tys xs al ss).toOption.map (·.2.out)) ss₀ = some so.out := by
+  have hT : (fun ss => (ssaEntry fac G tys xs al ss).toOption.map (·.2.out)) ss₀ = some so.out := by
     simp [hss, Except.toOption]
   refine overapproximatesTraces2UptoWhen_triple_of_sourceRuns (EventLang.coreBlock π)
     (EventLang.coreBlock π) (DenoteBasedInterp F) _ _ _ _ _ params params ss₀ so.out hT
-    (ssa_overapproximatesTraces π params hp G tys xs al hal ss₀) h ⟨rfl, htf, harm, hfv⟩
+    (ssa_overapproximatesTraces π params hp fac G tys xs al hal ss₀) h ⟨rfl, htf, harm, hfv⟩
     (fun tr => ∀ ev ∈ tr, ev.condition.factory.factory = F)
     (fun tr => ∀ ev ∈ tr, ev.condition.factory.factory = F) ?_ ?_ hin ?_ ?_
     (fun _ _ _ _ _ _ _ _ _ => trivial)
   · intro ρ₀ ρ' trace hp _ hrun ev hev
-    rw [Core.Logic.coreBlock_terminatesAt_events_factory hnc hrun ev hev]
+    rw [Core.Logic.coreBlock_events_factory hnc hrun ev hev]
     exact hpin ρ₀ hp
   · intro ρ₀ ρ₀' ρ'' trace hp hrel _ hrun ev hev
-    rw [Core.Logic.coreBlock_terminatesAt_events_factory hnc' hrun ev hev, hrel.factory]
+    rw [Core.Logic.coreBlock_events_factory hnc' hrun ev hev, hrel.factory]
     exact hpin ρ₀ hp
   · intro _ _ hs ht hrel hv
     exact (Core.Logic.weakensAssumes_denoteBasedInterp hrel hs ht).assertionsValid_reflect hv
@@ -304,12 +310,13 @@ theorem ssa_triple (π : String → Option Procedure) (params : InitEnvWFParams)
 /-! ## The pipeline phase -/
 
 /-- A successful run of `ssaPipelinePhase` on `program` returns the obligation program of
-    `program` for the names of the functions of the factory `moreFns` extends. -/
+    `program` under the factory `fac` of the WP pipeline on `program` (`Core.wpFactory`), for the
+    names of its functions. -/
 theorem ssaPipelinePhase_ok {m : Lambda.Factory CoreLParams}
     {program out : Program} {s s' : Transform.CoreTransformState} {b : Bool}
     (h : ((ssaPipelinePhase m).transform program).run s = (.ok (b, out), s')) :
-    ∃ fac, Core.Factory.addFactory m = .ok fac ∧
-      ssaProgram (fac.toArray.toList.map (·.name)) program = .ok out := by
+    ∃ fac, Core.wpFactory m program = .ok fac ∧
+      ssaProgram fac (fac.toArray.toList.map (·.name)) program = .ok out := by
   simp only [ssaPipelinePhase, modelPreservingPipelinePhase, Transform.liftDiag] at h
   rcases hw : ssaProgramOf program m with _ | mid <;> rw [hw] at h <;> cases h
   simp only [ssaProgramOf, Bind.bind, Except.bind, throw, throwThe, MonadExceptOf.throw] at hw

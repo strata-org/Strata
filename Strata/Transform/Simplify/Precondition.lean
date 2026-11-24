@@ -8,15 +8,16 @@ module
 public import Strata.Transform.Simplify.Entry
 public import Strata.Languages.Core.InstExprTyping
 public import Strata.DL.Lambda.Denote.Assumptions
-import all Strata.DL.Lambda.FactoryProps
 import all Strata.Util.ListMap
 import all Strata.Transform.Simplify.Expr
 
 /-! # The precondition of the Simplify theorem
 
-The transform `simplifyBody` and what `simplifyBody_overapproximatesTraces` asks of the body
-(`BodyWF`) and of the factory Simplify folds with (`Laws`). They live apart from the theorem
-so that a caller can establish them without depending on its proof.
+What the Simplify theorems (`sweptBody_overapproximatesTraces`,
+`checkedBody_overapproximatesTraces`) ask of the body (`BodyWF`) and of the context it is
+simplified from (`Ctx.Fresh`). They live apart from the theorems so that a caller can
+establish them without depending on their proofs. What the theorems ask of the factory is the
+condition of evaluator soundness, `Lambda.Factory.EvalSoundWF`.
 -/
 
 namespace Core.Simplify
@@ -67,30 +68,7 @@ mutual
   | _ => True
 end
 
-/-! ## The transform and its precondition -/
-
-/-- What `simplifyProcedure` does to a structured body: rewrite the statements, then drop
-    the definitions nothing reads, knowing that the input parameters are defined
-    throughout it.
-
-    `live` is what the theorem promises about: final stores agree on its names and on
-    nothing else (`EnvAgreeOnLive`). At the call site it must hold every name read after
-    the body. `simplifyProcedure` seeds it with the output parameters and the free
-    variables of the contract. That is enough: Core's type checker rejects a body that
-    writes anything but its output parameters and its own locals, so no global or input
-    written by the body can be read after it. -/
-@[expose] def simplifyBody (base : Ctx) (inputs : @Lambda.LMonoTySignature Unit)
-    (live : Std.HashSet String) (ss : List Statement) : Option (List Statement) :=
-  some (dropDeadDefs base.factory (Defined.ofParams inputs (simpStmts base ss).1) live
-    (simpStmts base ss).1)
-
-/-- What `simplifyProcedure` installs for a structured body: `simplifyBody`'s output when it
-    passes the def-use check `gateOK`, the body itself otherwise. -/
-@[expose] def simplifyBodyChecked (base : Ctx) (inputs : @Lambda.LMonoTySignature Unit)
-    (live : Std.HashSet String) (ss : List Statement) : Option (List Statement) :=
-  let out := dropDeadDefs base.factory (Defined.ofParams inputs (simpStmts base ss).1) live
-    (simpStmts base ss).1
-  some (if gateOK base.factory ss out then out else ss)
+/-! ## The precondition -/
 
 /-- The context a body is simplified from records nothing, and folds with its factory with
     `inline` weakened, as `Ctx.ofFactory` builds it. -/
@@ -115,87 +93,6 @@ theorem Ctx.ofFactory_fresh (F : Lambda.Factory CoreLParams) (c : List String) :
 @[expose] def BodyWF (F : Lambda.Factory CoreLParams) (Γ : VarTyping Expression)
     (ss : List Statement) : Prop :=
   BodyFragment ss ∧ Block.exprsOKIn F Γ ss
-
-/-- `tyMap` types a formal parameter of a function of `F` with a body only if the function
-    declares it at a ground type, and then at that type. A formal whose declared type has type
-    variables is left untyped: its annotation in the body changes with each instantiation, so
-    no one type agrees with all of them. Functions without a body are not constrained: only
-    bodies are substituted into the expression being simplified. -/
-@[expose] def AgreesOnFormals (F : Lambda.Factory CoreLParams)
-    (tyMap : Map CoreIdent Lambda.LMonoTy) : Prop :=
-  ∀ (f : String) (hf : f ∈ F), (F[f]).body.isSome →
-    ∀ x ty, (x, ty) ∈ (F[f]).inputs.toList →
-    ∀ τ, Map.find? tyMap x = some τ → τ = ty ∧ ty.freeVars = []
-
-/-- The names whose types the entry typing `Γ` and the body's declarations give: the
-    variables the clash check compares with the formals, and those the run invariant types. -/
-@[expose] def typeList (Γ : VarTyping Expression) (ss : List Statement) :
-    List (CoreIdent × Expression.Ty) :=
-  (Block.entryVars ss).filterMap (fun y => (Γ y).map (y, ·)) ++ Block.declaredTypes ss
-
-/-- Whether a variable of the body `ss`, an entry variable typed by `Γ` or a local at its
-    declared type, is named like a formal parameter of a function of `F` with a body at a
-    different type, or like one whose declared type has type variables. When it is `false`,
-    the typings Simplify folds `ss` under agree with `F`'s formals (`AgreesOnFormals`). It
-    names the clash `Laws` cannot rule out, and makes it a checked condition.
-
-    Locals are collected from every branch and loop body, so a name declared at two types in
-    sibling scopes is checked at both: a local that matches a formal's type in one branch and
-    not in the other counts as a clash. That can only reject more bodies. -/
-def Block.clashesWithFormals (F : Lambda.Factory CoreLParams) (Γ : VarTyping Expression)
-    (ss : List Statement) : Bool :=
-  let formals := F.toArray.toList.filter (·.body.isSome) |>.flatMap (·.inputs.toList)
-  (typeList Γ ss).any fun (x, ty) => formals.any fun (y, fty) =>
-    y == x && (ty.toMonoType? != some fty || !fty.freeVars.isEmpty)
-
-/-- **No clash, so the fold typings agree with the formals.** Every typing that types only
-    variables of the body, each at the type `Γ`, extended scope by scope, gives it, agrees
-    with the formals of `F`'s functions with a body when the body has no clash. The
-    simulation applies `Laws` at the typing of the values Simplify has recorded, which is
-    such a typing.
-
-    Simplify introduces no name into a body: the values it records are keyed by the variables
-    `init` and `set` write (`Ctx.record`), and inline expansion substitutes the arguments for
-    a function's formals. The fresh `$__lemma` names of `simplifyLemma` occur only in lemmas,
-    never in a procedure body. So the typings of recorded values type only body variables. -/
-theorem agreesOnFormals_of_noClash {F : Lambda.Factory CoreLParams} {Γ : VarTyping Expression}
-    {ss : List Statement} (hclash : Block.clashesWithFormals F Γ ss = false)
-    {tyMap : Map CoreIdent Lambda.LMonoTy}
-    (htyped : ∀ x τ, Map.find? tyMap x = some τ →
-      (x, Lambda.LTy.forAll [] τ) ∈ typeList Γ ss) :
-    AgreesOnFormals F tyMap := by
-  intro f hf hbody x ty hx τ hτ
-  obtain ⟨g, hg, hgn⟩ := Array.mem_map.mp ((Lambda.Factory.mem_iff_mem_names F f).mp hf)
-  obtain ⟨_, hget⟩ := Lambda.Factory.mem_name_eq_getElem hg hgn
-  have hget : F[f]'hf = g := hget
-  rw [hget] at hbody hx
-  have hno := hclash
-  simp only [Block.clashesWithFormals, List.any_eq_false] at hno
-  have hformal : (x, ty) ∈ (F.toArray.toList.filter (·.body.isSome)).flatMap (·.inputs.toList) :=
-    List.mem_flatMap.mpr ⟨g, List.mem_filter.mpr ⟨Array.mem_toList_iff.mpr hg, hbody⟩, hx⟩
-  have h := hno _ (htyped x τ hτ)
-  simp only [List.any_eq_true, Bool.and_eq_true, beq_iff_eq, Bool.or_eq_true, bne_iff_ne,
-    ne_eq, Bool.not_eq_eq_eq_not, Bool.not_true, List.isEmpty_eq_false_iff, not_exists,
-    not_and, not_or] at h
-  obtain ⟨h1, h2⟩ := h _ hformal rfl
-  refine ⟨?_, by simpa using h2⟩
-  simpa only [Lambda.LTy.toMonoType?, Option.some.injEq, Classical.not_not] using h1
-
-/-- **The factory's well-formedness**, in the two forms the expression lemmas ask for.
-
-    `StepWF` is asked only at typings that agree with the formals of the factory's functions
-    with a body (`AgreesOnFormals`), not at every typing: its `BodyAnnotated` field requires
-    each variable a function body mentions to carry the type the typing gives that name, so a
-    typing that gives a formal's name another type falsifies it for any factory with a
-    function body. The typings Simplify folds under are those of the values it has recorded
-    (`Env.smallValues`), so they agree with the factory's formals when no variable of the body
-    is named like a formal of a function with a body at a different type.
-
-    Monomorphization can create such a clash: every specialization of a polymorphic function
-    keeps the formal's name at a different type. -/
-@[expose] def Laws (F : Lambda.Factory CoreLParams) : Prop :=
-  (∃ tf : @Lambda.TypeFactory CoreLParams.IDMeta, Lambda.Factory.WF F tf) ∧
-    ∀ tyMap, AgreesOnFormals F tyMap → Lambda.Factory.StepWF F tyMap
 
 end
 

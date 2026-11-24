@@ -35,13 +35,13 @@ private def sameLabelProgram : Program :=
 #strata
 program Core;
 function f (x : int) : int;
-procedure P0() { assume [h]: f(0) == 0; assert [same]: f(0) == 0; };
+procedure P0() { assume [h]: f(0) == 0; assert [same]: 0 == f(0); };
 procedure P1() { assume [h]: f(1) == 1; assert [same]: f(1) == 0; };
-procedure P2() { assume [h]: f(2) == 2; assert [same]: f(2) == 2; };
+procedure P2() { assume [h]: f(2) == 2; assert [same]: 2 == f(2); };
 procedure P3() { assume [h]: f(3) == 3; assert [same]: f(3) == 0; };
-procedure P4() { assume [h]: f(4) == 4; assert [same]: f(4) == 4; };
+procedure P4() { assume [h]: f(4) == 4; assert [same]: 4 == f(4); };
 procedure P5() { assume [h]: f(5) == 5; assert [same]: f(5) == 0; };
-procedure P6() { assume [h]: f(6) == 6; assert [same]: f(6) == 6; };
+procedure P6() { assume [h]: f(6) == 6; assert [same]: 6 == f(6); };
 procedure P7() { assume [h]: f(7) == 7; assert [same]: f(7) == 0; };
 #end
 

@@ -502,107 +502,176 @@ theorem plain_close {st st' : WSt P} {a : WRes P} {fol : Bool} {S : List P.Ident
     simp [hb it hm] at hi, fun hTY hT => ⟨hc,
       LOK_plain fun it hm => ⟨hb it hm, (hok hTY hT).1 it hm⟩, (hok hTY hT).2⟩⟩
 
+omit iLB iHI iL iLF in
+/-- A list of straight-line items is typed when no obligation follows it. -/
+private theorem LOK_false_plain : ∀ {l : List (WItem P)},
+    (∀ it ∈ l, it.isBranching = false) → LOK Typ Ground T Y false l
+  | [], _ => by simp [LOK]
+  | it :: rest, h => by
+    have hr : LOK Typ Ground T Y false rest := LOK_false_plain fun it hm => h it (.tail _ hm)
+    have hrb : rest.any WItem.isBranching = false :=
+      List.any_eq_false.2 fun x hx => by simp [h x (.tail _ hx)]
+    have hb := h it (.head _)
+    rcases it with _ | _ | _ | _ | _
+    case obls | branch => cases hb
+    all_goals
+      simp only [LOK]
+      exact ⟨fun hc => by simp [hrb] at hc, hr⟩
+
+omit iL iLF in
+/-- The typing property of a walk step that keeps the carried merges, adds Boolean exit snapshots
+    and outputs straight-line items, typed when an obligation follows. -/
+private theorem plain_close_if {st st' : WSt P} {a : WRes P} {fol : Bool} {S : List P.Ident}
+    {Γ : VarTyping P} (hD : DisjInv st') (hc : CarStep Typ Ground T Y fol st st')
+    (hp : PendStep T Y st st') (hb : ∀ it ∈ a.out.toList, it.isBranching = false)
+    (hok : (∀ (n x : P.Ident), st'.tyOf[n]? = some x → T[n]? = none) →
+      (fol = true ∨ a.hasObl = true → TyCtx T Y st' S Γ) →
+      (fol = true → ∀ it ∈ a.out.toList, PlainOK Typ Ground T Y it) ∧
+        (fol = true → AOK Ground T Y a)) :
+    DisjInv st' ∧ PendStep T Y st st' ∧
+      (a.out.toList.any WItem.isBranching = true → a.hasObl = true) ∧
+      ((∀ (n x : P.Ident), st'.tyOf[n]? = some x → T[n]? = none) →
+        (fol = true ∨ a.hasObl = true → TyCtx T Y st' S Γ) →
+        CarStep Typ Ground T Y fol st st' ∧ LOK Typ Ground T Y fol a.out.toList ∧
+          (fol = true → AOK Ground T Y a)) := by
+  refine ⟨hD, hp, fun h => ?_, fun hTY hT => ⟨hc, ?_, (hok hTY hT).2⟩⟩
+  · obtain ⟨it, hm, hi⟩ := List.any_eq_true.1 h
+    simp [hb it hm] at hi
+  · cases fol
+    · exact LOK_false_plain hb
+    · exact LOK_plain fun it hm => ⟨hb it hm, (hok hTY hT).1 rfl it hm⟩
+
+/-- The walk of a deterministic `init` under the obligation bit `true` has the typing property
+    for every obligation bit `f` of its context: its items are typed when an obligation follows
+    it. -/
+private theorem typSpec_initDet (hL : TypingLaws Typ Ground) (κ : RE P) (d : Nat) (f : Bool)
+    (x : P.Ident) (ty : P.Ty) (e : P.Expr) (md : MetaData P) :
+    TypSpec Typ Ground Lc N κ (wpStmt κ d true (.cmd (.cmd (.init x ty (.det e) md))))
+      [.cmd (.cmd (.init x ty (.det e) md))]
+      (fun S => Stmt.WellScoped Lc S (.cmd (.cmd (.init x ty (.det e) md)))) f := by
+  intro st a st' hwf h T Y hfin S hwfs Γ hty hng hav hκ hD
+  simp only [wpStmt, keepInit, pure_bind] at h
+  ty_inv h
+  obtain ⟨⟨hwt, -⟩, -, hann, -⟩ := hty
+  obtain ⟨hxS, -, hrS⟩ := hwfs
+  obtain ⟨⟨⟨we, rd⟩, s0⟩, h0, ⟨n, s1⟩, h1, h⟩ := h
+  simp only at h1
+  obtain ⟨-, -, hc1, -, -⟩ := wDecl_spec h1
+  obtain ⟨n', s1', hk⟩ := wName_ok x s0
+  obtain ⟨hnn, rfl⟩ := Prod.mk.inj (Except.ok.inj ((wDecl_run hk).symm.trans h1))
+  replace hnn : n = n' := hnn.symm
+  subst hnn
+  obtain ⟨hn1, hs1⟩ := wName_state hk
+  obtain ⟨-, hn0', hs0, -⟩ := wRen_run h0
+  have hw0 : WFSt s0 := (wRen_walk h0).wf hwf nofun
+  have hxav : AvoidedIfFresh s0 x := fun b j e => by
+    rw [hs0]
+    exact hav x (by simp [Block.idents, Stmt.idents]) b j e
+  have hcur : ∀ y ∈ S, ∀ m, curName s0 y = some m →
+      curName { s1' with nm := s1'.nm.erase x, taken := s1'.taken.insert x } y = some m :=
+    fun y hy m hm => (hc1 y fun he => hxS (he ▸ hy)).trans hm
+  have hg : Ground ty := hL.ground hwt
+  have hn0 : st.tyOf[n]? = none := by rw [← decl_tyOf_none hk hw0 hxav, hs0]
+  split at h <;> ty_inv h
+  · obtain ⟨⟨u, s3⟩, h3, rfl, rfl⟩ := h
+    obtain ⟨live, clock, rfl, -⟩ := liveAdd_step h3
+    have hTn : T[n]? = some ty := decl_final hk hw0 hfin (by simp) (by simp)
+      (by rw [hs1, hs0]) (Nat.le_refl _) hxav
+    refine plain_close_if (hD.ins hn0 (by rw [hs1, hs0]) (by rw [hs1, hs0]))
+      (car_of_eq (by rw [hs1, hs0])) (pend_of_eq (by rw [hs1, hs0]))
+      (by simp [Rope.toList_one, WItem.isBranching])
+      fun _ hT => ⟨fun hf it hm => ?_, fun _ m hm => by simp at hm⟩
+    simp only [Rope.toList_one, List.mem_singleton] at hm
+    subst hm
+    intro ty' hty'
+    cases hty'
+    refine ⟨fun τ hτ => Except.ok.inj ((tyOfName_T hTn).symm.trans hτ).symm, hg,
+      fun w hw => ?_⟩
+    cases hw
+    exact wRen_wok hL h0 hrS (fun y hy m hm => by simpa [curName] using hcur y hy m hm)
+      (hT (.inl hf)) hann hwt
+  · obtain ⟨k, hk', hkn, hkav⟩ := freshIn_spec s1'.avoid (baseOf x) s1'.next
+    obtain ⟨⟨u, s3⟩, h3, rfl, rfl⟩ := hk' ▸ h
+    obtain ⟨live, clock, rfl, -⟩ := liveAdd_step h3
+    have hTn : T[n]? = some ty := decl_final hk hw0 hfin
+      (by rw [Std.HashMap.getElem?_insert]; split <;> simp) (by simp) (by rw [hs1, hs0])
+      (by simp; omega) hxav
+    have hTd : T[freshName (baseOf x) k]? = some ty := hfin.drawn (by simp)
+      (by simpa using hkav) ⟨_, k, rfl, by simp⟩
+    have hd : ∀ τ, tyOfName T Y (freshName (baseOf x) k) = .ok τ → τ = ty := fun τ hτ =>
+      Except.ok.inj ((tyOfName_T hTd).symm.trans hτ).symm
+    have hk0 : st.next ≤ k := Nat.le_trans hn0' (Nat.le_trans hn1 hkn)
+    refine plain_close_if (DisjInv.ins (s := { st with tys := st.tys.insert n ty })
+        (hD.ins hn0 rfl rfl) (hwf.tyOf_none hk0) (by rw [hs1, hs0]) (by rw [hs1, hs0]))
+      (car_of_eq (by rw [hs1, hs0])) (pend_of_eq (by rw [hs1, hs0]))
+      (by simp [Rope.toList_one, Rope.toList_app, WItem.isBranching])
+      fun _ hT => ⟨fun hf it hm => ?_, fun _ m hm => by simp at hm⟩
+    simp only [Rope.toList_app, Rope.toList_one, List.singleton_append, List.mem_cons,
+      List.not_mem_nil, or_false] at hm
+    rcases hm with rfl | rfl
+    all_goals intro ty' hty'
+    all_goals cases hty'
+    · exact ⟨hd, hg, nofun⟩
+    refine ⟨fun τ hτ => Except.ok.inj ((tyOfName_T hTn).symm.trans hτ).symm, hg,
+      fun w hw => ?_⟩
+    cases hw
+    refine WOK.kIte hL hκ (wRen_wok hL h0 hrS (fun y hy m hm => ?_) (hT (.inl hf)) hann hwt)
+      (WOK.var hL hg hd)
+    simpa [curName] using hcur y hy m hm
+
+omit iLF in
+/-- The walk of a nondeterministic `init` under the obligation bit `true` has the typing
+    property for every obligation bit `f` of its context. -/
+private theorem typSpec_initNondet (κ : RE P) (d : Nat) (f : Bool)
+    (x : P.Ident) (ty : P.Ty) (md : MetaData P) :
+    TypSpec Typ Ground Lc N κ (wpStmt κ d true (.cmd (.cmd (.init x ty .nondet md))))
+      [.cmd (.cmd (.init x ty .nondet md))]
+      (fun S => Stmt.WellScoped Lc S (.cmd (.cmd (.init x ty .nondet md)))) f := by
+  intro st a st' hwf h T Y hfin S hwfs Γ hty hng hav hκ hD
+  simp only [wpStmt, keepInit, pure_bind] at h
+  ty_inv h
+  obtain ⟨⟨n, s1⟩, h1, rfl, rfl⟩ := h
+  have hg : Ground ty := hng.1.2 (hng.1.1 trivial)
+  obtain ⟨n', s1', hk⟩ := wName_ok x st
+  obtain ⟨hnn, rfl⟩ := Prod.mk.inj (Except.ok.inj ((wDecl_run hk).symm.trans h1))
+  replace hnn : n = n' := hnn.symm
+  subst hnn
+  obtain ⟨-, hs1⟩ := wName_state hk
+  have hxav : AvoidedIfFresh st x := hav x (by simp [Block.idents, Stmt.idents])
+  have hTn : T[n]? = some ty := decl_final hk hwf hfin (by simp) (by simp) (by rw [hs1])
+    (Nat.le_refl _) hxav
+  refine plain_close (hD.ins (decl_tyOf_none hk hwf hxav) (by rw [hs1]) (by rw [hs1]))
+    (car_of_eq (by rw [hs1])) (pend_of_eq (by rw [hs1]))
+    (by simp [Rope.toList_one, WItem.isBranching])
+    fun _ _ => ⟨fun it hm => ?_, fun _ m hm => by simp at hm⟩
+  simp only [Rope.toList_one, List.mem_singleton] at hm
+  subst hm
+  intro ty' hty'
+  cases hty'
+  exact ⟨fun τ hτ => Except.ok.inj ((tyOfName_T hTn).symm.trans hτ).symm, hg, nofun⟩
+
 /-- The walk of a command has the typing property. -/
 theorem stmtTypSpec_cmd (hL : TypingLaws Typ Ground) (κ : RE P) (d : Nat) (f : Bool)
     (c : CmdExt P) : StmtTypSpec Typ Ground Lc N κ d f (.cmd c) := by
   intro st a st' hwf h T Y hfin S hwfs Γ hty hng hav hκ hD
-  unfold wpStmt at h
   rcases c with ((⟨x, ty, e | _, md⟩ | ⟨x, e | _, md⟩ | ⟨l, e, md⟩ | ⟨l, e, md⟩ | ⟨l, e, md⟩) |
     ⟨p, args, md⟩)
+  all_goals try
+    rw [wpStmt_init_run] at h
+    split at h
+    rotate_left
+    · cases h
+      exact ⟨hD, fun _ _ h => .inl h, by simp [Rope.toList_nil], fun _ _ =>
+        ⟨fun _ _ h => .inl h, by simp [Rope.toList_nil, LOK], fun _ _ h => by simp at h⟩⟩
+    first
+      | exact typSpec_initDet hL κ d f _ _ _ _ st a st' hwf h T Y hfin S hwfs Γ hty hng hav hκ hD
+      | exact typSpec_initNondet κ d f _ _ _ st a st' hwf h T Y hfin S hwfs Γ hty hng hav hκ hD
+  all_goals try unfold wpStmt at h
   all_goals try cases h
   all_goals cases f <;> ty_inv h
   all_goals try (obtain ⟨rfl, rfl⟩ := h
                  exact ⟨hD, fun _ _ h => .inl h, by simp [Rope.toList_nil], fun _ _ =>
                    ⟨fun _ _ h => .inl h, by simp [Rope.toList_nil, LOK], nofun⟩⟩)
-  case cmd.init.det.true =>
-    obtain ⟨⟨hwt, -⟩, -, hann, -⟩ := hty
-    obtain ⟨hxS, -, hrS⟩ := hwfs
-    obtain ⟨⟨⟨we, rd⟩, s0⟩, h0, ⟨n, s1⟩, h1, h⟩ := h
-    simp only at h1
-    obtain ⟨-, -, hc1, -, -⟩ := wDecl_spec h1
-    obtain ⟨n', s1', hk⟩ := wName_ok x s0
-    obtain ⟨hnn, rfl⟩ := Prod.mk.inj (Except.ok.inj ((wDecl_run hk).symm.trans h1))
-    replace hnn : n = n' := hnn.symm
-    subst hnn
-    obtain ⟨hn1, hs1⟩ := wName_state hk
-    obtain ⟨-, hn0', hs0, -⟩ := wRen_run h0
-    have hw0 : WFSt s0 := (wRen_walk h0).wf hwf nofun
-    have hxav : AvoidedIfFresh s0 x := fun b j e => by
-      rw [hs0]
-      exact hav x (by simp [Block.idents, Stmt.idents]) b j e
-    have hcur : ∀ y ∈ S, ∀ m, curName s0 y = some m →
-        curName { s1' with nm := s1'.nm.erase x, taken := s1'.taken.insert x } y = some m :=
-      fun y hy m hm => (hc1 y fun he => hxS (he ▸ hy)).trans hm
-    have hg : Ground ty := hL.ground hwt
-    split at h <;> ty_inv h
-    · obtain ⟨⟨u, s3⟩, h3, rfl, rfl⟩ := h
-      obtain ⟨live, clock, rfl, -⟩ := liveAdd_step h3
-      have hTn : T[n]? = some ty := decl_final hk hw0 hfin (by simp) (by simp)
-        (by rw [hs1, hs0]) (Nat.le_refl _) hxav
-      have hn0 : st.tyOf[n]? = none := by rw [← decl_tyOf_none hk hw0 hxav, hs0]
-      refine plain_close (hD.ins hn0 (by rw [hs1, hs0]) (by rw [hs1, hs0]))
-        (car_of_eq (by rw [hs1, hs0])) (pend_of_eq (by rw [hs1, hs0]))
-        (by simp [Rope.toList_one, WItem.isBranching])
-        fun _ hT => ⟨fun it hm => ?_, fun _ m hm => by simp at hm⟩
-      simp only [Rope.toList_one, List.mem_singleton] at hm
-      subst hm
-      intro ty' hty'
-      cases hty'
-      refine ⟨fun τ hτ => Except.ok.inj ((tyOfName_T hTn).symm.trans hτ).symm, hg,
-        fun w hw => ?_⟩
-      cases hw
-      exact wRen_wok hL h0 hrS (fun y hy m hm => by simpa [curName] using hcur y hy m hm)
-        (hT (.inl rfl)) hann hwt
-    · obtain ⟨k, hk', hkn, hkav⟩ := freshIn_spec s1'.avoid (baseOf x) s1'.next
-      rw [hk'] at h
-      obtain ⟨⟨u, s3⟩, h3, rfl, rfl⟩ := h
-      obtain ⟨live, clock, rfl, -⟩ := liveAdd_step h3
-      have hTn : T[n]? = some ty := decl_final hk hw0 hfin
-        (by rw [Std.HashMap.getElem?_insert]; split <;> simp) (by simp) (by rw [hs1, hs0])
-        (by simp; omega) hxav
-      have hTd : T[freshName (baseOf x) k]? = some ty := hfin.drawn (by simp)
-        (by simpa using hkav) ⟨_, k, rfl, by simp⟩
-      have hd : ∀ τ, tyOfName T Y (freshName (baseOf x) k) = .ok τ → τ = ty := fun τ hτ =>
-        Except.ok.inj ((tyOfName_T hTd).symm.trans hτ).symm
-      have hn0 : st.tyOf[n]? = none := by rw [← decl_tyOf_none hk hw0 hxav, hs0]
-      have hk0 : st.next ≤ k := Nat.le_trans hn0' (Nat.le_trans hn1 hkn)
-      refine plain_close (DisjInv.ins (s := { st with tys := st.tys.insert n ty })
-          (hD.ins hn0 rfl rfl) (hwf.tyOf_none hk0) (by rw [hs1, hs0]) (by rw [hs1, hs0]))
-        (car_of_eq (by rw [hs1, hs0])) (pend_of_eq (by rw [hs1, hs0]))
-        (by simp [Rope.toList_one, Rope.toList_app, WItem.isBranching])
-        fun _ hT => ⟨fun it hm => ?_, fun _ m hm => by simp at hm⟩
-      simp only [Rope.toList_app, Rope.toList_one, List.singleton_append, List.mem_cons,
-        List.not_mem_nil, or_false] at hm
-      rcases hm with rfl | rfl
-      all_goals intro ty' hty'
-      all_goals cases hty'
-      · exact ⟨hd, hg, nofun⟩
-      refine ⟨fun τ hτ => Except.ok.inj ((tyOfName_T hTn).symm.trans hτ).symm, hg,
-        fun w hw => ?_⟩
-      cases hw
-      refine WOK.kIte hL hκ (wRen_wok hL h0 hrS (fun y hy m hm => ?_) (hT (.inl rfl)) hann hwt)
-        (WOK.var hL hg hd)
-      simpa [curName] using hcur y hy m hm
-  case cmd.init.nondet.true =>
-    obtain ⟨⟨n, s1⟩, h1, rfl, rfl⟩ := h
-    have hg : Ground ty := hng.1.2 (hng.1.1 trivial)
-    obtain ⟨n', s1', hk⟩ := wName_ok x st
-    obtain ⟨hnn, rfl⟩ := Prod.mk.inj (Except.ok.inj ((wDecl_run hk).symm.trans h1))
-    replace hnn : n = n' := hnn.symm
-    subst hnn
-    obtain ⟨-, hs1⟩ := wName_state hk
-    have hxav : AvoidedIfFresh st x := hav x (by simp [Block.idents, Stmt.idents])
-    have hTn : T[n]? = some ty := decl_final hk hwf hfin (by simp) (by simp) (by rw [hs1])
-      (Nat.le_refl _) hxav
-    refine plain_close (hD.ins (decl_tyOf_none hk hwf hxav) (by rw [hs1]) (by rw [hs1]))
-      (car_of_eq (by rw [hs1])) (pend_of_eq (by rw [hs1]))
-      (by simp [Rope.toList_one, WItem.isBranching])
-      fun _ _ => ⟨fun it hm => ?_, fun _ m hm => by simp at hm⟩
-    simp only [Rope.toList_one, List.mem_singleton] at hm
-    subst hm
-    intro ty' hty'
-    cases hty'
-    exact ⟨fun τ hτ => Except.ok.inj ((tyOfName_T hTn).symm.trans hτ).symm, hg, nofun⟩
   case cmd.set.det.true =>
     obtain ⟨⟨τ, hΓx, hwt⟩, -⟩ := hty.1
     obtain ⟨-, -, hann, -⟩ := hty

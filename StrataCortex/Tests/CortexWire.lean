@@ -56,13 +56,9 @@ meta def program : Wire.Program :=
 /-- Translate `p` to Core, whose procedure bodies are CFGs, and type-check the
 Core program. Print which step rejected `p`, or that the type check passed. -/
 meta def typeCheck (p : Wire.Program) : IO Unit :=
-  match Cortex.wireToCortex p with
-  | .error e => IO.println s!"invalid Cortex program: {e}"
-  | .ok m => match Cortex.toCoreProgram m with
-    | .error e => IO.println s!"Cortex lowering failed: {e}"
-    | .ok core => match Core.typeCheck .quiet core with
-      | .error e => IO.println s!"Core type checking failed: {e}"
-      | .ok _ => IO.println "Core type checking succeeded."
+  match Cortex.checkWire p with
+  | .error e => IO.println e
+  | .ok () => IO.println "Core type checking succeeded."
 
 /--
 info: Core type checking succeeded.

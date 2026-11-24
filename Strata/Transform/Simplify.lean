@@ -478,10 +478,11 @@ def sweptBody (base : Ctx) (proc : Procedure) (ss : List Statement) : List State
     its entry variables are kept in hash sets, since the check looks up every variable
     occurrence. Every free-variable type annotation in `out` must also agree with its
     declaration in scope or, for a variable `ss` reads without declaring, with its
-    annotation in `ss` (`Block.annotsAgreeB`), whose typing is built once in a hash map. Both
-    conjuncts are checked rather than
-    proved: proofs that Simplify's output is def-use well-formed and keeps annotations
-    agreeing would remove them. -/
+    annotation in `ss` (`Block.annotsAgreeB`), whose typing is built once in a hash map.
+    When it passes, the swept body's entry environment is well-formed wherever the body's is
+    (`gateOK_blockInitEnvWF`), so the theorem about the installed body
+    (`checkedBody_overapproximatesTraces`) needs no condition on the factory. Over a factory
+    whose inlined bodies call undeclared operators the check can fail, and the body is kept. -/
 @[expose] def gateOK (F : Lambda.Factory CoreLParams) (ss out : List Statement) : Bool :=
   let defs : Std.HashSet CoreIdent :=
     Std.HashSet.ofList (Imperative.Block.definedVars (P := Expression) (C := Command) ss false)

@@ -6,7 +6,6 @@
 module
 
 public import Strata.Languages.Core.Factory
-public import Strata.Languages.Core.NameMangling
 public import Strata.Transform.Simplify.Expr
 
 /-! # Folding boolean connectives with a literal argument
@@ -25,11 +24,12 @@ open Lambda
 
 public section
 
-/-- The boolean connective the op `name` denotes, read through name mangling.
-    The type checker rejects a program function with a factory function's
-    name, so only the factory's connectives match. -/
+/-- The boolean connective the op `name` denotes. The type checker rejects a program
+    function with a factory function's name, so only the factory's connectives match.
+    The connectives are monomorphic, so monomorphization never copies them, and a name of
+    a copy's shape (`$__mono#Bool.And#…`) is a user function's, not a connective. -/
 def boolOpOf? (name : String) : Option BoolOpKind :=
-  match CoreOp.ofString (NameMangling.demangledBaseName name) with
+  match CoreOp.ofString name with
   | .bool k => some k
   | _ => none
 

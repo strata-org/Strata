@@ -20,6 +20,7 @@ import all Strata.DL.Lambda.LExprWFProps
 import Strata.DL.Lambda.OperationalSemanticsProps
 import all Strata.DL.Lambda.LExprDenoteEval
 import Strata.DL.Lambda.LExprDenoteEvalProps
+import Strata.DL.Lambda.LExprTProps
 
 /-!
 ## Rewrites that reduce, up to metadata
@@ -312,6 +313,27 @@ theorem fvars_annotated_by_annotated {tyMap : Map T.Identifier LMonoTy} :
       exact hx.elim (fun hx => hx.elim (ih₁ he.1) (ih₂ he.2.1)) (ih₃ he.2.2)
   | some t => exact ⟨t, rfl, fun t' ht' => fvars_annotated_by_freeVars tyMap e he x t t' hx ht'⟩
 
+omit [Inhabited T.IDMeta] in
+/-- An expression that annotates every free variable, with the type `tyMap` gives it when it gives
+    one, is annotated against `tyMap`: the converse of `fvars_annotated_by_annotated`. -/
+theorem fvars_annotated_by_of_annotated {tyMap : Map T.Identifier LMonoTy} :
+    ∀ {e : LExpr T.mono}, (∀ x ty, (x, ty) ∈ LExpr.freeVars e → ∃ t, ty = some t ∧
+      ∀ t', Map.find? tyMap x = some t' → t = t') → fvars_annotated_by tyMap e := by
+  intro e h
+  induction e with
+  | const | op | bvar => trivial
+  | fvar m y ty =>
+    obtain ⟨t, rfl, ht⟩ := h y ty (by simp [LExpr.freeVars])
+    exact ht
+  | abs _ _ _ _ ih => exact ih (fun x ty hx => h x ty (by simpa [LExpr.freeVars] using hx))
+  | quant _ _ _ _ _ _ ih₁ ih₂ | app _ _ _ ih₁ ih₂ | eq _ _ _ ih₁ ih₂ =>
+    exact ⟨ih₁ (fun x ty hx => h x ty (by simp [LExpr.freeVars, hx])),
+      ih₂ (fun x ty hx => h x ty (by simp [LExpr.freeVars, hx]))⟩
+  | ite _ _ _ _ ih₁ ih₂ ih₃ =>
+    exact ⟨ih₁ (fun x ty hx => h x ty (by simp [LExpr.freeVars, hx])),
+      ih₂ (fun x ty hx => h x ty (by simp [LExpr.freeVars, hx])),
+      ih₃ (fun x ty hx => h x ty (by simp [LExpr.freeVars, hx]))⟩
+
 omit [DecidableEq T.IDMeta] [Inhabited T.IDMeta] in
 /-- Equal terms have equal denotations, whatever typing proofs they come with. -/
 private theorem denote_congr_term {tc : TyConstrInterp} {op : OpInterp tc}
@@ -382,12 +404,58 @@ theorem Preserves.denoteEval {M : ModeledFactory T} {σ : ValStore T}
   exact (denote_congr_term he hτ h₀).trans (hd.trans
     (denote_congr_term he'.symm h' _))
 
+/-- A reduction keeps operators consistent with the factory, when the environment's values
+are, under the factory conditions of `Factory.StepWFOn` on bodies and evaluators. -/
+theorem ReachesModMeta.opsConsistent {F : @Factory T} {env : Env T}
+    (hEnvOps : ∀ x r, env x = some r → OpsConsistent F r)
+    (hbody : Factory.BodyOpsConsistentOn F) (heval : Factory.EvalOpsConsistentOn F)
+    {e e' : LExpr T.mono} (h : ReachesModMeta F env e e') (hops : OpsConsistent F e) :
+    OpsConsistent F e' := by
+  obtain ⟨e₁, hs, he⟩ := h e rfl
+  refine OpsConsistent_of_eraseMetadata_eq he ?_
+  clear h he
+  unfold StepStar at hs
+  induction hs with
+  | refl => exact hops
+  | step a b c hab _ ih => exact ih (Step.OpsConsistent_preservedOn hab hops hEnvOps hbody heval)
+
+/-- A reduction keeps free variables annotated against a type map, when the environment's values
+are, and inlined bodies and evaluator results are (`Factory.BodyInlineAnnotated`,
+`Factory.EvalAnnotatedOn`). -/
+theorem ReachesModMeta.annotated {F : @Factory T} {env : Env T}
+    {tyMap : Map T.Identifier LMonoTy}
+    (hEnvAnnot : ∀ x r, env x = some r → fvars_annotated_by tyMap r)
+    (hbody : Factory.BodyInlineAnnotated F tyMap) (heval : Factory.EvalAnnotatedOn F tyMap)
+    {e e' : LExpr T.mono} (h : ReachesModMeta F env e e') (hann : fvars_annotated_by tyMap e) :
+    fvars_annotated_by tyMap e' := by
+  obtain ⟨e₁, hs, he⟩ := h e rfl
+  refine fvars_annotated_by_of_eraseMetadata_eq he ?_
+  clear h he
+  unfold StepStar at hs
+  induction hs with
+  | refl => exact hann
+  | step a b c hab _ ih =>
+    exact ih (Step.fvars_annotated_preservedOn hab hann hEnvAnnot hbody heval)
+
+/-- A reduction up to metadata brings in only the factory's operators: the operators of the
+    reduct satisfy every predicate those of the source, of the environment's values and the
+    factory's functions satisfy, when the factory brings in only its own operators. -/
+theorem ReachesModMeta.opsIn {F : @Factory T} {env : Env T} (hF : F.OpsClosed)
+    {S : T.Identifier → Prop} (hFS : ∀ o : T.Identifier, o.name ∈ F → S o)
+    (henv : ∀ x r, env x = some r → r.OpsIn S) {e e' : LExpr T.mono}
+    (h : ReachesModMeta F env e e') (he : e.OpsIn S) : e'.OpsIn S := by
+  obtain ⟨e₁, hs, he₁⟩ := h e rfl
+  intro o ho
+  rw [← LExpr.Proofs.getOps_replaceMetadata e' (fun _ => ()), ← LExpr.eraseMetadata, ← he₁,
+    LExpr.eraseMetadata, LExpr.Proofs.getOps_replaceMetadata] at ho
+  exact StepStar.opsIn hF hFS henv hs he o ho
+
 /-- A reduction preserves meaning, under the assumptions the denotational semantics makes
 of the environment it runs in and of the factory. -/
 theorem ReachesModMeta.preserves {F : @Factory T} {env : Env T} {tf : @TypeFactory T.IDMeta}
     {tcInterp : TyConstrInterp} {opInterp : OpInterp tcInterp}
     {fvarVal : FreeVarVal T tcInterp} {vt : TyVarVal}
-    (hEnvWF : Env.StepWF F env) (hFWF : Factory.StepWF F hEnvWF.typed.tyMap)
+    (hEnvWF : Env.StepWF F env) (hFWF : Factory.StepWFOn F hEnvWF.typed.tyMap)
     (hFacWF : Factory.WF F tf) (hF : Factory.InterpConsistent tcInterp opInterp F)
     (hC : ConstrInterpConsistent tcInterp opInterp F)
     (hEnv : Env.InterpConsistentAt tcInterp opInterp fvarVal vt env)
@@ -395,25 +463,12 @@ theorem ReachesModMeta.preserves {F : @Factory T} {env : Env T} {tf : @TypeFacto
     Preserves F hEnvWF.typed.tyMap tcInterp opInterp fvarVal vt e e' := by
   intro hops hann
   obtain ⟨e₁, hs, he⟩ := h e rfl
-  have inv : ∀ {x y : LExpr T.mono}, StepStar F env x y → OpsConsistent F x →
-      fvars_annotated_by hEnvWF.typed.tyMap x →
-      OpsConsistent F y ∧ fvars_annotated_by hEnvWF.typed.tyMap y := by
-    intro x y hxy
-    unfold StepStar at hxy
-    induction hxy with
-    | refl => exact fun ho ha => ⟨ho, ha⟩
-    | step a b c hab _ ih =>
-      intro ho ha
-      exact ih (Step.OpsConsistent_preserved hab ho hEnvWF.ops hFWF.bodyOps hFWF.evalOps)
-        (Step.fvars_annotated_preserved hab hEnvWF.typed ha hEnvWF.annot hFWF.bodyAnnot
-          hFWF.evalAnnot)
-  obtain ⟨ho₁, ha₁⟩ := inv hs hops hann
-  refine ⟨OpsConsistent_of_eraseMetadata_eq he ho₁,
-    fvars_annotated_by_of_eraseMetadata_eq he ha₁, fun τ ht => ?_⟩
-  have ht₁ := StepStar.type_preserved hs ht hEnvWF hFWF hops hann
+  refine ⟨h.opsConsistent hEnvWF.ops hFWF.bodyOps hFWF.evalOps hops,
+    h.annotated hEnvWF.annot hFWF.bodyAnnot hFWF.evalAnnot hann, fun τ ht => ?_⟩
+  have ht₁ := (StepStar.type_preservedOn hs ht hEnvWF hFWF hops hann).1
   have ht' := HasTypeA_of_eraseMetadata_eq he ht₁
   refine ⟨ht', ?_⟩
-  rw [StepStar.denote_preservedAt tcInterp opInterp fvarVal vt hs ht ht₁ hEnvWF hFWF.toOn hFacWF hF
+  rw [StepStar.denote_preservedAt tcInterp opInterp fvarVal vt hs ht ht₁ hEnvWF hFWF hFacWF hF
     hC hEnv hops hann]
   rw [denote_replaceMetadata tcInterp opInterp fvarVal vt .nil (fun _ => ()) ht₁,
     denote_replaceMetadata tcInterp opInterp fvarVal vt .nil (fun _ => ()) ht']

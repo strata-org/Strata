@@ -54,11 +54,12 @@ private theorem ren_get_cases (ρ : Ren Expression) (x : Expression.Ident) :
 /-- **A successful run of both phases on a loop-free list** `ss` of `p`: the WP phase succeeds
     (`wpLoopFree`, after `checkLoopFree`) with `w`, and the SSA phase on its guarded program
     (`ssaLoopFree`) with the entry renaming `ρ0` and the output `so`. -/
-theorem wpSSALoopFree_ok {Gw Gs : IdSet Expression} {p : Procedure} {ss : Statements}
+theorem wpSSALoopFree_ok {fac : Lambda.Factory CoreLParams} {Gw Gs : IdSet Expression}
+    {p : Procedure} {ss : Statements}
     {w : WOut Expression} {ρ0 : Ren Expression} {so : SOut Expression}
-    (h : wpSSALoopFree Gw Gs p ss = .ok (w, ρ0, so)) :
+    (h : wpSSALoopFree fac Gw Gs p ss = .ok (w, ρ0, so)) :
     wpLoopFree Gw p ss = .ok w ∧ checkLoopFree p ss = .ok () ∧
-      ssaLoopFree Gs p w.lay = .ok (ρ0, so) := by
+      ssaLoopFree fac Gs p w.lay = .ok (ρ0, so) := by
   grind [wpSSALoopFree, wpLoopFree, Except.bind_is_ok, Except.pure_is_ok]
 
 /-! ## The entry store
@@ -151,13 +152,14 @@ private theorem freshFold_inj {τ : Type} (Av : Expression.Ident → Prop) (c : 
       (by grind [Ren.set]) fun x y hx hy he => by grind [get_set, Ren.set]
     exact ⟨ih1, fun x hx => ih2 x (by grind [Ren.set])⟩
 
-/-- **The aliasing hypothesis from the values of `old x`.**  When `wpSSALoopFree Gw Gs p ss`
+/-- **The aliasing hypothesis from the values of `old x`.**  When `wpSSALoopFree fac Gw Gs p ss`
     succeeds with entry renaming `ρ0`, `σ` gives `old x` the value of `x` for each in-out
     parameter `x` of `p`, and every in-scope variable of `S` of the form of an introduced name is
     a parameter, two variables of `S` that `ρ0` maps to the same name hold the same value in `σ`. -/
-theorem wpSSALoopFree_hal {Gw Gs : IdSet Expression} {p : Procedure}
+theorem wpSSALoopFree_hal {fac : Lambda.Factory CoreLParams} {Gw Gs : IdSet Expression}
+    {p : Procedure}
     {ss : Statements} {w : WOut Expression} {ρ0 : Ren Expression} {so : SOut Expression}
-    (h : wpSSALoopFree Gw Gs p ss = .ok (w, ρ0, so))
+    (h : wpSSALoopFree fac Gw Gs p ss = .ok (w, ρ0, so))
     {S V : List Expression.Ident}
     (hSI : ∀ x ∈ S, ∀ b n, x = freshName b n → x ∈ p.paramTys.map (·.1))
     {σ : SemanticStore Expression}
@@ -186,12 +188,13 @@ Both phases succeed only on loop-free lists that pass `checkLoopFree`, so with t
 variables of the list as locals, the list is well scoped (`Block.WellScoped`) and reads only
 variables in scope. -/
 
-/-- **What a successful run guarantees of its input.**  When `wpSSALoopFree Gw Gs p ss`
+/-- **What a successful run guarantees of its input.**  When `wpSSALoopFree fac Gw Gs p ss`
     succeeds, `ss` is well scoped from `p.entryScope` with its assigned variables as locals
     (`Block.WellScoped`) and reads only variables of `p.entryScope`. -/
-theorem wpSSALoopFree_checks {Gw Gs : IdSet Expression} {p : Procedure}
+theorem wpSSALoopFree_checks {fac : Lambda.Factory CoreLParams} {Gw Gs : IdSet Expression}
+    {p : Procedure}
     {ss : Statements} {w : WOut Expression} {ρ0 : Ren Expression} {so : SOut Expression}
-    (h : wpSSALoopFree Gw Gs p ss = .ok (w, ρ0, so)) :
+    (h : wpSSALoopFree fac Gw Gs p ss = .ok (w, ρ0, so)) :
     Block.WellScoped (Block.assignedVars ss) p.entryScope ss ∧
       ∀ x ∈ Block.freeVars ss, x ∈ p.entryScope :=
   let ⟨hfv, hwfl, _⟩ := checkLoopFree_ok (wpSSALoopFree_ok h).2.1
@@ -206,10 +209,11 @@ procedure per procedure (`ssaProc`, same name). -/
 /-- **The obligation program is contract-free**: every procedure of the SSA phase's output is
     an obligation procedure, with an empty contract, so its loop-free statement list is its body
     (`contractWrapped_emptySpec`). -/
-theorem wpSSAProgramWith_contractFree {reserved : List Expression.Ident}
+theorem wpSSAProgramWith_contractFree {fac : Lambda.Factory CoreLParams}
+    {reserved : List Expression.Ident}
     {declProgram program out : Program}
     {lemmaObls : List (Imperative.ProofObligation Expression)}
-    (h : wpSSAProgramWith reserved declProgram lemmaObls program = .ok out) :
+    (h : wpSSAProgramWith fac reserved declProgram lemmaObls program = .ok out) :
     Program.noProcedureContracts out = true := by
   simp only [wpSSAProgramWith, ssaProgram, Except.bind_is_ok, Except.pure_is_ok] at h
   obtain ⟨mid, -, decls, hm, rfl⟩ := h
@@ -226,13 +230,14 @@ theorem wpSSAProgramWith_contractFree {reserved : List Expression.Ident}
 The SSA phase keeps the obligation unit of each lemma: it has no parameter, and its obligation
 reads no renamed name. -/
 
-/-- **Each lemma keeps its obligation.**  Let `wpSSAProgramWith reserved declProgram lemmaObls
+/-- **Each lemma keeps its obligation.**  Let `wpSSAProgramWith fac reserved declProgram lemmaObls
     program` succeed with `out`, and let `l` be a lemma of `program`.  Then `out` contains the
     obligation unit (`lemmaUnit`) of an obligation of `lemmaObls` labelled with `l`'s name. -/
-theorem wpSSAProgramWith_lemma {reserved : List Expression.Ident}
+theorem wpSSAProgramWith_lemma {fac : Lambda.Factory CoreLParams}
+    {reserved : List Expression.Ident}
     {declProgram program out : Program}
     {lemmaObls : List (Imperative.ProofObligation Expression)}
-    (h : wpSSAProgramWith reserved declProgram lemmaObls program = .ok out)
+    (h : wpSSAProgramWith fac reserved declProgram lemmaObls program = .ok out)
     {l : Lemma} {md : Imperative.MetaData Expression} (hl : Decl.lemma l md ∈ program.decls) :
     ∃ ob ∈ lemmaObls, ob.label = l.name ∧ lemmaUnit l.name ob ∈ out.decls := by
   obtain ⟨mid, hm, hs⟩ := (Except.bind_is_ok _ _ _).1 h

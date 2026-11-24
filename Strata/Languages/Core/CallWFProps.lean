@@ -141,7 +141,7 @@ theorem callError?_eq_none_iff (p : Program) (procName : String)
 
 /-- A call's arguments match a procedure's signature exactly when they do after rewriting each
     `inArg` expression: matching depends only on each argument's mode and in-out variable. -/
-private theorem WF.ArgsMatchSignature.map_mapInput_iff (g : Expression.Expr → Expression.Expr)
+theorem WF.ArgsMatchSignature.map_mapInput_iff (g : Expression.Expr → Expression.Expr)
     (proc : Procedure) (args : List (CallArg Expression)) :
     WF.ArgsMatchSignature proc (args.map (CallArg.mapInput g)) ↔
       WF.ArgsMatchSignature proc args := by
@@ -190,6 +190,22 @@ private theorem WF.ArgsMatchSignature.map_mapInput_iff (g : Expression.Expr → 
       simp only [Prod.map_fst, Prod.map_snd, id_eq, hout]
       exact h.outputsMatch yr hyr
 
+/-- A call's arguments match the signature of a procedure with the same input and output names
+    as one whose signature they match. -/
+theorem WF.ArgsMatchSignature.of_keys_eq {q1 q2 : Procedure} {args : List (CallArg Expression)}
+    (hm : WF.ArgsMatchSignature q1 args) (hinKeys : q1.header.inputs.keys = q2.header.inputs.keys)
+    (houtKeys : q1.header.outputs.keys = q2.header.outputs.keys) :
+    WF.ArgsMatchSignature q2 args := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · rw [hm.inputCount]
+    simpa using congrArg List.length hinKeys
+  · rw [hm.resultCount]
+    simpa using congrArg List.length houtKeys
+  · rw [← hinKeys, ← houtKeys]
+    exact hm.inputsMatch
+  · rw [← hinKeys, ← houtKeys]
+    exact hm.outputsMatch
+
 /-- A well-formed call stays well formed when its callee is replaced by a procedure with the same
     parameter names and its arguments by ones with the same modes and result variables (equal
     after rewriting every `inArg` expression to one constant). -/
@@ -209,17 +225,7 @@ theorem WF.WFcallProp.transfer {P1 P2 : Program} {nm : String} {q1 q2 : Procedur
     rw [← WF.ArgsMatchSignature.map_mapInput_iff (fun _ => e0), hshape,
       WF.ArgsMatchSignature.map_mapInput_iff]
     exact hm1
-  have hm3 : WF.ArgsMatchSignature q2 args' := by
-    refine ⟨?_, ?_, ?_, ?_⟩
-    · rw [hm2.inputCount]
-      simpa using congrArg List.length hinKeys
-    · rw [hm2.resultCount]
-      simpa using congrArg List.length houtKeys
-    · rw [← hinKeys, ← houtKeys]
-      exact hm2.inputsMatch
-    · rw [← hinKeys, ← houtKeys]
-      exact hm2.outputsMatch
-  exact WF.WFcallProp.of_argsMatch hq2 hm3 (hlhs ▸ h.lhsWF)
+  exact WF.WFcallProp.of_argsMatch hq2 (hm2.of_keys_eq hinKeys houtKeys) (hlhs ▸ h.lhsWF)
 
 /-- A well-formed call stays well formed when each of its `inArg` expressions is rewritten. -/
 theorem WF.WFcallProp.map_mapInput {P : Program} {nm : String} {args : List (CallArg Expression)}
@@ -241,6 +247,121 @@ theorem Command.callsWellFormed_mapInput {P : Program} (g : Expression.Expr → 
   intro cs hcs
   obtain ⟨cs₀, hmem, rfl⟩ := List.mem_map.mp hcs
   exact WF.WFcallProp.map_mapInput g (h cs₀ hmem)
+
+/-- When each output formal agrees in kind with the result argument it is paired with, the two
+    agree at every position. -/
+theorem WF.outputArgMatches_of_zip {inputs : List Expression.Ident}
+    {zs : List Expression.Ident} {rs : List (CallArg Expression)}
+    (h : ∀ zr ∈ zs.zip rs, WF.outputArgMatches inputs zr.1 zr.2 = true) :
+    ∀ (k : Nat) (z : Expression.Ident) (r : CallArg Expression), zs[k]? = some z →
+      rs[k]? = some r → WF.outputArgMatches inputs z r = true :=
+  fun _ z r hz hr =>
+    h (z, r) (List.mem_iff_getElem?.2 ⟨_, List.getElem?_zip_eq_some.2 ⟨hz, hr⟩⟩)
+
+/-- When each output formal agrees in kind with the result argument at its position, the output
+    formal at the position of an `out` argument is an output-only formal, at the position of
+    that `out` variable among the `out` variables. -/
+theorem WF.outArg_aligned (inputs : List Expression.Ident) :
+    ∀ (zs : List Expression.Ident) (rs : List (CallArg Expression)),
+    (∀ (k : Nat) (z : Expression.Ident) (r : CallArg Expression), zs[k]? = some z →
+      rs[k]? = some r → WF.outputArgMatches inputs z r = true) →
+    ∀ (k : Nat) (z w : Expression.Ident), zs[k]? = some z →
+      rs[k]? = some (CallArg.outArg w) →
+      ∃ j : Nat, (zs.filter (fun x => !inputs.contains x))[j]? = some z ∧
+        (CallArg.getOutArgs rs)[j]? = some w := by
+  intro zs
+  induction zs with
+  | nil => intro rs _ k z w hz; simp only [List.getElem?_nil, reduceCtorEq] at hz
+  | cons z0 zs ih =>
+    intro rs hm k z w hz hr
+    cases rs with
+    | nil => simp only [List.getElem?_nil, reduceCtorEq] at hr
+    | cons r0 rs =>
+      have hm0 := hm 0 z0 r0 rfl rfl
+      have hm' : ∀ (k : Nat) (z : Expression.Ident) (r : CallArg Expression), zs[k]? = some z →
+          rs[k]? = some r → WF.outputArgMatches inputs z r = true :=
+        fun k z r hz hr => hm (k + 1) z r hz hr
+      cases k with
+      | zero =>
+        simp only [List.getElem?_cons_zero, Option.some.injEq] at hz hr
+        subst hz hr
+        refine ⟨0, ?_, ?_⟩
+        · simp only [WF.outputArgMatches] at hm0
+          rw [List.filter_cons_of_pos (p := fun x => !inputs.contains x) hm0]
+          rfl
+        · simp only [CallArg.getOutArgs, List.filterMap_cons]
+          rfl
+      | succ k =>
+        simp only [List.getElem?_cons_succ] at hz hr
+        obtain ⟨j, hj1, hj2⟩ := ih rs hm' k z w hz hr
+        cases r0 with
+        | inArg ex => simp only [WF.outputArgMatches, Bool.false_eq_true] at hm0
+        | inoutArg id =>
+          simp only [WF.outputArgMatches] at hm0
+          refine ⟨j, ?_, ?_⟩
+          · have hnot : ¬(!inputs.contains z0) = true := by rw [hm0]; decide
+            rw [List.filter_cons_of_neg (p := fun x => !inputs.contains x) hnot]
+            exact hj1
+          · simpa only [CallArg.getOutArgs, List.filterMap_cons] using hj2
+        | outArg id =>
+          simp only [WF.outputArgMatches] at hm0
+          refine ⟨j + 1, ?_, ?_⟩
+          · rw [List.filter_cons_of_pos (p := fun x => !inputs.contains x) hm0]
+            simpa only [List.getElem?_cons_succ] using hj1
+          · simpa only [CallArg.getOutArgs, List.filterMap_cons,
+              List.getElem?_cons_succ] using hj2
+
+/-- When there are as many result arguments as output formals and each output formal agrees in
+    kind with the result argument it is paired with, there are as many `out` arguments as
+    output-only formals. -/
+theorem WF.outputOnly_length (inputs : List Expression.Ident) :
+    ∀ (zs : List Expression.Ident) (rs : List (CallArg Expression)),
+    zs.length = rs.length →
+    (∀ zr ∈ zs.zip rs, WF.outputArgMatches inputs zr.1 zr.2 = true) →
+    (zs.filter (fun x => !inputs.contains x)).length = (CallArg.getOutArgs rs).length := by
+  intro zs
+  induction zs with
+  | nil =>
+    intro rs hlen _
+    cases rs with
+    | nil => rfl
+    | cons =>
+      exfalso
+      simp only [List.length_nil, List.length_cons] at hlen
+      omega
+  | cons z zs ih =>
+    intro rs hlen hm
+    cases rs with
+    | nil =>
+      exfalso
+      simp only [List.length_nil, List.length_cons] at hlen
+      omega
+    | cons r rs =>
+      have hhead : (z, r) ∈ (z :: zs).zip (r :: rs) := by
+        simp only [List.zip_cons_cons, List.mem_cons, true_or]
+      have hm0 := hm (z, r) hhead
+      have hm' : ∀ zr ∈ zs.zip rs, WF.outputArgMatches inputs zr.1 zr.2 = true := by
+        intro zr hzr
+        have htail : zr ∈ (z :: zs).zip (r :: rs) := by
+          simp only [List.zip_cons_cons, List.mem_cons]
+          exact .inr hzr
+        exact hm zr htail
+      have hlen' : zs.length = rs.length := by
+        simp only [List.length_cons, Nat.add_right_cancel_iff] at hlen
+        exact hlen
+      have hrec := ih rs hlen' hm'
+      cases r with
+      | inArg ex => simp only [WF.outputArgMatches, Bool.false_eq_true] at hm0
+      | inoutArg id =>
+        simp only [WF.outputArgMatches] at hm0
+        have hnot : ¬(!inputs.contains z) = true := by rw [hm0]; decide
+        rw [List.filter_cons_of_neg (p := fun x => !inputs.contains x) hnot]
+        simpa only [CallArg.getOutArgs, List.filterMap_cons] using hrec
+      | outArg id =>
+        simp only [WF.outputArgMatches] at hm0
+        rw [List.filter_cons_of_pos (p := fun x => !inputs.contains x) hm0]
+        simpa only [CallArg.getOutArgs, List.filterMap_cons, List.length_cons,
+          Nat.add_right_cancel_iff] using hrec
 
 end -- public section
 

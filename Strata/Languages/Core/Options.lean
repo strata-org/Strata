@@ -160,7 +160,9 @@ def CheckLevel.options : String :=
 
 /-- How verification conditions are generated from the loop-free program:
     `symbolic` (symbolic evaluation, `toCoreProofObligationProgram`) or `wp` (the WP phase, the
-    SSA phase and dead-definition elimination, `Core.WP`). -/
+    SSA phase, then beta reduction, guard forwarding, the inlining of single-use definitions,
+    dead-definition elimination, guard propagation and the constructor fold repeated until they
+    change nothing, `Core.wpVCGenPhases`). -/
 inductive VCGenMode where
   | symbolic
   | wp

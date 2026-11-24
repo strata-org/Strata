@@ -7,6 +7,8 @@ module
 
 public import Strata.Languages.Core.Expressions
 public import Strata.Languages.Core.Factory
+import Strata.DL.Lambda.LExprDenoteEvalProps
+import Strata.DL.Lambda.LExprWFProps
 import all Strata.Languages.Core.Expressions
 import all Strata.DL.Lambda.LExpr
 import all Strata.DL.Lambda.LExprWF
@@ -23,7 +25,9 @@ built-in `Bool.Not` (`Core.not_getOps`); a comparison `a < b` of expressions rea
 refers only to theirs and the built-in `Int.Lt` (`Core.lt_getFvars`, `Core.lt_getTypedFvars`,
 `Core.lt_getOps`).  `EqModuloMeta.beq` on Core expressions, on `Option`s of them and on
 products is `true` exactly when the metadata-erased operands are equal — it ignores metadata,
-not values (`eqModuloMeta_beq_iff`, `eqModuloMeta_beq_option_iff`, `eqModuloMeta_beq_prod_iff`). -/
+not values (`eqModuloMeta_beq_iff`, `eqModuloMeta_beq_option_iff`, `eqModuloMeta_beq_prod_iff`).
+A variable reference that evaluates gives the stored value of the variable
+(`Expression.eval_mkFvar_some`). -/
 
 namespace Core
 
@@ -124,6 +128,24 @@ theorem eqModuloMeta_beq_prod_iff {α β : Type _}
     Lambda.LExpr.EqModuloMeta.beq p q = true ↔
       Lambda.LExpr.EqModuloMeta.beq p.1 q.1 = true ∧ Lambda.LExpr.EqModuloMeta.beq p.2 q.2 = true := by
   simp only [Lambda.LExpr.EqModuloMeta.beq, Bool.and_eq_true]
+
+/-- A variable reference that evaluates gives the stored value of the variable, which belongs to
+    the factory. -/
+theorem Expression.eval_mkFvar_some {f : Expression.Factory}
+    {σ : Expression.Ident → Option Expression.Val}
+    {x : Expression.Ident} {v : Expression.Val}
+    (h : Expression.eval f σ (HasFvar.mkFvar x) = some v) :
+    σ x = some v ∧ HasVal.value f v := by
+  have hmemFree : (x, none) ∈
+      Lambda.LExpr.freeVars (HasFvar.mkFvar x : Expression.Expr) := by
+    simp only [Lambda.LExpr.freeVars, HasFvar.mkFvar, List.mem_singleton]
+  obtain ⟨w, hw, hwtc⟩ := Lambda.LExpr.denoteEval_defines h x
+    (Lambda.LExpr.mem_getVars_of_mem_freeVars (ty := none) hmemFree)
+  have hev : Expression.eval f σ (HasFvar.mkFvar x) = some w :=
+    Lambda.LExpr.denoteEval_fvar hw hwtc
+  rw [hev] at h
+  cases h
+  exact ⟨hw, hwtc⟩
 
 end -- public section
 

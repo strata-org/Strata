@@ -105,6 +105,11 @@ def CoreIdent.toPretty (x : CoreIdent) : String := x.name
 @[expose]
 def CoreIdent.oldStr : String := "old "
 
+/-- The prefix of the Boolean variable the translator declares for the choice of a CFG block's
+    nondeterministic `goto a, b` (`$__nondet_N`, declared by an `init` in that block). -/
+@[expose]
+def nondetChoicePrefix : String := "$__nondet_"
+
 /-- Create the `old name` identifier for an inout parameter named `name`. -/
 @[expose]
 def CoreIdent.mkOld (name : String) : CoreIdent := ⟨CoreIdent.oldStr ++ name, ()⟩

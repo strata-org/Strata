@@ -683,9 +683,10 @@ def toSMTOp (factory : @Lambda.Factory CoreLParams) (fn : CoreIdent) (fnty : LMo
     | .error _ => ctx
   let (smt_outty, ctx) ← LMonoTy.toSMTType outty ctx
 
-  -- Demangle so a specialized datatype op (e.g. `$__mono#Cons#int`) matches its
-  -- `datatypeFuns` key and the solver sees the native constructor/selector name.
-  let baseFn := Core.NameMangling.demangledBaseName fn.name
+  -- A monomorphized copy is encoded as the function its factory entry's mark records
+  -- (`FuncAttr.monoCopyOf`), not one read off its name. A copy that lost its mark is encoded
+  -- as an uninterpreted function: weaker, never unsound.
+  let baseFn := ((factory[fn.name]?).bind (Strata.DL.Util.FuncAttr.findMonoCopyOf ·.attr)).getD fn.name
   match ctx.datatypeFuns.get? baseFn with
   | some (kind, c) =>
     let adtApp := fun (args : List Term) (retty : TermType) =>
@@ -704,8 +705,8 @@ def toSMTOp (factory : @Lambda.Factory CoreLParams) (fn : CoreIdent) (fnty : LMo
     match factory[fn.name]? with
     | none => .error f!"Cannot find function {fn} in Strata Core's Factory!"
     | some func =>
-      -- Demangle so built-in dispatch keys on the base name (see above).
-      let baseName := Core.NameMangling.demangledBaseName func.name.name
+      -- Built-in dispatch keys on the function a copy specializes (see above).
+      let baseName := baseFn
       match corePredefinedOpToSMTOp (CoreOp.ofString baseName) ctx with
       | some (op, retty, ctx) => .ok (op, retty, ctx, pending)
       | none => do
@@ -765,16 +766,17 @@ def toSMTOp (factory : @Lambda.Factory CoreLParams) (fn : CoreIdent) (fnty : LMo
 
 /-- Does `tr` denote a *structured* Core trigger list (a `Triggers.empty` /
     `Triggers.addGroup` spine, or `LExpr.noTrigger`)? If not, the trigger is a bare
-    pattern term supplied directly and forms a single `:pattern` group. -/
+    pattern term supplied directly and forms a single `:pattern` group. The trigger operators
+    are matched by name: `MonomorphizeFunctions` never copies them (`isTriggerMetaOp`). -/
 def isCoreTriggerListExpr (tr : LExpr CoreLParams.mono) : Bool :=
   match tr with
   | .bvar _ _ => true  -- LExpr.noTrigger
   | .op _ opId _ =>
-    match CoreOp.ofString (Core.NameMangling.demangledBaseName opId.name) with
+    match CoreOp.ofString opId.name with
     | .trigger .EmptyTriggers | .trigger .EmptyGroup => true
     | _ => false
   | .app _ (.app _ (.op _ opId _) _) _ =>
-    match CoreOp.ofString (Core.NameMangling.demangledBaseName opId.name) with
+    match CoreOp.ofString opId.name with
     | .trigger .AddGroup => true
     | _ => false
   | _ => false
@@ -1016,7 +1018,7 @@ def encodeTriggerGroup (factory : @Lambda.Factory CoreLParams) (bvs : BoundVars)
     -- `TriggerGroup.empty`: end of the group spine.
     .ok (acc, ctx, pending)
   | .app _ (.app _ (.op _ opId _) t) rest =>
-    match CoreOp.ofString (Core.NameMangling.demangledBaseName opId.name) with
+    match CoreOp.ofString opId.name with
     | .trigger .AddTrigger =>
       let (tt, ctx, pending) ← toSMTTerm factory bvs t ctx pending
       encodeTriggerGroup factory bvs rest (tt :: acc) ctx pending
@@ -1044,7 +1046,7 @@ def encodeTriggerGroups (factory : @Lambda.Factory CoreLParams) (bvs : BoundVars
     -- `Triggers.empty`: end of the group-list spine.
     .ok (acc, ctx, pending)
   | .app _ (.app _ (.op _ opId _) g) rest =>
-    match CoreOp.ofString (Core.NameMangling.demangledBaseName opId.name) with
+    match CoreOp.ofString opId.name with
     | .trigger .AddGroup =>
       let (group, ctx, pending) ← encodeTriggerGroup factory bvs g [] ctx pending
       encodeTriggerGroups factory bvs rest (group :: acc) ctx pending
@@ -1435,10 +1437,13 @@ then *snapshots* the obligation: it reads the obligation's complete
 goal never enters the shared state.
 
 The state holds the full, unpruned `assumptions`, so entries stay shared
-across obligations that prune different irrelevant axioms. An entry's term,
-any encoding error, and its definition dependencies are attributed to that
-entry, so `snapshotObligation` selects only the entries an obligation keeps:
-a pruned entry's term is never asserted, its error is never surfaced, and its
+across obligations that prune different irrelevant axioms or leave out
+different unread definitions. An entry's term, any encoding error, and its
+definition dependencies are attributed to that entry, so `snapshotObligation`
+selects only the entries an obligation keeps, an assumption or distinctness
+fact by its label (`prunedLabels`) and a variable definition by its variable's
+name (`unreadDefs`), two separate sets: a pruned
+entry's term is never asserted or defined, its error is never surfaced, and its
 definitions are never drained — for these three mechanisms the result matches
 a from-scratch encoding of the pruned obligation.
 
@@ -1605,20 +1610,23 @@ structure EncodeResult.Assembly where
   /-- Seed queue from the kept entries and varDefs (goal's queue not yet folded in). -/
   keptSeed : SMT.PendingFnQueue
 
-/-- Assemble the entries `keep` selects, forcing their deferred results (a
-    kept entry's encoding error surfaces here; a dropped entry's never does).
-    Emission order: newest frame first, in-frame program order. -/
-def EncodeResult.Assembly.ofFramesKept (keep : String → Bool)
+/-- Assemble the entries kept: an assumption or distinctness fact when
+    `keepLabel` holds of its label, a variable definition when `keepDef` holds of
+    its variable's name. Their deferred results are forced (a kept entry's
+    encoding error surfaces here; a dropped entry's never does). Emission order:
+    newest frame first, in-frame program order. -/
+def EncodeResult.Assembly.ofFramesKept (keepLabel keepDef : String → Bool)
     (frames : List (Imperative.PathConditions.PathConditionFrame
       SMTCheckpoint SMTEncodedPathCondition Expression)) :
     Except Format EncodeResult.Assembly := do
   let keptDistincts ← (frames.flatMap fun f =>
     f.output.distinctsRev.reverse.filterMap fun e =>
-      if keep e.label then some e.result else none).mapM id
+      if keepLabel e.label then some e.result else none).mapM id
   let keptAssumptions ← (frames.flatMap fun f =>
     f.output.assumptionsRev.reverse.filterMap fun e =>
-      if keep e.label then some e.result else none).mapM id
-  let varDefsWithPending := frames.flatMap fun f => f.output.varDefsRev.reverse
+      if keepLabel e.label then some e.result else none).mapM id
+  let varDefsWithPending := frames.flatMap fun f =>
+    f.output.varDefsRev.reverse.filter fun d => keepDef d.1.name
   -- Seed the drain from only the definitions the kept terms depend on;
   -- `processPendingFnDefs` rediscovers the transitive closure.
   let seedQueues : List SMT.PendingFnQueue :=
@@ -1648,9 +1656,11 @@ def EncodeResult.Assembly.finish (factory : @Lambda.Factory CoreLParams)
         goal := goalTerm, ctx, stats }
 
 /-- Build one obligation's `EncodeResult` from `st` without writing back:
-    encode the goal against `st.current`, assemble the kept entries, finish. -/
+    encode the goal against `st.current`, assemble the entries kept (those whose
+    label is not in `prunedLabels`, the definitions whose variable is not in
+    `unreadDefs`), finish. -/
 def snapshotObligation (factory : @Lambda.Factory CoreLParams) (st : SMTEncodeState)
-    (goal : Expression.Expr) (prunedLabels : List String) :
+    (goal : Expression.Expr) (prunedLabels : List String) (unreadDefs : Std.HashSet String) :
     Except Format EncodeResult := do
   -- Obligation-specific fork: encode the goal against a fresh queue, capturing
   -- the goal's own definition dependencies.
@@ -1659,18 +1669,20 @@ def snapshotObligation (factory : @Lambda.Factory CoreLParams) (st : SMTEncodeSt
   -- Emission-time pruning: O(1) membership.
   let pruned : Std.HashSet String :=
     prunedLabels.foldl (fun acc l => acc.insert l) ∅
-  let asm ← EncodeResult.Assembly.ofFramesKept (fun l => !pruned.contains l) st.frames
+  let asm ← EncodeResult.Assembly.ofFramesKept (fun l => !pruned.contains l)
+    (fun x => !unreadDefs.contains x) st.frames
   asm.finish factory goalTerm goalPending ctx
 
 /-- Advance the fold over the obligation's `assumptions` (encoding only what
     the state has not already encoded), then `snapshotObligation` for its goal.
     Returns the result and the advanced state. -/
 def encodeObligationToSMT (factory : @Lambda.Factory CoreLParams) (st : SMTEncodeState)
-    (ob : Imperative.ProofObligation Expression) (prunedLabels : List String := []) :
+    (ob : Imperative.ProofObligation Expression) (prunedLabels : List String := [])
+    (unreadDefs : Std.HashSet String := {}) :
     Except Format (EncodeResult × SMTEncodeState) := do
   -- `assumptions` lists its PathConditions newest first; the fold runs oldest first.
   let st ← ((smtEncodingFold factory).advance ob.assumptions.reverse).exec st
-  let r ← snapshotObligation factory st ob.obligation prunedLabels
+  let r ← snapshotObligation factory st ob.obligation prunedLabels unreadDefs
   .ok (r, st)
 
 /-! ## Pointer-memoized snapshot assembly
@@ -1687,17 +1699,18 @@ def EncodeResult.Assembly.ofFrames
     (frames : List (Imperative.PathConditions.PathConditionFrame
       SMTCheckpoint SMTEncodedPathCondition Expression)) :
     Except Format EncodeResult.Assembly :=
-  EncodeResult.Assembly.ofFramesKept (fun _ => true) frames
+  EncodeResult.Assembly.ofFramesKept (fun _ => true) (fun _ => true) frames
 
 /-- `encodeObligationToSMT` with the assembly memoized by the frame list's
-    pointer address. Pruned obligations delegate to `encodeObligationToSMT`,
+    pointer address. Pruned or sliced obligations delegate to `encodeObligationToSMT`,
     which is also available for callers without a cache to thread. -/
 def encodeObligationToSMTCached (factory : @Lambda.Factory CoreLParams) (st : SMTEncodeState)
     (ob : Imperative.ProofObligation Expression) (prunedLabels : List String)
+    (unreadDefs : Std.HashSet String)
     (cache : Strata.PtrCache.PtrCache1 EncodeResult.Assembly.ofFrames) :
     Except Format (EncodeResult × SMTEncodeState ×
       Strata.PtrCache.PtrCache1 EncodeResult.Assembly.ofFrames) := do
-  if prunedLabels.isEmpty then
+  if prunedLabels.isEmpty && unreadDefs.isEmpty then
     let st ← ((smtEncodingFold factory).advance ob.assumptions.reverse).exec st
     -- Encode the goal before assembling the entries: if both fail, the
     -- goal's error is reported.
@@ -1711,7 +1724,7 @@ def encodeObligationToSMTCached (factory : @Lambda.Factory CoreLParams) (st : SM
     let r ← asm.finish factory goalTerm goalPending ctx
     .ok (r, st, cache)
   else
-    let (r, st) ← encodeObligationToSMT factory st ob prunedLabels
+    let (r, st) ← encodeObligationToSMT factory st ob prunedLabels unreadDefs
     .ok (r, st, cache)
 
 end -- public section

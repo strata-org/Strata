@@ -92,9 +92,9 @@ private theorem choosePrefix_go_fresh (names : List String) (bound : Nat)
       simp only [List.any_eq_true, not_exists, not_and, Bool.not_eq_true] at hany
       exact hany n hn
 
-/-- No name of `names` starts with `choosePrefix names`: symbols never collide with them. -/
-theorem choosePrefix_fresh (names : List String) :
-    ∀ n ∈ names, n.startsWith (choosePrefix names) = false := by
+/-- No name of `names` starts with `choosePrefix names base`: symbols never collide with them. -/
+theorem choosePrefix_fresh (names : List String) (base : String := defaultSymPrefix) :
+    ∀ n ∈ names, n.startsWith (choosePrefix names base) = false := by
   unfold choosePrefix
   exact choosePrefix_go_fresh names _ (length_le_foldl_max names 0) _ _ (by omega)
 

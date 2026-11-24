@@ -19,10 +19,19 @@ open Imperative Lambda
 
 @[expose] public section
 
-/-- `assume`s for the entries of the path condition `pc` (newest first) beyond its oldest `k`,
-    oldest first. -/
+/-- The statements for the entries of the path condition `pc` (newest first) beyond its oldest
+    `k`, oldest first: for a join symbol's definition `s == v` (`joinDefSym?`, against the join
+    symbols the entries before it define), `s` annotated with its type `ty`, the declaration
+    `init s : ty := v`; an `assume` for every other entry. -/
 def newAssumes (pc : List (String × Expression.Expr)) (k : Nat) : List Statement :=
-  (pc.take (pc.length - k)).reverse.map fun (l, e) => Statement.assume l e #[]
+  let defined := joinDefsOf (pc.drop (pc.length - k))
+  ((pc.take (pc.length - k)).reverse.foldl (fun (d, out) (l, e) =>
+    match joinDefSym? d l e, e with
+    | some s, .eq _ (.fvar _ x (some ty)) v =>
+      (d.insert s, out.push (Statement.init x (.forAll [] ty) (.det v) #[]))
+    | some s, _ => (d.insert s, out.push (Statement.assume l e #[]))
+    | none, _ => (d, out.push (Statement.assume l e #[])))
+    (defined, (#[] : Array Statement))).2.toList
 
 /-- The `assert`/`cover` checking an obligation's condition. -/
 def checkStmt (o : Obl) : Statement :=

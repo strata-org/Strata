@@ -181,6 +181,50 @@ abbrev CoreStepE
     (π : String → Option Procedure) :=
   StepStmtExtE π
 
+/-- The configuration runs next a call that does not finish: the call, possibly inside
+    sequences and blocks, is the next command to run. Its callee, the procedure of the table
+    instantiated at the call's type arguments, is found, the entry into the callee succeeds in
+    some callee store `σAO`, and no complete run of the callee body from `σAO` exists. The call
+    has no step. -/
+inductive CallDoesNotFinish (π : String → Option Procedure) : CoreConfig → Prop where
+  /-- The call is the next statement to run. -/
+  | call {n : String} {tyArgs : Option (List Expression.Ty)} {args : List (CallArg Expression)}
+      {md : MetaData Expression} {ρ : Env Expression} {p : Procedure} {σAO : CoreStore} :
+      Calls.typeInstantiatedCallee π n tyArgs = some p →
+      CallEntry ρ.factory ρ.store p args σAO →
+      (¬ ∃ σEnd evs, CoreBodyExecE π p.body ⟨σAO, ρ.factory⟩ σEnd evs) →
+      CallDoesNotFinish π (.stmt (.cmd (.call n tyArgs args md)) ρ)
+  /-- The call is the next command of the first part of a sequence. -/
+  | seq {inner : CoreConfig} {ss : List Statement} :
+      CallDoesNotFinish π inner → CallDoesNotFinish π (.seq inner ss)
+  /-- The call is the next command inside a block. -/
+  | block {label : Option String} {σp : CoreStore} {inner : CoreConfig} :
+      CallDoesNotFinish π inner → CallDoesNotFinish π (.block label σp inner)
+
+/-- The configuration runs next a call whose callee runs on without finishing: the call, possibly
+    inside sequences and blocks, is the next command to run, its callee is found, the entry into
+    the callee succeeds in some callee store `σAO`, the callee body is structured, and every
+    configuration reachable from the start of the callee body either steps or is again such a
+    configuration. The callee is never finished, since a finished configuration neither steps nor
+    runs such a call. -/
+coinductive CallRunsForever (π : String → Option Procedure) : CoreConfig → Prop where
+  /-- The call is the next statement to run. -/
+  | call {n : String} {tyArgs : Option (List Expression.Ty)} {args : List (CallArg Expression)}
+      {md : MetaData Expression} {ρ : Env Expression} {p : Procedure} {σAO : CoreStore}
+      {ss : List Statement} :
+      Calls.typeInstantiatedCallee π n tyArgs = some p →
+      CallEntry ρ.factory ρ.store p args σAO →
+      p.body = .structured ss →
+      (∀ evs cfg, CoreStepStarE π (.stmt (Stmt.block "" ss #[]) ⟨σAO, ρ.factory⟩) evs cfg →
+        (∃ evs' cfg', CoreStepE π cfg evs' cfg') ∨ CallRunsForever π cfg) →
+      CallRunsForever π (.stmt (.cmd (.call n tyArgs args md)) ρ)
+  /-- The call is the next command of the first part of a sequence. -/
+  | seq {inner : CoreConfig} {ss : List Statement} :
+      CallRunsForever π inner → CallRunsForever π (.seq inner ss)
+  /-- The call is the next command inside a block. -/
+  | block {label : Option String} {σp : CoreStore} {inner : CoreConfig} :
+      CallRunsForever π inner → CallRunsForever π (.block label σp inner)
+
 /-! ## Old-variable environment augmentation -/
 
 /-- Augment an environment with old-variable bindings for a set of variables

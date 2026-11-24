@@ -138,28 +138,23 @@ private theorem Ctx.Fixed.join {base ctx : Ctx} (h : ctx.Fixed base) (live : Lis
     | cons p rest ih => exact ih _ hc
 
 /-- What a run of a body assumes of the base context and the model: the fold factory is the
-    model's factory with `inline` weakened and satisfies the laws of the denotational
-    semantics under every typing of the names `L` lists. -/
-structure Setup (base : Ctx) (M : Expression.Factory) (L : List (CoreIdent × Expression.Ty)) :
-    Prop where
+    model's factory with `inline` weakened and satisfies the assumptions of the denotational
+    semantics under every typing. -/
+structure Setup (base : Ctx) (M : Expression.Factory) : Prop where
   fold : base.foldFactory = withoutInline base.carriers base.factory
   model : M.factory = base.factory
   wf : ∃ tf, Factory.WF base.foldFactory tf
-  step : ∀ tyMap : Map CoreIdent LMonoTy,
-    (∀ x τ, Map.find? tyMap x = some τ → (x, LTy.forAll [] τ) ∈ L) →
-    Factory.StepWF base.foldFactory tyMap
+  step : ∀ tyMap : Map CoreIdent LMonoTy, Factory.StepWFOn base.foldFactory tyMap
 
 /-- What holds at every point of a run: the context records sound values over names among
-    `T`, the store gives the names among `T` their `Γ` types and types `L` lists, holds
-    values of the model, and binds every name among `T` that `Γ` types. -/
+    `T`, the store gives the names among `T` their `Γ` types, holds values of the model, and
+    binds every name among `T` that `Γ` types. -/
 structure Inv (base : Ctx) (M : Expression.Factory) (T : List CoreIdent)
-    (L : List (CoreIdent × Expression.Ty)) (Γ : VarTyping Expression) (ctx : Ctx)
-    (σ : SemanticStore Expression) : Prop where
+    (Γ : VarTyping Expression) (ctx : Ctx) (σ : SemanticStore Expression) : Prop where
   fixed : ctx.Fixed base
   vs : ValuesSound ctx M σ
   names : ∀ x r, (x, r) ∈ ctx.values.toList → x ∈ T ∧ r.NamesIn (fun y : CoreIdent => y ∈ T)
   typed : TypedOn M Γ T σ
-  inL : ∀ y ∈ T, ∀ v, σ y = some v → (y, LTy.forAll [] v.sort.toMonoTy) ∈ L
   wf : WellFormedStore σ M
   /-- Every name among `T` the typing types is bound. -/
   bound : ∀ y ∈ T, (Γ y).isSome → (σ y).isSome
@@ -168,8 +163,8 @@ structure Inv (base : Ctx) (M : Expression.Factory) (T : List CoreIdent)
     precondition types, whose variables are among `T` and bound, simplifies to one that is
     well-formed against the store and evaluates to the same value. -/
 private theorem simp_expr {base ctx : Ctx} {M : Expression.Factory} {T : List CoreIdent}
-    {L : List (CoreIdent × Expression.Ty)} {Γ : VarTyping Expression}
-    {σ : SemanticStore Expression} (S : Setup base M L) (I : Inv base M T L Γ ctx σ)
+    {Γ : VarTyping Expression}
+    {σ : SemanticStore Expression} (S : Setup base M) (I : Inv base M T Γ ctx σ)
     {e : Expression.Expr} {ty : Expression.Ty} (hok : ExprOK base.factory Γ e ty)
     (hT : e.NamesIn (fun y : CoreIdent => y ∈ T)) (hd : ValStore.Defines σ M.model.tcInterp e) :
     ExprGood ctx.foldFactory M σ (fun y : CoreIdent => y ∈ T) (simplifyExpr ctx e) ∧
@@ -184,13 +179,10 @@ private theorem simp_expr {base ctx : Ctx} {M : Expression.Factory} {T : List Co
   have hg := exprGood_of_ok (c := base.carriers) hok I.typed hT hd
   rw [← S.fold, ← hfo] at hg
   refine simplifyExpr_eval (tf := tf) hok' I.vs (fun y v hv => I.wf y v hv)
-    (fun x r hx => I.names x r (Map.find?_mem _ _ _ hx)) (hfo ▸ hwf) (fun N hN => ?_)
+    (fun x r hx => I.names x r (Map.find?_mem _ _ _ hx)) (hfo ▸ hwf)
+    (fun _ _ => hfo ▸ S.step _)
     (hfold ▸ (Interp.withoutInline base.carriers M.model).interpConsistent)
     (hfold ▸ (Interp.withoutInline base.carriers M.model).constrConsistent) hg
-  rw [hfo]
-  refine S.step _ fun x τ hx => ?_
-  obtain ⟨hxN, v, hv, rfl⟩ := find?_storeTyMap_eq_some hx
-  exact I.inL x (hN x hxN) v hv
 
 
 /-! ## Commands -/
@@ -221,26 +213,21 @@ private theorem ValuesSound.invalidateVar {ctx : Ctx} {M : ModeledFactory CoreLP
 
 /-- The store part of the invariant after an `init`. -/
 private theorem store_init {M : Expression.Factory} {T : List CoreIdent}
-    {L : List (CoreIdent × Expression.Ty)} {Γ : VarTyping Expression}
+    {Γ : VarTyping Expression}
     {σ σ1 : SemanticStore Expression} {x : CoreIdent} {ty : Expression.Ty} {v : SemValue}
     (hty : TypedOn M Γ T σ)
-    (hL : ∀ y ∈ T, ∀ w, σ y = some w → (y, LTy.forAll [] w.sort.toMonoTy) ∈ L)
     (hwf : WellFormedStore σ M) (h1 : σ1 x = some v) (hfr : ∀ y, x ≠ y → σ1 y = σ y)
-    (hv : HasVal.valueOfTy M v ty) (hxL : (x, ty) ∈ L)
+    (hv : HasVal.valueOfTy M v ty)
     (hb : ∀ y ∈ T, (Γ y).isSome → (σ y).isSome) :
-    TypedOn M (Γ.extend [(x, ty)]) T σ1 ∧
-      (∀ y ∈ T, ∀ w, σ1 y = some w → (y, LTy.forAll [] w.sort.toMonoTy) ∈ L) ∧
-      WellFormedStore σ1 M ∧
+    TypedOn M (Γ.extend [(x, ty)]) T σ1 ∧ WellFormedStore σ1 M ∧
       (∀ y ∈ T, (Γ.extend [(x, ty)] y).isSome → (σ1 y).isSome) := by
   rw [VarTyping.extend_singleton]
-  refine ⟨fun y hy t w ht hw => ?_, fun y hy w hw => ?_, fun y w hw => ?_, fun y hy ht => ?_⟩ <;>
+  refine ⟨fun y hy t w ht hw => ?_, fun y w hw => ?_, fun y hy ht => ?_⟩ <;>
     by_cases hxy : x = y
   · subst hxy; simp only [ite_true, Option.some.injEq] at ht; subst ht
     rw [h1] at hw; cases hw; exact hv
   · simp only [Ne.symm hxy, ite_false] at ht
     rw [hfr y hxy] at hw; exact hty y hy t w ht hw
-  · subst hxy; rw [h1] at hw; cases hw; rw [← ty_eq_of_valueOfTy hv]; exact hxL
-  · rw [hfr y hxy] at hw; exact hL y hy w hw
   · subst hxy; rw [h1] at hw; cases hw; exact hv.1
   · rw [hfr y hxy] at hw; exact hwf y w hw
   · subst hxy; simp [h1]
@@ -249,25 +236,20 @@ private theorem store_init {M : Expression.Factory} {T : List CoreIdent}
 
 /-- The store part of the invariant after a `set`. -/
 private theorem store_set {M : Expression.Factory} {T : List CoreIdent}
-    {L : List (CoreIdent × Expression.Ty)} {Γ : VarTyping Expression}
+    {Γ : VarTyping Expression}
     {σ σ1 : SemanticStore Expression} {x : CoreIdent} {v : SemValue}
     (hty : TypedOn M Γ T σ)
-    (hL : ∀ y ∈ T, ∀ w, σ y = some w → (y, LTy.forAll [] w.sort.toMonoTy) ∈ L)
     (hwf : WellFormedStore σ M) (h1 : σ1 x = some v) (hfr : ∀ y, x ≠ y → σ1 y = σ y)
     (hst : HasVal.valueOfStoredTy (P := Expression) M σ x v)
     (hb : ∀ y ∈ T, (Γ y).isSome → (σ y).isSome) :
-    TypedOn M Γ T σ1 ∧
-      (∀ y ∈ T, ∀ w, σ1 y = some w → (y, LTy.forAll [] w.sort.toMonoTy) ∈ L) ∧
-      WellFormedStore σ1 M ∧ (∀ y ∈ T, (Γ y).isSome → (σ1 y).isSome) := by
+    TypedOn M Γ T σ1 ∧ WellFormedStore σ1 M ∧ (∀ y ∈ T, (Γ y).isSome → (σ1 y).isSome) := by
   obtain ⟨p, t0, hp, hpt, hvt⟩ := hst
   have hs := sort_eq_of_valueOfTy hvt hpt
-  refine ⟨fun y hy t w ht hw => ?_, fun y hy w hw => ?_, fun y w hw => ?_, fun y hy ht => ?_⟩ <;>
+  refine ⟨fun y hy t w ht hw => ?_, fun y w hw => ?_, fun y hy ht => ?_⟩ <;>
     by_cases hxy : x = y
   · subst hxy; rw [h1] at hw; cases hw
     exact ⟨hvt.1, by rw [hs]; exact (hty x hy t p ht hp).2⟩
   · rw [hfr y hxy] at hw; exact hty y hy t w ht hw
-  · subst hxy; rw [h1] at hw; cases hw; rw [hs]; exact hL x hy p hp
-  · rw [hfr y hxy] at hw; exact hL y hy w hw
   · subst hxy; rw [h1] at hw; cases hw; exact hvt.1
   · rw [hfr y hxy] at hw; exact hwf y w hw
   · subst hxy; simp [h1]
@@ -292,15 +274,14 @@ private theorem check_rel {M : Expression.Factory} {σ : SemanticStore Expressio
     simplification from the same store to the same store, with related events, and the
     invariant holds after it under the command's typing. -/
 theorem simp_cmd {base ctx : Ctx} {M : Expression.Factory} {T : List CoreIdent}
-    {L : List (CoreIdent × Expression.Ty)} {Γ : VarTyping Expression}
-    {σ σ1 : SemanticStore Expression} (S : Setup base M L) (I : Inv base M T L Γ ctx σ)
+    {Γ : VarTyping Expression}
+    {σ σ1 : SemanticStore Expression} (S : Setup base M) (I : Inv base M T Γ ctx σ)
     {c : Imperative.Cmd Expression} (hok : Stmt.exprsOKIn base.factory Γ (.cmd (.cmd c)))
     (hT : ∀ y ∈ Stmt.idents (.cmd (.cmd c) : Statement), y ∈ T)
-    (hL : ∀ x ty e md, c = .init x ty e md → (x, ty) ∈ L)
     {evs : List (Event Expression)} (h : EvalE M σ (.cmd c) σ1 evs) :
     ∃ evs', EvalE M σ (.cmd (simpCmd ctx c).1) σ1 evs' ∧
       List.Rel₂ (Event.WeakensAssume (evalInterp (P := Expression))) evs evs' ∧
-      Inv base M T L (Γ.extend (Cmd.typedDefinedVars c)) (simpCmd ctx c).2 σ1 := by
+      Inv base M T (Γ.extend (Cmd.typedDefinedVars c)) (simpCmd ctx c).2 σ1 := by
   match c, h with
   | .init x ty (.det e) md, .eval_init hev hinit hty hvar =>
     obtain ⟨h0, h1, hfr⟩ := hinit
@@ -310,10 +291,9 @@ theorem simp_cmd {base ctx : Ctx} {M : Expression.Factory} {T : List CoreIdent}
     have he' := hpres _ hev
     rw [simpCmd_init_det]
     refine ⟨[], .eval_init he' (.init h0 h1 hfr) hty hvar, .nil, ?_⟩
-    obtain ⟨ht', hL', hwf', hb'⟩ := store_init I.typed I.inL I.wf h1 hfr hty (hL _ _ _ _ rfl)
-      I.bound
+    obtain ⟨ht', hwf', hb'⟩ := store_init I.typed I.wf h1 hfr hty I.bound
     refine ⟨I.fixed.record _ _, I.vs.record h1 (fun y hy => hfr y (Ne.symm hy)) he' hg.ops hg.ann,
-      fun y r hm => ?_, ht', hL', hwf', hb'⟩
+      fun y r hm => ?_, ht', hwf', hb'⟩
     rcases mem_record hm with ⟨rfl, rfl⟩ | ⟨hm, -⟩
     · exact ⟨hT y List.mem_cons_self, hg.names⟩
     · exact I.names y r hm
@@ -321,10 +301,9 @@ theorem simp_cmd {base ctx : Ctx} {M : Expression.Factory} {T : List CoreIdent}
     obtain ⟨h0, h1, hfr⟩ := hinit
     rw [simpCmd_init_nondet]
     refine ⟨[], .eval_init_unconstrained (.init h0 h1 hfr) hty hvar, .nil, ?_⟩
-    obtain ⟨ht', hL', hwf', hb'⟩ := store_init I.typed I.inL I.wf h1 hfr hty (hL _ _ _ _ rfl)
-      I.bound
+    obtain ⟨ht', hwf', hb'⟩ := store_init I.typed I.wf h1 hfr hty I.bound
     exact ⟨I.fixed.invalidateVar _, I.vs.invalidateVar (fun y hy => hfr y (Ne.symm hy)),
-      fun y r hm => I.names y r (mem_invalidateVar hm).1, ht', hL', hwf', hb'⟩
+      fun y r hm => I.names y r (mem_invalidateVar hm).1, ht', hwf', hb'⟩
   | .set x (.det e) md, .eval_set hev hup hst hvar =>
     obtain ⟨hp, h1, hfr⟩ := hup
     obtain ⟨ty, -, hok⟩ := hok
@@ -334,9 +313,9 @@ theorem simp_cmd {base ctx : Ctx} {M : Expression.Factory} {T : List CoreIdent}
     have he' := hpres _ hev
     rw [simpCmd_set_det]
     refine ⟨[], .eval_set he' (.update hp h1 hfr) hst hvar, .nil, ?_⟩
-    obtain ⟨ht', hL', hwf', hb'⟩ := store_set I.typed I.inL I.wf h1 hfr hst I.bound
+    obtain ⟨ht', hwf', hb'⟩ := store_set I.typed I.wf h1 hfr hst I.bound
     refine ⟨I.fixed.record _ _, I.vs.record h1 (fun y hy => hfr y (Ne.symm hy)) he' hg.ops hg.ann,
-      fun y r hm => ?_, ht', hL', hwf', hb'⟩
+      fun y r hm => ?_, ht', hwf', hb'⟩
     rcases mem_record hm with ⟨rfl, rfl⟩ | ⟨hm, -⟩
     · exact ⟨hT y List.mem_cons_self, hg.names⟩
     · exact I.names y r hm
@@ -344,9 +323,9 @@ theorem simp_cmd {base ctx : Ctx} {M : Expression.Factory} {T : List CoreIdent}
     obtain ⟨hp, h1, hfr⟩ := hup
     rw [simpCmd_set_nondet]
     refine ⟨[], .eval_set_nondet (.update hp h1 hfr) hst hvar, .nil, ?_⟩
-    obtain ⟨ht', hL', hwf', hb'⟩ := store_set I.typed I.inL I.wf h1 hfr hst I.bound
+    obtain ⟨ht', hwf', hb'⟩ := store_set I.typed I.wf h1 hfr hst I.bound
     exact ⟨I.fixed.invalidateVar _, I.vs.invalidateVar (fun y hy => hfr y (Ne.symm hy)),
-      fun y r hm => I.names y r (mem_invalidateVar hm).1, ht', hL', hwf', hb'⟩
+      fun y r hm => I.names y r (mem_invalidateVar hm).1, ht', hwf', hb'⟩
   | .assert l e md, .eval_assert =>
     have hTe : e.NamesIn (fun y : CoreIdent => y ∈ T) := namesIn_of_getFvars hT
     have hd := defines_of_bound I.wf fun i hi => I.bound i (hT i hi) (by
@@ -407,25 +386,20 @@ private theorem brun_keeps {M : Expression.Factory} {ss : PStmts Expression}
 
 /-- The store part of the invariant survives a run that keeps the store. -/
 private theorem store_keeps {M : Expression.Factory} {T : List CoreIdent}
-    {L : List (CoreIdent × Expression.Ty)} {Γ : VarTyping Expression}
+    {Γ : VarTyping Expression}
     {σ σ' : SemanticStore Expression} (hty : TypedOn M Γ T σ)
-    (hL : ∀ y ∈ T, ∀ w, σ y = some w → (y, LTy.forAll [] w.sort.toMonoTy) ∈ L)
     (hk : Keeps M σ σ') (hb : ∀ y, (σ' y).isSome → (σ y).isSome)
     (hbd : ∀ y ∈ T, (Γ y).isSome → (σ y).isSome) :
-    TypedOn M Γ T σ' ∧
-      (∀ y ∈ T, ∀ w, σ' y = some w → (y, LTy.forAll [] w.sort.toMonoTy) ∈ L) ∧
-      (∀ y ∈ T, (Γ y).isSome → (σ' y).isSome) := by
+    TypedOn M Γ T σ' ∧ (∀ y ∈ T, (Γ y).isSome → (σ' y).isSome) := by
   have hget : ∀ y w, σ' y = some w → ∃ v, σ y = some v ∧ w.sort.toMonoTy = v.sort.toMonoTy := by
     intro y w hw
     obtain ⟨v, hv⟩ := Option.isSome_iff_exists.mp (hb y (by simp [hw]))
     obtain ⟨w', hw', hs⟩ := hk.2 y v hv
     rw [hw] at hw'; cases hw'
     exact ⟨v, hv, hs⟩
-  refine ⟨fun y hy t w ht hw => ?_, fun y hy w hw => ?_, fun y hy ht => ?_⟩
+  refine ⟨fun y hy t w ht hw => ?_, fun y hy ht => ?_⟩
   · obtain ⟨v, hv, hs⟩ := hget y w hw
     exact ⟨hk.1 y w hw, by rw [hs]; exact (hty y hy t v ht hv).2⟩
-  · obtain ⟨v, hv, hs⟩ := hget y w hw
-    rw [hs]; exact hL y hy v hv
   · obtain ⟨v, hv⟩ := Option.isSome_iff_exists.mp (hbd y hy ht)
     obtain ⟨w, hw, -⟩ := hk.2 y v hv
     simp [hw]
@@ -480,10 +454,10 @@ open Imperative.BigStep
 
 /-- The invariant after a branch whose arm `arm` ran to its normal end `σa`. -/
 private theorem inv_ite {base ctx armCtx : Ctx} {M : Expression.Factory} {T : List CoreIdent}
-    {L : List (CoreIdent × Expression.Ty)} {Γ Γa : VarTyping Expression}
+    {Γ Γa : VarTyping Expression}
     {σ σa : SemanticStore Expression} {live : List Ctx} {ts es arm : List Statement}
     {evs : List (Event Expression)}
-    (I : Inv base M T L Γ ctx σ) (Ia : Inv base M T L Γa armCtx σa) (hmem : armCtx ∈ live)
+    (I : Inv base M T Γ ctx σ) (Ia : Inv base M T Γa armCtx σa) (hmem : armCtx ∈ live)
     (hrun : BRun M arm σ evs (.normal σa))
     (harm : ∀ z, z ∈ Block.modifiedOrDefinedVars (P := Expression) (C := Command) arm false →
       z ∈ Block.modifiedOrDefinedVars (P := Expression) (C := Command) ts false ++
@@ -491,13 +465,13 @@ private theorem inv_ite {base ctx armCtx : Ctx} {M : Expression.Factory} {T : Li
     (hdef : ∀ z, z ∈ Block.definedVars (P := Expression) (C := Command) arm false →
       z ∈ Block.definedVars (P := Expression) (C := Command) ts false ++
         Block.definedVars (P := Expression) (C := Command) es false) :
-    Inv base M T L Γ
+    Inv base M T Γ
       (ctx.join live ((simpStmts ctx ts).2.2.union (simpStmts ctx es).2.2).vars
         ((simpStmts ctx ts).2.2.union (simpStmts ctx es).2.2).defined) (projectStore σ σa) := by
   have hw := (simpStmts_writes ctx ts).union (simpStmts_writes ctx es)
   have hk := keeps_proj (brun_keeps hrun I.wf)
-  obtain ⟨ht, hL, hb⟩ := store_keeps I.typed I.inL hk projectStore_isSome I.bound
-  refine ⟨I.fixed.join _ _ _, ?_, fun y r hm => ?_, ht, hL, hk.1, hb⟩
+  obtain ⟨ht, hb⟩ := store_keeps I.typed hk projectStore_isSome I.bound
+  refine ⟨I.fixed.join _ _ _, ?_, fun y r hm => ?_, ht, hk.1, hb⟩
   · exact ValuesSound.join I.vs Ia.vs hmem (Ia.fixed.2.1.trans I.fixed.2.1.symm) hw
       (fun z hz => brun_frame_modifiedOrDefined hrun z fun h => hz (harm z h))
       (fun z hz h0 => brun_undef hrun z (fun h => hz (hdef z h)) h0)
@@ -512,15 +486,15 @@ private theorem inv_ite {base ctx armCtx : Ctx} {M : Expression.Factory} {T : Li
 
 /-- The invariant after a block whose body ran from `σ` to the outcome `o`. -/
 private theorem inv_block {base ctx : Ctx} {M : Expression.Factory} {T : List CoreIdent}
-    {L : List (CoreIdent × Expression.Ty)} {Γ : VarTyping Expression}
+    {Γ : VarTyping Expression}
     {σ : SemanticStore Expression} {ss : List Statement} {evs : List (Event Expression)}
-    {o : Outcome Expression} (I : Inv base M T L Γ ctx σ) (hrun : BRun M ss σ evs o) :
-    Inv base M T L Γ ({ ctx with values := (simpStmts ctx ss).2.1.values }.invalidate
+    {o : Outcome Expression} (I : Inv base M T Γ ctx σ) (hrun : BRun M ss σ evs o) :
+    Inv base M T Γ ({ ctx with values := (simpStmts ctx ss).2.1.values }.invalidate
       (simpStmts ctx ss).2.2.vars) (projectStore σ o.store) := by
   have hk := keeps_proj (brun_keeps hrun I.wf)
-  obtain ⟨ht, hL, hb⟩ := store_keeps I.typed I.inL hk projectStore_isSome I.bound
+  obtain ⟨ht, hb⟩ := store_keeps I.typed hk projectStore_isSome I.bound
   refine ⟨(I.fixed.values _).invalidate _, I.vs.block ss (brun_frame_modifiedOrDefined hrun),
-    fun y r hm => ?_, ht, hL, hk.1, hb⟩
+    fun y r hm => ?_, ht, hk.1, hb⟩
   have hw := simpStmts_writes ctx ss
   obtain ⟨hm, hyv, -⟩ := mem_invalidate hm
   exact I.names y r (simpStmts_values_sub ctx ss hm (fun h => hyv ((hw.vars_iff _).mpr h)))
@@ -532,65 +506,56 @@ mutual
     store to the same outcome, with related events; after a normal end the invariant holds
     again. -/
 theorem simp_run {base : Ctx} {M : Expression.Factory} {T : List CoreIdent}
-    {L : List (CoreIdent × Expression.Ty)} (S : Setup base M L) :
+    (S : Setup base M) :
     ∀ {ss : PStmts Expression} {σ : SemanticStore Expression} {evs : List (Event Expression)}
       {o : Outcome Expression}, BRun M ss σ evs o →
-    ∀ {ctx : Ctx} {Γ : VarTyping Expression}, Inv base M T L Γ ctx σ →
+    ∀ {ctx : Ctx} {Γ : VarTyping Expression}, Inv base M T Γ ctx σ →
       Block.exprsOKIn base.factory Γ ss → (∀ y ∈ Block.idents ss, y ∈ T) →
-      (∀ p ∈ Block.declaredTypes ss, p ∈ L) → Block.noLoops ss = true →
+      Block.noLoops ss = true →
       ∃ evs', BRun M (simpStmts ctx ss).1 σ evs' o ∧
         List.Rel₂ (Event.WeakensAssume (evalInterp (P := Expression))) evs evs' ∧
-        ∀ σ', o = .normal σ' → ∃ Γ', Inv base M T L Γ' (simpStmts ctx ss).2.1 σ'
-  | _, _, _, _, .nil, ctx, Γ, I, _, _, _, _ => by
+        ∀ σ', o = .normal σ' → ∃ Γ', Inv base M T Γ' (simpStmts ctx ss).2.1 σ'
+  | _, _, _, _, .nil, ctx, Γ, I, _, _, _ => by
     rw [simpStmts_nil]
     exact ⟨[], .nil, .nil, fun σ' h => by cases h; exact ⟨Γ, I⟩⟩
-  | _, _, _, _, .cons_normal (s := s) (rest := rest) h1 h2, ctx, Γ, I, hok, hT, hL, hnl => by
+  | _, _, _, _, .cons_normal (s := s) (rest := rest) h1 h2, ctx, Γ, I, hok, hT, hnl => by
     rw [Block.noLoops_cons, Bool.and_eq_true] at hnl
     obtain ⟨hs, hrest⟩ := hok
     have hT1 : ∀ y ∈ Stmt.idents s, y ∈ T := fun y hy => hT y (by simp [Block.idents, hy])
     have hT2 : ∀ y ∈ Block.idents rest, y ∈ T := fun y hy => hT y (by simp [Block.idents, hy])
-    have hL1 : ∀ p ∈ Stmt.declaredTypes s, p ∈ L := fun p hp => hL p (by
-      simp [Block.declaredTypes, hp])
-    have hL2 : ∀ p ∈ Block.declaredTypes rest, p ∈ L := fun p hp => hL p (by
-      simp [Block.declaredTypes, hp])
-    obtain ⟨s', evs1', hout, h1', hm1, hinv1⟩ := simp_runS S h1 I hs hT1 hL1 hnl.1
-    obtain ⟨evs2', h2', hm2, hinv2⟩ := simp_run S h2 (hinv1 _ rfl) hrest hT2 hL2 hnl.2
+    obtain ⟨s', evs1', hout, h1', hm1, hinv1⟩ := simp_runS S h1 I hs hT1 hnl.1
+    obtain ⟨evs2', h2', hm2, hinv2⟩ := simp_run S h2 (hinv1 _ rfl) hrest hT2 hnl.2
     rw [simpStmts_cons, hout]
     exact ⟨evs1' ++ evs2', .cons_normal h1' h2', hm1.append hm2, hinv2⟩
-  | _, _, _, _, .cons_exit (s := s) (rest := rest) h1, ctx, Γ, I, hok, hT, hL, hnl => by
+  | _, _, _, _, .cons_exit (s := s) (rest := rest) h1, ctx, Γ, I, hok, hT, hnl => by
     rw [Block.noLoops_cons, Bool.and_eq_true] at hnl
     obtain ⟨hs, -⟩ := hok
     have hT1 : ∀ y ∈ Stmt.idents s, y ∈ T := fun y hy => hT y (by simp [Block.idents, hy])
-    have hL1 : ∀ p ∈ Stmt.declaredTypes s, p ∈ L := fun p hp => hL p (by
-      simp [Block.declaredTypes, hp])
-    obtain ⟨s', evs1', hout, h1', hm1, -⟩ := simp_runS S h1 I hs hT1 hL1 hnl.1
+    obtain ⟨s', evs1', hout, h1', hm1, -⟩ := simp_runS S h1 I hs hT1 hnl.1
     rw [simpStmts_cons, hout]
     exact ⟨evs1', .cons_exit h1', hm1, fun _ h => by cases h⟩
 /-- **One statement, simplified.** `simp_run` for a statement, which `simpStmt` turns into
     a single statement; after a normal end the invariant holds under the statement's
     typing. -/
 private theorem simp_runS {base : Ctx} {M : Expression.Factory} {T : List CoreIdent}
-    {L : List (CoreIdent × Expression.Ty)} (S : Setup base M L) :
+    (S : Setup base M) :
     ∀ {s : PStmt Expression} {σ : SemanticStore Expression} {evs : List (Event Expression)}
       {o : Outcome Expression}, BRunS M s σ evs o →
-    ∀ {ctx : Ctx} {Γ : VarTyping Expression}, Inv base M T L Γ ctx σ →
+    ∀ {ctx : Ctx} {Γ : VarTyping Expression}, Inv base M T Γ ctx σ →
       Stmt.exprsOKIn base.factory Γ s → (∀ y ∈ Stmt.idents s, y ∈ T) →
-      (∀ p ∈ Stmt.declaredTypes s, p ∈ L) → Stmt.noLoops s = true →
+      Stmt.noLoops s = true →
       ∃ s' evs', (simpStmt ctx s).1 = [s'] ∧ BRunS M s' σ evs' o ∧
         List.Rel₂ (Event.WeakensAssume (evalInterp (P := Expression))) evs evs' ∧
         ∀ σ', o = .normal σ' →
-          Inv base M T L (Γ.extend (Stmt.typedDefinedVars (P := Expression) s))
+          Inv base M T (Γ.extend (Stmt.typedDefinedVars (P := Expression) s))
             (simpStmt ctx s).2.1 σ'
-  | _, _, _, _, .cmd (c := .cmd c) h, ctx, Γ, I, hok, hT, hL, _ => by
-    obtain ⟨evs', h', hm, I'⟩ := simp_cmd S I hok hT
-      (fun x ty e md hc => hL _ (by
-        subst hc; simp [Stmt.declaredTypes, HasTypedVarsImp.typedDefinedVars,
-          CmdExt.typedDefinedVars, Cmd.typedDefinedVars])) h
+  | _, _, _, _, .cmd (c := .cmd c) h, ctx, Γ, I, hok, hT, _ => by
+    obtain ⟨evs', h', hm, I'⟩ := simp_cmd S I hok hT h
     rw [simpStmt_cmd]
     exact ⟨_, evs', rfl, .cmd h', hm, fun σ' ho => by cases ho; exact I'⟩
-  | _, _, _, _, .cmd (c := .call _ _ _ _) h, _, _, _, _, _, _, _ => h.elim
+  | _, _, _, _, .cmd (c := .call _ _ _ _) h, _, _, _, _, _, _ => h.elim
   | _, _, _, _, .ite_true (c := c) (tss := ts) (ess := es) (md := md) hc h, ctx, Γ, I, hok, hT,
-      hL, hnl => by
+      hnl => by
     simp only [Stmt.exprsOKIn] at hok
     simp only [Stmt.noLoops_ite, Bool.and_eq_true] at hnl
     obtain ⟨hcok, hts, -⟩ := hok
@@ -598,8 +563,7 @@ private theorem simp_runS {base : Ctx} {M : Expression.Factory} {T : List CoreId
       hT y (by simp [Stmt.idents, ExprOrNondet.getVars, hy])
     have hc' := (simp_expr S I hcok hTc (LExpr.denoteEval_defines hc)).2 _ hc
     obtain ⟨evs', h', hm, hinv⟩ := simp_run S h I hts
-      (fun y hy => hT y (by simp [Stmt.idents, hy]))
-      (fun p hp => hL p (by simp [Stmt.declaredTypes, hp])) hnl.1
+      (fun y hy => hT y (by simp [Stmt.idents, hy])) hnl.1
     rw [simpStmt_ite_det_eq]
     refine ⟨_, evs', rfl, .ite_true hc' h', hm, fun σ' ho => ?_⟩
     obtain ⟨σa, rfl, rfl⟩ := Outcome.proj_normal ho
@@ -607,7 +571,7 @@ private theorem simp_runS {base : Ctx} {M : Expression.Factory} {T : List CoreId
     exact inv_ite I Ia (mem_liveArms (b := true) hc' _ _) h
       (fun z hz => List.mem_append_left _ hz) (fun z hz => List.mem_append_left _ hz)
   | _, _, _, _, .ite_false (c := c) (tss := ts) (ess := es) (md := md) hc h, ctx, Γ, I, hok, hT,
-      hL, hnl => by
+      hnl => by
     simp only [Stmt.exprsOKIn] at hok
     simp only [Stmt.noLoops_ite, Bool.and_eq_true] at hnl
     obtain ⟨hcok, -, hes⟩ := hok
@@ -615,8 +579,7 @@ private theorem simp_runS {base : Ctx} {M : Expression.Factory} {T : List CoreId
       hT y (by simp [Stmt.idents, ExprOrNondet.getVars, hy])
     have hc' := (simp_expr S I hcok hTc (LExpr.denoteEval_defines hc)).2 _ hc
     obtain ⟨evs', h', hm, hinv⟩ := simp_run S h I hes
-      (fun y hy => hT y (by simp [Stmt.idents, hy]))
-      (fun p hp => hL p (by simp [Stmt.declaredTypes, hp])) hnl.2
+      (fun y hy => hT y (by simp [Stmt.idents, hy])) hnl.2
     rw [simpStmt_ite_det_eq]
     refine ⟨_, evs', rfl, .ite_false hc' h', hm, fun σ' ho => ?_⟩
     obtain ⟨σa, rfl, rfl⟩ := Outcome.proj_normal ho
@@ -624,12 +587,11 @@ private theorem simp_runS {base : Ctx} {M : Expression.Factory} {T : List CoreId
     exact inv_ite I Ia (mem_liveArms (b := false) hc' _ _) h
       (fun z hz => List.mem_append_right _ hz) (fun z hz => List.mem_append_right _ hz)
   | _, _, _, _, .ite_nondet_true (tss := ts) (ess := es) (md := md) h, ctx, Γ, I, hok, hT,
-      hL, hnl => by
+      hnl => by
     simp only [Stmt.exprsOKIn] at hok
     simp only [Stmt.noLoops_ite, Bool.and_eq_true] at hnl
     obtain ⟨evs', h', hm, hinv⟩ := simp_run S h I hok.1
-      (fun y hy => hT y (by simp [Stmt.idents, hy]))
-      (fun p hp => hL p (by simp [Stmt.declaredTypes, hp])) hnl.1
+      (fun y hy => hT y (by simp [Stmt.idents, hy])) hnl.1
     rw [simpStmt_ite_nondet_eq]
     refine ⟨_, evs', rfl, .ite_nondet_true h', hm, fun σ' ho => ?_⟩
     obtain ⟨σa, rfl, rfl⟩ := Outcome.proj_normal ho
@@ -637,37 +599,35 @@ private theorem simp_runS {base : Ctx} {M : Expression.Factory} {T : List CoreId
     exact inv_ite I Ia (by rw [liveArms_nondet]; simp) h
       (fun z hz => List.mem_append_left _ hz) (fun z hz => List.mem_append_left _ hz)
   | _, _, _, _, .ite_nondet_false (tss := ts) (ess := es) (md := md) h, ctx, Γ, I, hok, hT,
-      hL, hnl => by
+      hnl => by
     simp only [Stmt.exprsOKIn] at hok
     simp only [Stmt.noLoops_ite, Bool.and_eq_true] at hnl
     obtain ⟨evs', h', hm, hinv⟩ := simp_run S h I hok.2
-      (fun y hy => hT y (by simp [Stmt.idents, hy]))
-      (fun p hp => hL p (by simp [Stmt.declaredTypes, hp])) hnl.2
+      (fun y hy => hT y (by simp [Stmt.idents, hy])) hnl.2
     rw [simpStmt_ite_nondet_eq]
     refine ⟨_, evs', rfl, .ite_nondet_false h', hm, fun σ' ho => ?_⟩
     obtain ⟨σa, rfl, rfl⟩ := Outcome.proj_normal ho
     obtain ⟨Γa, Ia⟩ := hinv σa rfl
     exact inv_ite I Ia (by rw [liveArms_nondet]; simp) h
       (fun z hz => List.mem_append_right _ hz) (fun z hz => List.mem_append_right _ hz)
-  | _, _, _, _, .block (ss := ss) (l := l) (md := md) h, ctx, Γ, I, hok, hT, hL, hnl => by
+  | _, _, _, _, .block (ss := ss) (l := l) (md := md) h, ctx, Γ, I, hok, hT, hnl => by
     simp only [Stmt.exprsOKIn] at hok
     rw [Stmt.noLoops_block] at hnl
     obtain ⟨evs', h', hm, -⟩ := simp_run S h I hok
-      (fun y hy => hT y (by simp [Stmt.idents, hy]))
-      (fun p hp => hL p (by simp [Stmt.declaredTypes, hp])) hnl
+      (fun y hy => hT y (by simp [Stmt.idents, hy])) hnl
     rw [simpStmt_block_eq]
     refine ⟨_, evs', rfl, .block h', hm, fun σ' ho => ?_⟩
     rw [Outcome.block_normal ho]
     exact inv_block I h
-  | _, _, _, _, .exit (l := l) (md := md), ctx, Γ, I, _, _, _, _ => by
+  | _, _, _, _, .exit (l := l) (md := md), ctx, Γ, I, _, _, _ => by
     rw [simpStmt_exit]
     exact ⟨_, [], rfl, .exit, .nil, fun _ h => by cases h⟩
-  | _, _, _, _, .typeDecl (tc := tc) (md := md), ctx, Γ, I, _, _, _, _ => by
+  | _, _, _, _, .typeDecl (tc := tc) (md := md), ctx, Γ, I, _, _, _ => by
     rw [simpStmt_typeDecl]
     exact ⟨_, [], rfl, .typeDecl, .nil, fun σ' h => by cases h; exact I⟩
-  | _, _, _, _, .loop_exit _, _, _, _, _, _, _, hnl
-  | _, _, _, _, .loop_iter _ _ _, _, _, _, _, _, _, hnl
-  | _, _, _, _, .loop_break _ _, _, _, _, _, _, _, hnl => by simp [Stmt.noLoops_loop] at hnl
+  | _, _, _, _, .loop_exit _, _, _, _, _, _, hnl
+  | _, _, _, _, .loop_iter _ _ _, _, _, _, _, _, hnl
+  | _, _, _, _, .loop_break _ _, _, _, _, _, _, hnl => by simp [Stmt.noLoops_loop] at hnl
 end
 
 
@@ -675,56 +635,47 @@ mutual
 /-- **The simplified list matches every prefix of a run of the list**: `simp_run` for a run
     that stops right after a command. -/
 theorem simp_reach {base : Ctx} {M : Expression.Factory} {T : List CoreIdent}
-    {L : List (CoreIdent × Expression.Ty)} (S : Setup base M L) :
+    (S : Setup base M) :
     ∀ {ss : PStmts Expression} {σ : SemanticStore Expression} {evs : List (Event Expression)},
       BReach M ss σ evs →
-    ∀ {ctx : Ctx} {Γ : VarTyping Expression}, Inv base M T L Γ ctx σ →
+    ∀ {ctx : Ctx} {Γ : VarTyping Expression}, Inv base M T Γ ctx σ →
       Block.exprsOKIn base.factory Γ ss → (∀ y ∈ Block.idents ss, y ∈ T) →
-      (∀ p ∈ Block.declaredTypes ss, p ∈ L) → Block.noLoops ss = true →
+      Block.noLoops ss = true →
       ∃ evs', BReach M (simpStmts ctx ss).1 σ evs' ∧
         List.Rel₂ (Event.WeakensAssume (evalInterp (P := Expression))) evs evs'
-  | _, _, _, .here (s := s) (rest := rest) h, ctx, Γ, I, hok, hT, hL, hnl => by
+  | _, _, _, .here (s := s) (rest := rest) h, ctx, Γ, I, hok, hT, hnl => by
     rw [Block.noLoops_cons, Bool.and_eq_true] at hnl
     obtain ⟨hs, -⟩ := hok
     have hT1 : ∀ y ∈ Stmt.idents s, y ∈ T := fun y hy => hT y (by simp [Block.idents, hy])
-    have hL1 : ∀ p ∈ Stmt.declaredTypes s, p ∈ L := fun p hp => hL p (by
-      simp [Block.declaredTypes, hp])
-    obtain ⟨s', evs', hout, h', hm⟩ := simp_reachS S h I hs hT1 hL1 hnl.1
+    obtain ⟨s', evs', hout, h', hm⟩ := simp_reachS S h I hs hT1 hnl.1
     rw [simpStmts_cons, hout]
     exact ⟨evs', .here h', hm⟩
-  | _, _, _, .later (s := s) (rest := rest) h1 h2, ctx, Γ, I, hok, hT, hL, hnl => by
+  | _, _, _, .later (s := s) (rest := rest) h1 h2, ctx, Γ, I, hok, hT, hnl => by
     rw [Block.noLoops_cons, Bool.and_eq_true] at hnl
     obtain ⟨hs, hrest⟩ := hok
     have hT1 : ∀ y ∈ Stmt.idents s, y ∈ T := fun y hy => hT y (by simp [Block.idents, hy])
     have hT2 : ∀ y ∈ Block.idents rest, y ∈ T := fun y hy => hT y (by simp [Block.idents, hy])
-    have hL1 : ∀ p ∈ Stmt.declaredTypes s, p ∈ L := fun p hp => hL p (by
-      simp [Block.declaredTypes, hp])
-    have hL2 : ∀ p ∈ Block.declaredTypes rest, p ∈ L := fun p hp => hL p (by
-      simp [Block.declaredTypes, hp])
-    obtain ⟨s', evs1', hout, h1', hm1, hinv1⟩ := simp_runS S h1 I hs hT1 hL1 hnl.1
-    obtain ⟨evs2', h2', hm2⟩ := simp_reach S h2 (hinv1 _ rfl) hrest hT2 hL2 hnl.2
+    obtain ⟨s', evs1', hout, h1', hm1, hinv1⟩ := simp_runS S h1 I hs hT1 hnl.1
+    obtain ⟨evs2', h2', hm2⟩ := simp_reach S h2 (hinv1 _ rfl) hrest hT2 hnl.2
     rw [simpStmts_cons, hout]
     exact ⟨evs1' ++ evs2', .later h1' h2', hm1.append hm2⟩
 /-- `simp_reach` for a statement. -/
 private theorem simp_reachS {base : Ctx} {M : Expression.Factory} {T : List CoreIdent}
-    {L : List (CoreIdent × Expression.Ty)} (S : Setup base M L) :
+    (S : Setup base M) :
     ∀ {s : PStmt Expression} {σ : SemanticStore Expression} {evs : List (Event Expression)},
       BReachS M s σ evs →
-    ∀ {ctx : Ctx} {Γ : VarTyping Expression}, Inv base M T L Γ ctx σ →
+    ∀ {ctx : Ctx} {Γ : VarTyping Expression}, Inv base M T Γ ctx σ →
       Stmt.exprsOKIn base.factory Γ s → (∀ y ∈ Stmt.idents s, y ∈ T) →
-      (∀ p ∈ Stmt.declaredTypes s, p ∈ L) → Stmt.noLoops s = true →
+      Stmt.noLoops s = true →
       ∃ s' evs', (simpStmt ctx s).1 = [s'] ∧ BReachS M s' σ evs' ∧
         List.Rel₂ (Event.WeakensAssume (evalInterp (P := Expression))) evs evs'
-  | _, _, _, .cmd (c := .cmd c) h hne, ctx, Γ, I, hok, hT, hL, _ => by
-    obtain ⟨evs', h', hm, -⟩ := simp_cmd S I hok hT
-      (fun x ty e md hc => hL _ (by
-        subst hc; simp [Stmt.declaredTypes, HasTypedVarsImp.typedDefinedVars,
-          CmdExt.typedDefinedVars, Cmd.typedDefinedVars])) h
+  | _, _, _, .cmd (c := .cmd c) h hne, ctx, Γ, I, hok, hT, _ => by
+    obtain ⟨evs', h', hm, -⟩ := simp_cmd S I hok hT h
     rw [simpStmt_cmd]
     exact ⟨_, evs', rfl, .cmd h' (hm.ne_nil hne), hm⟩
-  | _, _, _, .cmd (c := .call _ _ _ _) h _, _, _, _, _, _, _, _ => h.elim
+  | _, _, _, .cmd (c := .call _ _ _ _) h _, _, _, _, _, _, _ => h.elim
   | _, _, _, .ite_true (c := c) (tss := ts) (ess := es) (md := md) hc h, ctx, Γ, I, hok, hT,
-      hL, hnl => by
+      hnl => by
     simp only [Stmt.exprsOKIn] at hok
     simp only [Stmt.noLoops_ite, Bool.and_eq_true] at hnl
     obtain ⟨hcok, hts, -⟩ := hok
@@ -732,12 +683,11 @@ private theorem simp_reachS {base : Ctx} {M : Expression.Factory} {T : List Core
       hT y (by simp [Stmt.idents, ExprOrNondet.getVars, hy])
     have hc' := (simp_expr S I hcok hTc (LExpr.denoteEval_defines hc)).2 _ hc
     obtain ⟨evs', h', hm⟩ := simp_reach S h I hts
-      (fun y hy => hT y (by simp [Stmt.idents, hy]))
-      (fun p hp => hL p (by simp [Stmt.declaredTypes, hp])) hnl.1
+      (fun y hy => hT y (by simp [Stmt.idents, hy])) hnl.1
     rw [simpStmt_ite_det_eq]
     exact ⟨_, evs', rfl, .ite_true hc' h', hm⟩
   | _, _, _, .ite_false (c := c) (tss := ts) (ess := es) (md := md) hc h, ctx, Γ, I, hok, hT,
-      hL, hnl => by
+      hnl => by
     simp only [Stmt.exprsOKIn] at hok
     simp only [Stmt.noLoops_ite, Bool.and_eq_true] at hnl
     obtain ⟨hcok, -, hes⟩ := hok
@@ -745,38 +695,34 @@ private theorem simp_reachS {base : Ctx} {M : Expression.Factory} {T : List Core
       hT y (by simp [Stmt.idents, ExprOrNondet.getVars, hy])
     have hc' := (simp_expr S I hcok hTc (LExpr.denoteEval_defines hc)).2 _ hc
     obtain ⟨evs', h', hm⟩ := simp_reach S h I hes
-      (fun y hy => hT y (by simp [Stmt.idents, hy]))
-      (fun p hp => hL p (by simp [Stmt.declaredTypes, hp])) hnl.2
+      (fun y hy => hT y (by simp [Stmt.idents, hy])) hnl.2
     rw [simpStmt_ite_det_eq]
     exact ⟨_, evs', rfl, .ite_false hc' h', hm⟩
   | _, _, _, .ite_nondet_true (tss := ts) (ess := es) (md := md) h, ctx, Γ, I, hok, hT,
-      hL, hnl => by
+      hnl => by
     simp only [Stmt.exprsOKIn] at hok
     simp only [Stmt.noLoops_ite, Bool.and_eq_true] at hnl
     obtain ⟨evs', h', hm⟩ := simp_reach S h I hok.1
-      (fun y hy => hT y (by simp [Stmt.idents, hy]))
-      (fun p hp => hL p (by simp [Stmt.declaredTypes, hp])) hnl.1
+      (fun y hy => hT y (by simp [Stmt.idents, hy])) hnl.1
     rw [simpStmt_ite_nondet_eq]
     exact ⟨_, evs', rfl, .ite_nondet_true h', hm⟩
   | _, _, _, .ite_nondet_false (tss := ts) (ess := es) (md := md) h, ctx, Γ, I, hok, hT,
-      hL, hnl => by
+      hnl => by
     simp only [Stmt.exprsOKIn] at hok
     simp only [Stmt.noLoops_ite, Bool.and_eq_true] at hnl
     obtain ⟨evs', h', hm⟩ := simp_reach S h I hok.2
-      (fun y hy => hT y (by simp [Stmt.idents, hy]))
-      (fun p hp => hL p (by simp [Stmt.declaredTypes, hp])) hnl.2
+      (fun y hy => hT y (by simp [Stmt.idents, hy])) hnl.2
     rw [simpStmt_ite_nondet_eq]
     exact ⟨_, evs', rfl, .ite_nondet_false h', hm⟩
-  | _, _, _, .block (ss := ss) (l := l) (md := md) h, ctx, Γ, I, hok, hT, hL, hnl => by
+  | _, _, _, .block (ss := ss) (l := l) (md := md) h, ctx, Γ, I, hok, hT, hnl => by
     simp only [Stmt.exprsOKIn] at hok
     rw [Stmt.noLoops_block] at hnl
     obtain ⟨evs', h', hm⟩ := simp_reach S h I hok
-      (fun y hy => hT y (by simp [Stmt.idents, hy]))
-      (fun p hp => hL p (by simp [Stmt.declaredTypes, hp])) hnl
+      (fun y hy => hT y (by simp [Stmt.idents, hy])) hnl
     rw [simpStmt_block_eq]
     exact ⟨_, evs', rfl, .block h', hm⟩
-  | _, _, _, .loop_here _ _, _, _, _, _, _, _, hnl
-  | _, _, _, .loop_later _ _ _, _, _, _, _, _, _, hnl => by simp [Stmt.noLoops_loop] at hnl
+  | _, _, _, .loop_here _ _, _, _, _, _, _, hnl
+  | _, _, _, .loop_later _ _ _, _, _, _, _, _, hnl => by simp [Stmt.noLoops_loop] at hnl
 end
 
 end Run

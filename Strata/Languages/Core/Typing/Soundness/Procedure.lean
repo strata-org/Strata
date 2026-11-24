@@ -80,13 +80,9 @@ private theorem Procedure.ensureAmbientRigidVarsFixed_ok (procName : CoreIdent)
   elim_err h
   assumption
 
-/-- The in-out parameters renamed to their `old` names, with their declared types. -/
-def inoutOldSig (hdr : Procedure.Header) : @LMonoTySignature Unit :=
-  hdr.getInoutParams.map (fun p => (CoreIdent.mkOld p.1.name, p.2))
-
 /-- The signature the body scope is built from. -/
 def bodySig (hdr : Procedure.Header) : @LMonoTySignature Unit :=
-  inoutOldSig hdr ++ hdr.outputs ++ hdr.inputs
+  oldInoutSig hdr.getInoutParams.toList ++ hdr.outputs ++ hdr.inputs
 
 /-- When a `mapM` that checks each labeled condition with `f` succeeds, `f` accepts every source
     condition and produces every returned one. -/
@@ -837,7 +833,7 @@ private theorem procInputContext_eq (Γ : TContext Unit) (proc : Procedure) :
 private theorem procBodyContext_eq (Γ : TContext Unit) (proc : Procedure) :
     procBodyContext Γ proc
       = { Γ with types := Γ.types.push (formalsScope (bodySig proc.header)) } := by
-  unfold bodySig inoutOldSig procBodyContext procBodyScopes
+  unfold bodySig procBodyContext procBodyScopes
   rfl
 
 /-- A condition accepted under a resolved, skolemized signature has type `bool` in the declared
@@ -918,7 +914,7 @@ private theorem bodySig_values_subset (hdr : Procedure.Header) :
   unfold bodySig at hm
   rcases (ListMap.mem_values_append _ _ mty).mp hm with h12 | h3
   · rcases (ListMap.mem_values_append _ _ mty).mp h12 with h1 | h2
-    · unfold inoutOldSig at h1
+    · unfold oldInoutSig at h1
       have h1' := ListMap.mem_values_map_of_snd_eq
         (fun x => (CoreIdent.mkOld x.1.name, x.2)) (fun x => rfl) _ mty h1
       simp only [Procedure.Header.getInoutParams, Core.getInoutParams] at h1'
@@ -1022,8 +1018,9 @@ private theorem bodySig_agree (aliases : List TypeAlias) (hdr hdrR : Procedure.H
     exact ListMap.forall₂_pair_filter _ (fun id => (ListMap.keys hdrR.outputs).contains id)
       _ _ hpairIn
   have hpairOld : List.Rel₂ (fun (q qR : CoreIdent × LMonoTy) =>
-      q.1 = qR.1 ∧ AliasEquiv aliases q.2 qR.2) (inoutOldSig hdr) (inoutOldSig hdrR) := by
-    unfold inoutOldSig
+      q.1 = qR.1 ∧ AliasEquiv aliases q.2 qR.2) (oldInoutSig hdr.getInoutParams.toList)
+        (oldInoutSig hdrR.getInoutParams.toList) := by
+    unfold oldInoutSig
     exact ListMap.forall₂_pair_mapKeys _ (fun (id : CoreIdent) => CoreIdent.mkOld id.name)
       _ _ hpairInout
   have hpairBody : List.Rel₂ (fun (q qR : CoreIdent × LMonoTy) =>

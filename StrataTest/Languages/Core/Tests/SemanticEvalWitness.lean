@@ -7,6 +7,7 @@ module
 
 import Strata.Languages.Core.StatementSemantics
 import Strata.DL.Lambda.OperationalSemantics
+import Strata.Transform.Passive.CoreLang
 import all Strata.DL.Lambda.LExprEvalProps
 
 /-!
@@ -28,5 +29,10 @@ theorem exists_wf_coreEval (f : Expression.Factory) :
     WellFormedSemanticEvalVar (P := Expression) f ∧ WellFormedSemanticEvalVal (P := Expression) f :=
   ⟨coreEvaluator_WellFormedSemanticEvalVar f, coreEvaluator_WellFormedSemanticEvalVal f⟩
 
+/-- The Core substitution law for variables and Boolean literals follows from the law for
+    expressions holding the values. -/
+example (f : Expression.Factory) : WellFormedSemanticEvalSubstLits (P := Expression) f :=
+  WP.WellFormedSemanticEvalSubstExprs.substLits
+    (WP.coreEvaluator_WellFormedSemanticEvalSubstExprs f) (coreEvaluator_WellFormedSemanticEvalVar f) (coreEvaluator_WellFormedSemanticEvalVal f)
 
 end Core

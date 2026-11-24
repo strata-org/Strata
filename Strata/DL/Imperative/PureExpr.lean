@@ -220,6 +220,11 @@ class HasTyping (P : PureExpr) where
   ∀ x ty, Γ x = some ty → ∃ v, σ x = some v ∧ HasVal.valueOfTy f v ty
 
 
+/-- The store `σ` binds no variable that the typing `Γ` leaves untyped. A declaration `init x`
+    needs `x` unbound, so a store that already binds an untyped `x` blocks it. -/
+@[expose] def StoreFresh {P : PureExpr} (σ : P.Ident → Option P.Val) (Γ : VarTyping P) : Prop :=
+  ∀ x, Γ x = none → σ x = none
+
 /-- Extend the typing `Γ` with the typed definitions `defs`; the first definition of a
     name wins. -/
 @[expose] def VarTyping.extend {P : PureExpr} (Γ : VarTyping P)

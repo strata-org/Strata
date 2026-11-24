@@ -268,8 +268,15 @@ structure WorkItem where
   keptAxioms : Nat := 0
   /-- CSE definitions on the path that this goal does not use, which the solver is not sent
       for this goal. The per-obligation discharge drops the same ones, see
-      `pruneUnusedCSEDefinitions`. -/
+      `pruneUnusedCSEDefinitions`, and also the path explorer's join-symbol definitions a goal
+      does not use (`pruneUnusedDefinitions`); this set leaves those in, since a goal that
+      skips a definition runs on a fresh solver, and most goals after a join read only some of
+      its symbols. -/
   skippedDefs : Std.HashSet String := {}
+  /-- Definitions on the path that neither this goal nor any assumption on its path reads. They
+      are not sent to the solver for this goal and do not seed its axiom relevance, as the
+      per-obligation discharge leaves them out (`unreadDefinitions`). -/
+  unreadDefs : Std.HashSet String := {}
 
 /-- The tree laid out for the walk. Nodes, and so goals, are numbered in pre-order, which is
     the order a solver walking the tree depth-first checks them in. All of it is immutable and
@@ -497,12 +504,15 @@ structure Session (τ σ : Type) where
       the per-obligation question. Any other goal sees the extra axioms under lazy pruning, and
       under exact pruning the solver resets before it. -/
   heldAxioms : Nat := 0
-  /-- How many of the path's variable declarations and definitions this solver has been sent.
-      A count is sound here: the walk only appends entries to
-      the fold's single frame and goes back up only through a reset, so a session's `varDecls`
-      and `varDefs` grow as one prefix in path order, and a goal's own fork adds to neither. -/
+  /-- How many of the path's variable declarations this solver has been sent. Declarations are
+      sent by count: the walk only appends entries to the fold's single frame and goes back up
+      only through a reset, so a session's `varDecls` grow as one prefix in path order, and a
+      goal's own fork adds none. -/
   toldDecls : Nat := 0
-  toldDefs : Nat := 0
+  /-- Names of the definitions this solver has been sent. Definitions are sent by name, because a
+      goal's definitions are the path's definitions less the ones it does not read, which differ
+      from goal to goal; each is sent the first time a goal reads it. -/
+  toldDefNames : Std.HashSet String := {}
   /-- How many levels of a path this session has been sent. -/
   heldLevels : Nat := 0
   /-- The node the session last proved a goal on, as child indices from the root. While
@@ -525,6 +535,9 @@ structure Session (τ σ : Type) where
   /-- The solver failed and no replacement could be started, so the next goal starts by trying
       to replace it again. -/
   dead : Bool := false
+  /-- The assumptions of the goals this session has decided (`EvalTrail`), so goals on one path
+      share that work. It describes no solver state. -/
+  evalTrail : EvalTrail := .init {}
   /-- The `set-option`s this solver was opened with, kept because `(reset)` clears them and
       a rebuild has to send them again. Held on the session so a rebuild does not need the
       options that produced them. -/
@@ -587,7 +600,7 @@ def Session.rebuild {τ σ : Type} (s : Session τ σ) (ctx0 : SMT.Context) :
       checks := s.checks, contexts := s.contexts + 1,
       goalsWithExtraAxioms := s.goalsWithExtraAxioms, solveNanos := s.solveNanos,
       preludeOptions := s.preludeOptions,
-      answered := s.answered }
+      answered := s.answered, evalTrail := s.evalTrail }
   s.startContext
 
 /-- The prefix that marks the failure of a walk that could start no solver at all, so a caller
@@ -624,7 +637,8 @@ def Session.respawn {τ σ : Type} (s : Session τ σ)
   let solver ← if patient then spawnPatiently spawn s.encodingFailure else spawn s.encodingFailure
   let fresh ← Session.open s.name solver s.encodingFailure s.preludeOptions ctx0
   return { fresh with checks := s.checks, contexts := s.contexts + 1,
-                      goalsWithExtraAxioms := s.goalsWithExtraAxioms, solveNanos := s.solveNanos }
+                      goalsWithExtraAxioms := s.goalsWithExtraAxioms, solveNanos := s.solveNanos,
+                      evalTrail := s.evalTrail }
 
 /-- Turn a solver verdict and the counterexample text that came with it into the `SMT.Result`
     the rest of the pipeline reports.
@@ -670,6 +684,7 @@ private def Goal.obligation (ctx : List (PathConditionEntry Expression)) (g : Go
 def obligationOf (item : WorkItem) : Imperative.ProofObligation Expression :=
   item.goal.obligation (item.path.toList.flatMap (·.toList))
 
+-- TODO: revisit the axioms a goal is checked under when `--vcgen wp` becomes the default.
 /-- Encode one assertion against this session's own state, send whatever that
     turned out to need and this solver has not been told, and check it. The result is the
     outcome, the counterexample model, and the variables asked for that a non-empty model has
@@ -679,7 +694,27 @@ def obligationOf (item : WorkItem) : Imperative.ProofObligation Expression :=
     fold discovers the sorts, functions and axioms the assertion mentions, and
     those have to reach this solver before the check does. With
     `removeDatatypes`, the solver is sent only the datatypes the query
-    mentions and their field types. -/
+    mentions and their field types.
+
+    The checks run on a solver in incremental mode, so a solver that decides less in that mode
+    than on a query sent once can answer otherwise than the per-obligation path. z3 is one: in
+    incremental mode, which a `push` or a check with assumptions starts, and with `smt.mbqi`
+    off, it can answer `unknown` on a context in which the body of a definition holds a
+    quantifier, where the same query sent once answers `sat`. An example is `assert(84)` of the
+    Java verifier test `javasupport/exceptions/AllowUncheckedExceptionsLevels` under
+    `--vcgen wp`: its per-obligation query answers `sat`, and the same query with a `(push 1)`
+    before the goal answers `unknown`. cvc5 answers `sat` on that check in both modes.
+
+    A goal is also checked under the axioms that earlier goals on its solver needed. The reset of
+    `exactPruning` reaches only the axioms that are labelled assumptions on the path, the ones
+    `WorkItem.keptAxioms` records. An axiom the encoder discovered from an earlier goal's own
+    expression stays asserted under either pruning mode, and with `smt.mbqi` off a later goal
+    can then read `unknown` where its per-obligation query answers `sat`. Under `--vcgen wp`,
+    `assert(327)` of the Laurel test `Execution/Procedures/PolyProcedure` reads `unknown` on z3
+    and cvc5 this way: its sibling `assert(259)` needs the axiom of `mapConst`. In the Python
+    test `test_model_soundness_433_integer_division_always_truncates_toward_negative_infinity`,
+    `assert(1468)` and `assert(1477)` are checked under labelled axioms a sibling kept: they get
+    their per-obligation verdict under `exactPruning` and read `unknown` under lazy pruning. -/
 def Session.prove {τ σ : Type} (s : Session τ σ) (factory : @Lambda.Factory CoreLParams)
     (item : WorkItem) (satCheck validCheck removeDatatypes : Bool)
     (leanExport : Option LeanExport.ExportConfig) :
@@ -705,7 +740,7 @@ def Session.prove {τ σ : Type} (s : Session τ σ) (factory : @Lambda.Factory 
       levels := lvl + 1
   -- The axioms this goal's pruning drops are left out, exactly as on the per-obligation path.
   -- The caller has already reset the solver if it holds one of them.
-  match snapshotObligation factory core item.goal.expr item.pruned with
+  match snapshotObligation factory core item.goal.expr item.pruned item.unreadDefs with
   | .error e =>
     s.encodingFailure.set (some s!"{e}")
     throw (IO.userError s!"encoding failed: {e}")
@@ -724,11 +759,14 @@ def Session.prove {τ σ : Type} (s : Session τ σ) (factory : @Lambda.Factory 
     let newUfs := ctx.ufs.toArray.toList.filter fun uf => !s.declUfs.contains uf.id
     let newIfs := ctx.ifs.toArray.toList.filter fun fn => !s.declIfs.contains fn.id
     let newAxms := ctx.axms.toArray.toList.filter fun ax => !s.declAxms.contains ax
-    -- The variables a counterexample reports: the ones the goal and its path reach, chosen and
-    -- ordered as the per-obligation path chooses them, from the obligation without its unused
-    -- CSE definitions.
-    let vars := (collectModelVars (pruneUnusedCSEDefinitions (obligationOf item)) r.varDefs
-      r.varDecls).filterMap fun
+    let toldDefNames := r.varDefs.foldl (fun acc d => acc.insert d.name) s.toldDefNames
+    -- The variables a counterexample reports: the ones the goal and its sliced path reach, chosen
+    -- and ordered as the per-obligation path chooses them, from the obligation without its unused
+    -- CSE definitions and without its unread definitions.
+    let vars := (collectModelVars
+        (ProofObligation.withoutDefinitions (pruneUnusedCSEDefinitions (obligationOf item))
+          item.unreadDefs)
+        r.varDefs r.varDecls).filterMap fun
       | (v, some ty) => some (v, Lambda.LTy.forAll [] ty)
       | (_, none) => none
     let solveTime ← IO.mkRef (0 : Nat)
@@ -741,7 +779,7 @@ def Session.prove {τ σ : Type} (s : Session τ σ) (factory : @Lambda.Factory 
         let sort ← liftM (AbstractEncoder.termTypeToSort solver decl.ty)
         let h ← liftM (solver.declareFun decl.name [] sort)
         modify fun st => { st with varHandles := st.varHandles.insert decl.name h }
-      for def_ in r.varDefs.drop s.toldDefs do
+      for def_ in r.varDefs.filter (!s.toldDefNames.contains ·.name) do
         let body ← AbstractEncoder.encodeTerm solver def_.body
         let sort ← liftM (AbstractEncoder.termTypeToSort solver def_.ty)
         liftM (solver.defineFun def_.name [] sort body)
@@ -819,7 +857,7 @@ def Session.prove {τ σ : Type} (s : Session τ σ) (factory : @Lambda.Factory 
                toldAssums := r.assumptions.foldl (fun acc a => acc.insert a) s.toldAssums,
                heldAxioms := s.heldAxioms ||| item.keptAxioms,
                toldDecls := max s.toldDecls r.varDecls.length,
-               toldDefs := max s.toldDefs r.varDefs.length,
+               toldDefNames,
                heldLevels := levels, heldPos := item.pos,
                checks := s.checks + 1, answered := s.answered + 1,
                solveNanos := s.solveNanos + (← solveTime.get) })
@@ -1013,8 +1051,13 @@ private partial def workLoop {τ σ : Type} (shared : Std.Mutex Schedule) (l : L
         | none => true
       let (satCheck, validCheck) := checksFor item.goal.property item.goal.md options
       -- A goal its own text settles, such as `assert true`, is decided here, as the
-      -- per-obligation path decides it, without sending the solver anything.
-      match evaluatorResults (obligationOf item) options.checkMode satCheck validCheck with
+      -- per-obligation path decides it, without sending the solver anything. The session's
+      -- trail keeps the previous goal's path, so only the entries past the shared prefix
+      -- are processed.
+      let (evaluated, trail) := evaluatorResultsTrail s.evalTrail (obligationOf item)
+        options.checkMode satCheck validCheck
+      let s := { s with evalTrail := trail }
+      match evaluated with
       | (some sat, some valid) =>
         let outcome : VCOutcome := { satisfiabilityProperty := sat, validityProperty := valid }
         -- The evaluator's verdicts carry no counterexample.
@@ -1139,8 +1182,18 @@ def run {τ σ : Type} (factory : @Lambda.Factory CoreLParams)
   let l0 := layoutOf tree
   let bit : Std.HashMap String Nat :=
     (axiomNames.zip (List.range axiomNames.length)).foldl (fun m (n, i) => m.insert n i) {}
-  -- Each goal's pruning, decided once from the goal and its path alone.
+  -- Each goal's unread definitions and pruning, decided once from the goal and its path alone.
+  -- The read state is advanced along the goals in order, so goals sharing a path prefix share
+  -- its processing.
+  let reads ← IO.mkRef
+    (.init {} : Imperative.PathConditions.FoldState ReadState Unit Expression)
   let tasks ← l0.tasks.mapM fun t => do
+    let ob := obligationOf t
+    let unreadDefs ← reads.modifyGet fun st =>
+      match (readFold.advance ob.assumptions.reverse).exec st with
+      | .ok st => (unreadDefinitions st.current ob, st)
+      | .error e => nomatch e
+    let t := { t with unreadDefs }
     let pruned ← prune t
     let dropped : Std.HashSet String := Std.HashSet.ofList pruned
     let keptMask := t.path.foldl (init := 0) fun acc run =>
@@ -1150,7 +1203,6 @@ def run {τ σ : Type} (factory : @Lambda.Factory CoreLParams)
           | some i => if dropped.contains label then acc else acc ||| (1 <<< i)
           | none => acc
         | _ => acc
-    let ob := obligationOf t
     let skippedDefs : Std.HashSet String :=
       let defs := cseDefinitions ob
       let needed := neededCSEDefinitions ob defs
@@ -1345,22 +1397,30 @@ lets this be tested without `symbolicEval`. -/
 /-- Each goal's pruning, which `verifyProgram` and `verifyProgramWith` hand to `run`: the
     per-obligation path's own decision for it, so a goal is asked exactly
     the question that path asks. The relevance query runs against the program as it was before
-    the pipeline, as it does there. -/
+    the pipeline, as it does there. The goals are taken in turn, and the facts of their path
+    conditions that `evaluatorResults` reads are computed along them (`EvalTrail`). The goal's
+    unread definitions are left out of the relevance seeds, as the per-obligation path leaves
+    them out. -/
 private def pruneFor (options : VerifyOptions) (program : Program) (axiomProgram : Option Program) :
-    WorkItem → IO (List String) :=
+    IO (WorkItem → IO (List String)) := do
   let axProg := axiomProgram.getD program
   match axiomCacheFor options.removeIrrelevantAxioms axProg with
-  | none => fun _ => pure []
+  | none => pure fun _ => pure []
   | some cache =>
     let axiomNames := axiomNamesOf axProg
-    fun item => do
+    let trail ← IO.mkRef (.init {} : EvalTrail)
+    pure fun item => do
       let (satCheck, validCheck) :=
         checksFor item.goal.property item.goal.md options
+      let ob := obligationOf item
+      let evaluated ← trail.modifyGet fun t =>
+        evaluatorResultsTrail t ob options.checkMode satCheck validCheck
       let (_, _, _, labels) ←
         EIO.toIO (fun m => IO.userError (toString (m.format none)))
-          (preprocessObligation (obligationOf item) program options
+          (preprocessObligation ob program options
             satCheck validCheck (some cache) axiomNames
-            (axiomProgram := some axProg))
+            (axiomProgram := some axProg) (evaluated := some evaluated)
+            (unread := item.unreadDefs))
       pure labels
 
 /-- Where the solvers a run walks the tree with come from. Any `AbstractSolver` will do, so a
@@ -1397,7 +1457,7 @@ def verifyProgramWith (session : SessionFactory) (program : Program) (sessions :
         recFnsAsDefineFunRec := options.recursiveFnsAsDefineFunRec }
       let r ← run E.factory (fun _ => session.spawn options) session.prelude smtCtx options tree
         sessions noHook false (axiomNamesOf (axiomProgram.getD program))
-        (pruneFor options program axiomProgram) sendAlone
+        (← pruneFor options program axiomProgram) sendAlone
       return .ok r
 
 /-- Verify a program by walking its obligation tree with `sessions` solvers.
@@ -1438,7 +1498,7 @@ def verifyProgram (program : Program) (sessions : Nat := 1)
         return wrapSolver (raisingIn (IncrementalSolver.mkIncrementalSolver st) failed)
       let r ← run E.factory spawn launch.prelude
         smtCtx options tree sessions hook resetPerGoal
-        (axiomNamesOf (axiomProgram.getD program)) (pruneFor options program axiomProgram)
+        (axiomNamesOf (axiomProgram.getD program)) (← pruneFor options program axiomProgram)
         sendAlone
       return .ok r
 
@@ -1534,7 +1594,8 @@ def coreSMTSolver (sessions : Nat := 1) (options : VerifyOptions := VerifyOption
         (axiomProgram := axProg) (mkDischarge := mkDischarge) (pctx := pctx) : CoreSMTSolver)
         factory oblProgram)
     -- A goal sent alone is discharged against the environment of the whole program, as the
-    -- per-obligation path discharges it, and with that path's dropping of unused CSE definitions.
+    -- per-obligation path discharges it, and with that path's dropping of unused generated
+    -- definitions.
     -- Built on the first goal sent alone, and once, however many workers send at once.
     let env : Thunk (Except Strata.Pipeline.Message Env) := Thunk.mk fun _ =>
       (Core.buildEnv options oblProgram factory (registerCustomFunctions := true)).map (·.1)
@@ -1543,7 +1604,7 @@ def coreSMTSolver (sessions : Nat := 1) (options : VerifyOptions := VerifyOption
         | .ok E => pure E
         | .error m => throw (ofMsg m)
       let ob := obligationOf item
-      let ob := pruneUnusedCSEDefinitions ob
+      let ob := pruneUnusedDefinitions ob
       -- A goal sent alone is a single obligation, so it is discharged with one worker whatever
       -- the caller's worker count. That count describes this call only: several of the walk's
       -- workers may send goals at once, so a back end that shares one connection between

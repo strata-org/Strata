@@ -21,6 +21,7 @@ Key theorems:
 - `LExpr.freeVars_eq_freeVarsFast` (`@[csimp]`) — `freeVars` and its
   linear-time implementation `freeVarsFast` agree; the compiler emits
   `freeVarsFast` wherever compiled code calls `freeVars`.
+- `LExpr.getVars_eq_getVarsFast` (`@[csimp]`) — the same for `LExpr.getVars`.
 
 This theorem lives here rather than in `LExprWFProps.lean` because `@[csimp]`
 substitution only applies in modules that import the file containing the
@@ -106,6 +107,36 @@ theorem freeVars_eq_freeVarsFast : @freeVars = @freeVarsFast := by
   funext T GenericTy e
   unfold freeVarsFast
   rw [freeVarsAcc_eq, List.append_nil]
+
+/-- `LExpr.getVars` of `e` prepended onto `acc`, in one walk of `e`. -/
+private def getVarsAcc {U : LExprParamsT} (e : LExpr U) (acc : List (Identifier U.base.IDMeta)) :
+    List (Identifier U.base.IDMeta) :=
+  match e with
+  | .const _ _ | .op _ _ _ | .bvar _ _ => acc
+  | .fvar _ x _ => x :: acc
+  | .abs _ _ _ e1 => getVarsAcc e1 acc
+  | .quant _ _ _ _ tr e1 => getVarsAcc tr (getVarsAcc e1 acc)
+  | .app _ e1 e2 => getVarsAcc e1 (getVarsAcc e2 acc)
+  | .ite _ c t e => getVarsAcc c (getVarsAcc t (getVarsAcc e acc))
+  | .eq _ e1 e2 => getVarsAcc e1 (getVarsAcc e2 acc)
+
+/-- The accumulator walk prepends `LExpr.getVars e`. -/
+private theorem getVarsAcc_eq {U : LExprParamsT} (e : LExpr U)
+    (acc : List (Identifier U.base.IDMeta)) :
+    getVarsAcc e acc = LExpr.getVars e ++ acc := by
+  induction e generalizing acc <;> simp_all [getVarsAcc, LExpr.getVars]
+
+/-- Linear-time implementation of `LExpr.getVars`. -/
+def getVarsFast {U : LExprParamsT} (e : LExpr U) : List (Identifier U.base.IDMeta) :=
+  getVarsAcc e []
+
+/-- `LExpr.getVars` and `getVarsFast` agree, so the compiler emits `getVarsFast` wherever
+    compiled code calls `LExpr.getVars`. -/
+@[csimp]
+theorem getVars_eq_getVarsFast : @LExpr.getVars = @getVarsFast := by
+  funext U e
+  unfold getVarsFast
+  rw [getVarsAcc_eq, List.append_nil]
 
 /--
 Is `x` a fresh variable w.r.t. `e`?
@@ -731,6 +762,11 @@ end LExpr
 @[expose] def LExpr.NamesIn {T : LExprParams} (S : T.Identifier → Prop) (e : LExpr T.mono) :
     Prop :=
   ∀ x ty, (x, ty) ∈ LExpr.freeVars e → S x
+
+/-- Every operator of `e` satisfies `S`. -/
+@[expose] def LExpr.OpsIn {T : LExprParams} (S : T.Identifier → Prop) (e : LExpr T.mono) :
+    Prop :=
+  ∀ o ∈ LExpr.getOps e, S o
 
 /-- Apply a function to every user-provided type annotation in an expression. -/
 def mapExprTys {T : LExprParams} (f : LMonoTy → LMonoTy)

@@ -45,7 +45,7 @@ variable {P : PureExpr} [iDE : DecidableEq P.Ident] [iBE : BEq P.Ident] [iLB : L
 omit iOp iLFv iLFvs
 variable {F : P.Factory} {σS σL σ σS' σS1 : SemanticStore P} {x y : P.Ident} {D : List P.Ident}
   {t : AssertId P} {A : AvoidSet P} {n0 n : Nat} {w : P.Val} {ρ : Std.HashMap P.Ident (SVal P)}
-  {out o : PStmts P} {tr evs : List (Event P)} {s s1 : SSt P} {cond : P.Expr}
+  {out o : PStmts P} {tr evs : List (Event P)} {s s1 : SSt P} {cond : P.Expr} {oe : WPOps.OpEnv P}
 
 
 /-! ## Agreement of the two stores
@@ -55,27 +55,32 @@ The guarded store `σL` and the obligation store `σS` agree on a name `x` under
 
 omit iDE iBE iHF iSF iHI iHa iHFs iLV in
 /-- `SHolds` survives the growth of the obligation store. -/
-private theorem SHolds.mono (hm : StoreAgreement σS σS')
+private theorem SHolds.mono (hM : WellFormedSemanticEvalMono F) (hm : StoreAgreement σS σS')
     : ∀ {o : Option (SVal P)}, SHolds F σS x w o → SHolds F σS' x w o
   | o, h => by
-    have := storeAgreement_supplies_mono_premise _ _ hm
-    rcases o with _ | _ | _ <;> grind [SHolds]
+    have hp := storeAgreement_supplies_mono_premise _ _ hm
+    rcases o with _ | _ | ⟨e, _, _⟩
+    · exact hp _ _ h
+    · exact ⟨hp _ _ h.1, h.2⟩
+    · obtain ⟨he, hty, y, rfl, hy⟩ := h
+      exact ⟨hM e w σS σS' hp he, hty, y, rfl, hp _ _ hy⟩
 
 omit iDE iBE iHF iSF iHI iHa iHFs iLV in
 /-- The value a current value holds has the type the current value gives `x`. -/
 private theorem SHolds.ty {F : P.Factory} {σS : SemanticStore P} {x : P.Ident} {w : P.Val}
     {ty : P.Ty} : ∀ {o : Option (SVal P)}, SHolds F σS x w o →
       (o.getD (.name x none)).ty? = some ty → HasVal.valueOfTy F w ty
-  | o, h, hty => by rcases o with _ | (_ | _) <;> grind [SHolds, SVal.ty?, bool_valueOfTy]
+  | o, h, hty => by rcases o with _ | (_ | _) <;> grind [SHolds, SVal.ty?]
 
 omit iDE iLB iHF iSF iHI iHFs iLV in
 /-- Agreement on `y` survives a step that keeps the guarded value and the current value of `y`
     and grows the obligation store. -/
 private theorem SAgree.transfer {F : P.Factory} {ρ ρ' : Std.HashMap P.Ident (SVal P)}
-    {σL σL' σS σS' : SemanticStore P} {y : P.Ident} (h : SAgree F ρ σL σS y)
+    {σL σL' σS σS' : SemanticStore P} {y : P.Ident} (hM : WellFormedSemanticEvalMono F)
+    (h : SAgree F ρ σL σS y)
     (hL : σL' y = σL y) (hρ : ρ'[y]? = ρ[y]?) (hm : StoreAgreement σS σS') :
     SAgree F ρ' σL' σS' y :=
-  h.imp fun _ ⟨h1, h2⟩ => ⟨hL ▸ h1, hρ ▸ h2.mono hm⟩
+  h.imp fun _ ⟨h1, h2⟩ => ⟨hL ▸ h1, hρ ▸ h2.mono hM hm⟩
 
 /-! ## Names of the obligation store
 
@@ -124,12 +129,13 @@ private theorem SDom.fresh (h : SDom A D n0 σS s.next) (hA : s.avoid = A) (hn :
 /-! ## Assignments -/
 
 omit iLV in
+include iOp iLFv in
 /-- **An assignment of the obligation program.**  When the guarded value of `x := e` is `v0`
     (of type `ty`) under agreement on the free variables of `e`, the output of `assignVal` runs
     from the obligation store to a larger one in which the recorded value of `x` holds `v0`. -/
-private theorem ssaAssign_sim (hF : SSALaws F) (hCL : WellFormedStore σL F)
+private theorem ssaAssign_sim (hF : SSALaws F oe) (hCL : WellFormedStore σL F)
     (hCS : WellFormedStore σS F) {ty : P.Ty} {e : P.Expr} {v : SVal P} {v0 : P.Val}
-    (h : assignVal x ty e s = .ok ((o, v), s1))
+    (h : assignVal oe x ty e s = .ok ((o, v), s1))
     (hA : ∀ y ∈ HasFvars.getFvars e, SAgree F s.ρ σL σS y) (he : EvalsTo F σL e v0)
     (hty : HasVal.valueOfTy F v0 ty) (hD : SDom A D n0 σS s.next) (hav : s.avoid = A)
     (hn : n0 ≤ s.next) :
@@ -137,13 +143,12 @@ private theorem ssaAssign_sim (hF : SSALaws F) (hCL : WellFormedStore σL F)
       SDom A D n0 σS1 s1.next ∧ SHolds F σS1 x v0 (some v) ∧ s1 = { s with next := s1.next } := by
   have hev := evalsTo_foldE hF hCL hCS s.ρ e hA he
   have hval := hev.value hF.val hCS
-  rcases assignVal_ok h with ⟨b, x', hb, hf, rfl, rfl⟩ | ⟨y, hy, -, rfl, rfl, rfl⟩ |
+  rcases assignVal_ok h with ⟨x', -, hf, rfl, rfl⟩ | ⟨y, hy, -, rfl, rfl, rfl⟩ |
     ⟨x', hf, rfl, rfl⟩
-  · obtain rfl := evalsTo_boolLit hF hb hev
-    obtain ⟨h0, hD1, hm, hC1, hs⟩ := hD.fresh hav hn hf hCS hval
-    refine ⟨_, run_init hF h0 (bool_valueOfTy ?_) fun _ h => ExprOrNondet.det.inj h ▸
-      evalsTo_lit F hF _ b, hm, hC1, hD1, ?_, hs⟩
-    all_goals cases b <;> simp [SHolds, SemanticStore.update]
+  · obtain ⟨h0, hD1, hm, hC1, hs⟩ := hD.fresh hav hn hf hCS hval
+    exact ⟨_, run_init hF h0 hty fun _ h => ExprOrNondet.det.inj h ▸ hev, hm, hC1, hD1,
+      ⟨hF.mono _ _ _ _ (storeAgreement_supplies_mono_premise _ _ hm) hev, hty, _, rfl,
+        (update_facts σS x' v0).1⟩, hs⟩
   · exact ⟨σS, .nil, StoreAgreement.refl _, hCS, hD, ⟨hev.var hF.var hCS hy,
       fun T h => Option.some.inj h ▸ hty⟩, rfl⟩
   · obtain ⟨h0, hD1, hm, hC1, hs⟩ := hD.fresh hav hn hf hCS hval
@@ -175,6 +180,18 @@ private theorem obl_claim (hD : SDom A D n0 σS n) {e : P.Expr}
     · exact .inr (hD.bound (by simp [ho]))
     · exact .inl ⟨z, ty, List.mem_filterMap.2 ⟨y, hy, by rw [hov]; rfl⟩⟩
 
+omit iHI iLI iLV in
+include iOp iLFv in
+/-- The condition the traversal emits for an obligation has the values of the obligation's
+    condition, when the two stores agree on its free variables. -/
+private theorem evalsTo_oblCond (hF : SSALaws F oe) (hCL : WellFormedStore σL F)
+    (hCS : WellFormedStore σS F) {b : Bool} {e : P.Expr} {v : P.Val}
+    (hA : ∀ x ∈ HasFvars.getFvars e, SAgree F ρ σL σS x) :
+    EvalsTo F σS (oblCond oe b ρ e) v ↔ EvalsTo F σL e v := by
+  rcases oblCond_eq b ρ e with h | ⟨-, h⟩ <;> rw [h]
+  · exact evalsTo_renM' hF hCL hCS hA
+  · exact iff_of_eq (congrArg (· = some v) (eval_evalM hF hCL hCS ρ e hA))
+
 /-! ## The simulation -/
 
 /-- A reach of the obligation program `out` from `σS` claims a failure of the target `t` at an
@@ -204,19 +221,21 @@ omit iHF iSF iHI iHFs iLV in
 /-- Agreement after an assignment of `x`: on `x`, from the value the new current value holds;
     on the other names of `V`, from the agreement before. -/
 private theorem SAgree.assign {σL1 : SemanticStore P} {v : SVal P} {V : List P.Ident}
-    (hx : SHolds F σS1 x w (some v)) (hx1 : σL1 x = some w) (hfr : ∀ y, x ≠ y → σL1 y = σL y)
+    (hM : WellFormedSemanticEvalMono F) (hx : SHolds F σS1 x w (some v)) (hx1 : σL1 x = some w)
+    (hfr : ∀ y, x ≠ y → σL1 y = σL y)
     (hm : StoreAgreement σS σS1)
     (hold : ∀ y ∈ V, y ≠ x → SAgree F ρ σL σS y) : ∀ y ∈ V, SAgree F (ρ.insert x v) σL1 σS1 y :=
-  fun y hy => by by_cases h : x = y <;> grind [SAgree, SAgree.transfer]
+  fun y hy => by by_cases h : x = y <;> grind [SAgree, SAgree.transfer hM]
 
+include iOp iLFv in
 /-- **The traversal preserves failures.**  A failure of the target `t` at an occurrence of
     condition `cond` reached by a guarded list from `σL` is one of the traversal's output from
     `σS` at an occurrence of `cond` under a recorded substitution (`SClaim`), when the two stores
     agree on the free variables of the list and the obligation store binds only the names `SDom`
     allows. -/
-private theorem ssaList_over (hF : SSALaws F) (t : AssertId P) (cond : P.Expr) (A : AvoidSet P)
+private theorem ssaList_over (hF : SSALaws F oe) (t : AssertId P) (cond : P.Expr) (A : AvoidSet P)
     (D : List P.Ident) (n0 : Nat) (ss : PStmts P) :
-    ∀ {s s' : SSt P} {out : PStmts P}, ssaList ss s = .ok (out, s') →
+    ∀ {s s' : SSt P} {out : PStmts P}, ssaList oe ss s = .ok (out, s') →
     ∀ {σL σS : SemanticStore P} {tr : List (Event P)}, s.avoid = A → n0 ≤ s.next →
     (∀ x ∈ Block.freeVars ss, SAgree F s.ρ σL σS x) → WellFormedStore σL F → WellFormedStore σS F →
     SDom A D n0 σS s.next → BReach F ss σL tr → Claim t cond tr →
@@ -253,7 +272,7 @@ private theorem ssaList_over (hF : SSALaws F) (t : AssertId P) (cond : P.Expr) (
       have hx : SHolds F _ x v0 (some (.name x' (some ty))) :=
         ⟨(update_facts σS x' v0).1, fun T hT => by cases hT; exact hty⟩
     exact (ih (by simp [SSt.defd, SSt.bound, hf.1, hav]) (Nat.le_trans hn hf.2.1)
-      (SAgree.assign hx hx1 hfr hm fun y hy hne => hs1 ▸ hA y
+      (SAgree.assign hF.mono hx hx1 hfr hm fun y hy hne => hs1 ▸ hA y
         (by simp [Block.freeVars, Stmt.freeVars, hy, hne]))
       (evalCmdE_storeWellDefined hF.val hE hCL) hC1 hD1 hR' hC').mono ⟨[], rfl⟩
       (reach_after_run hrun)
@@ -272,23 +291,26 @@ private theorem ssaList_over (hF : SSALaws F) (t : AssertId P) (cond : P.Expr) (
     · refine hS.mono ⟨[], rfl⟩ fun hb => reach_after_stmt (.cmd (by exact .eval_assume)) ?_ hb
       exact fun _ hc => by cases List.mem_singleton.1 hc; exact evalInterp_holds_iff.2 hev
   case check =>
-    intro mk l e md rest s out' s' hmk h' ih σL σS tr hav hn hA hCL hCS hD hR hC
+    intro mk b l e md rest s out' s' hmk h' ih σL σS tr hav hn hA hCL hCS hD hR hC
     have hmem := (ssaList_frame rest h').2.2.1.elim fun l' hl =>
       hl ▸ List.mem_append_right l' (.head _)
     obtain ⟨σ1, evs, hE, hc | ⟨tr', hR', hf, hc⟩⟩ := reach_cmd_claim hR hC
-    · rcases hmk with rfl | rfl <;> cases hE
+    · rcases hmk with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ <;> cases hE
       all_goals
         have hA' : ∀ x ∈ HasFvars.getFvars e, SAgree F s.ρ σL σS x :=
           fun x hx => hA x (by simp [Block.freeVars, Stmt.freeVars, mem_exprFV, hx])
         have hfa := claim_single hc
         obtain rfl : e = cond := hfa.2.2.1
-        obtain ⟨h1, h3, h4⟩ := obl_claim hD hA'
         obtain ⟨hl, hmd, -, hv⟩ :=
-          failsAt_transfer (by simp) (fun _ => evalsTo_renM' hF hCL hCS hA') hfa
-        refine ⟨_, _, hl ▸ hmem, .here (.cmd (by constructor) (by simp)), ⟨[], _, rfl, nofun, ?_⟩,
-          h3, h4⟩
-        exact ⟨hl, hmd, h1, hv⟩
-    · rcases hmk with rfl | rfl <;> cases hE <;>
+          failsAt_transfer (by simp) (fun _ => evalsTo_oblCond hF hCL hCS hA') hfa
+        rcases oblCond_eq _ s.ρ e with hob | ⟨hb, hob⟩
+        · obtain ⟨h1, h3, h4⟩ := obl_claim hD hA'
+          refine ⟨_, _, hl ▸ hmem, .here (.cmd (by constructor) (by simp)), ⟨[], _, rfl, nofun, ?_⟩,
+            h3, h4⟩
+          exact ⟨hl, hmd, hob.trans h1, hv⟩
+        · rw [hob, WPLang.boolLit?_eval hb] at hv
+          grind [hF.val.eval_tt, hF.val.eval_ff, HasBool.ttVal_ne_ffVal]
+    · rcases hmk with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ <;> cases hE <;>
         exact (ih hav hn (fun x hx => hA x (by simp [Block.freeVars, Stmt.freeVars, hx]))
             hCL hCS hD hR' hc).mono
           ⟨[], rfl⟩ fun hb => reach_after_stmt (.cmd (by constructor)) (fun _ h => by simp at h) hb
@@ -306,8 +328,8 @@ private theorem ssaList_over (hF : SSALaws F) (t : AssertId P) (cond : P.Expr) (
       by_cases he : e' = [] <;> simp only [ho2 hne, ho3 hne, he, ne_eq, not_false_eq_true] <;>
         first | exact hR0 | exact .here (.ite_nondet_true hR0)
     · have hcE := ihE (ha.trans hav) (Nat.le_trans hn hn')
-        (fun y hy => (hA y (by simp [Block.freeVars, Stmt.freeVars, hy])).transfer rfl (hρU y)
-          (StoreAgreement.refl _))
+        (fun y hy => (hA y (by simp [Block.freeVars, Stmt.freeVars, hy])).transfer hF.mono rfl
+          (hρU y) (StoreAgreement.refl _))
         hCL hCS (hD.le hn') hRE hC
       have hne : e' ≠ [] := fun h => by obtain ⟨_, _, _, ⟨⟩, _⟩ := h ▸ hcE
       refine hcE.mono ⟨[], rfl⟩ fun hR0 => ⟨[], ?_, nofun⟩
@@ -329,21 +351,22 @@ arm. -/
 omit iLI iLV in
 /-- The traversal's output of a list containing an `assert` or a `cover` is not empty. -/
 private theorem ssaList_ne_nil (ss : PStmts P) {s s' : SSt P} {out : PStmts P}
-    (h : ssaList ss s = .ok (out, s')) : Block.hasCheck ss = true → out ≠ [] := by
+    (h : ssaList oe ss s = .ok (out, s')) : Block.hasCheck ss = true → out ≠ [] := by
   refine ssaList_ind (Q := fun ss _ out _ => Block.hasCheck ss = true → out ≠ [])
     (fun _ h => by simp [Block.hasCheck] at h) ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ h <;> intros <;>
     (try simp only [Block.hasCheck, Stmt.hasCheck, Bool.false_or] at *) <;>
     grind [List.append_eq_nil_iff]
 
+include iOp iLFv in
 /-- **The traversal simulates the guarded list.**  When the two stores agree on the free
     variables of the list and the obligation store binds only the names `SDom` allows: every
     reach of the guarded list from `σL` has a target trace, empty or a reach of the output from
     `σS`, whose assumptions are weakened; and, when every arm of every `ite *` of the list
     contains an obligation, every run of the list from `σL` ends normally and has a run of the
     output from `σS` ending normally whose trace weakens the assumptions of the source's. -/
-private theorem ssaList_sim (hF : SSALaws F) (A : AvoidSet P) (D : List P.Ident) (n0 : Nat)
+private theorem ssaList_sim (hF : SSALaws F oe) (A : AvoidSet P) (D : List P.Ident) (n0 : Nat)
     (ss : PStmts P) :
-    ∀ {s s' : SSt P} {out : PStmts P}, ssaList ss s = .ok (out, s') →
+    ∀ {s s' : SSt P} {out : PStmts P}, ssaList oe ss s = .ok (out, s') →
     ∀ {σL σS : SemanticStore P}, s.avoid = A → n0 ≤ s.next →
     (∀ x ∈ Block.freeVars ss, SAgree F s.ρ σL σS x) → WellFormedStore σL F → WellFormedStore σS F →
     SDom A D n0 σS s.next →
@@ -389,7 +412,7 @@ private theorem ssaList_sim (hF : SSALaws F) (A : AvoidSet P) (D : List P.Ident)
         have hx : SHolds F _ x v0 (some (.name x' (some ty))) :=
           ⟨(update_facts σS x' v0).1, fun T hT => by cases hT; exact hty⟩
       have hI := ih (by simp [SSt.defd, SSt.bound, hf.1, hav]) (Nat.le_trans hn hf.2.1)
-        (SAgree.assign hx hx1 hfr hm fun y hy hne =>
+        (SAgree.assign hF.mono hx hx1 hfr hm fun y hy hne =>
           hs1 ▸ hA y (by simp [Block.freeVars, Stmt.freeVars, hy, hne]))
         (evalCmdE_storeWellDefined hF.val hE hCL) hC1 hD1
       first
@@ -421,12 +444,12 @@ private theorem ssaList_sim (hF : SSALaws F) (A : AvoidSet P) (D : List P.Ident)
       · exact ⟨σL', rfl, _, σS', .cons_normal (evs1 := [_]) (.cmd (by exact .eval_assume)) h1,
           .cons hw h2⟩
   case check =>
-    intro mk l e md rest s out' s' hmk h' ih σL σS hav hn hA hCL hCS hD
-    rcases hmk with rfl | rfl
+    intro mk b l e md rest s out' s' hmk h' ih σL σS hav hn hA hCL hCS hD
+    rcases hmk with ⟨rfl, -⟩ | ⟨rfl, -⟩
     all_goals
       have hI := ih hav hn (fun x hx => hA x (by simp [Block.freeVars, Stmt.freeVars, hx]))
           hCL hCS hD
-      have hev := fun v => evalsTo_renM' hF hCL hCS (ρ := s.ρ) (e := e) (v := v)
+      have hev := fun v => evalsTo_oblCond hF hCL hCS (b := b) (ρ := s.ρ) (e := e) (v := v)
         (fun x hx => hA x (by simp [Block.freeVars, Stmt.freeVars, mem_exprFV, hx]))
       refine ⟨fun {tr} hR => ?_, fun harm {tr o} hR => ?_⟩
       · rcases hR with ⟨⟨⟨⟩, -⟩⟩ | ⟨⟨⟨⟩⟩, hR'⟩
@@ -448,7 +471,7 @@ private theorem ssaList_sim (hF : SSALaws F) (A : AvoidSet P) (D : List P.Ident)
     have hIT := ihT hav hn (fun y hy => hA y (by simp [Block.freeVars, Stmt.freeVars, hy]))
         hCL hCS hD
     have hIE := ihE (ha.trans hav) (Nat.le_trans hn hn')
-      (fun y hy => (hA y (by simp [Block.freeVars, Stmt.freeVars, hy])).transfer rfl (hρU y)
+      (fun y hy => (hA y (by simp [Block.freeVars, Stmt.freeVars, hy])).transfer hF.mono rfl (hρU y)
         (StoreAgreement.refl _))
       hCL hCS (hD.le hn')
     refine ⟨fun {tr} hR => ?_, fun harm {tr o} hR => ?_⟩
@@ -506,6 +529,7 @@ private theorem entryMap_agree {tys : Tys P} {ρ0 : Ren P} {lay : PStmts P}
   obtain ⟨w, hw⟩ := Option.isSome_iff_exists.1 (hρ x hx).2
   cases hp : ρ0.find? (·.1 == x) <;> grind [SAgree, SHolds, Ren.get, TyOK, entryMap_lookup]
 
+include iOp iLFv in
 /-- **The SSA phase preserves failures.**  If the guarded program `lay` fails the target `t` from
     the store `σL` at an occurrence whose condition is `e`, then its obligation program `so.out`
     fails `t`, from the store `σS`, at an occurrence whose condition is `e` under the substitution
@@ -514,8 +538,8 @@ private theorem entryMap_agree {tys : Tys P} {ρ0 : Ren P} {lay : PStmts P}
     `ρ0.get x`, and has its declared type (`TyOK`); both stores hold values; `σS` binds only names
     of `D`, and every name of `D` of the form of a fresh name the phase may introduce is avoided
     (`NamesOK`). -/
-private theorem ssaBody_over (hF : SSALaws F) {st : FreshSt P} {ρ0 : Ren P} {lay : PStmts P}
-    {so : SOut P} (h : ssaBody st ρ0 lay = .ok so) (hN : NamesOK st.avoid.toList D st.next)
+private theorem ssaBody_over (hF : SSALaws F oe) {st : FreshSt P} {ρ0 : Ren P} {lay : PStmts P}
+    {so : SOut P} (h : ssaBody oe st ρ0 lay = .ok so) (hN : NamesOK st.avoid.toList D st.next)
     (hρ : ∀ x ∈ Block.freeVars lay, σL x = σS (ρ0.get x) ∧ (σL x).isSome)
     (hty : TyOK F st.tys (Block.freeVars lay) (Block.freeVars lay) σL) (hCL : WellFormedStore σL F)
     (hCS : WellFormedStore σS F) (hdom : SemanticStore.DomIn σS D) {e : P.Expr}
@@ -531,22 +555,21 @@ private theorem ssaBody_over (hF : SSALaws F) {st : FreshSt P} {ρ0 : Ren P} {la
       hCS ⟨D, hN, hdom, fun z hz => .inl hz⟩ hr ⟨evs, ev, rfl, hf, hfa⟩
   exact ⟨ssub, hobls ▸ List.mem_reverse.2 hm, ⟨evs', ev', hr', hf', hfa'⟩, hk, hy⟩
 
-/-- **The SSA phase preserves failures.**  Let `ssaEntry G tys xs al lay` give the entry renaming
-    `ρ0` and the obligation program `so.out` of the guarded program `lay`.  If `lay` fails the
-    target `t` from the store `σL` at an occurrence whose condition is `e`, then `so.out` fails
-    `t`, from the store `σS`, at an occurrence whose condition is `e` under the substitution
-    `ssub` of an entry `obl t.label ssub` the phase records; the keys of `ssub` are free
-    variables of `e`, and every free variable of `e` is a key of `ssub` or a name `σS` may
+include iOp iLFv in
+/-- **The SSA phase preserves failures.**  Let `ssaEntry oe G tys xs al lay` give the entry
+    renaming `ρ0` and the obligation program `so.out` of the guarded program `lay`.  If `lay`
+    fails the target `t` from the store `σL` at an occurrence whose condition is `e`, then
+    `so.out` fails `t`, from the store `σS`, at an occurrence whose condition is `e` under the
+    substitution `ssub` of an entry `obl t.label ssub` the phase records; the keys of `ssub` are
+    free variables of `e`, and every free variable of `e` is a key of `ssub` or a name `σS` may
     bind.  Hypotheses: every `(a, x)` of `al` has `x` in `xs`; every free variable `x` of
     `lay` is defined in `σL` with the value `σS` gives its entry name `ρ0.get x`, and has its
     type in `tys` (`TyOK`); both stores hold values; `σS` binds only names of `D`, each an entry
-    name or not of the form of a fresh name.  Hypotheses on the factory: the mainline evaluator
-    laws for variables and values, and the folding law `WellFormedSemanticEvalSubstLits`. -/
-theorem ssaEntry_over {F : P.Factory} (hVar : WellFormedSemanticEvalVar (P := P) F)
-    (hVal : WellFormedSemanticEvalVal (P := P) F)
-    (hLits : WellFormedSemanticEvalSubstLits (P := P) F) {G : IdSet P} {tys : Tys P}
+    name or not of the form of a fresh name.  Hypotheses on the factory: the laws `SSALaws` under
+    the operator data `oe`. -/
+theorem ssaEntry_over {F : P.Factory} (hF : SSALaws F oe) {G : IdSet P} {tys : Tys P}
     {xs : List P.Ident} {al : List (P.Ident × P.Ident)} {lay : PStmts P} {ρ0 : Ren P}
-    {so : SOut P} (h : ssaEntry G tys xs al lay = .ok (ρ0, so)) (hal : ∀ q ∈ al, q.2 ∈ xs)
+    {so : SOut P} (h : ssaEntry oe G tys xs al lay = .ok (ρ0, so)) (hal : ∀ q ∈ al, q.2 ∈ xs)
     {σL σS : SemanticStore P} (hρ : ∀ x ∈ Block.freeVars lay, σL x = σS (ρ0.get x) ∧ (σL x).isSome)
     (hty : TyOK F tys (Block.freeVars lay) (Block.freeVars lay) σL) (hCL : WellFormedStore σL F)
     (hCS : WellFormedStore σS F) {D : List P.Ident} (hdom : SemanticStore.DomIn σS D)
@@ -556,26 +579,26 @@ theorem ssaEntry_over {F : P.Factory} (hVar : WellFormedSemanticEvalVar (P := P)
       (∀ q ∈ ssub, q.1 ∈ exprFV e) ∧
       ∀ y ∈ exprFV e, (∃ z ty, (y, z, ty) ∈ ssub) ∨ y ∈ D := by
   obtain ⟨rfl, hs⟩ := ssaEntry_ok h
-  obtain ⟨ssub, hm, hfs, hk, hc⟩ := ssaBody_over ⟨hVar, hVal, hLits⟩ hs
+  obtain ⟨ssub, hm, hfs, hk, hc⟩ := ssaBody_over hF hs
       (ssaEntryRen_namesOK _ xs al hal hD) hρ hty hCL hCS hdom hfail
   exact ⟨ssub, hm, hfs, hk, fun y hy => (hc y hy).imp_right (·.resolve_right fun ⟨_, _, _, _, hn⟩ =>
     hn (by simp [inputAvoid, AvoidSet.toList, IdSet.ofList, fails_fv hfail y hy]))⟩
 
-/-- **The SSA phase simulates the traces of the guarded program.**  Let `ssaEntry G tys xs al lay`
-    give the entry renaming `ρ0` and the obligation program `so.out` of the guarded program
-    `lay`, under the hypotheses of `ssaEntry_over` on the stores `σL` and `σS`.  Then every reach
-    of `lay` from `σL` emitting `tr` has a trace `tr'`, empty or emitted by a reach of `so.out`
-    from `σS`, that is `tr` with its assumptions weakened (`Trace.WeakensAssumes evalInterp`:
-    each assertion and cover kept with its label and metadata, holding exactly when the source's
+include iOp iLFv in
+/-- **The SSA phase simulates the traces of the guarded program.**  Let
+    `ssaEntry oe G tys xs al lay` give the entry renaming `ρ0` and the obligation program
+    `so.out` of the guarded program `lay`, under the hypotheses of `ssaEntry_over` on the stores
+    `σL` and `σS`.  Then every reach of `lay` from `σL` emitting `tr` has a trace `tr'`, empty or
+    emitted by a reach of `so.out` from `σS`, that is `tr` with its assumptions weakened
+    (`Trace.WeakensAssumes evalInterp`: each assertion and cover kept with its label and
+    metadata, holding exactly when the source's
     holds; each assumption kept, with its label and metadata, holding whenever the source's
     holds, or dropped).  When moreover every arm of every `ite *` of `lay` contains an `assert`
     or a `cover` (`Block.armsHaveChecks`), every run of `lay` from `σL` ends normally, and has a run
     of `so.out` from `σS` ending normally with such a trace. -/
-theorem ssaEntry_sim {F : P.Factory} (hVar : WellFormedSemanticEvalVar (P := P) F)
-    (hVal : WellFormedSemanticEvalVal (P := P) F)
-    (hLits : WellFormedSemanticEvalSubstLits (P := P) F) {G : IdSet P} {tys : Tys P}
+theorem ssaEntry_sim {F : P.Factory} (hF : SSALaws F oe) {G : IdSet P} {tys : Tys P}
     {xs : List P.Ident} {al : List (P.Ident × P.Ident)} {lay : PStmts P} {ρ0 : Ren P}
-    {so : SOut P} (h : ssaEntry G tys xs al lay = .ok (ρ0, so)) (hal : ∀ q ∈ al, q.2 ∈ xs)
+    {so : SOut P} (h : ssaEntry oe G tys xs al lay = .ok (ρ0, so)) (hal : ∀ q ∈ al, q.2 ∈ xs)
     {σL σS : SemanticStore P} (hρ : ∀ x ∈ Block.freeVars lay, σL x = σS (ρ0.get x) ∧ (σL x).isSome)
     (hty : TyOK F tys (Block.freeVars lay) (Block.freeVars lay) σL) (hCL : WellFormedStore σL F)
     (hCS : WellFormedStore σS F) {D : List P.Ident} (hdom : SemanticStore.DomIn σS D)
@@ -586,7 +609,7 @@ theorem ssaEntry_sim {F : P.Factory} (hVar : WellFormedSemanticEvalVar (P := P) 
       ∃ tr' σS', BRun F so.out σS tr' (.normal σS') ∧ Trace.WeakensAssumes evalInterp tr tr') := by
   obtain ⟨rfl, hs⟩ := ssaEntry_ok h
   obtain ⟨s1, h1, -⟩ := ssaBody_ok hs
-  exact ssaList_sim ⟨hVar, hVal, hLits⟩ _ D _ lay h1 rfl (Nat.le_refl _) (entryMap_agree hρ hty)
+  exact ssaList_sim hF _ D _ lay h1 rfl (Nat.le_refl _) (entryMap_agree hρ hty)
       hCL hCS ⟨D, ssaEntryRen_namesOK _ xs al hal hD, hdom, fun z hz => .inl hz⟩
 
 end -- public section

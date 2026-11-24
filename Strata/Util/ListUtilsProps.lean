@@ -1521,6 +1521,29 @@ theorem List.Rel₂.getElem?_some {R : α → β → Prop}
     | zero => simp only [length_cons, Nat.zero_lt_succ, getElem?_pos, getElem_cons_zero, Option.some.injEq] at ha; subst ha; exact ⟨_, rfl, hr⟩
     | succ n => simp only [List.getElem?_cons_succ] at ha ⊢; exact ih ha
 
+/-- Two lists of equal length whose entries are related at every position are related
+position by position. -/
+theorem List.Rel₂.of_getElem? {R : α → β → Prop} {as : List α} {bs : List β}
+    (hlen : as.length = bs.length)
+    (h : ∀ (k : Nat) (a : α) (b : β), as[k]? = some a → bs[k]? = some b → R a b) :
+    List.Rel₂ R as bs := by
+  induction as generalizing bs with
+  | nil =>
+    cases bs with
+    | nil => exact .nil
+    | cons => simp only [List.length_nil, List.length_cons] at hlen; omega
+  | cons a as ih =>
+    cases bs with
+    | nil => simp only [List.length_nil, List.length_cons] at hlen; omega
+    | cons b bs =>
+      have hlen' : as.length = bs.length := by
+        simp only [List.length_cons] at hlen
+        omega
+      have htail : ∀ (k : Nat) (a' : α) (b' : β),
+          as[k]? = some a' → bs[k]? = some b' → R a' b' :=
+        fun k a' b' ha hb => h (k + 1) a' b' ha hb
+      exact .cons (h 0 a b rfl rfl) (ih hlen' htail)
+
 /-- Lists related position by position, concatenated, are related position by position. -/
 theorem List.Rel₂.append {R : α → β → Prop} {l₁ l₂ : List α} {l₁' l₂' : List β} :
     Rel₂ R l₁ l₁' → Rel₂ R l₂ l₂' → Rel₂ R (l₁ ++ l₂) (l₁' ++ l₂')
@@ -1851,6 +1874,14 @@ theorem List.mem_zip_map_self {α β : Type _} (l : List α) (g : α → β) {a 
     rcases List.mem_cons.mp h with rfl | htl
     · exact List.mem_cons_self ..
     · exact List.mem_cons_of_mem _ (ih htl)
+
+/-- An entry of a list that is the image of another list under `g` is the image of the entry at
+    the same position. -/
+theorem List.getElem_of_eq_map {α β : Type _} {l : List β} {l0 : List α} {g : α → β}
+    (h : l = l0.map g) {i : Nat} (hj : i < l.length) :
+    ∃ hj0 : i < l0.length, l[i] = g l0[i] := by
+  subst h
+  exact ⟨by simpa only [List.length_map] using hj, List.getElem_map _⟩
 
 /-- With distinct keys, searching a zip returns the pair stored under a member key. -/
 theorem find?_zip_of_mem {α β : Type} [BEq α] [LawfulBEq α]

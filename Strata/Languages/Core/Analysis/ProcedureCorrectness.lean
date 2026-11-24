@@ -146,8 +146,8 @@ variable (I : ConditionInterp Expression)
     meets the procedure's contract.
 
     The two parts differ in which runs they read. The first quantifies over every
-    finite prefix of the body's runs, so it covers runs that never finish; a
-    partial-correctness contract says nothing about those. The prefixes are those
+    finite prefix of the body's runs, so it covers runs that never finish, as
+    `Procedure.contractTriple` does. The prefixes are those
     of `EventLang.core`, where a call runs its callee to completion in one step,
     so they do not include prefixes inside a callee that never finishes (see the
     section comment above). The second is the contract: from an entry

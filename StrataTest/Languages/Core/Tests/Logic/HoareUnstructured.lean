@@ -668,7 +668,7 @@ theorem sum_to_n_meets_contract :
   refine ⟨sumToNProc, sumToN_find,
     Core.Procedure.forall_instance_of_typeArgs_nil (by native_decide) ⟨by native_decide, ?_⟩⟩
   rw [sumToN_body]
-  intro ρEntry ρ₀ ρ' trace hpre hinit hterm
+  intro ρEntry ρ₀ hpre hinit
   obtain ⟨⟨hpre, _haxioms⟩, rfl⟩ := hpre
   obtain ⟨hpreP, hfac, _hold, hinput, -⟩ := hpre
   obtain ⟨vn, hvn, invn⟩ := hinput nId Lambda.LMonoTy.int (by native_decide)
@@ -676,13 +676,20 @@ theorem sum_to_n_meets_contract :
   have htc : vn.tc = ρ₀.factory.model.tcInterp := hinit.storeWellDefined nId vn hvn
   rw [hvi, htc] at hvn
   have hnonneg : 0 ≤ nv := req_nonneg ρ₀ nv hfac hvn hpreP
+  refine ⟨fun cfg trace hrun => ?_, fun ρ' trace hterm _ => ?_⟩
+  · -- every finite execution emits nothing
+    have hrun : ReflTransTrace
+        (StepCFGE Core.Expression (Core.EvalCommandE sumToNAST.findProcByString?))
+        (.atBlock sumToNCFG sumToNCFG.entry ρ₀) trace cfg := hrun
+    rw [sumToN_cfg_eq] at hrun
+    obtain ⟨-, rfl⟩ := run_preserves hfac hnonneg (RunInv.atEntry ρ₀ rfl hvn) hrun
+    exact True.intro
   have hrun : ReflTransTrace (StepCFGE Core.Expression (Core.EvalCommandE sumToNAST.findProcByString?))
       (.atBlock sumToNCFG sumToNCFG.entry ρ₀) trace (.terminal ρ') := by
     rcases hterm with h | ⟨_, h⟩ <;> exact h
   rw [sumToN_cfg_eq] at hrun
   obtain ⟨hfinal, htrace⟩ := run_preserves hfac hnonneg (RunInv.atEntry ρ₀ rfl hvn) hrun
   subst htrace
-  refine ⟨True.intro, fun _ => ?_⟩
   obtain ⟨hfac', hpost⟩ := runInv_terminal hfinal
   obtain ⟨rv, hn', hr, hsum⟩ := hpost
   have hresultEntry : (ρ₀.store resultId).isSome :=
@@ -821,6 +828,7 @@ private theorem false_ens_initEnvWF (model : Lambda.Interp Core.Factory) :
   definedVarsNotReserved := by intro n _ name _ p hp; simp [testParams] at hp
   reservedFresh := by intro n _ name _ p hp; simp [testParams] at hp
   factoryDeclared := by intro nm _; rfl
+  runtimeFactoryDeclared := by intro f _; rfl
   initTypesInhabited := by
     intro ty hty
     have hlist : Imperative.DetCFG.initTypes falseEnsCFG = [intLTy] := by native_decide
@@ -887,7 +895,8 @@ theorem false_ens_contract_refuted :
     · intro id ty hmem
       rw [show falseEnsProc.header.inputs.toList = [] from by native_decide] at hmem
       simp at hmem
-  obtain ⟨_, hpost⟩ := htriple (ρ0N model) (ρ0N model) { ρ0N model with store := σ2N model } []
+  obtain ⟨_, hpost⟩ := Strata.Logic.Hoare.TripleWith.run (htriple (ρ0N model)) (ρ0N model)
+    { ρ0N model with store := σ2N model } []
     ⟨⟨hpre, Core.Specification.axiomsBeforeProcedureDecl_of_noAxioms (by native_decide) _⟩, rfl⟩
     (false_ens_initEnvWF model) (Or.inl (falseEns_run model))
   have hreach : Trace.Reachable Core.Expression (Core.Logic.DenoteBasedInterp Core.Factory) [] :=
@@ -1068,13 +1077,21 @@ theorem copy_meets_contract :
   refine ⟨copyProc, copy_find,
     Core.Procedure.forall_instance_of_typeArgs_nil (by native_decide) ⟨by native_decide, ?_⟩⟩
   rw [copy_body]
-  intro ρEntry ρ₀ ρ' trace hpre hinit hterm
+  intro ρEntry ρ₀ hpre hinit
   obtain ⟨⟨hpre, _haxioms⟩, rfl⟩ := hpre
   obtain ⟨_hpreP, hfac, _hold, hinput, -⟩ := hpre
   obtain ⟨vx, hvx, hvt⟩ := hinput xIdC Lambda.LMonoTy.int (by native_decide)
   obtain ⟨a, hvi⟩ := Lambda.SemValue.exists_ofInt hvt
   have htc : vx.tc = ρ₀.factory.model.tcInterp := hinit.storeWellDefined xIdC vx hvx
   rw [hvi, htc] at hvx
+  refine ⟨fun cfg trace hrun => ?_, fun ρ' trace hterm _ => ?_⟩
+  · -- every finite execution emits nothing
+    have hrun : ReflTransTrace
+        (StepCFGE Core.Expression (Core.EvalCommandE copyPgm.findProcByString?))
+        (.atBlock copyCFG copyCFG.entry ρ₀) trace cfg := hrun
+    rw [copy_entry] at hrun
+    obtain ⟨-, rfl⟩ := run_preserves_copy (CopyInv.atEntry ρ₀ rfl hvx) hrun
+    exact True.intro
   have hrun : ReflTransTrace (StepCFGE Core.Expression (Core.EvalCommandE copyPgm.findProcByString?))
       (.atBlock copyCFG copyCFG.entry ρ₀) trace (.terminal ρ') := by
     rcases hterm with h | ⟨_, h⟩ <;> exact h
@@ -1083,7 +1100,6 @@ theorem copy_meets_contract :
   subst htrace
   cases hfinal with
   | terminal _ hf' hx' hr' =>
-    refine ⟨True.intro, fun _ => ?_⟩
     have hxEntry : (ρ₀.store xIdC).isSome :=
       hinit.readWritesDefined xIdC (by native_decide) (by native_decide)
     have hrEntry : (ρ₀.store resultId).isSome :=
@@ -1470,6 +1486,7 @@ theorem copy_call_triple :
             simp at hn
           reservedFresh := by intro n _ name _ p hp; simp [testParams] at hp
           factoryDeclared := by intro nm _; rfl
+          runtimeFactoryDeclared := by intro f _; rfl
           initTypesInhabited := by
             intro ty hty
             rw [show Imperative.DetCFG.initTypes copyCFG = [] from by native_decide] at hty

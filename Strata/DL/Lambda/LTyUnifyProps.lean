@@ -2865,6 +2865,65 @@ theorem LMonoTy.openVars_ftvar_of_zip (P : LMonoTy → Prop) (x : TyIdentifier) 
         (by simpa only [List.length_cons, Nat.add_right_cancel_iff] using hlen)
         (fun p hp => hab p (List.mem_cons_of_mem _ hp)) h
 
+/-- For distinct variables, looking up a listed variable in `as` zipped with `as.map g` gives the
+    pair whose value is `g` of the variable. -/
+private theorem find?_zip_map_of_mem (g : TyIdentifier → LMonoTy) {as : List TyIdentifier}
+    (hnd : as.Nodup) {a : TyIdentifier} (ha : a ∈ as) :
+    (List.zip as (as.map g)).find? (fun p => p.1 == a) = some (a, g a) := by
+  have hmem : (a, g a) ∈ List.zip as (as.map g) := List.mem_zip_map_self as g ha
+  exact find?_zip_of_mem as (as.map g) a (g a) hmem hnd
+
+/-- For distinct variables `as`, the substitution zipping `as` with `g` of each variable sends a
+    listed variable `a` to `g a`. -/
+public theorem LMonoTy.subst_ofScopes_zip_map_ftvar (g : TyIdentifier → LMonoTy)
+    {as : List TyIdentifier} (hnd : as.Nodup) {a : TyIdentifier} (ha : a ∈ as) :
+    LMonoTy.subst (Strata.Util.HMaps.ofScopes [as.zip (as.map g)]) (.ftvar a) = g a := by
+  have hlen : as.length = (as.map g).length := by simp only [List.length_map]
+  rw [LExpr.subst_ofScopes_zip_eq_openVars as (as.map g) (.ftvar a) hlen hnd,
+    LMonoTy.openVars_ftvar, find?_zip_map_of_mem g hnd ha]
+
+/-- For distinct type parameters `as` covering the free variables of `ty`, substituting for each
+    parameter `b` the result of applying `σ'` then `S` to it is the same as applying `σ'` then
+    `S` to `ty`. -/
+public theorem LMonoTy.subst_ofScopes_zip_map_comp (S : Subst) (σ' : List (TyIdentifier × LMonoTy))
+    {as : List TyIdentifier} (hnd : as.Nodup) {ty : LMonoTy}
+    (hfv : ∀ x ∈ LMonoTy.freeVars ty, x ∈ as) :
+    LMonoTy.subst (Strata.Util.HMaps.ofScopes [as.zip (as.map (fun b =>
+      LMonoTy.subst S (LMonoTy.subst (Strata.Util.HMaps.ofScopes [σ']) (.ftvar b))))]) ty =
+      LMonoTy.subst S (LMonoTy.subst (Strata.Util.HMaps.ofScopes [σ']) ty) := by
+  symm
+  refine LMonoTy.subst_subst_of_pointwise _ _ _ ty fun x hx => ?_
+  exact (LMonoTy.subst_ofScopes_zip_map_ftvar (fun b =>
+    LMonoTy.subst S (LMonoTy.subst (Strata.Util.HMaps.ofScopes [σ']) (.ftvar b))) hnd
+    (hfv x hx)).symm
+
+/-- Looking up a listed variable in `as` zipped with `ms`, of the same length, gives a pair whose
+    value is in `ms`. -/
+private theorem exists_find?_zip_of_mem (a : TyIdentifier) (as : List TyIdentifier)
+    (ms : LMonoTys) (hlen : as.length = ms.length) (hnd : as.Nodup) (ha : a ∈ as) :
+    ∃ m ∈ ms, (List.zip as ms).find? (fun p => p.1 == a) = some (a, m) := by
+  obtain ⟨i, hi, hia⟩ := List.getElem_of_mem ha
+  have hi' : i < ms.length := by omega
+  subst hia
+  have hz : i < (List.zip as ms).length := by
+    simp only [List.length_zip]
+    omega
+  have hpair : (List.zip as ms)[i] = (as[i], ms[i]) := by
+    simp only [List.getElem_zip]
+  have hmem : (as[i], ms[i]) ∈ List.zip as ms :=
+    List.mem_iff_getElem.2 ⟨i, hz, hpair⟩
+  exact ⟨ms[i], List.getElem_mem hi', find?_zip_of_mem as ms as[i] ms[i] hmem hnd⟩
+
+/-- For distinct variables `as` and as many monotypes `ms`, the substitution zipping `as` with
+    `ms` sends a listed variable to one of the monotypes. -/
+public theorem LMonoTy.subst_ofScopes_zip_ftvar_mem {as : List TyIdentifier} {ms : LMonoTys}
+    (hlen : as.length = ms.length) (hnd : as.Nodup) {a : TyIdentifier} (ha : a ∈ as) :
+    ∃ m ∈ ms, LMonoTy.subst (Strata.Util.HMaps.ofScopes [as.zip ms]) (.ftvar a) = m := by
+  obtain ⟨m, hm, hfind⟩ := exists_find?_zip_of_mem a as ms hlen hnd ha
+  refine ⟨m, hm, ?_⟩
+  rw [LExpr.subst_ofScopes_zip_eq_openVars as ms (.ftvar a) hlen hnd, LMonoTy.openVars_ftvar,
+    hfind]
+
 /-- `openVars` fixes a bitvector type. -/
 theorem LMonoTy.openVars_bitvec (vars : List TyIdentifier) (vals : LMonoTys) (n : Nat) :
     LMonoTy.openVars vars vals (.bitvec n) = .bitvec n := by

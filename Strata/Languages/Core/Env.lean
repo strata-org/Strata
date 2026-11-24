@@ -73,7 +73,7 @@ def PathConditions.format (ps : PathConditions Expression) : Format :=
 
 /-- The expressions a path-condition entry reads: an assumption's body, a `.det` varDecl's
     right-hand side, the operands of a `distinct`; a `.nondet` varDecl reads none. -/
-def entryExprs : PathConditionEntry Expression → List Expression.Expr
+@[expose] def entryExprs : PathConditionEntry Expression → List Expression.Expr
   | .assumption _ e => [e]
   | .varDecl _ _ (.det e) => [e]
   | .varDecl _ _ .nondet => []
@@ -250,6 +250,10 @@ def Env.addFactoryFunc (E : Env) (func : (Lambda.LFunc CoreLParams)) : Except Me
   if func.isRecursive && (Strata.DL.Util.FuncAttr.findInlineIfConstr func.attr).isNone
       && func.measure.isNone then
     .error (.fromFormat f!"Recursive function '{func.name}' requires a @[cases] parameter or 'decreases' clause")
+  -- A function the program declares is never a copy `MonomorphizeFunctions` made of a factory
+  -- function (those it adds to the factory), so a copy mark on it, which only a program built
+  -- through the API could carry, is dropped: the encoder reads it from its own declaration.
+  let func := { func with attr := Strata.DL.Util.FuncAttr.withoutMonoCopyOf func.attr }
   let exprEnv ← E.exprEnv.addFactoryFunc func
   .ok { E with exprEnv := exprEnv }
 

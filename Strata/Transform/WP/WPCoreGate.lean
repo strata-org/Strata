@@ -81,6 +81,7 @@ theorem wp_gate {G : IdSet Expression} {tys : Tys Expression} {ss : Statements}
       (fun x hx => by simpa using hund x hx)
       (fun o ho => block_defUse_ops ss hwf.defUseOk o (hO o ho))
     factoryDeclared := hwf.factoryDeclared
+    runtimeFactoryDeclared := hwf.runtimeFactoryDeclared
     initTypesInhabited := fun ty hm => by
       rcases hT ty hm with h | rfl | ⟨x, hx, hg⟩
       · exact hwf.initTypesInhabited ty h

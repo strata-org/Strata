@@ -57,14 +57,15 @@ def proc (params : List String) (ss : Statements) : Procedure := {
 /-- Translate `ss` with integer parameters `params`: the WP phase, the SSA phase, then
     dead-definition elimination. -/
 def tr (params : List String) (ss : Statements) : Except String Statements := do
-  let (_, _, so) ← wpSSALoopFree (IdSet.ofList []) (IdSet.ofList []) (proc params ss) ss
+  let (_, _, so) ← wpSSALoopFree Lambda.Factory.default (IdSet.ofList []) (IdSet.ofList [])
+      (proc params ss) ss
   pure (deadDefElim [] so.out)
 
 /-- `tr` with the WP phase run without `checkLoopFree` (`wpEntry` alone), for the lists with an
     `exit` that targets no enclosing block, which the check rejects. -/
 def trW (params : List String) (ss : Statements) : Except String Statements := do
   let w ← wpEntry (P := Expression) (IdSet.ofList []) (proc params ss).paramTys ss
-  let (_, so) ← ssaLoopFree (IdSet.ofList []) (proc params ss) w.lay
+  let (_, so) ← ssaLoopFree Lambda.Factory.default (IdSet.ofList []) (proc params ss) w.lay
   pure (deadDefElim [] so.out)
 
 /-- `tr`, the empty list on error. -/
@@ -104,7 +105,8 @@ def oblSubsMatch (lay out : Statements) (obls : List (Option (LogEntry Expressio
 
 /-- The obligation program's inputs: the parameters under their entry names. -/
 def inputsOf (params : List String) (ss : Statements) : List CoreIdent :=
-  match wpSSALoopFree (IdSet.ofList []) (IdSet.ofList []) (proc params ss) ss with
+  match wpSSALoopFree Lambda.Factory.default (IdSet.ofList []) (IdSet.ofList [])
+      (proc params ss) ss with
   | .ok (_, ρ0, _) => params.map (fun x => Ren.get ρ0 (id' x))
   | .error _ => []
 
@@ -510,7 +512,7 @@ def errW (ss : Statements) : String :=
 -- fresh entry name `x@0`.
 def inoutProc : Procedure :=
   { proc ["x"] [] with header := { (proc ["x"] []).header with outputs := [(id' "x", .int)] } }
-#guard match wpSSALoopFree (IdSet.ofList []) (IdSet.ofList []) inoutProc
+#guard match wpSSALoopFree Lambda.Factory.default (IdSet.ofList []) (IdSet.ofList []) inoutProc
     [assert' "a" (gt (iv "x") (int 0))] with
   | .ok (_, ρ0, _) => (Ren.get ρ0 (CoreIdent.mkOld "x")).name == "x@0" &&
       (Ren.get ρ0 (id' "x")).name == "x@0"
@@ -522,8 +524,8 @@ def inoutProc : Procedure :=
     "{",
     "  assert [a]: int.gt(x@0, 0);",
     "}"]
-#guard match wpSSALoopFree (IdSet.ofList []) (IdSet.ofList [id' "x@0"]) (proc ["x"] [])
-    [assert' "a" (gt (iv "x") (int 0))] with
+#guard match wpSSALoopFree Lambda.Factory.default (IdSet.ofList []) (IdSet.ofList [id' "x@0"])
+    (proc ["x"] []) [assert' "a" (gt (iv "x") (int 0))] with
   | .ok (_, ρ0, _) => (Ren.get ρ0 (id' "x")).name == "x@1" | .error _ => false
 
 
@@ -541,12 +543,12 @@ def procNames (p : Program) : List String :=
   p.decls.filterMap fun d => match d with | .proc q _ => some q.header.name.name | _ => none
 
 -- Two source procedures give two obligation procedures, with the same names.
-#guard match wpSSAProgramWith [] { decls := [] } [] twoProcs with
+#guard match wpSSAProgramWith Lambda.Factory.default [] { decls := [] } [] twoProcs with
   | .ok p => procNames p == ["P", "Q"] | .error _ => false
 
 -- Extraction accepts several obligation procedures: one assert obligation per assert, in
 -- source order.
-#guard match wpSSAProgramWith [] { decls := [] } [] twoProcs with
+#guard match wpSSAProgramWith Lambda.Factory.default [] { decls := [] } [] twoProcs with
   | .ok p => match Core.ObligationExtraction.extractObligations p with
     | .ok obs => obs.toList.map (fun (o : ProofObligation Expression) => (o.label, o.property))
         == [("p1", .assert), ("q1", .assert), ("q2", .assert)]
@@ -560,7 +562,7 @@ def procAxProc : Program :=
               .ax { name := "A", e := .true Core.valueLoc } .empty,
               .proc (namedProc "Q" [assert' "q1" (gt (iv "x") (int 1))]) .empty] }
 
-#guard match wpSSAProgramWith [] { decls := [] } [] procAxProc with
+#guard match wpSSAProgramWith Lambda.Factory.default [] { decls := [] } [] procAxProc with
   | .ok p => (Program.axiomScopes p).map (fun (n, axs) => (n, axs.length)) == [("P", 0), ("Q", 1)]
       && axiomScopesAgree procAxProc p
   | .error _ => false
@@ -583,8 +585,8 @@ def procBody (n : String) (r : Except String Program) : Except String Statements
   | some (.structured ss) => pure ss
   | _ => throw s!"no procedure {n}"
 
-#guard show' (procBody "P" (wpSSAProgramWith [] { decls := globalProg.decls.take 1 } []
-    globalProg)) == lines [
+#guard show' (procBody "P" (wpSSAProgramWith Lambda.Factory.default []
+    { decls := globalProg.decls.take 1 } [] globalProg)) == lines [
     "{",
     "  assert [p1]: int.gt(x@1, 0);",
     "}"]
@@ -606,7 +608,8 @@ def mentions (ss : Statements) (x : CoreIdent) : Bool := (Block.idents ss).conta
 
 /-- The entry name of the parameter `x` in the translation of `ss`. -/
 def entryOf (params : List String) (ss : Statements) (x : String) : CoreIdent :=
-  match wpSSALoopFree (IdSet.ofList []) (IdSet.ofList []) (proc params ss) ss with
+  match wpSSALoopFree Lambda.Factory.default (IdSet.ofList []) (IdSet.ofList [])
+      (proc params ss) ss with
   | .ok (_, ρ0, _) => Ren.get ρ0 (id' x)
   | .error _ => id' x
 
@@ -860,8 +863,7 @@ def deadAfterExit : Statements := [block' "L" [set' "x" (int 1), exit' "L", set'
 #guard !hasObl (trOut ["x"] deadAfterExit) "p"
 #guard show' (tr ["x"] deadAfterExit) == lines [
     "{",
-    "  var x@3 : int := 1;",
-    "  assert [q]: x@3 == 1;",
+    "  assert [q]: true;",
     "}"]
 
 def exitThenSet : Statements := [block' "L" [ite' (c0 "c") [exit' "L"] [], set' "x" (int 2)],
@@ -1019,7 +1021,8 @@ def blockRedeclared : Statements := [block' "L" [init' "z" (iv "x"),
 
 -- The SSA phase's substitution maps the name of the guarded program, and `substObl sub e` is the
 -- emitted condition.
-#guard match wpSSALoopFree (IdSet.ofList []) (IdSet.ofList []) (proc ["c"] redeclared) redeclared with
+#guard match wpSSALoopFree Lambda.Factory.default (IdSet.ofList []) (IdSet.ofList [])
+    (proc ["c"] redeclared) redeclared with
   | .ok (w, _, so) => oblSubsMatch w.lay so.out so.obls
   | .error _ => false
 
@@ -1048,7 +1051,8 @@ def saveLocal : Statements := [init' "z" (iv "x"),
 def oldRead : Statements := [set' "x" (add (iv "x") (int 1)),
   assert' "a" (gt (iv "x") (.fvar Core.valueLoc (CoreIdent.mkOld "x") (some .int)))]
 #guard show' (do
-    let (_, _, so) ← wpSSALoopFree (IdSet.ofList []) (IdSet.ofList []) inoutProc oldRead
+    let (_, _, so) ← wpSSALoopFree Lambda.Factory.default (IdSet.ofList []) (IdSet.ofList [])
+        inoutProc oldRead
     pure (deadDefElim [] so.out)) == lines [
     "{",
     "  var x@1 : int := int.add(x@0, 1);",
@@ -1061,12 +1065,16 @@ The SSA phase on hand-written guarded programs: conditions with literal parts fo
 assumptions are dropped, an arm assuming `false` is kept (its obligations are reported, as
 symbolic evaluation reports those of a branch whose condition is `false`), an empty arm is
 dropped with the other inline, an assignment of a literal defines a name for it, which
-obligations read, and a copy from a name not annotated with the copy's declared type is
-defined by a fresh `init`. -/
+obligations read, and later definitions and assumptions read the literal, an operator
+application on literals is evaluated (an equality or `Bool.Not` under every factory, a function
+of the factory by its concrete evaluator), an assertion that evaluates to `true` under the
+literal values is `assert true`, a function value is substituted into later definitions, and a
+copy from a name not annotated with the copy's declared type is defined by a fresh `init`. -/
 
-/-- The SSA phase on a guarded program, without free-variable types and entry renaming. -/
+/-- The SSA phase on a guarded program, without free-variable types and entry renaming, under
+    the factory with no functions. -/
 def ssa (lay : Statements) : Except String Statements := do
-  let (_, so) ← ssaEntry (P := Expression) (IdSet.ofList []) [] [] [] lay
+  let (_, so) ← ssaEntry (P := Expression) Lambda.Factory.default (IdSet.ofList []) [] [] [] lay
   pure so.out
 
 def bv (n : String) : Expression.Expr := .fvar Core.valueLoc (id' n) (some .bool)
@@ -1108,7 +1116,7 @@ def ff' : Expression.Expr := .boolConst Core.valueLoc false
     "{",
     "  var b@0 : bool := true;",
     "  var c@1 : bool := true;",
-    "  assert [p]: c@1 == true;",
+    "  assert [p]: true;",
     "}"]
 #guard show' (ssa [initB "g" (.ite Core.valueLoc (bv "q") ff' ff'), assume' "r" (bv "g"),
   assert' "p" (gt (iv "a") (int 0))]) == lines [
@@ -1140,12 +1148,168 @@ def ff' : Expression.Expr := .boolConst Core.valueLoc false
     "  assert [p]: int.gt(y@0, 0);",
     "}"]
 
+/-- `Bool.Not e`, the factory's negation applied to `e`. -/
+def notB (e : Expression.Expr) : Expression.Expr :=
+  .app Core.valueLoc (Lambda.boolNotFunc (T := CoreLParams)).opExpr e
+
+-- A literal is recorded and substituted: an equality of two literals evaluates to a literal,
+-- and an assumption of `true` is dropped.
+#guard show' (ssa [init' "x" (int 1), initB "b" (eq' (iv "x") (int 1)), assume' "a" (bv "b"),
+  assert' "p" (gt (iv "x") (int 0))]) == lines [
+    "{",
+    "  var x@0 : int := 1;",
+    "  var b@1 : bool := true;",
+    "  assert [p]: int.gt(x@0, 0);",
+    "}"]
+#guard show' (ssa [init' "x" (int 1), initB "b" (eq' (iv "x") (int 2)), assume' "a" (bv "b"),
+  assert' "p" (gt (iv "x") (int 0))]) == lines [
+    "{",
+    "  var x@0 : int := 1;",
+    "  var b@1 : bool := false;",
+    "  assume [a]: false;",
+    "  assert [p]: int.gt(x@0, 0);",
+    "}"]
+-- A merge of two equal literals is the literal.
+#guard show' (ssa [init' "z" (.ite Core.valueLoc (bv "q") (int 1) (int 1)),
+  assert' "p" (gt (iv "z") (int 0))]) == lines [
+    "{",
+    "  var z@0 : int := 1;",
+    "  assert [p]: int.gt(z@0, 0);",
+    "}"]
+-- `Bool.Not` of a Boolean literal evaluates to a literal.
+#guard show' (ssa [initB "b" tt', assume' "a" (notB (bv "b")), assert' "p" (gt (iv "a") (int 0))])
+  == lines [
+    "{",
+    "  var b@0 : bool := true;",
+    "  assume [a]: false;",
+    "  assert [p]: int.gt(a, 0);",
+    "}"]
+
+/-- The SSA phase on a guarded program, without free-variable types and entry renaming, under
+    the factory `fac`. -/
+def ssaWith (fac : Lambda.Factory CoreLParams) (lay : Statements) : Except String Statements := do
+  let (_, so) ← ssaEntry (P := Expression) fac (IdSet.ofList []) [] [] [] lay
+  pure so.out
+
+/-- A chain of increments of a variable initialized to a literal. -/
+def incrChain : Statements := [init' "x" (int 0), set' "x" (add (iv "x") (int 1)),
+  set' "x" (add (iv "x") (int 1)), set' "x" (add (iv "x") (int 1)),
+  assert' "a" (gt (iv "x") (int 2))]
+
+-- Under `Core.Factory` every increment folds to one literal, and the assertion evaluates to
+-- `true`.
+#guard show' (ssaWith Core.Factory incrChain) == lines [
+    "{",
+    "  var x@0 : int := 0;",
+    "  var x@1 : int := 1;",
+    "  var x@2 : int := 2;",
+    "  var x@3 : int := 3;",
+    "  assert [a]: true;",
+    "}"]
+-- Both phases under the factory they are given: under `Core.Factory` the SSA phase folds the
+-- increments as above.
+#guard show' (do
+    let (_, _, so) ← wpSSALoopFree Core.Factory (IdSet.ofList []) (IdSet.ofList [])
+      (proc [] incrChain) incrChain
+    pure so.out) == lines [
+    "{",
+    "  var x@0 : int := 0;",
+    "  var x@1 : int := 1;",
+    "  var x@2 : int := 2;",
+    "  var x@3 : int := 3;",
+    "  assert [a]: true;",
+    "}"]
+-- Under the factory with no functions an addition of literals is not evaluated.
+#guard show' (ssa incrChain) == lines [
+    "{",
+    "  var x@0 : int := 0;",
+    "  var x@1 : int := int.add(0, 1);",
+    "  var x@2 : int := int.add(x@1, 1);",
+    "  var x@3 : int := int.add(x@2, 1);",
+    "  assert [a]: int.gt(x@3, 2);",
+    "}"]
+
+/-- A user-defined function with a concrete evaluator: `dbl x` is `2 * x`. -/
+def dblFunc : Lambda.LFunc CoreLParams :=
+  { name := "dbl", typeArgs := [], inputs := [(⟨"x", ()⟩, .int)], output := .int,
+    concreteEval := some fun md _ args => match args with
+      | [x] => (Lambda.LExpr.denoteInt x).map fun v => .intConst md (2 * v)
+      | _ => none }
+
+/-- `dbl a`, with the operator annotated `ty`. -/
+def dbl (ty : Option Lambda.LMonoTy) (a : Expression.Expr) : Expression.Expr :=
+  .app Core.valueLoc (.op Core.valueLoc ⟨"dbl", ()⟩ ty) a
+
+-- The application of `dbl` to a literal is evaluated by its concrete evaluator.
+#guard show' (ssaWith (Lambda.Factory.ofArray #[dblFunc])
+  [init' "y" (dbl (some (.arrow .int .int)) (int 21)), assert' "p" (gt (iv "y") (int 0))]) ==
+  lines [
+    "{",
+    "  var y@0 : int := 42;",
+    "  assert [p]: int.gt(y@0, 0);",
+    "}"]
+-- An application whose operator is annotated with another type than the declared one is not
+-- evaluated: the definition of `y` keeps the application.
+#guard (ssaWith (Lambda.Factory.ofArray #[dblFunc])
+    [init' "y" (dbl (some (.arrow .bool .int)) (int 21)),
+      assert' "p" (gt (iv "y") (int 0))]).toOption ==
+  some [init' "y@0" (dbl (some (.arrow .bool .int)) (int 21)),
+    assert' "p" (gt (iv "y@0") (int 0))]
+
+/-- A polymorphic user-defined function with a concrete evaluator: `pick x y` is `x`, for `x`
+    and `y` of a type `a`. -/
+def pickFunc : Lambda.LFunc CoreLParams :=
+  { name := "pick", typeArgs := ["a"], inputs := [(⟨"x", ()⟩, .ftvar "a"), (⟨"y", ()⟩, .ftvar "a")],
+    output := .ftvar "a",
+    concreteEval := some fun _ _ args => match args with
+      | [x, _] => if x.isConst then some x else none
+      | _ => none }
+
+/-- `pick a b`, with the operator annotated `ty`. -/
+def pick (ty : Option Lambda.LMonoTy) (a b : Expression.Expr) : Expression.Expr :=
+  .app Core.valueLoc (.app Core.valueLoc (.op Core.valueLoc ⟨"pick", ()⟩ ty) a) b
+
+-- The application of `pick` at the instance `int → int → int` of its type `a → a → a` is
+-- evaluated by its concrete evaluator.
+#guard show' (ssaWith (Lambda.Factory.ofArray #[pickFunc])
+  [init' "y" (pick (some (.arrow .int (.arrow .int .int))) (int 7) (int 8)),
+    assert' "p" (gt (iv "y") (int 0))]) ==
+  lines [
+    "{",
+    "  var y@0 : int := 7;",
+    "  assert [p]: int.gt(y@0, 0);",
+    "}"]
+-- An annotation that is not an instance of `a → a → a` (two argument types) is not evaluated.
+#guard (ssaWith (Lambda.Factory.ofArray #[pickFunc])
+    [init' "y" (pick (some (.arrow .int (.arrow .bool .int))) (int 7) (.boolConst Core.valueLoc true)),
+      assert' "p" (gt (iv "y") (int 0))]).toOption ==
+  some [init' "y@0" (pick (some (.arrow .int (.arrow .bool .int))) (int 7)
+      (.boolConst Core.valueLoc true)), assert' "p" (gt (iv "y@0") (int 0))]
+
+/-- An `init` of `x` at the type `int → int`. -/
+def initF (x : String) (e : Expression.Expr) : Statement :=
+  .cmd (.cmd (.init (id' x) (.forAll [] (.arrow .int .int)) (.det e) md))
+
+-- A function value is recorded and substituted into later definitions: the application of `f`
+-- is a beta-redex.
+#guard show' (ssa [init' "c" (add (iv "n") (int 1)),
+  initF "f" (.abs Core.valueLoc "v" (some .int) (add (.bvar Core.valueLoc 0) (iv "c"))),
+  init' "r" (.app Core.valueLoc (.fvar Core.valueLoc (id' "f") (some (.arrow .int .int))) (int 2)),
+  assert' "ok" (gt (iv "r") (int 0))]) == lines [
+    "{",
+    "  var c@0 : int := int.add(n, 1);",
+    "  var f@1 : int -> int := fun v : int => int.add(v, c@0);",
+    "  var r@2 : int := (fun v : int => int.add(v, c@0))(2);",
+    "  assert [ok]: int.gt(r@2, 0);",
+    "}"]
+
 /-! ## The records of the two phases -/
 
 /-- Does the SSA phase on the guarded program of `ss` record one entry per obligation of the
     guarded program, in order, each one the emitted obligation under its substitution? -/
 def recordOK (params : List String) (ss : Statements) : Bool :=
-  match wpSSALoopFree (IdSet.ofList []) (IdSet.ofList []) (proc params ss) ss with
+  match wpSSALoopFree Lambda.Factory.default (IdSet.ofList []) (IdSet.ofList [])
+      (proc params ss) ss with
   | .ok (w, _, so) =>
     (oblSubs so.obls).map (·.1) == oblLabels w.lay && oblSubsMatch w.lay so.out so.obls
   | .error _ => false
@@ -1162,7 +1326,8 @@ def recordOK (params : List String) (ss : Statements) : Bool :=
 def droppedRecord : Statements := [block' "L" [exit' "L", havocInit "h",
     ite' (c0 "c") [assert' "p" (gt (iv "h") (int 0))] []],
   assert' "q" (gt (iv "c") (int 0))]
-#guard match wpSSALoopFree (IdSet.ofList []) (IdSet.ofList []) (proc ["c"] droppedRecord)
+#guard match wpSSALoopFree Lambda.Factory.default (IdSet.ofList []) (IdSet.ofList [])
+    (proc ["c"] droppedRecord)
     droppedRecord with
   | .ok (w, _, so) => skNames w.sk == [] && (oblSubs so.obls).map (·.1) == ["q"]
   | .error _ => false
@@ -1170,8 +1335,11 @@ def droppedRecord : Statements := [block' "L" [exit' "L", havocInit "h",
 -- A guard that folds to a literal is recorded by the SSA phase with its literal value.
 def litGuard : Statements := [ite' tt' [assert' "t" (gt (iv "x") (int 0))]
   [assert' "e" (gt (iv "x") (int 1))], assert' "a" (gt (iv "x") (int 2))]
-#guard match wpSSALoopFree (IdSet.ofList []) (IdSet.ofList []) (proc ["x"] litGuard) litGuard with
-  | .ok (_, _, so) => so.defs.any fun (_, v) => match v with | .lit true _ => true | _ => false
+#guard match wpSSALoopFree Lambda.Factory.default (IdSet.ofList []) (IdSet.ofList [])
+    (proc ["x"] litGuard) litGuard with
+  | .ok (_, _, so) => so.defs.any fun (_, v) => match v with
+    | .lit (.const _ (.boolConst true)) _ _ => true
+    | _ => false
   | .error _ => false
 
 /-! ## Tree form -/
@@ -1324,6 +1492,20 @@ def corpusLists : List Statements :=
 #guard corpusLists.all fun ss => (stmtsExprs ss).all fun e =>
   let sm : Map CoreIdent Expression.Expr := (exprFV e).map fun x => (x, iv (x.name ++ "'"))
   LExpr.substFvarsBy e (fun x => sm.find? x) == LExpr.substFvars e sm
+
+-- A write in a block that always exits, ahead of an assertion that exit skips, keeps the
+-- declaration of the written variable: the translation succeeds, the skipped assertion leaves no
+-- obligation, and an assertion after the block reads the written value.
+#guard show' (tr [] [.cmd (.cmd (.init (id' "r") intTy .nondet md)),
+    block' "t" [block' "x" [set' "r" (int 0), exit' "t"], assert' "a" (gt (int 1) (int 0))]])
+  == "{}"
+#guard show' (tr [] [.cmd (.cmd (.init (id' "r") intTy .nondet md)),
+    block' "t" [block' "x" [set' "r" (int 0), exit' "t"], assert' "a" (gt (int 1) (int 0))],
+    assert' "b" (gt (iv "r") (int 0))]) == lines [
+    "{",
+    "  var r@4 : int := 0;",
+    "  assert [b]: int.gt(r@4, 0);",
+    "}"]
 
 end WPProgramTest
 

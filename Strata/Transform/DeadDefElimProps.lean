@@ -9,6 +9,8 @@ public import Strata.Transform.DeadDefElim
 public import Strata.DL.Imperative.BigStep.Sem
 public import Strata.DL.Imperative.StmtProps
 public import Strata.Languages.Core.Logic.LangDef
+public import Strata.Transform.Passive.Typed
+public import Strata.Transform.Passive.WellTyped
 import Strata.DL.Imperative.CmdSemanticsProps
 import all Strata.DL.Imperative.Cmd
 import all Strata.DL.Imperative.Stmt
@@ -23,19 +25,23 @@ recomputes.
 Erasure keeps every property of all nested statements that does not look into branches or
 bodies (`deadDefElim_allSubstmts`), the order conditions `Block.nondetIteLast` and
 `Block.onlyChecksAfterAssert` (`deadDefElim_nondetIteLast`,
-`deadDefElim_onlyChecksAfterAssert`) and the reads of defined names `Block.readsDefined`
-(`deadDefElim_readsDefined`).
+`deadDefElim_onlyChecksAfterAssert`), the reads of defined names `Block.readsDefined`
+(`deadDefElim_readsDefined`), typed right-hand sides (`deadDefElim_initsTyped`), Boolean
+`assume`, `assert` and `cover` conditions (`deadDefElim_condsTyped`) and the passive form
+(`deadDefElim_passive`).
 
 For Core statement lists, the facts the trace over-approximation (`DeadDefElimCoreCorrect`) is
 built from: the correspondence of final environments (`DDOut`); a Core run of a call-free
 configuration is a run over `EvalE` and back (`star_evalE`, `star_core`); and erasure keeps the
 initial-environment gate `BlockInitEnvWF` of a list without loops and calls
 (`blockInitEnvWF_dd`), through its defined variables (`dd_definedVars`), its `init` types
-(`dd_initTypes`) and def-use well-formedness (`dd_defUse`).
+(`dd_initTypes`) and def-use well-formedness (`dd_defUse`); and erasure keeps def-use
+well-formedness and the annotation check of such a list (`deadDefElim_defUse_fvarTypes`).
 
 Key theorems: `deadDefElimH_eq`, `deadDefElim_allSubstmts`, `deadDefElim_nondetIteLast`,
-`deadDefElim_onlyChecksAfterAssert`, `deadDefElim_readsDefined`, `star_evalE`, `star_core`,
-`blockInitEnvWF_dd`.
+`deadDefElim_onlyChecksAfterAssert`, `deadDefElim_readsDefined`, `deadDefElim_initsTyped`,
+`deadDefElim_condsTyped`, `deadDefElim_passive`, `deadDefElim_defUse_fvarTypes`, `star_evalE`,
+`star_core`, `blockInitEnvWF_dd`.
 
 Key definitions: `Core.DeadDefElim.DDOut`, `Core.DeadDefElim.CallFree`. -/
 
@@ -211,6 +217,24 @@ theorem deadDefElim_onlyChecksAfterAssert : ∀ (live : List P.Ident) (ss : PStm
   all_goals grind [deadDefElim, deadDefElimS, Block.onlyChecksAfterAssert, erasable,
     deadDefElim_checks]
 
+/-- **Erasure keeps right-hand sides typed**: if every deterministic `init` of `ss` has a
+    right-hand side of its declared type under the typing predicate `Typ` (`Block.initsTyped`),
+    so does every one of `deadDefElim live ss`. -/
+theorem deadDefElim_initsTyped {Typ : P.Expr → P.Ty → Prop} : ∀ (live : List P.Ident)
+    (ss : PStmts P), Block.initsTyped Typ ss → Block.initsTyped Typ (deadDefElim live ss) := by
+  refine (deadDefElim.mutual_induct _ (fun live s => Stmt.initsTyped Typ s →
+    Stmt.initsTyped Typ (deadDefElimS live s)) ?_ ?_ ?_ ?_ ?_ ?_).1
+  all_goals grind [deadDefElim, deadDefElimS, Stmt.initsTyped, Block.initsTyped]
+
+/-- **Erasure keeps the conditions Boolean**: if every `assume`, `assert` and `cover` of `ss` has
+    a Boolean condition under the typing predicate `Typ` (`Block.condsTyped`), so does every one
+    of `deadDefElim live ss`. -/
+theorem deadDefElim_condsTyped [HasBool P] {Typ : P.Expr → P.Ty → Prop} : ∀ (live : List P.Ident)
+    (ss : PStmts P), Block.condsTyped Typ ss → Block.condsTyped Typ (deadDefElim live ss) := by
+  refine (deadDefElim.mutual_induct _ (fun live s => Stmt.condsTyped Typ s →
+    Stmt.condsTyped Typ (deadDefElimS live s)) ?_ ?_ ?_ ?_ ?_ ?_).1
+  all_goals grind [deadDefElim, deadDefElimS, Stmt.condsTyped, Block.condsTyped]
+
 end
 
 /-- Erasure keeps the reads of defined names, also from fewer defined names: the output
@@ -244,6 +268,29 @@ theorem deadDefElim_readsDefined (live : List P.Ident) {D : List P.Ident} {ss : 
   deadDefElim_ws live ss D D h (fun _ hy => hy) fun _ hy _ => hy
 
 end
+
+/-! ## Erasure keeps the passive form -/
+
+section Passive
+
+variable {P : PureExpr}
+
+/-- **Erasure keeps the passive form**: the output of `deadDefElim live` on a list in passive
+    form is in passive form. -/
+theorem deadDefElim_passive [BEq P.Ident] [HasFvars P] :
+    ∀ (live : List P.Ident) (ss : List (Stmt P (CmdExt P))), Block.passiveForm ss = true →
+      Block.passiveForm (deadDefElim live ss) = true := by
+  have hcons (s : Stmt P (CmdExt P)) (rest : List (Stmt P (CmdExt P))) :
+      Block.passiveForm (s :: rest) = (Block.passiveForm [s] && Block.passiveForm rest) := by
+    rcases s with ((_ | _ | _ | _ | _) | _) | _ | ⟨_ | _⟩ | _ | _ | _ <;> simp [Block.passiveForm]
+  refine (deadDefElim.mutual_induct _ (fun live s => Block.passiveForm [s] = true →
+    Block.passiveForm [deadDefElimS live s] = true) ?_ ?_ ?_ ?_ ?_ ?_).1
+  all_goals intros
+  all_goals try cases ‹Stmt P (CmdExt P)›
+  all_goals try cases ‹ExprOrNondet P›
+  all_goals grind [deadDefElim, deadDefElimS, Block.passiveForm]
+
+end Passive
 
 end -- public section
 
@@ -588,6 +635,17 @@ private theorem dd_fvarTypes : ∀ (live : List Expression.Ident) (ss : Statemen
     simp only [Block.fvarTypesWellAnnotated, Stmt.fvarTypesWellAnnotated,
       Stmt.typedDefinedVars, true_and] at h ⊢
     exact dd_fvarTypes live rest Γ Γ' hss hnc h fun n hn => hag n (by simp [Block.idents, hn])
+
+/-- **Erasure keeps def-use well-formedness and the annotation check** of a list without loops
+    and calls, from the same defined names and for the same typing. -/
+theorem deadDefElim_defUse_fvarTypes {ss : Statements} (hss : Block.noLoops ss = true)
+    (hnc : Statements.noCalls ss = true) {D : Expression.Ident → Bool}
+    {fs : Expression.Ident → Bool} {Γ : VarTyping Expression}
+    (hd : Block.defUseWellFormed D fs ss = true) (hw : Block.fvarTypesWellAnnotated Γ ss) :
+    Block.defUseWellFormed D fs (deadDefElim [] ss) = true ∧
+      Block.fvarTypesWellAnnotated Γ (deadDefElim [] ss) :=
+  ⟨dd_defUse fs [] ss D D hss hnc hd (fun _ h => h) fun _ h _ => h,
+    dd_fvarTypes [] ss Γ Γ hss hnc hw fun _ _ => rfl⟩
 
 /-- The output of `deadDefElim` is well formed from every environment the input is: the
     gate `BlockInitEnvWF` of the input gives that of the output. -/

@@ -222,6 +222,74 @@ E2: frames=1 captured=yes matchesEncodeCore=true
   (ob "E1" [[]], false),
   (ob "E2" [[assm "h0" "p"]], false)]
 
+/-! ## Sliced files contain exactly `encodeCore`'s commands for the sliced obligation
+
+When an obligation leaves out unread definitions, the captured file is cut around the byte
+ranges of their `define-fun` commands (`CapturedFrame.declPiecesWithout`). Each obligation's
+file is compared, as sorted lines, with `encodeCore`'s output for the obligation encoded with
+those definitions left out (`encodeObligationToSMT … unreadDefs`). -/
+
+/-- `runScenario` for obligations that leave out the definitions of the variables named in the
+    list, each compared with `encodeCore` on its encoding without those definitions. -/
+private def runSlicedScenario
+    (obs : List (Imperative.ProofObligation Expression × List String)) : IO Unit := do
+  let mut encState : SMTEncodeState := .init { ctx := SMT.Context.default }
+  let mut es ← EmitterState.init SMT.Context.default (pure ())
+  for (ob, slicedNames) in obs do
+    let sliced : Std.HashSet String := slicedNames.foldl (·.insert ·) ∅
+    match encodeObligationToSMT Core.Factory encState ob [] sliced with
+    | .error e => IO.println s!"{ob.label}: encode error {e}"
+    | .ok (res, encState') =>
+      encState := encState'
+      let managed : Std.HashSet String :=
+        (res.varDefs.map (·.name) ++ res.varDecls.map (·.name)).foldl
+          (·.insert ·) ∅
+      let defined : Std.HashSet String :=
+        (res.varDefs.map (·.name)).foldl (·.insert ·) sliced
+      let (es', cf?) ← es.syncAndEmit Core.Factory encState'.frames
+        encState'.current.ctx false res.ctx res.goal {} ob.label managed defined
+        (satisfiabilityCheck := false) (validityCheck := true) (sliced := sliced)
+      es := es'
+      match cf? with
+      | none =>
+        IO.println s!"{ob.label}: frames={es.frames.length} captured=no"
+      | some cf =>
+        let pctx ← Strata.Pipeline.PipelineContext.create
+          (outputMode := .quiet) (profilePipeline := false)
+        let (_, coreText, _) ← recordSolverEncoding
+          (Strata.SMT.Encoder.encodeCore res.ctx (pure ()) res.assumptions
+            res.goal {} (satisfiabilityCheck := false) (validityCheck := true)
+            (label := ob.label) (varDefinitions := res.varDefs)
+            (varDeclarations := res.varDecls) (pctx := pctx))
+        let same := sortedLines (String.join cf.pieces) == sortedLines coreText
+        IO.println
+          s!"{ob.label}: frames={es.frames.length} captured=yes matchesEncodeCore={same}"
+
+/-- `x` declared, then `y`, `z` and `w` defined from it, and an assumption on each. -/
+private def defsFrame : List (PathConditionEntry Expression) :=
+  [.varDecl ⟨"x", ()⟩ (.forAll [] boolTy) .nondet,
+   .varDecl ⟨"y", ()⟩ (.forAll [] boolTy) (.det (.fvar testLoc "x" (.some boolTy))),
+   .varDecl ⟨"z", ()⟩ (.forAll [] boolTy) (.det (.fvar testLoc "x" (.some boolTy))),
+   .varDecl ⟨"w", ()⟩ (.forAll [] boolTy) (.det (.fvar testLoc "x" (.some boolTy))),
+   assm "h0" "x"]
+
+-- The same captured frame, unsliced, then without its first, middle and last definition, and
+-- without all three: the cut keeps the neighbouring commands whole.
+/--
+info: S0: frames=1 captured=yes matchesEncodeCore=true
+S1: frames=1 captured=yes matchesEncodeCore=true
+S2: frames=1 captured=yes matchesEncodeCore=true
+S3: frames=1 captured=yes matchesEncodeCore=true
+S4: frames=1 captured=yes matchesEncodeCore=true
+-/
+#guard_msgs in
+#eval runSlicedScenario [
+  (ob "S0" [defsFrame], []),
+  (ob "S1" [defsFrame], ["y"]),
+  (ob "S2" [defsFrame], ["z"]),
+  (ob "S3" [defsFrame], ["w"]),
+  (ob "S4" [defsFrame], ["y", "z", "w"])]
+
 /-! ## Frame alignment -/
 
 /-- info: (Bool.true, Bool.false, Bool.true, Bool.false, Bool.false) -/

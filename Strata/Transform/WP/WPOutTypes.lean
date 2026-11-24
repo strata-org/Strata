@@ -359,13 +359,22 @@ local macro "ty_inv " h:ident : tactic => `(tactic| simp only [Bool.not_true, Bo
 theorem tySpec_cmd (κ : RE P) (d : Nat) (f : Bool) (c : CmdExt P) :
     TySpec K V Θ T0 (wpStmt κ d f (.cmd c)) [.cmd c] := by
   intro st a st' h hi hΘ hV hK
-  unfold wpStmt at h
   rcases c with ((⟨x, ty, e | _, md⟩ | ⟨x, e | _, md⟩ | ⟨l, e, md⟩ | ⟨l, e, md⟩ | ⟨l, e, md⟩) |
     ⟨p, args, md⟩)
+  all_goals try
+    rw [wpStmt_init_run] at h
+    split at h
+    rotate_left
+    · cases h
+      exact ⟨hi, tyOut_nil rfl rfl⟩
+    rename_i hc
+    clear hc f
+    simp only [wpStmt, keepInit, pure_bind] at h
+  all_goals try unfold wpStmt at h
   all_goals try cases h
-  all_goals cases f <;> ty_inv h
+  all_goals (try cases f) <;> ty_inv h
   all_goals try (obtain ⟨rfl, rfl⟩ := h; exact ⟨hi, tyOut_nil rfl rfl⟩)
-  case' init.det.true =>
+  case' init.det.isTrue =>
     have hθ : Θ ty := hΘ ty (by simp [Block.initTypes, Stmt.initTypes, HasInitTypesImp.initTypes,
       CmdExt.initTypes, Cmd.initTypes])
     obtain ⟨⟨⟨we, rd⟩, s1⟩, h1, ⟨n, s2⟩, h2, h⟩ := h
@@ -377,7 +386,7 @@ theorem tySpec_cmd (κ : RE P) (d : Nat) (f : Bool) (c : CmdExt P) :
         (getElem?_insert_or hθ k v h).elim (getElem?_insert_or hθ k v) .inr)
         (fun _ _ h => .inl h) (fun _ _ h => .inl h)), tyOut_noA (by
         simp [Rope.toList_one, Rope.toList_app, wTyRefs, RefOK, hθ]) rfl⟩
-  case' init.nondet.true =>
+  case' init.nondet.isTrue =>
     have hθ : Θ ty := hΘ ty (by simp [Block.initTypes, Stmt.initTypes, HasInitTypesImp.initTypes,
       CmdExt.initTypes, Cmd.initTypes])
     obtain ⟨⟨n, s1⟩, h1, rfl, rfl⟩ := h

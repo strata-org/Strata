@@ -1380,7 +1380,7 @@ private def splitNondetGoto (cmds : List Core.Command)
     List Core.Command × Option (String × String) :=
   match tr, cmds.getLast? with
   | .condGoto (.fvar _ x _) lt lf _, some (.cmd (.init x' _ .nondet _)) =>
-    if x == x' && x.name.startsWith "$__nondet_" then (cmds.dropLast, some (lt, lf))
+    if x == x' && x.name.startsWith Core.nondetChoicePrefix then (cmds.dropLast, some (lt, lf))
     else (cmds, none)
   | _, _ => (cmds, none)
 

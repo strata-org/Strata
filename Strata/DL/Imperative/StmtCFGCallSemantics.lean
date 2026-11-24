@@ -159,8 +159,7 @@ variable [HasFvar P] [HasFvars P] [HasVal P]
     caller variable held (`HasVal.valueOfStoredTy`), as for `set`.  This restricts the
     semantics: a call whose output value has another type than the caller variable has no
     exit, so its runs stop at the call.  It keeps the caller's variables at their types
-    across the call.  No theorem yet shows that type-checked programs never reach such a
-    call. -/
+    across the call. -/
 @[expose] def CallExit (fac : P.Factory) (σ : SemanticStore P)
     (p : Procedure P (CmdExt P) Hdr) (callArgs : List (CallArg P))
     (σEnd σ' : SemanticStore P) : Prop :=

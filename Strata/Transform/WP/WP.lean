@@ -386,12 +386,24 @@ abbrev WM (P : PureExpr) [DecidableEq P.Ident] [BEq P.Ident] [LawfulBEq P.Ident]
   | some s => s < t
   | none => false
 
+/-- Does the emitted rest read the variable an `init x` declares: is its WP name live? -/
+@[expose] def readLater (st : WSt P) (x : P.Ident) : Bool :=
+  match st.nm[x]? with
+  | some n => st.live.contains n
+  | none => !st.taken.contains x && st.live.contains x
+
+/-- Is an `init x` emitted, `f` telling whether an obligation follows it: when one does, or
+    when the emitted rest reads the variable it declares. -/
+@[expose] def keepInit (x : P.Ident) : Bool → WM P Bool
+  | true => pure true
+  | false => do pure (readLater (← get) x)
+
 mutual
 /-- The WP traversal of a statement under reach context `κ` at block depth `d`; `f`: an
     obligation follows it. -/
 @[expose] def wpStmt (κ : RE P) (d : Nat) (f : Bool) : PStmt P → WM P (WRes P)
   | .cmd (.cmd (.init x ty (.det e) _)) => do
-    if !f then return {}
+    if !(← keepInit x f) then return {}
     let (we, rd) ← wRen e
     let n ← wDecl x
     modify fun st => { st with tys := st.tys.insert n ty }
@@ -406,7 +418,7 @@ mutual
     liveAdd (rd ++ RE.vars κ)
     return { out := out, R := Std.HashSet.ofList rd }
   | .cmd (.cmd (.init x ty .nondet _)) => do
-    if !f then return {}
+    if !(← keepInit x f) then return {}
     let n ← wDecl x
     modify fun st => { st with tys := st.tys.insert n ty }
     liveDel n

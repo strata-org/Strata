@@ -143,7 +143,7 @@ theorem cmd (params : InitEnvWFParams) (c : Command)
     (h : Hoare.Triple π params Pre [.cmd c] Post (factory := factory)) :
     Triple π params Pre [.cmd c] Post (factory := factory) := by
   intro ρ₀ hpre hinit
-  refine ⟨fun w => ?_, fun ρ' trace hrun => (h ρ₀ ρ' trace hpre hinit hrun).2⟩
+  refine ⟨fun w => ?_, (h ρ₀ hpre hinit).2⟩
   obtain ⟨σ', emitted, hstep⟩ := hprog ρ₀ hpre (blockInitEnvWF_singleton hinit)
   refine mustTerminateAndAssertsValid_imperativeBlockE_of_imperativeE
     (initEnvWF := fun _ _ _ => True)
@@ -158,7 +158,7 @@ theorem cmd (params : InitEnvWFParams) (c : Command)
         (.step_cmd hs' : StepStmtE Expression (EvalCommandE π) _ _ _) (.refl _)
       rw [List.append_nil] at hrun
       exact (Trace.AssertionsValid_iff_assertionsHoldIn _ _).1
-        (h ρ₀ _ _ hpre hinit (.inl (stmtRun_to_singletonE (EvalCommandE π) hrun))).1 w
+        ((h ρ₀ hpre hinit).1 _ _ (stmtRun_to_singletonE (EvalCommandE π) hrun)) w
   cases (hs : StepStmtE Expression (EvalCommandE π) _ _ _)
   exact .terminal _
 

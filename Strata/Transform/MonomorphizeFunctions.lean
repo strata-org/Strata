@@ -467,6 +467,11 @@ def updateFunctionsInProgram
     | _ => out := out.push decl
   return { decls := out.toList }
 
+/-- `f`, marked as the copy of the factory function `base` (`FuncAttr.monoCopyOf`). The SMT
+    encoder reads a factory function as `base` only when it carries this mark. -/
+@[expose] def markCopyOf (base : String) (f : Function) : Function :=
+  { f with attr := f.attr.push (.monoCopyOf base) }
+
 /-- Rebuild `factory`, dropping every polymorphic entry and appending the
     specialized copies produced by the worklist.  Rewrites op references inside
     each specialized body (so factory-internal references become their specialized
@@ -483,11 +488,12 @@ def updateFactory (polyfuncDecls : PolymorphicFuncDecls) (factory : Lambda.Facto
       let rewrittenFunc ← mangleOpsInFunctionDecl polyfuncDecls factory lfunc.toFunc
       kept := kept.push { lfunc with toFunc := rewrittenFunc }
 
-  -- Append specialized copies (their bodies also rewritten).
+  -- Append specialized copies (their bodies also rewritten), each marked as a copy of the
+  -- function it specializes.
   for (fs, tf) in specializedFnsInFactory do
     let rewritten ← mangleOpsInFunctionDecl polyfuncDecls factory tf
     let concreteEval := (factory.get? fs.name).bind (·.concreteEval)
-    kept := kept.push { toFunc := rewritten, concreteEval }
+    kept := kept.push { toFunc := markCopyOf fs.name rewritten, concreteEval }
   return Lambda.Factory.ofArray kept
 
 

@@ -22,6 +22,8 @@ The phases rewrite right-hand sides with the operations of `WPOps`; `TypedLaws` 
 have that type, a substitution of expressions having the annotated types of the variables they
 replace keeps the type, and the annotation of an
 occurrence in a typed expression types a variable annotated with it.
+`TypedOpLaws` adds, for the phases that fold operators, that the value `evalOp?` gives keeps the
+type.
 
 The values a nondeterministic assignment draws, and the copies of them, are of ground types when
 some name set holding the variables they are assigned to has ground types where they are assigned
@@ -164,6 +166,12 @@ structure TypedLaws (Typ : P.Expr → P.Ty → Prop) : Prop where
   /-- The type of a conditional. -/
   ite : ∀ {c t f : P.Expr} {ty : P.Ty},
     Typ (WPOps.ite c t f) ty ↔ Typ c HasBool.boolTy ∧ Typ t ty ∧ Typ f ty
+  /-- The type of a conditional recognized by `iteView?`.  The law is stated through `iteView?`
+      rather than the canonical `WPOps.ite`, because a conditional's root carries a source
+      location that the typing ignores: a recognized conditional need not be syntactically equal
+      to the canonical conditional of its parts. -/
+  iteView : ∀ {e c t f : P.Expr} {ty : P.Ty}, WPOps.iteView? e = some (c, t, f) →
+    (Typ e ty ↔ Typ c HasBool.boolTy ∧ Typ t ty ∧ Typ f ty)
   /-- A substitution of expressions of the annotated types keeps the type. -/
   substFn : ∀ {e : P.Expr} {ty : P.Ty} (g : P.Ident → Option P.Expr), Typ e ty →
     (∀ p ∈ HasFvars.getTypedFvars e, ∀ v, g p.1 = some v → Typ v p.2) →
@@ -180,6 +188,13 @@ structure TypedLaws (Typ : P.Expr → P.Ty → Prop) : Prop where
       annotated type. -/
   var : ∀ {e : P.Expr} {ty : P.Ty} {p : P.Ident × P.Ty} (y : P.Ident), Typ e ty →
     p ∈ HasFvars.getTypedFvars e → Typ (HasFvar.mkVar y (some p.2)) p.2
+
+/-- **The laws of a typing predicate** `Typ` under the operator data `oe`: the `TypedLaws` of
+    `Typ`, and the value `evalOp? oe` gives an expression has the expression's type. -/
+structure TypedOpLaws (Typ : P.Expr → P.Ty → Prop) (oe : WPOps.OpEnv P) : Prop
+    extends TypedLaws Typ where
+  /-- The value `evalOp?` gives keeps the type. -/
+  evalOp : ∀ {e r : P.Expr} {ty : P.Ty}, WPOps.evalOp? oe e = some r → Typ e ty → Typ r ty
 
 end -- public section
 

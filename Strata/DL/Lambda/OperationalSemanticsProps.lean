@@ -26,7 +26,9 @@ and metadata-insensitivity lemmas used to reason about `Step` and `StepStar`.
 Evaluator-specific top-level theorems live in `LExprEvalProps` and
 `LExprEvalSound`. A reduction introduces no free variable beyond those of the source and
 of the environment's values (`Step.namesIn`, `StepStar.namesIn`, stated with
-`LExpr.NamesIn`).
+`LExpr.NamesIn`), and, under a factory that brings in only its own operators
+(`Factory.OpsClosed`), no operator beyond those of the source, of the environment's values
+and of the factory (`Step.opsIn`, `StepStar.opsIn`, stated with `LExpr.OpsIn`).
 -/
 
 namespace Lambda
@@ -2353,39 +2355,50 @@ theorem substFvarsFromEnv {env : Env T} (henv : ∀ x r, env x = some r → r.Na
 
 end LExpr.NamesIn
 
-/-- The arguments `getLFuncCall` collects are subterms. -/
-private theorem getLFuncCall_go_args {S : T.Identifier → Prop} :
-    ∀ (e : LExpr T.mono) (acc : List (LExpr T.mono)), e.NamesIn S → (∀ a ∈ acc, a.NamesIn S) →
-      ∀ a ∈ (getLFuncCall.go e acc).2, a.NamesIn S := by
+/-- The arguments `getLFuncCall` collects satisfy every property of expressions that passes
+    from an application to its function and its argument. -/
+private theorem getLFuncCall_go_sat {P : LExpr T.mono → Prop}
+    (happ : ∀ {m f a}, P (.app m f a) → P f ∧ P a) :
+    ∀ (e : LExpr T.mono) (acc : List (LExpr T.mono)), P e → (∀ a ∈ acc, P a) →
+      ∀ a ∈ (getLFuncCall.go e acc).2, P a := by
   intro e acc
   fun_induction getLFuncCall.go e acc with
   | case1 _ _ _ _ _ _ ih =>
     intro he hacc
-    simp only [LExpr.NamesIn.app] at he
-    refine ih he.1.1 (fun a ha => ?_)
+    have h₁ := happ he
+    have h₂ := happ h₁.1
+    refine ih h₂.1 (fun a ha => ?_)
     simp only [List.cons_append, List.nil_append, List.mem_cons] at ha
     rcases ha with rfl | rfl | ha
-    · exact he.1.2
-    · exact he.2
+    · exact h₂.2
+    · exact h₁.2
     · exact hacc a ha
   | case2 =>
     intro he hacc a ha
-    simp only [LExpr.NamesIn.app, List.cons_append, List.nil_append, List.mem_cons] at he ha
+    simp only [List.cons_append, List.nil_append, List.mem_cons] at ha
     rcases ha with rfl | ha
-    · exact he.2
+    · exact (happ he).2
     · exact hacc a ha
   | case3 => intro _ hacc; exact hacc
 
-/-- The arguments of a call are subterms of it. -/
-private theorem callOfLFunc_args_namesIn {S : T.Identifier → Prop} {F : @Factory T}
+/-- The arguments of a call satisfy every property of expressions that holds of the call and
+    passes from an application to its function and its argument. -/
+private theorem callOfLFunc_args_sat {P : LExpr T.mono → Prop}
+    (happ : ∀ {m f a}, P (.app m f a) → P f ∧ P a) {F : @Factory T}
     {e callee : LExpr T.mono} {args : List (LExpr T.mono)} {fn : LFunc T}
-    (hc : F.callOfLFunc e = some (callee, args, fn)) (he : e.NamesIn S) :
-    ∀ a ∈ args, a.NamesIn S := by
+    (hc : F.callOfLFunc e = some (callee, args, fn)) (he : P e) : ∀ a ∈ args, P a := by
   have hg := callOfLFunc_getLFuncCall hc
-  have hargs := getLFuncCall_go_args (S := S) e [] he (by simp)
+  have hargs := getLFuncCall_go_sat happ e [] he (by simp)
   unfold getLFuncCall at hg
   rw [hg] at hargs
   exact hargs
+
+/-- The arguments of a call are subterms of it, so they have no free variable it has not. -/
+private theorem callOfLFunc_args_namesIn {S : T.Identifier → Prop} {F : @Factory T}
+    {e callee : LExpr T.mono} {args : List (LExpr T.mono)} {fn : LFunc T}
+    (hc : F.callOfLFunc e = some (callee, args, fn)) (he : e.NamesIn S) :
+    ∀ a ∈ args, a.NamesIn S :=
+  callOfLFunc_args_sat (fun h => LExpr.NamesIn.app.mp h) hc he
 
 /-- An expansion mentions only free variables of the arguments: the body of a well-formed
 function mentions only its parameters, and expansion replaces each by its argument. -/
@@ -2481,6 +2494,258 @@ theorem StepStar.namesIn [DecidableEq T.Metadata] [DecidableEq T.IDMeta] [Inhabi
   | step _ _ _ h _ ih => exact ih (Step.namesIn hF henv h he)
 
 end NamesIn
+
+/-! ## Reduction brings in only the factory's operators
+
+A reduction step under a factory whose function bodies mention only its own functions, and
+whose concrete evaluators return only operators of the factory or of their arguments
+(`Factory.OpsClosed`), keeps the operators of an expression within any set of names that
+contains them, the operators of the environment's values and the factory's functions
+(`Step.opsIn`, `StepStar.opsIn`). -/
+
+section OpsIn
+
+variable {T : LExprParams}
+
+/-- **The factory brings in only its own operators.** Every function body mentions only
+    functions of `F`, and every concrete evaluator returns an expression whose operators are
+    functions of `F` or operators of its arguments. -/
+@[expose] def Factory.OpsClosed (F : @Factory T) : Prop :=
+  (∀ fn ∈ F.toArray, ∀ body, fn.body = some body → body.OpsIn (fun o => o.name ∈ F)) ∧
+  (∀ fn ∈ F.toArray, ∀ ceval, fn.concreteEval = some ceval → ∀ md opTy args r,
+    ceval md opTy args = some r →
+      r.OpsIn (fun o => o.name ∈ F ∨ ∃ a ∈ args, o ∈ LExpr.getOps a))
+
+namespace LExpr.OpsIn
+
+variable {S : T.Identifier → Prop}
+
+/-- A constant has no operator. -/
+@[simp] theorem const {m c} : (LExpr.const m c : LExpr T.mono).OpsIn S := by
+  simp [LExpr.OpsIn, LExpr.getOps]
+
+/-- A bound variable has no operator. -/
+@[simp] theorem bvar {m i} : (LExpr.bvar m i : LExpr T.mono).OpsIn S := by
+  simp [LExpr.OpsIn, LExpr.getOps]
+
+/-- A free variable has no operator. -/
+@[simp] theorem fvar {m x ty} : (LExpr.fvar m x ty : LExpr T.mono).OpsIn S := by
+  simp [LExpr.OpsIn, LExpr.getOps]
+
+/-- An operator satisfies `S` exactly when its name does. -/
+@[simp] theorem op {m o ty} : (LExpr.op m o ty : LExpr T.mono).OpsIn S ↔ S o := by
+  simp [LExpr.OpsIn, LExpr.getOps]
+
+/-- Replacing the root metadata keeps the operators. -/
+@[simp] theorem replaceMetadata1 {m} {e : LExpr T.mono} :
+    (LExpr.replaceMetadata1 m e).OpsIn S ↔ e.OpsIn S := by
+  cases e <;> simp [LExpr.replaceMetadata1, LExpr.OpsIn, LExpr.getOps]
+
+/-- An abstraction has the operators of its body. -/
+@[simp] theorem abs {m n ty} {b : LExpr T.mono} : (LExpr.abs m n ty b).OpsIn S ↔ b.OpsIn S := by
+  simp [LExpr.OpsIn, LExpr.getOps]
+
+/-- A quantifier has the operators of its trigger and its body. -/
+@[simp] theorem quant {m qk n ty} {tr b : LExpr T.mono} :
+    (LExpr.quant m qk n ty tr b).OpsIn S ↔ tr.OpsIn S ∧ b.OpsIn S := by
+  simp [LExpr.OpsIn, LExpr.getOps, or_imp, forall_and]
+
+/-- An application has the operators of its function and its argument. -/
+@[simp] theorem app {m} {f a : LExpr T.mono} :
+    (LExpr.app m f a).OpsIn S ↔ f.OpsIn S ∧ a.OpsIn S := by
+  simp [LExpr.OpsIn, LExpr.getOps, or_imp, forall_and]
+
+/-- An equality has the operators of its two sides. -/
+@[simp] theorem eq {m} {a b : LExpr T.mono} :
+    (LExpr.eq m a b).OpsIn S ↔ a.OpsIn S ∧ b.OpsIn S := by
+  simp [LExpr.OpsIn, LExpr.getOps, or_imp, forall_and]
+
+/-- A conditional has the operators of its condition and its two branches. -/
+@[simp] theorem ite {m} {c t f : LExpr T.mono} :
+    (LExpr.ite m c t f).OpsIn S ↔ c.OpsIn S ∧ t.OpsIn S ∧ f.OpsIn S := by
+  simp [LExpr.OpsIn, LExpr.getOps, or_imp, forall_and]
+
+/-- A predicate that the operators satisfy can be weakened. -/
+theorem mono {S' : T.Identifier → Prop} (h : ∀ x, S x → S' x) {e : LExpr T.mono}
+    (he : e.OpsIn S) : e.OpsIn S' := fun o ho => h o (he o ho)
+
+/-- Substituting for a bound variable an expression whose operators satisfy `S` keeps them in
+    `S`. -/
+theorem substK {s : T.Metadata → LExpr T.mono} (hs : ∀ m, (s m).OpsIn S) :
+    ∀ {k : Nat} {e : LExpr T.mono}, e.OpsIn S → (LExpr.substK k s e).OpsIn S := by
+  intro k e
+  induction e generalizing k with
+  | bvar m i =>
+    intro _
+    simp only [LExpr.substK]
+    split
+    · exact hs m
+    · exact bvar
+  | const | op | fvar => intro he; simpa only [LExpr.substK] using he
+  | abs _ _ _ _ ih => simp only [LExpr.substK, abs]; exact ih
+  | quant _ _ _ _ _ _ ihtr ihb =>
+    simp only [LExpr.substK, quant]; exact fun ⟨h₁, h₂⟩ => ⟨ihtr h₁, ihb h₂⟩
+  | app _ _ _ ihf iha =>
+    simp only [LExpr.substK, app]; exact fun ⟨h₁, h₂⟩ => ⟨ihf h₁, iha h₂⟩
+  | ite _ _ _ _ ihc iht ihf =>
+    simp only [LExpr.substK, ite]; exact fun ⟨h₁, h₂, h₃⟩ => ⟨ihc h₁, iht h₂, ihf h₃⟩
+  | eq _ _ _ iha ihb =>
+    simp only [LExpr.substK, eq]; exact fun ⟨h₁, h₂⟩ => ⟨iha h₁, ihb h₂⟩
+
+/-- Shifting bound variables keeps the operators. -/
+theorem liftBVars {n : Nat} : ∀ {e : LExpr T.mono} {c : Nat},
+    e.OpsIn S → (LExpr.liftBVars n e c).OpsIn S := by
+  intro e
+  induction e with
+  | bvar m i => intro c _; simp only [LExpr.liftBVars]; split <;> exact bvar
+  | const | op | fvar => intro c he; simpa only [LExpr.liftBVars] using he
+  | abs _ _ _ _ ih => intro c; simp only [LExpr.liftBVars, abs]; exact ih
+  | quant _ _ _ _ _ _ ihtr ihb =>
+    intro c; simp only [LExpr.liftBVars, quant]; exact fun ⟨h₁, h₂⟩ => ⟨ihtr h₁, ihb h₂⟩
+  | app _ _ _ ihf iha =>
+    intro c; simp only [LExpr.liftBVars, app]; exact fun ⟨h₁, h₂⟩ => ⟨ihf h₁, iha h₂⟩
+  | ite _ _ _ _ ihc iht ihf =>
+    intro c; simp only [LExpr.liftBVars, ite]
+    exact fun ⟨h₁, h₂, h₃⟩ => ⟨ihc h₁, iht h₂, ihf h₃⟩
+  | eq _ _ _ iha ihb =>
+    intro c; simp only [LExpr.liftBVars, eq]; exact fun ⟨h₁, h₂⟩ => ⟨iha h₁, ihb h₂⟩
+
+/-- Instantiating type variables keeps the operators. -/
+theorem applyTypeSubst {S' : Subst} {e : LExpr T.mono} (he : e.OpsIn S) :
+    (e.applyTypeSubst S').OpsIn S := by
+  intro o ho; rw [LExpr.getOps_applyTypeSubst] at ho; exact he o ho
+
+/-- Substituting for free variables expressions whose operators satisfy `S` keeps them in
+    `S`. -/
+theorem substFvarsLifting [DecidableEq T.IDMeta] {sm : Map T.Identifier (LExpr T.mono)}
+    (hsm : ∀ x r, sm.find? x = some r → r.OpsIn S) {e : LExpr T.mono} (he : e.OpsIn S) :
+    (LExpr.substFvarsLifting e sm).OpsIn S := by
+  unfold LExpr.substFvarsLifting
+  split
+  · exact he
+  · suffices ∀ (e : LExpr T.mono) d, e.OpsIn S → (LExpr.substFvarsLifting.go sm e d).OpsIn S
+      from this e 0 he
+    intro e
+    induction e with
+    | const | op | bvar => intro d h; simpa only [LExpr.substFvarsLifting.go] using h
+    | fvar m x ty =>
+      intro d h
+      simp only [LExpr.substFvarsLifting.go]
+      split
+      · rename_i r hr; exact replaceMetadata1.mpr (liftBVars (hsm x r hr))
+      · exact h
+    | abs _ _ _ _ ih => intro d; simp only [LExpr.substFvarsLifting.go, abs]; exact ih _
+    | quant _ _ _ _ _ _ ihtr ihb =>
+      intro d; simp only [LExpr.substFvarsLifting.go, quant]
+      exact fun ⟨h₁, h₂⟩ => ⟨ihtr _ h₁, ihb _ h₂⟩
+    | app _ _ _ ihf iha =>
+      intro d; simp only [LExpr.substFvarsLifting.go, app]
+      exact fun ⟨h₁, h₂⟩ => ⟨ihf _ h₁, iha _ h₂⟩
+    | ite _ _ _ _ ihc iht ihf =>
+      intro d; simp only [LExpr.substFvarsLifting.go, ite]
+      exact fun ⟨h₁, h₂, h₃⟩ => ⟨ihc _ h₁, iht _ h₂, ihf _ h₃⟩
+    | eq _ _ _ iha ihb =>
+      intro d; simp only [LExpr.substFvarsLifting.go, eq]
+      exact fun ⟨h₁, h₂⟩ => ⟨iha _ h₁, ihb _ h₂⟩
+
+/-- Substituting the environment's values for free variables keeps the operators in `S` when
+    the values' operators are. -/
+theorem substFvarsFromEnv {env : Env T} (henv : ∀ x r, env x = some r → r.OpsIn S) :
+    ∀ {e : LExpr T.mono}, e.OpsIn S → (LExpr.substFvarsFromEnv env e).OpsIn S := by
+  intro e
+  induction e with
+  | const | op | bvar => intro h; simpa only [LExpr.substFvarsFromEnv] using h
+  | fvar m x ty =>
+    intro h
+    simp only [LExpr.substFvarsFromEnv]
+    split
+    · rename_i r hr; exact replaceMetadata1.mpr (henv x r hr)
+    · exact h
+  | abs _ _ _ _ ih => simp only [LExpr.substFvarsFromEnv, abs]; exact ih
+  | quant _ _ _ _ _ _ ihtr ihb =>
+    simp only [LExpr.substFvarsFromEnv, quant]; exact fun ⟨h₁, h₂⟩ => ⟨ihtr h₁, ihb h₂⟩
+  | app _ _ _ ihf iha =>
+    simp only [LExpr.substFvarsFromEnv, app]; exact fun ⟨h₁, h₂⟩ => ⟨ihf h₁, iha h₂⟩
+  | ite _ _ _ _ ihc iht ihf =>
+    simp only [LExpr.substFvarsFromEnv, ite]
+    exact fun ⟨h₁, h₂, h₃⟩ => ⟨ihc h₁, iht h₂, ihf h₃⟩
+  | eq _ _ _ iha ihb =>
+    simp only [LExpr.substFvarsFromEnv, eq]; exact fun ⟨h₁, h₂⟩ => ⟨iha h₁, ihb h₂⟩
+
+end LExpr.OpsIn
+
+/-- The arguments of a call are subterms of it, so they have no operator it has not. -/
+private theorem callOfLFunc_args_opsIn {S : T.Identifier → Prop} {F : @Factory T}
+    {e callee : LExpr T.mono} {args : List (LExpr T.mono)} {fn : LFunc T}
+    (hc : F.callOfLFunc e = some (callee, args, fn)) (he : e.OpsIn S) :
+    ∀ a ∈ args, a.OpsIn S :=
+  callOfLFunc_args_sat (fun h => LExpr.OpsIn.app.mp h) hc he
+
+/-- **A reduction step brings in only the factory's operators.** Under a factory that brings in
+only its own operators, the operators of a reduct satisfy every predicate that those of the
+source, of the environment's values and the factory's functions satisfy. -/
+theorem Step.opsIn [DecidableEq T.IDMeta] [Inhabited T.IDMeta] {F : @Factory T}
+    (hF : F.OpsClosed) {env : Env T}
+    {S : T.Identifier → Prop} (hFS : ∀ o : T.Identifier, o.name ∈ F → S o)
+    (henv : ∀ x r, env x = some r → r.OpsIn S) {e e' : LExpr T.mono}
+    (hs : Step F env e e') (he : e.OpsIn S) : e'.OpsIn S := by
+  induction hs with
+  | expand_fvar x r hx => exact LExpr.OpsIn.replaceMetadata1.mpr (henv x r hx)
+  | beta e1 e2 eres h =>
+    subst h
+    simp only [LExpr.OpsIn.app, LExpr.OpsIn.abs] at he
+    exact LExpr.OpsIn.substK (fun _ => he.2) he.1
+  | reduce_2 _ _ _ _ ih =>
+    simp only [LExpr.OpsIn.app] at he ⊢; exact ⟨he.1, ih he.2⟩
+  | reduce_1 _ _ _ _ ih =>
+    simp only [LExpr.OpsIn.app] at he ⊢; exact ⟨ih he.1, he.2⟩
+  | ite_reduce_then => simp only [LExpr.OpsIn.ite] at he; exact he.2.1
+  | ite_reduce_else => simp only [LExpr.OpsIn.ite] at he; exact he.2.2
+  | ite_reduce_cond _ _ _ _ _ ih =>
+    simp only [LExpr.OpsIn.ite] at he ⊢; exact ⟨ih he.1, he.2⟩
+  | ite_reduce_then_branch _ _ _ _ _ ih =>
+    simp only [LExpr.OpsIn.ite] at he ⊢; exact ⟨he.1, ih he.2.1, he.2.2⟩
+  | ite_reduce_else_branch _ _ _ _ _ ih =>
+    simp only [LExpr.OpsIn.ite] at he ⊢; exact ⟨he.1, he.2.1, ih he.2.2⟩
+  | eq_reduce_true | eq_reduce_false => exact LExpr.OpsIn.const
+  | eq_reduce_lhs _ _ _ _ ih =>
+    simp only [LExpr.OpsIn.eq] at he ⊢; exact ⟨ih he.1, he.2⟩
+  | eq_reduce_rhs _ _ _ _ ih =>
+    simp only [LExpr.OpsIn.eq] at he ⊢; exact ⟨he.1, ih he.2⟩
+  | expand_fn e callee body nb args fn ts hc hb _ hnb =>
+    subst hnb
+    have hmem := callOfLFunc_func_mem F e callee args fn false hc
+    exact LExpr.OpsIn.substFvarsLifting
+      (fun _ r hr => callOfLFunc_args_opsIn hc he r (Map.find?_zip_mem _ _ _ r hr))
+      (LExpr.OpsIn.applyTypeSubst (LExpr.OpsIn.mono (fun o ho => hFS o ho) (hF.1 fn hmem body hb)))
+  | eval_fn e callee e' args fn ceval hc hce hres =>
+    have hmem := callOfLFunc_func_mem F e callee args fn false hc
+    intro o ho
+    rcases hF.2 fn hmem ceval hce _ _ args e' hres.symm o ho with h | ⟨a, ha, hoa⟩
+    · exact hFS o h
+    · exact callOfLFunc_args_opsIn hc he a ha o hoa
+  | abs_subst_fvars =>
+    simp only [LExpr.OpsIn.abs] at he ⊢
+    exact LExpr.OpsIn.substFvarsFromEnv henv he
+  | quant_subst_fvars_body =>
+    simp only [LExpr.OpsIn.quant] at he ⊢
+    exact ⟨he.1, LExpr.OpsIn.substFvarsFromEnv henv he.2⟩
+  | quant_subst_fvars_trigger =>
+    simp only [LExpr.OpsIn.quant] at he ⊢
+    exact ⟨LExpr.OpsIn.substFvarsFromEnv henv he.1, he.2⟩
+
+/-- **A reduction brings in only the factory's operators**: `Step.opsIn`, along a sequence of
+    steps. -/
+theorem StepStar.opsIn [DecidableEq T.IDMeta] [Inhabited T.IDMeta] {F : @Factory T}
+    (hF : F.OpsClosed)
+    {env : Env T} {S : T.Identifier → Prop} (hFS : ∀ o : T.Identifier, o.name ∈ F → S o)
+    (henv : ∀ x r, env x = some r → r.OpsIn S) {e e' : LExpr T.mono}
+    (hs : StepStar F env e e') (he : e.OpsIn S) : e'.OpsIn S := by
+  induction hs with
+  | refl => exact he
+  | step _ _ _ h _ ih => exact ih (Step.opsIn hF hFS henv h he)
+
+end OpsIn
 
 end -- public section
 end Lambda

@@ -278,16 +278,22 @@ private theorem cdCFG_triple {E : Core.Expression.Factory} (hE : E.factory = Cor
     Core.Logic.Hoare.TripleUnstructured π testParams
       (fun ρ => Core.Logic.Hoare.Procedure.contractPre Core.Factory cdProc ρ ∧ ρ.factory = E)
       cdCFG (Done E) := by
-  intro ρ₀ ρ' trace ⟨hpre, hf⟩ hinit hterm
-  have hrun : ReflTransTrace (StepCFGE Core.Expression (Core.EvalCommandE π))
-      (.atBlock cdCFG cdCFG.entry ρ₀) trace (.terminal ρ') := by
-    rcases hterm with h | ⟨_, h⟩ <;> exact h
+  intro ρ₀ ⟨hpre, hf⟩ hinit
   obtain ⟨k, hn, hk⟩ := nonneg_of_pre hpre hinit.storeWellDefined (by native_decide)
     cd_pre_expr (by native_decide)
   rw [hf] at hn
+  refine ⟨fun c trace hrun => ?_, fun ρ' trace hterm _ => ?_⟩
+  · -- every finite execution emits nothing
+    have hrun : ReflTransTrace (StepCFGE Core.Expression (Core.EvalCommandE π))
+        (.atBlock cdCFG cdCFG.entry ρ₀) trace c := hrun
+    obtain ⟨-, rfl⟩ :=
+      ReflTransTrace.invariant_of_silent_step hrun (step_preserves hE) (.atEntry ρ₀ hf ⟨k, hn, hk⟩)
+    exact True.intro
+  have hrun : ReflTransTrace (StepCFGE Core.Expression (Core.EvalCommandE π))
+      (.atBlock cdCFG cdCFG.entry ρ₀) trace (.terminal ρ') := by
+    rcases hterm with h | ⟨_, h⟩ <;> exact h
   obtain ⟨hfinal, rfl⟩ :=
     ReflTransTrace.invariant_of_silent_step hrun (step_preserves hE) (.atEntry ρ₀ hf ⟨k, hn, hk⟩)
-  refine ⟨trivial, fun _ => ?_⟩
   cases hfinal with
   | terminal _ hf' h =>
     obtain ⟨_, hr, _, rfl⟩ := h

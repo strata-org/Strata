@@ -400,9 +400,16 @@ include iDec iBool iFvar iSubst iId iLId iHash iW
 theorem stmtReads_cmd (Lc : List P.Ident) (κ : RE P) (d : Nat) (f : Bool) (c : CmdExt P) :
     StmtReads Lc κ d f (.cmd c) := by
   rintro st a st' - h S hS - - - - - -
-  unfold wpStmt at h
   rcases c with ((⟨x, ty, e | _, md⟩ | ⟨x, e | _, md⟩ | ⟨l, e, md⟩ | ⟨l, e, md⟩ | ⟨l, e, md⟩) |
     ⟨p, args, md⟩)
+  all_goals try
+    rw [wpStmt_init_run] at h
+    split at h
+    rotate_left
+    · cases h
+      exact readsOK_nil rfl rfl
+    simp only [wpStmt, keepInit, pure_bind] at h
+  all_goals try unfold wpStmt at h
   all_goals try first | cases h | (cases f; cases h; exact readsOK_nil rfl rfl)
   all_goals wp_inv h
   · split at h <;> wp_inv h <;> obtain ⟨⟨⟨we, rd⟩, s1⟩, h1, ⟨n, s2⟩, h2, rfl, hst⟩ := h
@@ -475,7 +482,7 @@ private theorem init_decl (h : (wpStmt κ d f s).run st = .ok (a, st')) (hf : f 
     simp only [Stmt.topInits, List.mem_singleton, List.not_mem_nil] at hx
   all_goals
     subst hx hf
-    unfold wpStmt at h
+    simp only [wpStmt, keepInit, pure_bind] at h
     wp_inv h
   · obtain ⟨⟨⟨we, rd⟩, s0⟩, h0, ⟨n', s1⟩, h1, h⟩ := h
     obtain ⟨-, -, -, hkeep⟩ := wRen_run h0

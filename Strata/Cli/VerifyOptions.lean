@@ -107,10 +107,11 @@ def verifyOptionsFlags : List Flag := [
     takesArg := .arg "N|none" },
   { name := "vcgen",
     help := "(experimental) Verification-condition generation: 'symbolic' (default, the legacy "
-      ++ "symbolic evaluator), 'wp' (the WP phase, the SSA phase and dead-definition "
-      ++ "elimination), or 'symexec[:MODE]' (symbolic execution by the path explorer, in place "
-      ++ "of the legacy evaluator). MODE says when to merge the two branches of an if where they "
-      ++ "meet: 'merged' (the default: merge at every join), 'per-path' (no merging, up to "
+      ++ "symbolic evaluator), 'wp' (the WP phase, the SSA phase, guard forwarding, the "
+      ++ "inlining of single-use definitions and dead-definition elimination), or "
+      ++ "'symexec[:MODE]' (symbolic execution by the path explorer, in place of the legacy "
+      ++ "evaluator). MODE says when to merge the two branches of an if where they meet: "
+      ++ "'merged' (the default: merge at every join), 'per-path' (no merging, up to "
       ++ "10,000 paths), or 'merge-above:N' (merge whenever more than N paths would exist; a "
       ++ "join whose branches cannot be merged keeps them apart, so N is not a hard bound). "
       ++ "In every mode, if a procedure cannot be fully explored (for example more than 10,000 "

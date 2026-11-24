@@ -24,7 +24,8 @@ That lets the explorer
 * keep the paths as an explicit worklist and record them as a tree (`Node`, `Result`);
 * stop paths where the branches of a fork first meet again, wait for both branches, and let a
   `MergePolicy` (any Lean function of a `JoinView`) decide whether to merge them (`placeF`,
-  `joinBranchesF`, `mergeBranches`, `mergeEnvs`). The branches meet at the end of an `if`, or,
+  `joinBranchesF`, `mergeBranches`, `mergeEnvs`), naming each merged value by a fresh symbol
+  defined in the path condition (`nameJoinValues`). The branches meet at the end of an `if`, or,
   when one branch always exits, at the end of the labelled block that catches its `exit`s; in a
   CFG with no cycle, at the block of those both successors of the forking block reach that has
   no predecessor among them (a path may bypass it); in a CFG with a cycle, at the forking block's
@@ -33,12 +34,13 @@ That lets the explorer
   apart by its label and metadata (`Imperative.AssertId`), and the run records the checks some
   path reaches (`Result.reached`). A check in an `if` branch that no path entered at a decided
   guard is reported at the `if` (`deadBranchObls`, under the path condition there); when the run
-  is complete and no path ended at a failed assert, `Result.addUnreached` adds every other check
-  of the body no path reached. What an unreached check means is up to the client: the verifier
-  reports it as unreachable;
+  is complete, `Result.addUnreached` adds every other check of the body no path reached. What an
+  unreached check means is up to the client: the verifier reports it as unreachable;
 * bound the work per path (`runFuel`) and in total (`maxSteps`), and the number of paths
   (`ExploreCfg.maxPaths`); a run that stops early says so (`Result.completeness`);
-* optionally end a path at a failed check (`ExploreCfg.endOnFailedChecks`, `failedCheckStatus`).
+* end a path at a step that adds a path-condition entry that is literal `false`
+  (`infeasibleStatus`): no run follows it, so the explorer neither explores nor merges it, and
+  the checks only it would reach are reported unreached.
 
 `exploreProc` sets up one procedure and calls `explore`; `symExecProgram`, the entry point of
 symbolic execution for verification, checks `symExecRequires` and runs every procedure.
@@ -70,11 +72,8 @@ inductive NodeStatus where
   | joined
   /-- Not explored further: the run reached its path limit (`ExploreCfg.maxPaths`). -/
   | overPathLimit
-  /-- Under `ExploreCfg.endOnFailedChecks`: ended at the `assert` labelled `label`, whose condition
-      is literal `false` (the obligation is recorded). -/
-  | assertFailed (label : String)
-  /-- Under `ExploreCfg.endOnFailedChecks`: ended at the `assume` labelled `label`, which
-      contradicts the path condition, so no run follows the path past it. -/
+  /-- Ended at the step that added the path-condition entry labelled `label`, which is literal
+      `false`, so no run follows the path past it (`infeasibleStatus`). -/
   | infeasible (label : String)
 
 /-- A node of the path tree: the condition added when it was created by a fork, and the
@@ -101,12 +100,12 @@ structure Result where
       ending in a `false` entry, with a literal goal (`true` for an assert, `false` for a
       cover). A check in an `if` branch that some path skipped at a
       decided guard `g` and no path entered is reported under that path's condition at the `if`
-      plus `<dead_branch: g>` (`deadBranchObls`), once per such path. When the run is complete and
-      no path ended at a failed assert, every other check of the body no path reached is
-      reported once, under only `<unreachable_block: l>` in a CFG body (`l` the check's block,
-      in block and command order) and `<unreachable_check: a>` in a structured body (`a` the
-      check's label, in statement order). What they mean is up to the client; the verifier
-      reports each as unreachable. Filled in by `explore` and `Result.addUnreached`. -/
+      plus `<dead_branch: g>` (`deadBranchObls`), once per such path. When the run is complete,
+      every other check of the body no path reached is reported once, under only
+      `<unreachable_block: l>` in a CFG body (`l` the check's block, in block and command order)
+      and `<unreachable_check: a>` in a structured body (`a` the check's label, in statement
+      order). What they mean is up to the client; the verifier reports each as unreachable.
+      Filled in by `explore` and `Result.addUnreached`. -/
   unreached : List Obl := []
   /-- The checks some path reached, told apart by label and metadata as `Imperative.AssertId`
       does: for each label, the metadata of the reached checks with that label. Two checks with
@@ -115,6 +114,10 @@ structure Result where
   reached : Std.HashMap String (Array (MetaData Expression)) := {}
   /-- Joins at which two paths were merged. -/
   merges : Nat := 0
+  /-- Merged values left unnamed at joins because their variable's declared type was not
+      recorded on the then-branch or differs on the else-branch (`nameJoinStep`); expected to be
+      0. Function-typed values, never named, are not counted. -/
+  joinValuesUnnamed : Nat := 0
   /-- The run's start: each formal (and `old` name) with the symbol it was bound to. -/
   entry : List (CoreIdent × Expression.Expr) := []
   /-- For a structured body, the statements the run executed (precondition assumes, body,
@@ -149,8 +152,8 @@ def Result.unmatchedExits (r : Result) : Nat :=
 
 /-- Whether a run analyzed every way through the procedure. -/
 inductive Completeness where
-  /-- Every path finished, merged, or (under `ExploreCfg.endOnFailedChecks`) ended at a failed
-      check: the obligations cover the procedure. -/
+  /-- Every path finished, merged, or ended at a step that added a path-condition entry
+      contradicting the rest of its path condition: the obligations cover the procedure. -/
   | complete
   /-- Some path ended before the end of the procedure for the listed reasons (no duplicates,
       in node order): checks past those points have no obligation, so the run says nothing
@@ -283,6 +286,16 @@ structure ProcBodyShape (scfg : ExploreCfg) (C : Type) where
       CFG body has none. The other checks no path reached, in either kind of body, are added
       after the run (`Result.addUnreached`). -/
   deadObls : C → Outcomes C → List (String × Expression.Expr) → List Obl
+  /-- The variable the next step at this configuration declares, with its declared type, if
+      that step runs an `init` with a monotype (`initDecl?`): the explorer records it in the
+      path's `PathState.types` before the step (`stepPath`). -/
+  declares : C → Option (CoreIdent × LMonoTy)
+
+/-- The variable a command declares and its declared type, if the command is an `init` whose
+    type is a monotype. -/
+private def initDecl? : Command → Option (CoreIdent × LMonoTy)
+  | .cmd (.init x ty _ _) => ty.toMonoType?.map (x, ·)
+  | _ => none
 
 /-- Append obligations (given newest first) to node `i`. -/
 private def addObls (nodes : Array Node) (i : Nat) (os : List Obl) : Array Node :=
@@ -485,7 +498,10 @@ def structuredShape (scfg : ExploreCfg) : ProcBodyShape scfg (StmtConfig scfg) :
       | _ => none
     setJoinEnv := fun c e => replaceDeepest c (.terminal e)
     forMerge := fun _ e => e
-    deadObls := deadBranchObls }
+    deadObls := deadBranchObls
+    declares := fun c => match deepest c with
+      | .stmt (.cmd cmd) _ => initDecl? cmd
+      | _ => none }
 
 /-! ## CFG configurations -/
 
@@ -618,7 +634,10 @@ def cfgShape (scfg : ExploreCfg) (g : Core.DetCFG) : ProcBodyShape scfg (BlockCo
           | none => localsOutOfScope dom decls j
         { e with store := e.store.drop out }
       | _, e => e
-    deadObls := fun _ _ _ => [] }
+    deadObls := fun _ _ _ => []
+    declares := fun
+      | .inBlock _ _ (cmd :: _) _ _ => initDecl? cmd
+      | _ => none }
 
 /-! ## Merging -/
 
@@ -660,17 +679,60 @@ private def mergeShapeOk (j : Join) (sa sb : PathState) : Bool :=
       ptrFastEq ba bb
   | _, _ => false
 
+/-- The symbol the path-condition entry `(l, e)` defines when it is a join symbol's definition
+    (`nameJoinStep`): its label is a join definition's (`isJoinValueLabel`), its condition is
+    `s == v` for a join symbol `s` (`isJoinValueName`), and `s` is not in `defined`, the join
+    symbols the entries before it on the path define. An entry of that form for a symbol already
+    defined is an assumption about it. -/
+def joinDefSym? (defined : Std.HashSet String) (l : String) (e : Expression.Expr) :
+    Option String :=
+  if isJoinValueLabel l then
+    match e with
+    | .eq _ (.fvar _ s _) _ =>
+      if isJoinValueName s.name && !defined.contains s.name then some s.name else none
+    | _ => none
+  else none
+
+/-- `defined` and the join symbols the entries of `pc` (newest first) define (`joinDefSym?`),
+    oldest first. -/
+def joinDefsOf (pc : List (String × Expression.Expr)) (defined : Std.HashSet String := {}) :
+    Std.HashSet String :=
+  pc.foldr (fun (l, e) acc => match joinDefSym? acc l e with
+    | some s => acc.insert s
+    | none => acc) defined
+
+/-- A branch's own path-condition entries `own` (newest first) as the merged path condition
+    holds them: each under the fork's guard (`wrap`), except a join symbol's definition
+    (`joinDefSym?`, with `defined` the join symbols the entries before them define), which is
+    kept as it is. -/
+-- TODO: prove that keeping a definition unguarded keeps the merged path condition's meaning:
+-- its symbol is fresh in its branch, so every model of the other branch's path condition
+-- extends, giving the symbol its definition's value, to one of the definition.
+def mergeOwn (wrap : Expression.Expr → Expression.Expr) (defined : Std.HashSet String)
+    (own : List (String × Expression.Expr)) : List (String × Expression.Expr) :=
+  (go own).2
+where
+  /-- `mergeOwn` on `own`, with the join symbols `own` and `defined` define. -/
+  go : List (String × Expression.Expr) → Std.HashSet String × List (String × Expression.Expr)
+    | [] => (defined, [])
+    | (l, e) :: older =>
+      let (d, out) := go older
+      match joinDefSym? d l e with
+      | some s => (d.insert s, (l, e) :: out)
+      | none => (d, (l, wrap e) :: out)
+
 /-- Merge the environments `ea` (then-branch, path state `sa`) and `eb` (else-branch, path
     state `sb`) of the two branches of fork `j` at its join: values that differ, ignoring source
     locations (`LExpr.beqIgnoringMetadata`), become `if g then va else vb`; the path condition
-    is the shared prefix, then each branch's entries added after the fork's guard, each guarded
-    by `g` (then-branch `if g then e else true`, else-branch
-    `if g then true else e`) and keeping their labels; the record of choices keeps both
-    branches' (`mergeChoices`). Returns the merged environment and path state, and the number of
-    differing variables. `none` if the branches bind different variables, or if their path
-    conditions do not have the form `mergeShapeOk` checks. -/
+    is the shared prefix, then each branch's entries added after the fork's guard, keeping their
+    labels: a join symbol's definition as it is, any other entry guarded by `g` (then-branch
+    `if g then e else true`, else-branch `if g then true else e`; `mergeOwn`); the record of
+    choices keeps both branches' (`mergeChoices`). Returns the merged environment and path state, and the differing
+    variables with their merged values, in the store's key order. `none` if the branches bind
+    different variables, or if their path conditions do not have the form `mergeShapeOk` checks. -/
 def mergeEnvs {scfg : ExploreCfg} (j : Join) (ea eb : @IEnv Expression (symLang scfg))
-    (sa sb : PathState) : Option (@IEnv Expression (symLang scfg) × PathState × Nat) :=
+    (sa sb : PathState) :
+    Option (@IEnv Expression (symLang scfg) × PathState × List (CoreIdent × Expression.Expr)) :=
   letI := symLang scfg
   if sa.pc.length < j.basePcLen + 1 || sb.pc.length < j.basePcLen + 1 || !mergeShapeOk j sa sb
   then none else
@@ -689,26 +751,98 @@ def mergeEnvs {scfg : ExploreCfg} (j : Join) (ea eb : @IEnv Expression (symLang 
     let store := diffs.foldl (fun σ (k, v) => σ.update k v) ea.store
     let own (pc : List (String × Expression.Expr)) := (pc.take (pc.length - j.basePcLen)).dropLast
     let base := sa.pc.drop (sa.pc.length - j.basePcLen)
-    let pc := (own sb.pc).map (fun (l, e) => (l, LExpr.ite symExecLoc j.guard Core.true e)) ++
-      (own sa.pc).map (fun (l, e) => (l, LExpr.ite symExecLoc j.guard e Core.true)) ++ base
+    let defined := joinDefsOf base
+    let pc := mergeOwn (LExpr.ite symExecLoc j.guard Core.true ·) defined (own sb.pc) ++
+      mergeOwn (LExpr.ite symExecLoc j.guard · Core.true) defined (own sa.pc) ++ base
     some ({ ea with store },
           { sa with pc := pc, segment := [], merged := true,
                     choices := mergeChoices j sa.choices sb.choices, next := max sa.next sb.next },
-          diffs.length)
+          diffs)
+
+/-- The label of the path-condition entry defining the symbol a join gives variable `x`. -/
+def joinValueLabel (x : CoreIdent) : String := s!"<join_value: {x.name}>"
+
+/-- The type annotation of a symbol, if `e` is an annotated free variable. -/
+def symType? : Expression.Expr → Option LMonoTy
+  | .fvar _ _ ty => ty
+  | _ => none
+
+/-- The state `nameJoinValues` threads through a join's merged values: the store, the path
+    condition, the symbol counter, the number of values left unnamed for want of a type, and
+    the values named so far with their symbols. -/
+abbrev NameAcc (scfg : ExploreCfg) : Type :=
+  @IStore Expression (symLang scfg) × List (String × Expression.Expr) × Nat × Nat ×
+    List (Expression.Expr × Expression.Expr)
+
+/-- One step of `nameJoinValues` for variable `x` with merged value `v`, where `ta` and `tb` are
+    the declared types the then- and else-branch recorded (`PathState.types`):
+    * a variable either branch recorded with a type containing a function type keeps `v` (an
+      equation between functions is not something the solver decides, and the verifier never
+      asks for a function's value);
+    * a variable both branches recorded with the same type `ty`, whose value equals, up to
+      source locations, one named earlier at this join by a symbol of type `ty`, gets that
+      symbol;
+    * any other variable both branches recorded with the same type `ty` gets the symbol
+      `s := mkSym scfg.joinPre k ty x`, and the path condition the entry `s == v` (labelled
+      `joinValueLabel x`); the counter moves on;
+    * otherwise (no type recorded, or the branches disagree) `x` keeps `v`, and the step counts
+      it as unnamed. -/
+def nameJoinStep {scfg : ExploreCfg} (ta tb : Std.TreeMap CoreIdent LMonoTy identCmp)
+    (acc : NameAcc scfg) (xv : CoreIdent × Expression.Expr) : NameAcc scfg :=
+  letI := symLang scfg
+  let (σ, pc, k, unnamed, named) := acc
+  let (x, v) := xv
+  let isFun (t? : Option LMonoTy) : Bool := (t?.map LMonoTy.containsArrow).getD false
+  if isFun ta[x]? || isFun tb[x]? then acc else
+  match ta[x]?, tb[x]? with
+  | some ty, some ty' =>
+    if ty == ty' then
+      match named.find? (fun p => p.1.beqIgnoringMetadata v && symType? p.2 == some ty) with
+      | some (_, s) => (σ.update x s, pc, k, unnamed, named)
+      | none =>
+        let s := mkSym scfg.joinPre k ty x.name
+        (σ.update x s, (joinValueLabel x, LExpr.eq symExecLoc s v) :: pc, k + 1, unnamed,
+          (v, s) :: named)
+    else (σ, pc, k, unnamed + 1, named)
+  | _, _ => (σ, pc, k, unnamed + 1, named)
+
+/-- Name the merged values `diffs` of a join (`mergeEnvs`) by fresh symbols (`nameJoinStep`,
+    counting from `next`, with the declared types `ta` and `tb` the then- and else-branch
+    recorded): each variable `x` with merged value `v` and a recorded type gets a symbol `s`,
+    and the path condition gets the entry `s == v`. Later expressions mention `s`, so the
+    obligations write each merged value once, in its definition, and nested joins nest symbols.
+    Join symbols have their own prefix (`ExploreCfg.joinPre`) and their own counter
+    (`DState.joinNext`); `next` must be the explorer's join counter, so that no other join used
+    any number counted here. Also returns how many values
+    were left unnamed for want of a type, and the counter after the symbols used. -/
+-- TODO: prove that naming preserves meaning: every model of the path condition before naming
+-- extends, giving each join symbol its definition's value, to a model of the named one, under
+-- which the named store denotes what the unnamed one does.
+def nameJoinValues {scfg : ExploreCfg} (next : Nat) (ta tb : Std.TreeMap CoreIdent LMonoTy identCmp)
+    (diffs : List (CoreIdent × Expression.Expr))
+    (env : @IEnv Expression (symLang scfg)) (st : PathState) :
+    @IEnv Expression (symLang scfg) × PathState × Nat × Nat :=
+  letI := symLang scfg
+  let r := diffs.foldl (nameJoinStep (scfg := scfg) ta tb) (env.store, st.pc, next, 0, [])
+  ({ env with store := r.1 }, { st with pc := r.2.1 }, r.2.2.2.1, r.2.2.1)
 
 /-- Merge the two branches of fork `j` at its join (`a` the then-branch, `b` the else-branch):
     the environments each brings to the merge (`ProcBodyShape.forMerge`) merged by `mergeEnvs`,
-    at the then-branch's configuration. Also returns the number of differing variables. `none` if a
-    branch is not at a join, or `mergeEnvs` refuses. -/
+    with the merged values named by fresh symbols counted from the join counter `joinNext`
+    (`nameJoinValues`), at the then-branch's configuration. Also returns the number of
+    differing variables, the number left unnamed, and the join counter after the merge. `none`
+    if a branch is not at a join, or `mergeEnvs` refuses. -/
 def mergeBranches {scfg : ExploreCfg} {C : Type} (sh : ProcBodyShape scfg C) (j : Join)
-    (a b : Entry C) :
-    Option (Entry C × Nat) :=
+    (joinNext : Nat) (a b : Entry C) :
+    Option (Entry C × Nat × Nat × Nat) :=
   match sh.joinEnv a.cfg, sh.joinEnv b.cfg with
   | some ea, some eb =>
     match mergeEnvs j (sh.forMerge j.site ea) (sh.forMerge j.site eb) a.st b.st with
-    | some (env, st, n) =>
-      some ({ cfg := sh.setJoinEnv a.cfg env, st, node := a.node,
-              budget := min a.budget b.budget, joins := a.joins.drop 1 }, n)
+    | some (env, st, ds) =>
+      let named := nameJoinValues joinNext a.st.types b.st.types ds env st
+      some ({ cfg := sh.setJoinEnv a.cfg named.1, st := named.2.1, node := a.node,
+              budget := min a.budget b.budget, joins := a.joins.drop 1 },
+            ds.length, named.2.2.1, named.2.2.2)
     | none => none
   | _, _ => none
 
@@ -731,6 +865,11 @@ structure DState (C : Type) where
   waitingCount : Nat := 0
   finished : Nat := 0
   merges : Nat := 0
+  /-- Merged values left unnamed at joins (`Result.joinValuesUnnamed`). -/
+  joinValuesUnnamed : Nat := 0
+  /-- The next number for a join symbol (`nameJoinValues`); a counter of its own, apart from
+      `next`. -/
+  joinNext : Nat := 0
   /-- The checks some path reached (`checkOf`): for each label, the metadata of the checks with
       that label. -/
   reached : Std.HashMap String (Array (MetaData Expression)) := {}
@@ -781,23 +920,25 @@ private def joinBranchesF {scfg : ExploreCfg} {C : Type} (sh : ProcBodyShape scf
     | some jp, some jq =>
       let (a, b) := if jp.side then (p, q) else (q, p)
       if jp.side == jq.side then release s else
-      let merged := Thunk.mk fun _ => mergeBranches sh jp a b
+      let merged := Thunk.mk fun _ => mergeBranches sh jp s.joinNext a b
       -- `s.waitingCount` excludes `ps`: their fork's entry is cleared above.
       let view : JoinView := { proc, depth := a.joins.length - 1,
                                pending := s.work.length + s.waitingCount,
                                finished := s.finished,
-                               differing := Thunk.mk fun _ => (merged.get.map (·.2)).getD 0 }
+                               differing := Thunk.mk fun _ => (merged.get.map (·.2.1)).getD 0 }
       if !pol view then release s else
       match merged.get with
       | none => release s
-      | some (m, _) =>
+      | some (m, _, unnamed, joinNext) =>
         let i := s.nodes.size
         let nodes := s.nodes.push { parent := none, cond := none, startPc := m.st.pc }
         let nodes := setStatus (setStatus nodes a.node .joined) b.node .joined
         let nodes := nodes.modify jp.node fun n => { n with cont := some i }
         -- The merged path counts once, not twice, inside every enclosing fork's branches.
         let inBranches := m.joins.foldl (fun l j => l.modify j.fork (· - 1)) s.inBranches
-        placeF sh pol proc n { s with nodes, inBranches, merges := s.merges + 1 }
+        placeF sh pol proc n { s with nodes, inBranches, merges := s.merges + 1,
+                                      joinValuesUnnamed := s.joinValuesUnnamed + unnamed,
+                                      joinNext }
           { m with node := i }
     | _, _ => release s
   | _ => release s
@@ -826,17 +967,14 @@ private def endPath {scfg : ExploreCfg} {C : Type} (sh : ProcBodyShape scfg C) (
 private def done {C : Type} (s : DState C) : Result :=
   let notReached (o : Obl) := !checkReached s.reached (checkOf o)
   { nodes := s.nodes, steps := s.steps, unreached := s.dead.toList.filter notReached,
-    reached := s.reached, merges := s.merges }
+    reached := s.reached, merges := s.merges, joinValuesUnnamed := s.joinValuesUnnamed }
 
 /-- `r` with the obligations of the checks in `checks` that no path of the run reached and
     `r.unreached` does not already hold, in the order of `checks`. A run that is not complete
-    says nothing about them, and a path that ended at a failed assert
-    (`ExploreCfg.endOnFailedChecks`) may be the only one to reach the checks after it, so neither
-    adds any. -/
+    says nothing about them, so it adds none. -/
 def Result.addUnreached (r : Result) (checks : List Obl) : Result :=
   match r.completeness with
   | .complete =>
-    if r.countStatus (· matches .assertFailed _) != 0 then r else
     let seen := r.unreached.foldl (fun cs u => addCheck cs (checkOf u)) r.reached
     { r with unreached := r.unreached ++ checks.filter (fun o => !checkReached seen (checkOf o)) }
   | .notAnalyzed _ => r
@@ -916,35 +1054,28 @@ private def placeInTree {C : Type} (nodes : Array Node) (e : Entry C) (outs : Ou
       let ns := ns.push { parent := some e.node, cond := st.pc.head?.map (·.2), startPc := st.pc }
       (addObls ns i st.segment, ts ++ [(o, st, i, k == 0)])) (nodes, [])
 
-/-- Under `ExploreCfg.endOnFailedChecks`, why a path that stepped from path condition `before` to
-    state `st` ends: an `assert` recorded in the step (`st.segment`) whose condition is literal
-    `false` (`assertFailed`), or an entry the step added to the path condition that is literal
-    `false` or whose negation is already assumed (`pcRefutes`; `infeasible`); literals are
-    compared up to source locations. `none` if
-    neither, or the mode is off. -/
-def failedCheckStatus (scfg : ExploreCfg) (before : List (String × Expression.Expr))
+/-- Whether a path that stepped to state `st` is infeasible: the newest entry of its path
+    condition is literal `false`. Then no run follows the path and it ends (`infeasible`, with the
+    entry's label); obligations recorded in the step stay on it. `none` otherwise, in constant
+    time. A step adds at most one entry; an older `false` would have ended the path at the step
+    that added it. A condition that contradicts others without being literal `false` is left to
+    the solver. `_before`, the path condition the step started from, is not needed. -/
+def infeasibleStatus (_before : List (String × Expression.Expr))
     (st : PathState) : Option NodeStatus :=
-  if !scfg.endOnFailedChecks then none else
-  let isFalse (e : Expression.Expr) : Bool := LExpr.isFalse _ e
-  match st.segment.reverse.find? (fun o => o.kind == .assert && isFalse o.cond) with
-  | some o => some (.assertFailed o.label)
-  | none =>
-    let added := (st.pc.take (st.pc.length - before.length)).zipIdx
-    added.findSome? fun ((label, c), k) =>
-      if isFalse c || pcRefutes (pcExprs (st.pc.drop (k + 1))) c then
-        some (.infeasible label)
-      else none
+  match st.pc with
+  | (label, c) :: _ => if LExpr.isFalse _ c then some (.infeasible label) else none
+  | [] => none
 
 /-- Continue one outcome of `e`'s step at node `i` with step budget `b` and open joins `joins`:
-    `place` it if it continues, `endPath` it if it stopped or a failed check ends it
-    (`failedCheckStatus`). -/
+    `place` it if it continues, `endPath` it if it stopped or is infeasible
+    (`infeasibleStatus`). -/
 private def placeOutcome {scfg : ExploreCfg} {C : Type} (sh : ProcBodyShape scfg C)
     (pol : MergePolicy)
     (proc : String) (s : DState C) (e : Entry C) (b : Nat) (joins : List Join) (o : Out C)
     (st : PathState) (i : Nat) : DState C :=
   match o with
   | .ok c' =>
-    match failedCheckStatus scfg e.st.pc st with
+    match infeasibleStatus e.st.pc st with
     | some status => endPath sh pol proc s { e with node := i, joins } status
     | none => place sh pol proc s { cfg := c', st := { st with segment := [] }, node := i,
                                      budget := b, joins }
@@ -962,7 +1093,10 @@ private def stepPath {scfg : ExploreCfg} {C : Type} (sh : ProcBodyShape scfg C) 
     match e.budget with
     | 0 => endPath sh pol proc s e (.stopped .replayFuelExhausted)
     | b + 1 =>
-      let st0 := { e.st with segment := [], next := s.next }
+      let types := match sh.declares e.cfg with
+        | some (x, ty) => e.st.types.insert x ty
+        | none => e.st.types
+      let st0 := { e.st with segment := [], next := s.next, types }
       let outs := sh.step (b + 1) e.cfg scfg st0
       -- A step with no outcome leaves the rest of the path unexplored: the path stops, which
       -- makes the run incomplete (`NodeStatus.incompleteReason?`).
@@ -1052,7 +1186,9 @@ def exploreProc (cfg : ExploreCfg) (maxSteps runFuel : Nat) (F : Lambda.Factory 
   -- `tag` extends the chosen prefix (still a prefix no name starts with), so callers can keep
   -- symbols of different procedures apart; `extraNames` are further names to avoid (e.g. the
   -- factory's functions).
-  let cfg := { cfg with pre := choosePrefix (extraNames ++ procNames p) ++ tag }
+  let names := extraNames ++ procNames p
+  let cfg := { cfg with pre := choosePrefix names ++ tag,
+                        joinPre := choosePrefix names defaultJoinPrefix ++ tag }
   letI := symLang cfg
   -- An in-out parameter is bound once (its input symbol).
   let formals := p.header.inputs.toList ++
@@ -1072,6 +1208,9 @@ def exploreProc (cfg : ExploreCfg) (maxSteps runFuel : Nat) (F : Lambda.Factory 
     | .Free => none
     | _ => some (Imperative.Cmd.assert label check.expr check.md)
   let env : IEnv Expression := { store := σ, factory := F }
+  -- The declared types of the formals and their `old` names (`PathState.types`).
+  let types : Std.TreeMap CoreIdent LMonoTy identCmp := formals.foldl (fun t (x, ty) =>
+    (t.insert x ty).insert (CoreIdent.mkOld x.name) ty) {}
   let names := formals.map (·.1) ++ formals.map (fun (x, _) => CoreIdent.mkOld x.name)
   let entry := names.filterMap fun x => (σ.get x).map (x, ·)
   match p.body with
@@ -1079,13 +1218,13 @@ def exploreProc (cfg : ExploreCfg) (maxSteps runFuel : Nat) (F : Lambda.Factory 
     let stmt (c : Imperative.Cmd Expression) : Statement := .cmd (.cmd c)
     let stmts := pre.map stmt ++ body ++ post.map stmt
     let r := explore (structuredShape cfg) maxSteps
-      { cfg := .stmts stmts env, st := { next := n }, node := 0, budget := runFuel }
+      { cfg := .stmts stmts env, st := { next := n, types }, node := 0, budget := runFuel }
       pol p.header.name.name
     { r.addUnreached (stmtCheckObls stmts) with entry, stmts }
   | .cfg g =>
     let g := wrapCFG g (pre.map CmdExt.cmd) (post.map CmdExt.cmd)
     let r := explore (cfgShape cfg g) maxSteps
-      { cfg := .atBlock g g.entry env, st := { next := n }, node := 0, budget := runFuel }
+      { cfg := .atBlock g g.entry env, st := { next := n, types }, node := 0, budget := runFuel }
       pol p.header.name.name
     { r.addUnreached (blockCheckObls g) with entry, graph := some g }
 

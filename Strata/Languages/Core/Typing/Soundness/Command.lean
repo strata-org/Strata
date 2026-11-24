@@ -1466,13 +1466,6 @@ theorem CalledProcedureSignaturesFixed.resolveSigs {σ : RigidNames} {A : List T
   obtain ⟨ty0, hty0, rfl⟩ := hty
   rw [deskolemizeTy_resolveTy hns, h pname hp proc0 hf0 ty0 hty0]
 
-/-! ## Mapping the annotations of an expression -/
-
-/-- Mapping an expression's type annotations preserves its free term variables. -/
-theorem getFvars_mapExprTys (f : LMonoTy → LMonoTy) (e : Expression.Expr) :
-    HasFvars.getFvars (mapExprTys f e) = HasFvars.getFvars e :=
-  Lambda.getVars_replaceUserProvidedType e f
-
 /-! ## Deskolemization transport for commands -/
 
 /-- Deskolemization keeps a declared type a valid source type, under a variable policy `adm`,

@@ -253,4 +253,22 @@ info: Except.ok "phase #17 `commonSubexprElim` requires `noInits` but preceding 
 #guard_msgs in
 #eval validation ((Core.corePipelinePhases Core.VerifyOptions.quiet).map Core.phaseName)
 
+/-! The rewrite loop reduces the redexes of procedure bodies only, so it does not establish
+`noBetaRedexes`, which the back end requires: the default order of `--vcgen wp`, which ends with
+`betaReduce`, is accepted, and the same order without its final `betaReduce` is rejected. -/
+
+/-- The phase names of the `--vcgen wp` order. -/
+private def wpOrder : List String :=
+  (Core.corePipelinePhases { Core.VerifyOptions.quiet with vcgen := .wp }).map Core.phaseName
+
+/-- info: Except.ok "accepted" -/
+#guard_msgs in
+#eval validation wpOrder
+
+/--
+info: Except.ok "phase #16 `the verification back end` requires `noBetaRedexes` but preceding phases only guarantee `noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noPrecondsFromFuncs, hasObligationForm, noProcedureContracts, noPolymorphicProcedures, noPolymorphicFunctions, typeAnnotated, exitsCovered, armsHaveObligations`"
+-/
+#guard_msgs in
+#eval validation (wpOrder.dropLast)
+
 end Strata.WPGlobalNameTest

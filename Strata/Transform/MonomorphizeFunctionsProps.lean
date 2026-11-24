@@ -786,11 +786,13 @@ public def keptOf (P : PolymorphicFuncDecls) (F : Lambda.Factory CoreLParams)
       acc.push { lfunc with toFunc := renFn g lfunc.toFunc }
     else acc) #[]).toList
 
-/-- The copies `updateFactory` adds to the factory, with operators renamed. -/
+/-- The copies `updateFactory` adds to the factory, with operators renamed, each marked as a
+    copy of the function it specializes. -/
 public def copiesOf (F : Lambda.Factory CoreLParams) (g : CoreIdent → Option LMonoTy → CoreIdent)
     (specs : Array (FuncSpecialization × Function)) : List (LFunc CoreLParams) :=
   specs.toList.map fun x =>
-    { toFunc := renFn g x.2, concreteEval := (F.get? x.1.name).bind (·.concreteEval) }
+    { toFunc := markCopyOf x.1.name (renFn g x.2),
+      concreteEval := (F.get? x.1.name).bind (·.concreteEval) }
 
 /-- `updateFactory` builds the factory of the kept functions, with operators renamed, followed
     by the factory-sourced copies. -/
@@ -807,7 +809,7 @@ theorem updateFactory_run (P : PolymorphicFuncDecls) (F : Lambda.Factory CoreLPa
     else acc)]
   · dsimp only
     rw [forIn_array_eq (fun (acc : Array (LFunc CoreLParams)) (x : FuncSpecialization × Function) =>
-      acc.push { toFunc := renFn (monoRen P F) x.2,
+      acc.push { toFunc := markCopyOf x.1.name (renFn (monoRen P F) x.2),
                  concreteEval := (F.get? x.1.name).bind (·.concreteEval) })]
     · dsimp only
       rw [List.foldl_push_map]

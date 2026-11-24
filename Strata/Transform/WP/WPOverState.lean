@@ -67,6 +67,24 @@ theorem wm_forIn_inv {β : Type} (I : List P.Ident → β → WSt P → Prop)
     obtain ⟨c, rfl, hI'⟩ := hf S y b s b' s1 hI hy
     simpa using wm_forIn_inv I f hf l (S ++ [y]) c s1 r s' hI' h
 
+/-- A run of `keepInit x f` keeps the state and tells whether an obligation follows (`f`) or
+    the emitted rest reads `x`. -/
+theorem keepInit_run (x : P.Ident) (f : Bool) (st : WSt P) :
+    (keepInit x f).run st = .ok (f || readLater st x, st) := by
+  cases f <;> rfl
+
+include iW in
+/-- A run of the walk of an `init x` under the flag `f` is the walk under the flag `true` when an
+    obligation follows (`f`) or the emitted rest reads `x`, and otherwise returns the empty result
+    and keeps the state. -/
+theorem wpStmt_init_run (κ : RE P) (d : Nat) (f : Bool) (x : P.Ident) (ty : P.Ty)
+    (e : ExprOrNondet P) (md : MetaData P) (s : WSt P) :
+    (wpStmt κ d f (.cmd (.cmd (.init x ty e md)))).run s =
+      if (f || readLater s x) = true then (wpStmt κ d true (.cmd (.cmd (.init x ty e md)))).run s
+      else .ok ({}, s) := by
+  cases e <;> cases f <;> cases h : readLater s x <;>
+    simp [wpStmt, keepInit, StateT.run_bind, StateT.run_get, h] <;> rfl
+
 /-- A run of `wFresh b` returns the name `freshIn` picks and advances the counter. -/
 theorem wFresh_run (b : String) (st : WSt P) :
     (wFresh b).run st =

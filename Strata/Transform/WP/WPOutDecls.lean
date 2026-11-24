@@ -477,12 +477,14 @@ private theorem count_app_le {a b A B : List P.Ident} (h1 : ∀ y, a.count y ≤
 private theorem init_dw {f : Bool} {ty : P.Ty} {e : ExprOrNondet P} {md : MetaData P}
     (h : (wpStmt κ d f (.cmd (.cmd (.init x ty e md)))).run st = .ok (r, st')) (hw : WFSt st)
     (hx : AvoidedIfFresh st x) : DeclW [x] st st' (wDecls r.out.toList) := by
-  cases f
-  · cases e <;> simp only [wpStmt, Bool.not_false, ↓reduceIte] at h <;>
-      obtain ⟨rfl, rfl⟩ := wm_run_pure_ok h <;> exact .of_nil rfl
+  rw [wpStmt_init_run] at h
+  split at h
+  rotate_left
+  · cases h
+    exact .of_nil rfl
   cases e with
   | det e =>
-    simp only [wpStmt, Bool.not_true, Bool.false_eq_true, ↓reduceIte, pure_bind] at h
+    simp only [wpStmt, keepInit, Bool.not_true, Bool.false_eq_true, ↓reduceIte, pure_bind] at h
     peel h ⟨⟨we, rd⟩, s1, h1⟩ ⟨n, s2, h2⟩ _
     have S1 := wRen_d h1
     have hw1 := (wRen_walk h1).wf hw nofun
@@ -510,7 +512,7 @@ private theorem init_dw {f : Bool} {ty : P.Ty} {e : ExprOrNondet P} {md : MetaDa
           List.count_cons, List.count_nil, beq_iff_eq, Nat.zero_add]
         omega
   | nondet =>
-    simp only [wpStmt, Bool.not_true, Bool.false_eq_true, ↓reduceIte] at h
+    simp only [wpStmt, keepInit, pure_bind, Bool.not_true, Bool.false_eq_true, ↓reduceIte] at h
     peel h ⟨n, s2, h2⟩ _ ⟨_, s4, h4, ⟨⟩⟩
     obtain ⟨S2, D2⟩ := wDecl_d h2 hw hx
     simpa [Rope.toList_one, wDecls] using

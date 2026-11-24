@@ -105,6 +105,35 @@ private theorem runs_of_gate {base : InitEnvWFParams} {ss ss' : Statements}
     obtain ⟨evs', hb, hr⟩ := hsim (star_brun.2 h')
     exact ⟨_, evs', star_core π (brun_star hF.bool hb), rfl, hr⟩
 
+/-- The facts the simulation needs, from an entry satisfying the gate with `prefixesReserved`
+    reserved: finite executions of `ss` are replayed by `ss'` with traces related by inserting
+    assertions and then checked assumptions, under the entry's factory. -/
+private theorem prefix_of_gate {base : InitEnvWFParams} {ss ss' : Statements}
+    (hrel : BlockRel [] ss ss') (hnc : Statements.noCalls ss = Bool.true) {ρ₀ : Env Expression}
+    (hwf : BlockInitEnvWF (base.extend prefixesReserved) ss ρ₀)
+    {R : Trace Expression → Trace Expression → Prop}
+    (hmono : ∀ {t t' : Trace Expression}, RComp (Trace.InsertsAsserts (· = ρ₀.factory))
+      (Trace.InsertsCheckedAssumes (· = ρ₀.factory) InvCheck []) t t' → R t t') :
+    ∀ cfg trace, (EventLang.coreBlock π).traceStar ((EventLang.coreBlock π).stmtCfg ss ρ₀)
+        trace cfg →
+      ∃ cfg' trace', (EventLang.coreBlock π).traceStar ((EventLang.coreBlock π).stmtCfg ss' ρ₀)
+        trace' cfg' ∧ R trace trace' := by
+  intro cfg trace h
+  have hp : measurePrefix ∈ (base.extend prefixesReserved).prefixIdents := by
+    simp [Imperative.Logic.InitEnvWFParams.extend, prefixesReserved]
+  have h' := star_evalE h hnc
+  by_cases htr : trace = []
+  · subst htr
+    exact ⟨_, [], .refl _, hmono ⟨[], .nil, .nil⟩⟩
+  obtain ⟨σ₀, F⟩ := ρ₀
+  have hF : WellFormedSemanticEval (P := Expression) F := hwf.toWellFormedSemanticEval
+  obtain ⟨evs', hb, hins⟩ := reach_sim hF.var hF.bool hF.exprCongr measureIdent_reserved hrel
+    (star_breach h' htr) hwf.storeWellDefined (fun x hx => hwf.reservedFreshCore x hx _ hp)
+    (idents_not_reserved hwf) hwf.defUseOk hwf.fvarTypesOk fun m hm Γ σ hΓ hann =>
+      Core.eval_of_annotates F Γ σ m _ hΓ hann (hwf.measuresTyped m hm)
+  obtain ⟨cfg', hc⟩ := breach_star hF.bool hb
+  exact ⟨cfg', evs', star_core π hc, hmono hins⟩
+
 /-- **Inserting the checks of loop invariants and measures over-approximates the traces of a
     Core statement list.**  Let a transformation `T` insert the checks of the loops of its
     input (`BlockRel []`).  For a call-free Core statement list `ss` (`Statements.noCalls`) that
@@ -147,18 +176,8 @@ theorem overapproximatesTraces_of_blockRel (base : InitEnvWFParams)
         (Trace.InsertsCheckedAssumes WellFormedSemanticEval InvCheck []) t t' :=
     Trace.insertsAsserts_insertsCheckedAssumes_mono fun _ h => h ▸ hF
   have hruns := runs_of_gate π hrel hnc hwf hmono
-  refine ⟨fun cfg trace h => ?_, hruns.1, hruns.2, blockInitEnvWF_of_blockRel hprefixes hrel hwf⟩
-  have h' := star_evalE h hnc
-  by_cases htr : trace = []
-  · subst htr
-    exact ⟨_, [], .refl _, [], .nil, .nil⟩
-  obtain ⟨σ₀, F⟩ := ρ₀
-  obtain ⟨evs', hb, hins⟩ := reach_sim hF.var hF.bool hF.exprCongr measureIdent_reserved hrel
-    (star_breach h' htr) hwf.storeWellDefined (fun x hx => hwf.reservedFreshCore x hx _ hp)
-    (idents_not_reserved hwf) hwf.defUseOk hwf.fvarTypesOk fun m hm Γ σ hΓ hann =>
-      Core.eval_of_annotates F Γ σ m _ hΓ hann (hwf.measuresTyped m hm)
-  obtain ⟨cfg', hc⟩ := breach_star hF.bool hb
-  exact ⟨cfg', evs', star_core π hc, hmono hins⟩
+  exact ⟨prefix_of_gate π hrel hnc hwf hmono, hruns.1, hruns.2,
+    blockInitEnvWF_of_blockRel hprefixes hrel hwf⟩
 
 /-- **Inserting the checks of loop invariants and measures over-approximates the traces of a
     Core statement list, its runs over one Lambda factory.**  Let a transformation `T` insert
@@ -169,19 +188,16 @@ theorem overapproximatesTraces_of_blockRel (base : InitEnvWFParams)
     or starts with it:
     * every finite trace of `ss` from `ρ₀` has a trace of `ss'` from `ρ₀` related to it by
       `Trace.InsertsAsserts` and then `Trace.InsertsCheckedAssumes` over `InvCheck`, the
-      conditions captured under a factory satisfying `WellFormedSemanticEval`;
+      conditions captured under a factory over `F`;
     * every terminating or exiting run of `ss` from `ρ₀` has a run of `ss'` from `ρ₀` ending in
-      the same environment, in the same way, with a trace so related, the conditions captured
-      under a factory over `F`;
+      the same environment, in the same way, with a trace so related;
     * `ss'` satisfies `BlockInitEnvWF base` at `ρ₀`. -/
 theorem overapproximatesTraces_over_of_blockRel (base : InitEnvWFParams)
     (hprefixes : ∀ p ∈ base.prefixIdents,
       ¬ p.toList.isPrefixOf measurePrefix.toList ∧ ¬ measurePrefix.toList.isPrefixOf p.toList)
     {T : Statements → Option Statements} (hT : ∀ ss ss', T ss = some ss' → BlockRel [] ss ss')
     (F : Lambda.Factory CoreLParams) :
-    OverapproximatesTraces2UptoWhen
-      (RComp (Trace.InsertsAsserts (WellFormedSemanticEval (P := Expression)))
-        (Trace.InsertsCheckedAssumes (WellFormedSemanticEval (P := Expression)) InvCheck []))
+    OverapproximatesTracesUptoWhen
       (RComp (Trace.InsertsAsserts (fun G : Expression.Factory => G.factory = F))
         (Trace.InsertsCheckedAssumes (fun G : Expression.Factory => G.factory = F) InvCheck []))
       -- Both executions start from the same environment, over `F`.
@@ -194,10 +210,15 @@ theorem overapproximatesTraces_over_of_blockRel (base : InitEnvWFParams)
       (base.extend prefixesReserved) base := by
   intro ss ss' ht hnc ρ₀ ρ₀' ⟨hEq, hpin⟩ hwf
   subst hEq
-  have h0 := overapproximatesTraces_of_blockRel π base hprefixes hT ss ss' ht hnc ρ₀ ρ₀ rfl hwf
-  have hruns := runs_of_gate π (hT ss ss' ht) hnc hwf
-    (Trace.insertsAsserts_insertsCheckedAssumes_mono fun _ h => h ▸ hpin)
-  exact ⟨h0.1, hruns.1, hruns.2, h0.2.2.2⟩
+  have hmono : ∀ {t t' : Trace Expression}, RComp (Trace.InsertsAsserts (· = ρ₀.factory))
+      (Trace.InsertsCheckedAssumes (· = ρ₀.factory) InvCheck []) t t' →
+      RComp (Trace.InsertsAsserts (fun G : Expression.Factory => G.factory = F))
+        (Trace.InsertsCheckedAssumes (fun G : Expression.Factory => G.factory = F) InvCheck [])
+        t t' :=
+    Trace.insertsAsserts_insertsCheckedAssumes_mono fun _ h => h ▸ hpin
+  have hruns := runs_of_gate π (hT ss ss' ht) hnc hwf hmono
+  exact ⟨prefix_of_gate π (hT ss ss' ht) hnc hwf hmono, hruns.1, hruns.2,
+    blockInitEnvWF_of_blockRel hprefixes (hT ss ss' ht) hwf⟩
 
 /-- Sending `ss` to `ss'` and rejecting every other list inserts the checks of the loops of its
     input, when `ss'` is `ss` with the checks of its loops inserted. -/

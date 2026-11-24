@@ -47,6 +47,19 @@ by `Rtrace_full`, and the one-relation members (`OverapproximatesTracesUptoWhen`
   for two stages sharing a transitive trace relation `R` back to the single `R`.
 - `OverapproximatesTraces2UptoWhen.mono_env` — environment-relation weakening: a finer input
   relation and a coarser output relation.
+- `OverapproximatesTracesUptoWhen.mono_out` — output-relation weakening (`Rout ⊆ Rout'`),
+  covariant.
+- `OverapproximatesTracesUptoWhen.comp_eq_right` — composition of a first stage with any
+  input relation and a second stage with equality as input relation; the trace and output
+  relations compose by `RComp`.
+- `OverapproximatesTracesUptoWhen.mono_in` — input-relation strengthening (`Rin' ⊆ Rin`),
+  contravariant.
+- `OverapproximatesTracesUptoWhen.comp_eqOn_right` — `comp_eq_right` for a second stage whose
+  input relation is equality at environments satisfying a predicate the first stage's input
+  relation gives its target environments.
+- `OverapproximatesTracesUptoWhen.iterate` — `n` applications of a phase (`iterateT`) that
+  over-approximates with reflexive and transitive trace and output relations, under a
+  precondition it preserves, over-approximate with the same relations.
 - `OverapproximatesTraces2UptoWhen.rel_comp` / `OverapproximatesTraces.rel_comp` — compose
   stages, producing the relational composition `RComp` of their relations.
 - `OverapproximatesTraces2UptoWhen.comp_trans_eq` /
@@ -526,6 +539,124 @@ theorem overapproximatesTraces_allAsserts
     AllAssertsValidOnTracesWhen L₁ I
       (L₁.initEnvWF params₁ st) st :=
   overapproximatesTraces2UptoWhen_allAsserts I hreflect hover ht hpre hvalid
+
+omit [HasFvar P] [HasFvars P] [HasOps P] [HasBool P] [HasBoolOps P]
+  [HasSubstFvar P] [HasInt P] [HasIntOps P] in
+/-- Output-relation weakening.  `Rout` occurs only covariantly in
+`OverapproximatesTracesUptoWhen` (it relates the source's final environment to the matched
+target's), so replacing it by any coarser relation `Rout'` (with `Rout ⊆ Rout'`) preserves the
+overapproximation. -/
+theorem OverapproximatesTracesUptoWhen.mono_out
+    {EventT : Type _}
+    {Rtrace : Relation (List EventT)} {Rin Rout Rout' : Relation (Env P)}
+    {L₁ L₂ : EventLang P EventT} {T : L₁.StmtT → Option L₂.StmtT}
+    {pre : L₁.StmtT → Prop}
+    {params₁ : L₁.InitEnvWFParamsTy} {params₂ : L₂.InitEnvWFParamsTy}
+    (hsub : ∀ ρ ρ', Rout ρ ρ' → Rout' ρ ρ')
+    (h : OverapproximatesTracesUptoWhen Rtrace Rin Rout L₁ L₂ T pre params₁ params₂) :
+    OverapproximatesTracesUptoWhen Rtrace Rin Rout' L₁ L₂ T pre params₁ params₂ :=
+  OverapproximatesTraces2UptoWhen.mono_env (fun _ _ h => h) hsub h
+
+omit [HasFvar P] [HasFvars P] [HasOps P] [HasBool P] [HasBoolOps P]
+  [HasSubstFvar P] [HasInt P] [HasIntOps P] in
+/-- Composition with a second phase whose input relation is equality.  The first phase relates
+the initial environments by any `Rin`; the second starts from the first's target environment.
+The composite relates traces by the composition of the trace relations and final environments by
+the composition of the output relations, under the first phase's precondition, when the first
+phase's output satisfies the second's precondition. -/
+theorem OverapproximatesTracesUptoWhen.comp_eq_right
+    {EventT : Type _}
+    {Rtrace₁ Rtrace₂ : Relation (List EventT)} {Rin Rout₁ Rout₂ : Relation (Env P)}
+    {L₁ L₂ L₃ : EventLang P EventT}
+    {T₁ : L₁.StmtT → Option L₂.StmtT} {T₂ : L₂.StmtT → Option L₃.StmtT}
+    {pre₁ : L₁.StmtT → Prop} {pre₂ : L₂.StmtT → Prop}
+    {params₁ : L₁.InitEnvWFParamsTy} {params₂ : L₂.InitEnvWFParamsTy}
+    {params₃ : L₃.InitEnvWFParamsTy}
+    (hpre : ∀ st st', T₁ st = some st' → pre₁ st → pre₂ st')
+    (h₁ : OverapproximatesTracesUptoWhen Rtrace₁ Rin Rout₁ L₁ L₂ T₁ pre₁ params₁ params₂)
+    (h₂ : OverapproximatesTracesUptoWhen Rtrace₂ (· = ·) Rout₂ L₂ L₃ T₂ pre₂ params₂ params₃) :
+    OverapproximatesTracesUptoWhen (RComp Rtrace₁ Rtrace₂) Rin (RComp Rout₁ Rout₂)
+      L₁ L₃ (fun s => T₁ s >>= T₂) pre₁ params₁ params₃ :=
+  (OverapproximatesTraces2UptoWhen.rel_comp hpre h₁ h₂).mono_env (fun _ ρ' h => ⟨ρ', h, rfl⟩)
+    fun _ _ h => h
+
+omit [HasFvar P] [HasFvars P] [HasOps P] [HasBool P] [HasBoolOps P]
+  [HasSubstFvar P] [HasInt P] [HasIntOps P] in
+/-- Input-relation strengthening.  `Rin` occurs only contravariantly in
+`OverapproximatesTracesUptoWhen` (it is a hypothesis on the two initial environments), so
+replacing it by any finer relation `Rin'` (with `Rin' ⊆ Rin`) preserves the
+overapproximation. -/
+theorem OverapproximatesTracesUptoWhen.mono_in
+    {EventT : Type _}
+    {Rtrace : Relation (List EventT)} {Rin Rin' Rout : Relation (Env P)}
+    {L₁ L₂ : EventLang P EventT} {T : L₁.StmtT → Option L₂.StmtT}
+    {pre : L₁.StmtT → Prop}
+    {params₁ : L₁.InitEnvWFParamsTy} {params₂ : L₂.InitEnvWFParamsTy}
+    (hsub : ∀ ρ ρ', Rin' ρ ρ' → Rin ρ ρ')
+    (h : OverapproximatesTracesUptoWhen Rtrace Rin Rout L₁ L₂ T pre params₁ params₂) :
+    OverapproximatesTracesUptoWhen Rtrace Rin' Rout L₁ L₂ T pre params₁ params₂ :=
+  OverapproximatesTraces2UptoWhen.mono_env hsub (fun _ _ h => h) h
+
+omit [HasFvar P] [HasFvars P] [HasOps P] [HasBool P] [HasBoolOps P]
+  [HasSubstFvar P] [HasInt P] [HasIntOps P] in
+/-- Composition with a second phase whose input relation is equality at environments satisfying
+`Q`.  The first phase relates the initial environments by any `Rin` whose target environments
+satisfy `Q`; the second starts from the first's target environment.  The composite relates
+traces by the composition of the trace relations and final environments by the composition of
+the output relations, under the first phase's precondition, when the first phase's output
+satisfies the second's precondition. -/
+theorem OverapproximatesTracesUptoWhen.comp_eqOn_right
+    {EventT : Type _}
+    {Rtrace₁ Rtrace₂ : Relation (List EventT)} {Rin Rout₁ Rout₂ : Relation (Env P)}
+    {Q : Env P → Prop}
+    {L₁ L₂ L₃ : EventLang P EventT}
+    {T₁ : L₁.StmtT → Option L₂.StmtT} {T₂ : L₂.StmtT → Option L₃.StmtT}
+    {pre₁ : L₁.StmtT → Prop} {pre₂ : L₂.StmtT → Prop}
+    {params₁ : L₁.InitEnvWFParamsTy} {params₂ : L₂.InitEnvWFParamsTy}
+    {params₃ : L₃.InitEnvWFParamsTy}
+    (hQ : ∀ ρ ρ', Rin ρ ρ' → Q ρ')
+    (hpre : ∀ st st', T₁ st = some st' → pre₁ st → pre₂ st')
+    (h₁ : OverapproximatesTracesUptoWhen Rtrace₁ Rin Rout₁ L₁ L₂ T₁ pre₁ params₁ params₂)
+    (h₂ : OverapproximatesTracesUptoWhen Rtrace₂ (fun ρ ρ' => ρ = ρ' ∧ Q ρ) Rout₂ L₂ L₃ T₂ pre₂
+      params₂ params₃) :
+    OverapproximatesTracesUptoWhen (RComp Rtrace₁ Rtrace₂) Rin (RComp Rout₁ Rout₂)
+      L₁ L₃ (fun s => T₁ s >>= T₂) pre₁ params₁ params₃ :=
+  (OverapproximatesTraces2UptoWhen.rel_comp hpre h₁ h₂).mono_env
+    (fun _ ρ' h => ⟨ρ', h, rfl, hQ _ _ h⟩) fun _ _ h => h
+
+/-- `n` applications of the partial transformation `T`, stopping at the first failure. -/
+@[expose] def iterateT {α : Type _} (T : α → Option α) : Nat → α → Option α
+  | 0, a => some a
+  | n + 1, a => T a >>= iterateT T n
+
+omit [HasFvar P] [HasFvars P] [HasOps P] [HasBool P] [HasBoolOps P]
+  [HasSubstFvar P] [HasInt P] [HasIntOps P] in
+/-- **Iterating an over-approximating phase over-approximates.**  Let `T` over-approximate the
+traces of its input from equal initial environments satisfying `Q`, with the trace relation
+`Rtrace` and the output relation `Rout`, under a precondition `pre` that `T` preserves.  When
+`Rtrace` and `Rout` are reflexive and transitive, every number `n` of applications of `T`
+(`iterateT T n`) over-approximates with the same relations. -/
+theorem OverapproximatesTracesUptoWhen.iterate
+    {EventT : Type _}
+    {Rtrace : Relation (List EventT)} {Rout : Relation (Env P)} {Q : Env P → Prop}
+    {L : EventLang P EventT} {T : L.StmtT → Option L.StmtT} {pre : L.StmtT → Prop}
+    {params : L.InitEnvWFParamsTy}
+    (htr : ∀ t, Rtrace t t) (htt : ∀ t₁ t₂ t₃, Rtrace t₁ t₂ → Rtrace t₂ t₃ → Rtrace t₁ t₃)
+    (hor : ∀ ρ, Rout ρ ρ) (hot : IsTransitive Rout)
+    (hpre : ∀ st st', T st = some st' → pre st → pre st')
+    (h : OverapproximatesTracesUptoWhen Rtrace (fun ρ ρ' => ρ = ρ' ∧ Q ρ) Rout L L T pre
+      params params) (n : Nat) :
+    OverapproximatesTracesUptoWhen Rtrace (fun ρ ρ' => ρ = ρ' ∧ Q ρ) Rout L L (iterateT T n) pre
+      params params := by
+  induction n with
+  | zero =>
+    exact (OverapproximatesTraces2UptoWhen.id htr htr L pre params).mono_env (fun _ _ h => h.1)
+      fun ρ ρ' (h : ρ = ρ') => h ▸ hor ρ
+  | succ n ih =>
+    have htc : ∀ t t', RComp Rtrace Rtrace t t' → Rtrace t t' := fun _ _ ⟨_, h₁, h₂⟩ =>
+      htt _ _ _ h₁ h₂
+    refine (OverapproximatesTraces2UptoWhen.rel_comp hpre h ih).mono_trace htc htc |>.mono_env
+      (fun ρ _ ⟨he, hq⟩ => ⟨ρ, ⟨rfl, hq⟩, he, hq⟩) fun _ _ ⟨_, h₁, h₂⟩ => hot _ _ _ h₁ h₂
 
 /-- `EnvStoreAgree` is transitive: store agreement composes across a middle
 environment. -/

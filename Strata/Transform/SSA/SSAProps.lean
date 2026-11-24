@@ -45,7 +45,7 @@ variable {P : PureExpr} [iDE : DecidableEq P.Ident] [iBE : BEq P.Ident] [iLB : L
 omit iLId iLV iOp iLF iLFvs
 variable {x y : P.Ident} {ρ : Std.HashMap P.Ident (SVal P)} {s s' : SSt P} {Dd Dd' : List P.Ident}
   {α β : Type} {v : SVal P} {ty : P.Ty} {e : P.Expr} {u : Unit} {o out lay : PStmts P} {ρ0 : Ren P}
-  {so : SOut P}
+  {so : SOut P} {oe : WPOps.OpEnv P}
 
 
 /-! ## The SSA monad: inversion of successful steps -/
@@ -180,31 +180,30 @@ theorem curTy_ok (h : curTy x s = .ok (ty, s')) :
     cases h
   exact ⟨rfl, rfl⟩
 
-/-- The three outcomes of `assignVal x ty e`: the folded value `e'` is a literal (recorded and
-    defined by a fresh Boolean `init`), a variable `y` that `e'` annotates with `ty`
-    (recorded, no output, same state), or is defined by an `init` of a fresh name. -/
-theorem assignVal_ok (h : assignVal x ty e s = .ok ((o, v), s')) :
-    (∃ b x', WPOps.boolLit? (foldE s.ρ e) = some b ∧ sFresh x s = .ok (x', s') ∧
-      o = [mkInit x' HasBool.boolTy (.det (if b then tt else ff))] ∧ v = .lit b (some x')) ∨
-    (∃ y, HasFvar.getFvar (foldE s.ρ e) = some y ∧
-      (HasFvars.getTypedFvars (foldE s.ρ e)).any (fun p => p.1 == y && WPOps.tyBEq p.2 ty) ∧
+/-- The three outcomes of `assignVal oe x ty e`: the folded value `e'` is a literal or a function
+    value (recorded and defined by an `init` of a fresh name), a variable `y` that `e'` annotates
+    with `ty` (recorded, no output, same state), or is defined by an `init` of a fresh name. -/
+theorem assignVal_ok (h : assignVal oe x ty e s = .ok ((o, v), s')) :
+    (∃ x', (WPOps.lit? (foldE oe s.ρ e) || WPOps.lam? (foldE oe s.ρ e)) = true ∧
+      sFresh x s = .ok (x', s') ∧
+      o = [mkInit x' ty (.det (foldE oe s.ρ e))] ∧ v = .lit (foldE oe s.ρ e) ty (some x')) ∨
+    (∃ y, HasFvar.getFvar (foldE oe s.ρ e) = some y ∧
+      (HasFvars.getTypedFvars (foldE oe s.ρ e)).any (fun p => p.1 == y && WPOps.tyBEq p.2 ty) ∧
       o = [] ∧ v = .name y (some ty) ∧ s' = s) ∨
-    (∃ x', sFresh x s = .ok (x', s') ∧ o = [mkInit x' ty (.det (foldE s.ρ e))] ∧
+    (∃ x', sFresh x s = .ok (x', s') ∧ o = [mkInit x' ty (.det (foldE oe s.ρ e))] ∧
       v = .name x' (some ty)) := by
   simp only [assignVal, SM.get_bind] at h
-  rcases hb : WPOps.boolLit? (foldE s.ρ e) <;> rcases hy : HasFvar.getFvar (foldE s.ρ e) <;>
-    simp only [hb, hy, SM.bind_iff, SM.pure_iff] at h
-  case none.some y =>
+  rcases hb : recorded (foldE oe s.ρ e) <;>
+    rcases hy : HasFvar.getFvar (foldE oe s.ρ e) <;>
+    simp only [hb, hy, SM.bind_iff, SM.pure_iff, Bool.false_eq_true, ite_false, ite_true] at h
+  case false.some y =>
     split at h
-    · next hc =>
-      obtain ⟨h1, rfl⟩ := SM.pure_iff.1 h
-      cases h1
-      exact .inr (.inl ⟨y, rfl, hc, rfl, rfl, rfl⟩)
+    · obtain ⟨⟨⟩, rfl⟩ := SM.pure_iff.1 h
+      exact .inr (.inl ⟨y, rfl, ‹_›, rfl, rfl, rfl⟩)
     · obtain ⟨x', s1, hf, h2⟩ := SM.bind_iff.1 h
-      obtain ⟨h3, rfl⟩ := SM.pure_iff.1 h2
-      cases h3
+      obtain ⟨⟨⟩, rfl⟩ := SM.pure_iff.1 h2
       exact .inr (.inr ⟨x', hf, rfl, rfl⟩)
-  all_goals grind
+  all_goals grind [recorded]
 
 /-- Induction along a successful run of the traversal: a property of the input list, the start
     state, the output and the end state holds of every run when it holds of the run of the empty
@@ -212,34 +211,34 @@ theorem assignVal_ok (h : assignVal x ty e s = .ok ((o, v), s')) :
     traversal and the runs of the sublists. -/
 @[elab_as_elim]
 theorem ssaList_ind {Q : PStmts P → SSt P → PStmts P → SSt P → Prop} (nil : ∀ s, Q [] s [] s)
-    (initDet : ∀ {x ty e md rest s o v s1 out s'}, assignVal x ty e s = .ok ((o, v), s1) →
+    (initDet : ∀ {x ty e md rest s o v s1 out s'}, assignVal oe x ty e s = .ok ((o, v), s1) →
       Q rest (s1.defd x v) out s' →
       Q (.cmd (.cmd (.init x ty (.det e) md)) :: rest) s (o ++ out) s')
     (initNondet : ∀ {x ty md rest s x' s1 out s'}, sFresh x s = .ok (x', s1) →
       Q rest (s1.defd x (.name x' (some ty))) out s' →
       Q (.cmd (.cmd (.init x ty .nondet md)) :: rest) s (mkInit x' ty .nondet :: out) s')
     (setDet : ∀ {x e md rest s ty o v s1 out s'}, curTy x s = .ok (ty, s) →
-      assignVal x ty e s = .ok ((o, v), s1) → Q rest (s1.bound x v) out s' →
+      assignVal oe x ty e s = .ok ((o, v), s1) → Q rest (s1.bound x v) out s' →
       Q (.cmd (.cmd (.set x (.det e) md)) :: rest) s (o ++ out) s')
     (setNondet : ∀ {x md rest s ty x' s1 out s'}, curTy x s = .ok (ty, s) →
       sFresh x s = .ok (x', s1) → Q rest (s1.bound x (.name x' (some ty))) out s' →
       Q (.cmd (.cmd (.set x .nondet md)) :: rest) s (mkInit x' ty .nondet :: out) s')
     (assume : ∀ {l a md rest s out s'}, Q rest s out s' →
-      Q (.cmd (.cmd (.assume l a md)) :: rest) s (if WPOps.boolLit? (foldE s.ρ a) == some true &&
+      Q (.cmd (.cmd (.assume l a md)) :: rest) s (if WPOps.boolLit? (foldE oe s.ρ a) == some true &&
         !WPOps.keepsTrueAssume (P := P) l then out
-        else .cmd (.cmd (.assume l (foldE s.ρ a) md)) :: out) s')
-    (check : ∀ {mk : String → P.Expr → MetaData P → Cmd P} {l e md rest s out s'},
-      (mk = .assert ∨ mk = .cover) →
-      ssaList rest { s with obls := some (.obl l (oblSubS s.ρ e)) :: s.obls } = .ok (out, s') →
+        else .cmd (.cmd (.assume l (foldE oe s.ρ a) md)) :: out) s')
+    (check : ∀ {mk : String → P.Expr → MetaData P → Cmd P} {b : Bool} {l e md rest s out s'},
+      (mk = .assert ∧ b = true ∨ mk = .cover ∧ b = false) →
+      ssaList oe rest { s with obls := some (.obl l (oblSubS s.ρ e)) :: s.obls } = .ok (out, s') →
       Q rest { s with obls := some (.obl l (oblSubS s.ρ e)) :: s.obls } out s' →
-      Q (.cmd (.cmd (mk l e md)) :: rest) s (.cmd (.cmd (mk l (renM' s.ρ e) md)) :: out) s')
-    (ite : ∀ {tss ess md s t sT sU e out s'}, ssaList tss s = .ok (t, sT) → Q tss s t sT →
-      undoTo s.trailLen sT = .ok ((), sU) → ssaList ess sU = .ok (e, s') → Q ess sU e s' →
+      Q (.cmd (.cmd (mk l e md)) :: rest) s (.cmd (.cmd (mk l (oblCond oe b s.ρ e) md)) :: out) s')
+    (ite : ∀ {tss ess md s t sT sU e out s'}, ssaList oe tss s = .ok (t, sT) → Q tss s t sT →
+      undoTo s.trailLen sT = .ok ((), sU) → ssaList oe ess sU = .ok (e, s') → Q ess sU e s' →
       (t = [] → out = e) → (t ≠ [] → e = [] → out = t) →
       (t ≠ [] → e ≠ [] → out = [.ite .nondet t e md]) → Q [.ite .nondet tss ess md] s out s')
     (typeDecl : ∀ {tc md rest s out s'}, Q rest s out s' → Q (.typeDecl tc md :: rest) s out s')
-    {ss : PStmts P} (h : ssaList ss s = .ok (out, s')) : Q ss s out s' := by
-  induction ss using ssaList.induct generalizing s s' out
+    {ss : PStmts P} (h : ssaList oe ss s = .ok (out, s')) : Q ss s out s' := by
+  induction ss using ssaList.induct oe generalizing s s' out
   all_goals simp only [ssaList, SM.bind_iff, SM.pure_iff, SM.get_bind, SM.modify_bind, WP.bind,
     pushObl] at h
   case case1 => exact h.1 ▸ h.2 ▸ nil s
@@ -282,8 +281,9 @@ theorem sFresh_frame (h : sFresh x s = .ok (y, s')) : SFrame s s' := by
 
 include iLId in
 /-- `assignVal` frames the state. -/
-theorem assignVal_frame (h : assignVal x ty e s = .ok ((o, v), s')) : SFrame s s' := by
-  grind [SFrame.refl, assignVal_ok, sFresh_frame]
+theorem assignVal_frame (h : assignVal oe x ty e s = .ok ((o, v), s')) : SFrame s s' := by
+  rcases assignVal_ok h with ⟨_, -, hf, -⟩ | ⟨_, -, -, -, -, rfl⟩ | ⟨_, hf, -⟩ <;>
+    first | exact sFresh_frame hf | exact SFrame.refl _
 
 omit iW in
 /-- Undoing, after a run from `s`, the bindings logged since `s` gives back the lookups, the
@@ -300,7 +300,7 @@ include iLId in
     counter, only adds choice-record entries, and only extends the undo log, by bindings whose
     undoing gives back the lookups it started from. -/
 theorem ssaList_frame (ss : PStmts P) : ∀ {s s' : SSt P} {out : PStmts P},
-    ssaList ss s = .ok (out, s') → SFrame s s' := fun h =>
+    ssaList oe ss s = .ok (out, s') → SFrame s s' := fun h =>
   ssaList_ind SFrame.refl (fun h1 ih => (assignVal_frame h1).trans ((SFrame.defd _ _ _).trans ih))
     (fun h1 ih => (sFresh_frame h1).trans ((SFrame.defd _ _ _).trans ih))
     (fun _ h1 ih => (assignVal_frame h1).trans ((SFrame.bound _ _ _).trans ih))
@@ -314,18 +314,18 @@ theorem ssaList_frame (ss : PStmts P) : ∀ {s s' : SSt P} {out : PStmts P},
   ρ0.foldr (fun p ρ => ρ.insert p.1 (SVal.name p.2 (tys.get? p.1))) ∅
 
 /-- The SSA phase is the traversal of the guarded program from the entry mapping. -/
-theorem ssaBody_ok {st : FreshSt P} (h : ssaBody st ρ0 lay = .ok so) :
-    ∃ s1, ssaList lay ⟨st.next, st.avoid, entryMap st.tys ρ0, [], 0, {}, []⟩ = .ok (so.out, s1) ∧
+theorem ssaBody_ok {st : FreshSt P} (h : ssaBody oe st ρ0 lay = .ok so) :
+    ∃ s1, ssaList oe lay ⟨st.next, st.avoid, entryMap st.tys ρ0, [], 0, {}, []⟩ = .ok (so.out, s1) ∧
       so.obls = s1.obls.reverse := by
   obtain ⟨⟨out, s1⟩, hr, ⟨⟩⟩ := (Except.bind_is_ok _ _ _).1 h
   exact ⟨s1, hr, rfl⟩
 
 /-- The traversal of a list of obligations is a list of obligations. -/
 private theorem ssaList_obls (ss : PStmts P) : ∀ {s s' : SSt P} {out : PStmts P},
-    ssaList ss s = .ok (out, s') → ss.all Stmt.isCheck = true → out.all Stmt.isCheck = true := by
+    ssaList oe ss s = .ok (out, s') → ss.all Stmt.isCheck = true → out.all Stmt.isCheck = true := by
   intro s s' out h
   refine ssaList_ind (fun _ _ => rfl) ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ h <;> intros <;>
-    (try rcases ‹_ ∨ _› with rfl | rfl) <;> grind [Stmt.isCheck]
+    (try rcases ‹_ ∨ _› with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩) <;> grind [Stmt.isCheck]
 
 /-- A straight-line statement of the flat translation: an `init` or an `assume`. -/
 private def Stmt.IsLetOrAssume : Stmt P (CmdExt P) → Prop
@@ -349,7 +349,7 @@ private theorem shape_cons {c : PStmt P} (hc : Stmt.IsLetOrAssume c)
     after every `assert`: in tree form, with only `assert`s and `cover`s after every `assert`,
     with only `init`, `assume`, `assert`, `cover` and `ite *`, and without loops. -/
 private theorem ssaList_shape (ss : PStmts P) : ∀ {s s' : SSt P} {out : PStmts P},
-    ssaList ss s = .ok (out, s') → Block.treeForm ss = true →
+    ssaList oe ss s = .ok (out, s') → Block.treeForm ss = true →
     Block.onlyChecksAfterAssert ss = true → Block.treeForm out = true ∧
       Block.onlyChecksAfterAssert out = true ∧ Block.passiveForm out = true ∧
       Block.noLoops out = true := by
@@ -361,7 +361,7 @@ private theorem ssaList_shape (ss : PStmts P) : ∀ {s s' : SSt P} {out : PStmts
     (fun {_ _ _ _ t _ _ e _ _} _ ihT _ _ ihE h1 h2 h3 hg ho => ?_)
     (fun _ hg => by simp [Block.treeForm] at hg) h
   case refine_6 =>
-    rcases hmk with rfl | rfl <;>
+    rcases hmk with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ <;>
       simp only [Block.treeForm, Block.onlyChecksAfterAssert, Block.passiveForm, Block.noLoops_cons,
         Stmt.noLoops_cmd, Bool.true_and] at hg ho ⊢
     · have h := ih hg (Block.onlyChecksAfterAssert_of_all_isCheck ho)
@@ -377,22 +377,45 @@ private theorem ssaList_shape (ss : PStmts P) : ∀ {s s' : SSt P} {out : PStmts
         Stmt.noLoops_ite, Block.noLoops_nil]
   all_goals simp only [Block.treeForm, Block.onlyChecksAfterAssert] at hg ho
   case' refine_1 | refine_3 =>
-    rcases assignVal_ok hA with ⟨_, _, -, -, rfl, -⟩ | ⟨_, -, -, rfl, -⟩ | ⟨_, -, rfl, -⟩
+    rcases assignVal_ok hA with ⟨_, -, -, rfl, -⟩ | ⟨_, -, -, rfl, -⟩ | ⟨_, -, rfl, -⟩
   case' refine_5 => split
   all_goals first | exact ih hg ho | exact shape_cons trivial (ih hg ho)
 
 /-! ## Folding -/
 
+omit iHI in
+/-- The condition the traversal emits for an obligation: the obligation on the variables it reads
+    (`renM'`), or the folded condition `evalM oe ρ e`, in the case where that folds to the
+    literal `b`. -/
+theorem oblCond_eq (b : Bool) (ρ : Std.HashMap P.Ident (SVal P)) (e : P.Expr) :
+    oblCond oe b ρ e = renM' ρ e ∨ (WPOps.boolLit? (evalM oe ρ e) = some b ∧
+      oblCond oe b ρ e = evalM oe ρ e) := by
+  dsimp only [oblCond]
+  split <;> rename_i h
+  · exact .inr ⟨beq_iff_eq.1 (Bool.and_eq_true_iff.1 h).2, rfl⟩
+  · exact .inl rfl
+
+omit iLB iHI in
+/-- An element of a list `f` assigns to `evalM oe ρ e` is one it assigns to `renM ρ e`, when the
+    value `evalOp?` gives an expression has no element the expression does not have. -/
+private theorem evalM_sub {α : Type} (f : P.Expr → List α)
+    (hf : ∀ {e r}, WPOps.evalOp? oe e = some r → ∀ a ∈ f r, a ∈ f e) {a : α}
+    (ha : a ∈ f (evalM oe ρ e)) : a ∈ f (renM ρ e) := by
+  simp only [evalM] at ha
+  cases ho : WPOps.evalOp? oe (renM ρ e) <;> simp only [ho, Option.getD] at ha <;>
+    first | exact ha | exact hf ho a ha
+
 /-! ## Well-scopedness -/
 
 /-- The names the current value `o` of `x` reads are in `Dd`: its variable, the name defined for
-    its literal, or `x` itself when unmapped. -/
+    its value expression and the free variables of that expression, or `x` itself when
+    unmapped. -/
 @[expose] def SNames (Dd : List P.Ident) (x : P.Ident) : Option (SVal P) → Prop
   | some (.name y _) => y ∈ Dd
-  | some (.lit _ m) => ∃ y, m = some y ∧ y ∈ Dd
+  | some (.lit e _ m) => (∃ y, m = some y ∧ y ∈ Dd) ∧ ∀ z ∈ HasFvars.getFvars e, z ∈ Dd
   | none => x ∈ Dd
 
-omit iDE iBE iHB iHF iSF iHI iHa iHFs in
+omit iDE iBE iHB iHF iSF iHI iHa in
 /-- `SNames` survives adding names. -/
 private theorem SNames.mono (hs : Dd ⊆ Dd') :
     ∀ {o : Option (SVal P)}, SNames Dd x o → SNames Dd' x o := fun {o} h => by
@@ -417,17 +440,18 @@ omit iLB iHI in
 private theorem renM_fv (e : P.Expr) (hA : ∀ x ∈ HasFvars.getFvars e, SNames Dd x ρ[x]?) :
     ∀ y ∈ HasFvars.getFvars (renM ρ e), y ∈ Dd := substFn_fv fun x hx y hy => by
   have h := hA x hx
-  rcases hρ : ρ[x]? with _ | ⟨z, ty⟩ | ⟨_ | _, m⟩ <;>
-    grind [SNames, SVal.expr, HasFvar.eq_of_mem_getFvars_mkVar, WPLang.getFvars_tt,
-      WPLang.getFvars_ff]
+  rcases hρ : ρ[x]? with _ | ⟨z, ty⟩ | ⟨e', ty, _ | m⟩ <;>
+    grind [SNames, SVal.expr, substVal, HasFvar.eq_of_mem_getFvars_mkVar]
 
 include iLFvs in
 omit iLB iHI in
 /-- The free variables of the folded `e` are names the free variables of `e` read. -/
 private theorem foldE_fv (ρ : Std.HashMap P.Ident (SVal P)) (e : P.Expr) :
     (∀ x ∈ HasFvars.getFvars e, SNames Dd x ρ[x]?) →
-      ∀ y ∈ HasFvars.getFvars (foldE ρ e), y ∈ Dd := by
-  fun_induction foldE ρ e <;> intro hA y hy <;>
+      ∀ y ∈ HasFvars.getFvars (foldE oe ρ e), y ∈ Dd := by
+  fun_induction foldE oe ρ e <;> intro hA y hy
+  case case5 e _ => exact renM_fv e hA y (evalM_sub _ WPLang.getFvars_evalOp? hy)
+  all_goals
     grind [WPLang.getFvars_ite, WPLang.iteView?_getFvars, getFvars_of_iteView, renM_fv]
 
 omit iHB iHF iSF iHI iHFs in
@@ -444,10 +468,10 @@ omit iHI in
 private theorem renM'_fv (e : P.Expr) (hA : ∀ x ∈ HasFvars.getFvars e, SNames Dd x ρ[x]?) :
     ∀ y ∈ HasFvars.getFvars (renM' ρ e), y ∈ Dd := substFn_fv fun x hx y hy => by
   have h := hA x hx
-  rcases hρ : ρ[x]? with _ | ⟨z, ty⟩ | ⟨b, _ | m⟩ <;>
+  rcases hρ : ρ[x]? with _ | ⟨z, ty⟩ | ⟨e', ty, _ | m⟩ <;>
     grind [SNames, oblVar, HasFvar.eq_of_mem_getFvars_mkVar]
 
-omit iHB iHF iSF iHI iHFs in
+omit iHB iHF iSF iHI in
 /-- `SNames` after binding `x`: on `x` from the new value, on the other names of `V` from
     before. -/
 private theorem SNames.assign {V : List P.Ident} (hs : Dd ⊆ Dd') (hx : SNames Dd' x (some v))
@@ -458,7 +482,7 @@ include iLId iLFvs in
 /-- The well-scopedness of the traversal's output: from names `Dd` its fresh names avoid, when
     the current values of the free variables of the list read only names of `Dd`. -/
 private theorem ssaList_wellScoped (ss : PStmts P) : ∀ {s s' : SSt P} {out : PStmts P},
-    ssaList ss s = .ok (out, s') → ∀ {Dd : List P.Ident}, NamesOK s.avoid.toList Dd s.next →
+    ssaList oe ss s = .ok (out, s') → ∀ {Dd : List P.Ident}, NamesOK s.avoid.toList Dd s.next →
     (∀ x ∈ Block.freeVars ss, SNames Dd x s.ρ[x]?) → Block.readsDefined Dd out = true := by
   intro s s' out h
   refine no_implicit_lambda% (ssaList_ind (fun _ _ _ _ => by simp [Block.readsDefined])
@@ -470,16 +494,17 @@ private theorem ssaList_wellScoped (ss : PStmts P) : ∀ {s s' : SSt P} {out : P
       hA y (by simp [Block.freeVars, Stmt.freeVars, mem_exprFV, hy])
     have hold : ∀ y ∈ Block.freeVars rest, y ≠ x → SNames Dd y s.ρ[y]? := fun y hy hne =>
       hA y (by simp [Block.freeVars, Stmt.freeVars, hy, hne])
-    rcases assignVal_ok h1 with ⟨b, _, -, hf, rfl, rfl⟩ | ⟨y, hy, -, rfl, rfl, rfl⟩ |
+    rcases assignVal_ok h1 with ⟨_, -, hf, rfl, rfl⟩ | ⟨y, hy, -, rfl, rfl, rfl⟩ |
       ⟨_, hf, rfl, rfl⟩
     case inr.inl => exact ih hN (SNames.assign (List.Subset.refl _)
       (foldE_fv _ e hfe y (WPLang.getFvar_getFvars hy)) hold)
     all_goals
       obtain ⟨j, hj, rfl, hy, rfl⟩ := sFresh_ok hf
       have hr := ih (hN.add_fresh _ hj) (SNames.assign (List.subset_cons_self _ _)
-        (by first | exact .head _ | exact ⟨_, rfl, .head _⟩) hold)
-      (try cases b) <;> simp +contextual [Block.readsDefined, mkInit, hN.fresh_not_mem hj hy, hr,
-        WPLang.getFvars_tt, WPLang.getFvars_ff, foldE_fv _ e hfe]
+        (by first | exact .head _ |
+          exact ⟨⟨_, rfl, .head _⟩, fun z hz => .tail _ (foldE_fv _ e hfe z hz)⟩) hold)
+      simp +contextual [Block.readsDefined, mkInit, hN.fresh_not_mem hj hy, hr,
+        foldE_fv (oe := oe) _ e hfe]
   case' initNondet => intro x _ _ rest s _ _ _ _ h1 ih Dd hN hA
   case' setNondet => intro x _ rest s _ _ _ _ _ _ h1 ih Dd hN hA
   case initNondet | setNondet =>
@@ -489,14 +514,20 @@ private theorem ssaList_wellScoped (ss : PStmts P) : ∀ {s s' : SSt P} {out : P
     simp [Block.readsDefined, mkInit, hN.fresh_not_mem hj hy, hr]
   · intro l a md rest s out s' ih Dd hN hA
     have hr := ih hN fun y hy => hA y (by simp [Block.freeVars, Stmt.freeVars, hy])
-    have hf := foldE_fv s.ρ a fun y hy =>
+    have hf := foldE_fv (oe := oe) s.ρ a fun y hy =>
       hA y (by simp [Block.freeVars, Stmt.freeVars, mem_exprFV, hy])
     split <;> simp_all [Block.readsDefined]
-  · intro mk l e md rest s out s' hmk _ ih Dd hN hA
-    rcases hmk with rfl | rfl <;>
-      simp +contextual [Block.readsDefined,
-        ih hN fun y hy => hA y (by simp [Block.freeVars, Stmt.freeVars, hy]),
-        renM'_fv e fun y hy => hA y (by simp [Block.freeVars, Stmt.freeVars, mem_exprFV, hy])]
+  · intro mk b l e md rest s out s' hmk _ ih Dd hN hA
+    rcases hmk with ⟨rfl, -⟩ | ⟨rfl, -⟩
+    all_goals
+      have hfe : ∀ y ∈ HasFvars.getFvars e, SNames Dd y s.ρ[y]? := fun y hy =>
+        hA y (by simp [Block.freeVars, Stmt.freeVars, mem_exprFV, hy])
+      have hc : ∀ y ∈ HasFvars.getFvars (oblCond oe b s.ρ e), y ∈ Dd := by
+        rcases oblCond_eq b s.ρ e with h | ⟨-, h⟩ <;> rw [h]
+        · exact renM'_fv e hfe
+        · exact fun y hy => renM_fv e hfe y (evalM_sub _ WPLang.getFvars_evalOp? hy)
+      simp +contextual [Block.readsDefined, hc,
+        ih hN fun y hy => hA y (by simp [Block.freeVars, Stmt.freeVars, hy])]
   · intro tss ess md s t sT sU e out s' hT ihT hU _ ihE h1 h2 h3 Dd hN hA
     obtain ⟨⟨ha, hn, -⟩, hρ⟩ := undoTo_frame (ssaList_frame _ hT) hU
     have rT := ihT hN fun y hy => hA y (by simp [Block.freeVars, Stmt.freeVars, hy])
@@ -595,10 +626,10 @@ theorem ssaEntryRen_namesOK (A : AvoidSet P) (xs : List P.Ident) (al : List (P.I
 /-- A successful run of `ssaEntry` is `ssaBody` from the entry renaming and the counter after
     it, avoiding `inputAvoid G tys lay`. -/
 theorem ssaEntry_ok {G : IdSet P} {tys : Tys P} {xs : List P.Ident} {al : List (P.Ident × P.Ident)}
-    (h : ssaEntry G tys xs al lay = .ok (ρ0, so)) :
+    (h : ssaEntry oe G tys xs al lay = .ok (ρ0, so)) :
     ρ0 = (ssaEntryRen (inputAvoid G tys lay) xs al 0).1 ∧
-      ssaBody ⟨(ssaEntryRen (inputAvoid G tys lay) xs al 0).2, inputAvoid G tys lay, tys⟩ ρ0 lay =
-        .ok so := by
+      ssaBody oe ⟨(ssaEntryRen (inputAvoid G tys lay) xs al 0).2, inputAvoid G tys lay, tys⟩ ρ0
+        lay = .ok so := by
   obtain ⟨so', hb, ⟨⟩⟩ := (Except.bind_is_ok _ _ _).1 h
   exact ⟨rfl, hb⟩
 
@@ -609,7 +640,7 @@ theorem ssaEntry_ok {G : IdSet P} {tys : Tys P} {xs : List P.Ident} {al : List (
     (`Block.passiveForm`), and has no loop at any depth (`Block.noLoops`). -/
 theorem ssaBody_shape {st : FreshSt P} {ρ0 : Ren P} {lay : PStmts P} {so : SOut P}
     (hg : Block.treeForm lay = true) (ho : Block.onlyChecksAfterAssert lay = true)
-    (h : ssaBody st ρ0 lay = .ok so) :
+    (h : ssaBody oe st ρ0 lay = .ok so) :
     Block.treeForm so.out = true ∧ Block.onlyChecksAfterAssert so.out = true ∧
       Block.passiveForm so.out = true ∧ Block.noLoops so.out = true :=
   (ssaBody_ok h).elim fun _ ⟨h1, _⟩ => ssaList_shape lay h1 hg ho
@@ -620,7 +651,7 @@ include iLId iLFvs in
     syntactically well scoped from the entry names. -/
 theorem ssaEntry_wellScoped {G : IdSet P} {tys : Tys P} {xs : List P.Ident}
     {al : List (P.Ident × P.Ident)} {lay : PStmts P} {ρ0 : Ren P} {so : SOut P}
-    (h : ssaEntry G tys xs al lay = .ok (ρ0, so)) (hal : ∀ q ∈ al, q.2 ∈ xs)
+    (h : ssaEntry oe G tys xs al lay = .ok (ρ0, so)) (hal : ∀ q ∈ al, q.2 ∈ xs)
     (hfv : ∀ x ∈ Block.freeVars lay, x ∈ xs ∨ x ∈ al.map (·.1)) :
     Block.readsDefined (ρ0.map (·.2)) so.out = true := by
   obtain ⟨rfl, hb⟩ := ssaEntry_ok h
@@ -636,21 +667,19 @@ theorem ssaEntry_wellScoped {G : IdSet P} {tys : Tys P} {xs : List P.Ident}
 /-! ## Facts for the initial-environment gate -/
 
 include iLId in
-/-- The outcomes of `assignVal x ty e`: the state keeps its mapping and does not decrease its
+/-- The outcomes of `assignVal oe x ty e`: the state keeps its mapping and does not decrease its
     counter; the value has the Boolean type or `ty`; the output is empty or the `init` of a fresh
     name with the base of `x` and a counter at least the current one, of the Boolean type or
     `ty`, with a Boolean literal or the folded `e` as value. -/
-theorem assignVal_facts (h : assignVal x ty e s = .ok ((o, v), s')) :
+theorem assignVal_facts (h : assignVal oe x ty e s = .ok ((o, v), s')) :
     s'.ρ = s.ρ ∧ s.next ≤ s'.next ∧ (v.ty? = some HasBool.boolTy ∨ v.ty? = some ty) ∧
     (o = [] ∨ ∃ j ty' e', s.next ≤ j ∧ (ty' = HasBool.boolTy ∨ ty' = ty) ∧
-      (e' = tt ∨ e' = ff ∨ e' = foldE s.ρ e) ∧
+      (e' = tt ∨ e' = ff ∨ e' = foldE oe s.ρ e) ∧
         o = [mkInit (freshName (baseOf x) j) ty' (.det e')]) := by
-  rcases assignVal_ok h with ⟨b, _, -, hf, rfl, rfl⟩ | ⟨y, -, -, rfl, rfl, rfl⟩ | ⟨_, hf, rfl, rfl⟩
-  · obtain ⟨j, hj, rfl, -, rfl⟩ := sFresh_ok hf
-    exact ⟨rfl, Nat.le_succ_of_le hj, .inl rfl, .inr ⟨j, _, _, hj, .inl rfl,
-      by cases b <;> simp, rfl⟩⟩
-  · exact ⟨rfl, Nat.le_refl _, .inr rfl, .inl rfl⟩
-  · obtain ⟨j, hj, rfl, -, rfl⟩ := sFresh_ok hf
+  rcases assignVal_ok h with ⟨_, -, hf, rfl, rfl⟩ | ⟨y, -, -, rfl, rfl, rfl⟩ | ⟨_, hf, rfl, rfl⟩
+  case inr.inl => exact ⟨rfl, Nat.le_refl _, .inr rfl, .inl rfl⟩
+  all_goals
+    obtain ⟨j, hj, rfl, -, rfl⟩ := sFresh_ok hf
     exact ⟨rfl, Nat.le_succ_of_le hj, .inr rfl, .inr ⟨j, ty, _, hj, .inr rfl, .inr (.inr rfl), rfl⟩⟩
 
 include iLId iLFvs in
@@ -659,7 +688,7 @@ include iLId iLFvs in
     entry names of the free variables. -/
 theorem ssaEntry_wellScopedFV {G : IdSet P} {tys : Tys P} {xs : List P.Ident}
     {al : List (P.Ident × P.Ident)} {lay : PStmts P} {ρ0 : Ren P} {so : SOut P}
-    (h : ssaEntry G tys xs al lay = .ok (ρ0, so)) (hal : ∀ q ∈ al, q.2 ∈ xs)
+    (h : ssaEntry oe G tys xs al lay = .ok (ρ0, so)) (hal : ∀ q ∈ al, q.2 ∈ xs)
     (hfv : ∀ x ∈ Block.freeVars lay, x ∈ xs ∨ x ∈ al.map (·.1)) :
     Block.readsDefined ((Block.freeVars lay).map ρ0.get) so.out = true := by
   obtain ⟨rfl, hb⟩ := ssaEntry_ok h
@@ -703,7 +732,7 @@ theorem ssaEntryRen_base (A : AvoidSet P) (xs : List P.Ident) (al : List (P.Iden
   exact fun q hq => ((entryAlias_spec (fun y => ∃ w ∈ xs, ∃ k, y = freshName (WPOps.name w) k)
     al _ (fun q hq => h3 _ (.inl (hal q hq))) (hf xs (List.Subset.refl _) ([], n) nofun)).1 q hq).1
 
-omit iHF iSF iHI iHFs in
+omit iHB iHF iSF iHI iHFs in
 /-- The current value the entry mapping gives a name the entry renaming renames has the type
     `tys` records for that name. -/
 theorem entryMap_ty (tys : Tys P) (ρ0 : Ren P) (x : P.Ident) (hx : x ∈ ρ0.map (·.1)) :
@@ -721,11 +750,12 @@ recorded for the name it replaces, so the output passes the free-variable annota
 against the typing of the entry names (`ssaEntry_fvarTypesWellAnnotated`). -/
 
 /-- The value `v` of the name `x` agrees with the typing `Γ`: a variable other than `x` has, under
-    `Γ`, the type it is annotated with, and a literal is defined by a name `Γ` gives the Boolean
-    type. -/
+    `Γ`, the type it is annotated with, and a value expression is defined by a name `Γ` gives
+    the expression's type, and its annotations agree with `Γ`. -/
 @[expose] def STyped (Γ : VarTyping P) (x : P.Ident) : SVal P → Prop
   | .name y ty => y ≠ x ∧ ∀ T, ty = some T → Γ y = some T
-  | .lit _ m => ∃ y, m = some y ∧ Γ y = some HasBool.boolTy
+  | .lit e ty m => (∃ y, m = some y ∧ Γ y = some ty) ∧
+      ∀ p ∈ HasFvars.getTypedFvars e, Γ p.1 = some p.2
 
 include iLFvs in
 omit iDE iBE iLB iHB iSF iHI iHa iW in
@@ -740,14 +770,6 @@ private theorem typed_var {y : P.Ident} {ty : Option P.Ty} {p : P.Ident × P.Ty}
     simp only [List.mem_singleton] at h'
     subst h'
     exact ⟨rfl, rfl⟩
-
-include iLFvs in
-omit iBE iLB iHI iHa in
-/-- A Boolean literal has no annotated free-variable occurrence. -/
-private theorem typed_lit (b : Bool) {p : P.Ident × P.Ty}
-    (h : p ∈ HasFvars.getTypedFvars (if b then (tt : P.Expr) else ff)) : False := by
-  have h' := LawfulHasFvars.mem_getFvars_of_typed _ p.1 p.2 h
-  cases b <;> simp [WPLang.getFvars_tt, WPLang.getFvars_ff] at h'
 
 include iLFvs in
 omit iLB iHI in
@@ -767,7 +789,13 @@ private theorem renM_typed {Γ : VarTyping P} (e : P.Expr)
     | name y ty =>
       obtain ⟨h1, h2⟩ := typed_var hw
       exact h1 ▸ ht.2 _ h2
-    | lit b m => exact (typed_lit b hw).elim
+    | lit e' ty m =>
+      obtain ⟨⟨y, rfl, hy⟩, ht⟩ := ht
+      simp only [substVal] at hw
+      split at hw
+      · obtain ⟨h1, h2⟩ := typed_var hw
+        exact h1 ▸ Option.some.inj h2 ▸ hy
+      · exact ht p hw
 
 include iLFvs in
 omit iLB iHI in
@@ -775,16 +803,19 @@ omit iLB iHI in
     of `e` does. -/
 private theorem foldE_typed {Γ : VarTyping P} (ρ : Std.HashMap P.Ident (SVal P)) (e : P.Expr) :
     (∀ x ∈ HasFvars.getFvars e, ∃ v, ρ[x]? = some v ∧ STyped Γ x v) →
-      ∀ p ∈ HasFvars.getTypedFvars (foldE ρ e), Γ p.1 = some p.2 := by
+      ∀ p ∈ HasFvars.getTypedFvars (foldE oe ρ e), Γ p.1 = some p.2 := by
   have parts : ∀ {e c t f : P.Expr}, WPOps.iteView? e = some (c, t, f) →
       (∀ x ∈ HasFvars.getFvars e, ∃ v, ρ[x]? = some v ∧ STyped Γ x v) →
       (∀ x ∈ HasFvars.getFvars c, ∃ v, ρ[x]? = some v ∧ STyped Γ x v) ∧
       (∀ x ∈ HasFvars.getFvars t, ∃ v, ρ[x]? = some v ∧ STyped Γ x v) ∧
       (∀ x ∈ HasFvars.getFvars f, ∃ v, ρ[x]? = some v ∧ STyped Γ x v) := fun hv hA => by
-    exact ⟨fun x hx => hA x ((WPLang.iteView?_getFvars x hv).mpr ((WPLang.getFvars_ite _ _ _ x).2 (.inl hx))),
-      fun x hx => hA x ((WPLang.iteView?_getFvars x hv).mpr ((WPLang.getFvars_ite _ _ _ x).2 (.inr (.inl hx)))),
-      fun x hx => hA x ((WPLang.iteView?_getFvars x hv).mpr ((WPLang.getFvars_ite _ _ _ x).2 (.inr (.inr hx))))⟩
-  fun_induction foldE ρ e
+    exact ⟨fun x hx => hA x ((WPLang.iteView?_getFvars x hv).mpr
+        ((WPLang.getFvars_ite _ _ _ x).2 (.inl hx))),
+      fun x hx => hA x ((WPLang.iteView?_getFvars x hv).mpr
+        ((WPLang.getFvars_ite _ _ _ x).2 (.inr (.inl hx)))),
+      fun x hx => hA x ((WPLang.iteView?_getFvars x hv).mpr
+        ((WPLang.getFvars_ite _ _ _ x).2 (.inr (.inr hx))))⟩
+  fun_induction foldE oe ρ e
   case case1 e c t f hv c' hb ih2 ih1 | case2 e c t f hv c' hb ih2 ih1 =>
     intro hA p hp
     obtain ⟨hc, ht, hf⟩ := parts hv hA
@@ -799,7 +830,8 @@ private theorem foldE_typed {Γ : VarTyping P} (ρ : Std.HashMap P.Ident (SVal P
     · exact ih3 hc p hp
     · exact ih2 ht p hp
     · exact ih1 hf p hp
-  case case5 e hv => exact renM_typed e
+  case case5 e hv =>
+    exact fun hA p hp => renM_typed e hA p (evalM_sub _ WPLang.getTypedFvars_evalOp? hp)
 
 include iLFvs in
 omit iHI in
@@ -813,8 +845,8 @@ private theorem renM'_typed {Γ : VarTyping P} (e : P.Expr)
   · obtain ⟨v, hv, ht⟩ := hA p.1 (LawfulHasFvars.mem_getFvars_of_typed _ _ _ hp)
     cases v with
     | name y ty => simp [oblVar, hv, ht.1] at hg
-    | lit b m =>
-      obtain ⟨y, rfl, -⟩ := ht
+    | lit e' ty m =>
+      obtain ⟨⟨y, rfl, -⟩, -⟩ := ht
       simp [oblVar, hv] at hg
   · obtain ⟨v, hv, ht⟩ := hA z hz
     cases v with
@@ -824,15 +856,15 @@ private theorem renM'_typed {Γ : VarTyping P} (e : P.Expr)
       subst hg
       obtain ⟨h1, h2⟩ := typed_var hw
       exact h1 ▸ ht.2 _ h2
-    | lit b m =>
-      obtain ⟨y, rfl, hy⟩ := ht
+    | lit e' ty m =>
+      obtain ⟨⟨y, rfl, hy⟩, -⟩ := ht
       simp only [oblVar, hv, Option.map_some, Option.some.injEq] at hg
       subst hg
       obtain ⟨h1, h2⟩ := typed_var hw
       rw [h1, ← Option.some.inj h2]
       exact hy
 
-omit iDE iBE iHF iSF iHI iHa iHFs iW in
+omit iDE iBE iHB iHF iSF iHI iHa iW in
 /-- `STyped` survives extending the typing at a name outside the names it types. -/
 private theorem STyped.extend {Γ : VarTyping P} {Dd : List P.Ident} {x' : P.Ident} {T : P.Ty}
     (hΓ : ∀ y, (Γ y).isSome → y ∈ Dd) (hx' : x' ∉ Dd) :
@@ -844,11 +876,11 @@ private theorem STyped.extend {Γ : VarTyping P} {Dd : List P.Ident} {x' : P.Ide
   intro z w h
   cases w with
   | name y ty => exact ⟨h.1, fun U hU => hkeep y U (h.2 U hU)⟩
-  | lit b m =>
-    obtain ⟨y, rfl, hy⟩ := h
-    exact ⟨y, rfl, hkeep y _ hy⟩
+  | lit e ty m =>
+    obtain ⟨⟨y, rfl, hy⟩, he⟩ := h
+    exact ⟨⟨y, rfl, hkeep y _ hy⟩, fun p hp => hkeep _ _ (he p hp)⟩
 
-omit iHF iSF iHI iHFs iW in
+omit iHB iHF iSF iHI iW in
 /-- `STyped` on the names of `V` after binding `x`: on `x` from the new value, on the other names
     of `V` from before. -/
 private theorem STyped.assign {Γ : VarTyping P} {V : List P.Ident} (hx : STyped Γ x v)
@@ -872,7 +904,7 @@ private theorem init_out {Γ : VarTyping P} {x' : P.Ident} {T : P.Ty} {e' : Expr
     by simpa [Stmt.typedDefinedVars, HasTypedVarsImp.typedDefinedVars, CmdExt.typedDefinedVars,
       Cmd.typedDefinedVars, mkInit] using hr⟩
 
-omit iLB iHF iSF iHI iHFs iW in
+omit iLB iHB iHF iSF iHI iW in
 /-- Extending `Γ` at a name `x'` outside `Dd` and the avoided names keeps `Γ` a typing of names of
     `x' :: Dd`, outside the avoided names, under which the current values of names other than `x`
     still agree. -/
@@ -894,7 +926,7 @@ include iLId iLFvs in
     when the names of `Dd` are not avoided, the identifiers of the list are, and the current
     value of every free variable of the list agrees with `Γ`. -/
 private theorem ssaList_fvarTypesWellAnnotated (ss : PStmts P) :
-    ∀ {s s' : SSt P} {out : PStmts P}, ssaList ss s = .ok (out, s') →
+    ∀ {s s' : SSt P} {out : PStmts P}, ssaList oe ss s = .ok (out, s') →
     ∀ {Γ : VarTyping P} {Dd : List P.Ident}, NamesOK s.avoid.toList Dd s.next →
     (∀ y, (Γ y).isSome → y ∈ Dd) → (∀ y ∈ Dd, y ∉ s.avoid.toList) →
     (∀ x ∈ Block.idents ss, x ∈ s.avoid.toList) →
@@ -913,7 +945,7 @@ private theorem ssaList_fvarTypesWellAnnotated (ss : PStmts P) :
     have hx : x ∈ s.avoid.toList := hid x (by simp [Block.idents, Stmt.idents])
     have hidr : ∀ z ∈ Block.idents rest, z ∈ s.avoid.toList := fun z hz =>
       hid z (by simp [Block.idents, hz])
-    rcases assignVal_ok h1 with ⟨b, _, -, hf, rfl, rfl⟩ | ⟨y, hy, hc, rfl, rfl, rfl⟩ |
+    rcases assignVal_ok h1 with ⟨_, -, hf, rfl, rfl⟩ | ⟨y, hy, hc, rfl, rfl, rfl⟩ |
       ⟨_, hf, rfl, rfl⟩
     case inr.inl =>
       obtain ⟨p, hp, hpe⟩ := List.any_eq_true.1 hc
@@ -925,15 +957,14 @@ private theorem ssaList_fvarTypesWellAnnotated (ss : PStmts P) :
     all_goals
       obtain ⟨j, hj, rfl, hy, rfl⟩ := sFresh_ok hf
       obtain ⟨hΓ', hDd', hold'⟩ := fresh_step (x := x) hΓ hDd (hN.fresh_not_mem hj hy) hy hold
-    · exact init_out
-        (fun p hp => (typed_lit b (by simpa [ExprOrNondet.getTypedVars] using hp)).elim)
-        (ih (hN.add_fresh _ hj) (hΓ' _) hDd' hidr
-          (STyped.assign ⟨_, rfl, by simp [VarTyping.extend]⟩ (hold' _)))
-    · exact init_out
-        (fun p hp => foldE_typed _ e hfe p (by simpa [ExprOrNondet.getTypedVars] using hp))
-        (ih (hN.add_fresh _ hj) (hΓ' ty) hDd' hidr
-          (STyped.assign ⟨fun he => hy (by rw [he]; exact hx),
-            fun T hT => by cases hT; simp [VarTyping.extend]⟩ (hold' ty)))
+      have hfe' := foldE_typed (oe := oe) _ e hfe
+      refine init_out (fun p hp => hfe' p (by simpa [ExprOrNondet.getTypedVars] using hp))
+        (ih (hN.add_fresh _ hj) (hΓ' ty) hDd' hidr (STyped.assign ?_ (hold' ty)))
+    · refine ⟨⟨_, rfl, by simp [VarTyping.extend]⟩, fun p hp => ?_⟩
+      have hne : p.1 ≠ freshName (baseOf x) j := fun he =>
+        hN.fresh_not_mem hj hy (he ▸ hΓ p.1 (by simp [hfe' p hp]))
+      exact (VarTyping.extend_of_not_mem (by simpa [eq_comm] using hne)).trans (hfe' p hp)
+    · exact ⟨fun he => hy (by rw [he]; exact hx), fun T hT => by cases hT; simp [VarTyping.extend]⟩
   case' initNondet => intro x ty _ rest s _ _ _ _ h1 ih Γ Dd hN hΓ hDd hid hA
   case' setNondet => intro x _ rest s ty _ _ _ _ _ h1 ih Γ Dd hN hΓ hDd hid hA
   case initNondet | setNondet =>
@@ -949,7 +980,7 @@ private theorem ssaList_fvarTypesWellAnnotated (ss : PStmts P) :
   · intro l a md rest s out s' ih Γ Dd hN hΓ hDd hid hA
     have hr := ih hN hΓ hDd (fun z hz => hid z (by simp [Block.idents, hz]))
       fun y hy => hA y (by simp [Block.freeVars, Stmt.freeVars, hy])
-    have hf := foldE_typed s.ρ a fun y hy =>
+    have hf := foldE_typed (oe := oe) s.ρ a fun y hy =>
       hA y (by simp [Block.freeVars, Stmt.freeVars, mem_exprFV, hy])
     split
     · exact hr
@@ -957,13 +988,17 @@ private theorem ssaList_fvarTypesWellAnnotated (ss : PStmts P) :
         CmdExt.typedReadVars, Cmd.getTypedVars] using hz),
         by simp only [Stmt.typedDefinedVars, HasTypedVarsImp.typedDefinedVars,
           CmdExt.typedDefinedVars, Cmd.typedDefinedVars]; exact hr⟩
-  · intro mk l e md rest s out s' hmk _ ih Γ Dd hN hΓ hDd hid hA
-    have hr := ih hN hΓ hDd (fun z hz => hid z (by rcases hmk with rfl | rfl <;>
-        simp [Block.idents, hz]))
-      fun y hy => hA y (by rcases hmk with rfl | rfl <;> simp [Block.freeVars, Stmt.freeVars, hy])
-    have hf := renM'_typed (ρ := s.ρ) e fun y hy =>
-      hA y (by rcases hmk with rfl | rfl <;> simp [Block.freeVars, Stmt.freeVars, mem_exprFV, hy])
-    rcases hmk with rfl | rfl <;>
+  · intro mk b l e md rest s out s' hmk _ ih Γ Dd hN hΓ hDd hid hA
+    rcases hmk with ⟨rfl, -⟩ | ⟨rfl, -⟩
+    all_goals
+      have hr := ih hN hΓ hDd (fun z hz => hid z (by simp [Block.idents, hz]))
+        fun y hy => hA y (by simp [Block.freeVars, Stmt.freeVars, hy])
+      have hfe : ∀ x ∈ HasFvars.getFvars e, ∃ v, s.ρ[x]? = some v ∧ STyped Γ x v := fun y hy =>
+        hA y (by simp [Block.freeVars, Stmt.freeVars, mem_exprFV, hy])
+      have hf : ∀ p ∈ HasFvars.getTypedFvars (oblCond oe b s.ρ e), Γ p.1 = some p.2 := by
+        rcases oblCond_eq b s.ρ e with h | ⟨-, h⟩ <;> rw [h]
+        · exact renM'_typed e hfe
+        · exact fun p hp => renM_typed e hfe p (evalM_sub _ WPLang.getTypedFvars_evalOp? hp)
       exact ⟨fun z T hz => hf (z, T) (by simpa [HasTypedVarsImp.typedReadVars,
         CmdExt.typedReadVars, Cmd.getTypedVars] using hz),
         by simp only [Stmt.typedDefinedVars, HasTypedVarsImp.typedDefinedVars,
@@ -975,12 +1010,8 @@ private theorem ssaList_fvarTypesWellAnnotated (ss : PStmts P) :
     have rE := ihE (fun y hy b j hj he => ha ▸ hN y hy b j (Nat.le_trans hn hj) he) hΓ
       (fun z hz => ha ▸ hDd z hz) (fun z hz => ha ▸ hid z (by simp [Block.idents, Stmt.idents, hz]))
       fun y hy => hρ y ▸ hA y (by simp [Block.freeVars, Stmt.freeVars, hy])
-    by_cases ht : t = [] <;> by_cases he : e = []
-    · rw [h1 ht]; exact rE
-    · rw [h1 ht]; exact rE
-    · rw [h2 ht he]; exact rT
-    · rw [h3 ht he]
-      exact ⟨⟨fun _ _ hz => by simp [ExprOrNondet.getTypedVars] at hz, rT, rE⟩, trivial⟩
+    exact if ht : t = [] then h1 ht ▸ rE else if he : e = [] then h2 ht he ▸ rT
+      else h3 ht he ▸ ⟨⟨fun _ _ hz => by simp [ExprOrNondet.getTypedVars] at hz, rT, rE⟩, trivial⟩
   · intro tc md rest s out s' ih Γ Dd hN hΓ hDd hid hA
     exact ih hN hΓ hDd (fun z hz => hid z (by simp [Block.idents, hz]))
       fun y hy => hA y (by simp [Block.freeVars, Stmt.freeVars, hy])
@@ -991,7 +1022,7 @@ include iLId iLFvs in
     guarded program whose free variables are names of `xs` or of the aliases `al`. -/
 theorem ssaEntry_fvarTypesWellAnnotated {G : IdSet P} {tys : Tys P} {xs : List P.Ident}
     {al : List (P.Ident × P.Ident)} {lay : PStmts P} {ρ0 : Ren P} {so : SOut P}
-    (h : ssaEntry G tys xs al lay = .ok (ρ0, so)) (hal : ∀ q ∈ al, q.2 ∈ xs)
+    (h : ssaEntry oe G tys xs al lay = .ok (ρ0, so)) (hal : ∀ q ∈ al, q.2 ∈ xs)
     (hfv : ∀ x ∈ Block.freeVars lay, x ∈ xs ∨ x ∈ al.map (·.1)) {Γ : VarTyping P}
     (hty : ∀ x ∈ Block.freeVars lay, ∀ T, tys.get? x = some T → Γ (ρ0.get x) = some T)
     (hdom : ∀ y, (Γ y).isSome → ∃ x ∈ Block.freeVars lay, y = ρ0.get x) :

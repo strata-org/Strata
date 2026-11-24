@@ -204,10 +204,11 @@ def noLoopInitsB (reachable : Std.HashSet String) (onCyc : Std.HashSet String)
 A local declared in a block that can run more than once would be re-initialized
 on re-entry, which the Imperative `init` semantics cannot step (it requires the
 variable to be unset). The structured pipeline hoists such declarations out of
-the loop (`hoistLoopPrefixInits`); a CFG body has no analogous rewrite here, so a
-loop-carried `init` is rejected rather than silently certified. This also covers
-the translator-inserted `init $__nondet_N` that a nondeterministic `goto` in a
-loop header would introduce. -/
+the loop (`hoistLoopPrefixInits`); for a CFG body, a loop-carried `init` is
+rejected. The translator's `init $__nondet_N` for a nondeterministic `goto` in a
+loop is the exception: `CFGLoopElim.hoistNondetChoices` moves it to the entry
+before type checking, so it reaches this check only in a phase order without that
+hoist. -/
 def checkNoLoopInits (procName : CoreIdent) (reachable : Std.HashSet String)
     (onCyc : Std.HashSet String) (cfg : DetCFG) (sourceLoc : FileRange) :
     Except Message Unit :=

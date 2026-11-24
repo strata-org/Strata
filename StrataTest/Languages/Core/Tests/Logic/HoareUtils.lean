@@ -258,7 +258,7 @@ theorem blockWF_nil (ρ : Imperative.Env Core.Expression)
     (hsv : Imperative.WellFormedStore ρ.store ρ.factory) :
     Core.Logic.BlockInitEnvWF testParams [Imperative.Stmt.block "" [] #[]] ρ :=
   Core.Logic.blockInitEnvWF_procBlock_nil (Core.coreFactory_WellFormedSemanticEval _ hfac)
-    hsv rfl (fun _ _ => rfl)
+    hsv rfl (fun _ _ => rfl) (fun _ _ => rfl)
 
 /-- An empty body, wrapped as the procedure block a body actually runs in, returns to
     its own environment: entering and leaving the block projects the store through
@@ -317,7 +317,7 @@ theorem setBlockWF (x : Core.Expression.Ident) (e : Core.Expression.Expr)
       [Stmt.block "" [Stmt.cmd (CmdExt.cmd (Cmd.set x (.det e) md))] #[]] ρ := by
   refine Core.Logic.BlockInitEnvWF.of_defUseOk (Core.coreFactory_WellFormedSemanticEval _ hf)
     hsv (fun n hn => ?_) (fun n hn => ?_) (fun n _ p hp => ?_)
-    (fun _ _ p hp => by simp [testParams] at hp) ?_ (fun _ _ => rfl)
+    (fun _ _ p hp => by simp [testParams] at hp) ?_ (fun _ _ => rfl) (fun _ _ => rfl)
     (by
       simp [Block.InitTypesInhabited, Block.initTypes, Stmt.initTypes,
         HasInitTypesImp.initTypes, CmdExt.initTypes, Cmd.initTypes])

@@ -63,7 +63,11 @@ three times.
 See `PathConditionsFoldProps.lean` for the faithfulness theorem:
 `(f.advance target).exec st` equals the from-scratch fold of `target`, so
 `advance`'s result does not depend on the sequence of `advance` calls that
-produced the state. -/
+produced the state.
+
+`UndoFold` folds the same entries with a step that can be undone. It keeps no checkpoint: it
+undoes, one entry at a time, the processed entries past the longest common prefix with the target,
+inside a frame as well as across frames, so its state is updated in place. -/
 
 namespace Imperative
 
@@ -274,6 +278,67 @@ def Fold.advance
 def FoldState.collectOutputs (st : FoldState σ ω P)
     (combine : ω → ω → ω) (init : ω) : ω :=
   st.frames.foldr (fun f acc => combine f.output acc) init
+
+/-! ## A fold with an undo step
+
+`Fold` rewinds to the checkpoint it saved when a frame opened, so it keeps one state per frame
+and rebuilds a closed frame that the target only partly matches. When the step can be undone,
+`UndoFold` needs neither: it keeps the processed entries, oldest first, and only the current
+state. Advancing it to a target compares the entries with the target by
+`PathConditionEntry.fastEq`, as `stripPathConditionPrefix` does for `Fold`, undoes one entry at a
+time those past the longest common prefix, inside a frame as well as across frames, and processes
+the rest of the target. As no earlier state is kept, a state holding hash maps is updated in place.
+The cost of an advance is the comparison of the prefix plus one step or undo per entry processed
+or undone. -/
+
+/-- What a caller supplies to an undo fold: how one entry transforms the state (`step`), and how
+    to revert that on the state after it (`undo`, given the entry). -/
+structure UndoFold (σ : Type) (P : PureExpr) where
+  /-- Process one more entry. -/
+  step : σ → PathConditionEntry P → σ
+  /-- Revert the processing of the newest entry, which it is given. -/
+  undo : σ → PathConditionEntry P → σ
+
+/-- The state of an undo fold: the entries processed, oldest first, and the state after them. -/
+structure UndoFoldState (σ : Type) (P : PureExpr) where
+  /-- The entries processed, oldest first. -/
+  entries : Array (PathConditionEntry P) := #[]
+  /-- The state after processing them. -/
+  current : σ
+
+/-- A fresh undo-fold state at `s`: nothing processed. -/
+def UndoFoldState.init (s : σ) : UndoFoldState σ P :=
+  { current := s }
+
+/-- Process one more entry. -/
+def UndoFold.push (f : UndoFold σ P) (st : UndoFoldState σ P) (e : PathConditionEntry P) :
+    UndoFoldState σ P :=
+  { entries := st.entries.push e, current := f.step st.current e }
+
+/-- Undo the newest entry. Identity when nothing has been processed. -/
+def UndoFold.pop (f : UndoFold σ P) (st : UndoFoldState σ P) : UndoFoldState σ P :=
+  match st.entries.back? with
+  | none => st
+  | some e => { entries := st.entries.pop, current := f.undo st.current e }
+
+/-- `i` plus the number of leading entries of `target` equal (`PathConditionEntry.fastEq`) to
+    those of `processed` from position `i` on. -/
+def commonPrefixLen [DecidableEq P.Ident] [DecidableEq P.Ty] [DecidableEq P.Expr]
+    (processed : Array (PathConditionEntry P)) : Nat → PathCondition P → Nat
+  | i, [] => i
+  | i, e :: target =>
+    if h : i < processed.size then
+      if processed[i].fastEq e then commonPrefixLen processed (i + 1) target else i
+    else i
+
+/-- Advance the state so that it has processed exactly the entries `target`, oldest first: undo
+    the processed entries past their longest common prefix with `target`, then process the rest
+    of `target`. -/
+def UndoFold.advance [DecidableEq P.Ident] [DecidableEq P.Ty] [DecidableEq P.Expr]
+    (f : UndoFold σ P) (st : UndoFoldState σ P) (target : PathCondition P) :
+    UndoFoldState σ P :=
+  let k := commonPrefixLen st.entries 0 target
+  (target.drop k).foldl f.push (Nat.repeat f.pop (st.entries.size - k) st)
 
 end -- public section
 

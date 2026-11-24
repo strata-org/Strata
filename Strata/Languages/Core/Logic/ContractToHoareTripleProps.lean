@@ -267,12 +267,11 @@ theorem Procedure.contractTripleTotal_iff (p : Core.Program) (params : InitEnvWF
     | structured bss =>
       rw [hbody] at htriple hterm
       exact fun ρ hpre hinit =>
-        ⟨hterm ρ hpre hinit, fun ρ' trace hrun => (htriple ρ ρ' trace hpre hinit hrun).2⟩
+        ⟨hterm ρ hpre hinit, (htriple ρ hpre hinit).2⟩
     | cfg cfg =>
       rw [hbody] at htriple hterm
       exact fun ρEntry ρ hpre hinit =>
-        ⟨hterm ρ hpre.1 hinit, fun ρ' trace hrun =>
-          (htriple ρEntry ρ ρ' trace hpre hinit hrun).2⟩
+        ⟨hterm ρ hpre.1 hinit, (htriple ρEntry ρ hpre hinit).2⟩
 
 /-- A contract of a procedure without type parameters whose every non-`free` `ensures` is
     literally one of the `requires` is met by an empty body: nothing runs, so the precondition still
