@@ -6,6 +6,7 @@
 module
 meta import StrataCortex.Implementation.Pipeline
 meta import StrataCortex.Implementation.Interpret
+meta import StrataCortex.Implementation.Cli
 
 open Strata Cortex.Wire
 
@@ -55,13 +56,9 @@ meta def program : Wire.Program :=
 /-- Translate `p` to Core, whose procedure bodies are CFGs, and type-check the
 Core program. Print which step rejected `p`, or that the type check passed. -/
 meta def typeCheck (p : Wire.Program) : IO Unit :=
-  match Cortex.wireToCortex p with
-  | .error e => IO.println s!"invalid Cortex program: {e}"
-  | .ok m => match Cortex.toCoreProgram m with
-    | .error e => IO.println s!"Cortex lowering failed: {e}"
-    | .ok core => match Core.typeCheck .quiet core with
-      | .error e => IO.println s!"Core type checking failed: {e}"
-      | .ok _ => IO.println "Core type checking succeeded."
+  match Cortex.checkWire p with
+  | .error e => IO.println e
+  | .ok () => IO.println "Core type checking succeeded."
 
 /--
 info: Core type checking succeeded.
@@ -167,7 +164,7 @@ meta def helperProgram : Wire.Program :=
 
 /--
 info: 62: no int overflow on '+' does not hold
-72: uncaught exception 'Arith' is not thrown does not hold
+72: call does not throw an uncaught 'Arith' does not hold
 stopped: 'overflows': assertion does not hold, at a check with no source location
 -/
 #guard_msgs in
@@ -188,8 +185,8 @@ meta def proc (name : String) (source : FileRange) (cmds : List Cmd) (entry := t
 meta def readsNoObject (r : FileRange) : List Cmd :=
   [.init "x" (.named "Box") none r, .init "t" i32 none r, .readField "t" (.var "x") "Box" "v" r]
 
-/-- An interpreter error is also reported where it happened: at the command or transfer that raised it (`deref`,
-`branchOnInt`), in a callee too (`viaCallee`), or, when that command has no source location, at the first located call
+/-- An interpreter error is also reported where it happened: at the command or transfer that raised it (`deref`),
+in a callee too (`viaCallee`), or, when that command has no source location, at the first located call
 on the way out (`viaForwarder`). A failed check (`unlocated`) or an uncaught exception (`throwsNowhere`) without a
 source location is never dropped, which would end the run with no diagnostic, as a pass: it ends the entry as an
 error, once however often it fails. -/
@@ -201,9 +198,6 @@ meta def stopsProgram : Wire.Program :=
       proc "deref" (at_ 70) (readsNoObject (at_ 73)),
       proc "derefAt" (at_ 76) (entry := false) (readsNoObject (at_ 77)),
       proc "viaCallee" (at_ 78) [.call [] "derefAt" [] (at_ 79)],
-      { name := "branchOnInt", inputs := [], outputs := [], throws := none, requires := [], entry := true,
-        source := at_ 86, body := some { entry := "b0", handlers := [],
-                                         blocks := [blk "b0" [] (.condGoto (.int 1) "b0" "b0" (at_ 87))] } },
       proc "unlocated" (at_ 75)
         [.assert "u1" (.eq (.int 1) (.int 2)) none noLoc, .assert "u2" (.eq (.int 1) (.int 2)) none noLoc],
       proc "throwsNowhere" (at_ 88)
@@ -212,19 +206,30 @@ meta def stopsProgram : Wire.Program :=
       proc "viaForwarder" (at_ 91) [.call [] "fwd" [] (at_ 92)]] }
 
 /--
-info: 73: the interpreter fails here: not a reference
-77: the interpreter fails here: not a reference
-87: the interpreter fails here: a branch condition was not a Boolean
-92: the interpreter fails here: not a reference
-stopped: 'deref': not a reference
-stopped: 'viaCallee': not a reference
-stopped: 'branchOnInt': a branch condition was not a Boolean
+info: 73: the interpreter fails here: an expression did not evaluate
+77: the interpreter fails here: an expression did not evaluate
+92: the interpreter fails here: an expression did not evaluate
+stopped: 'deref': an expression did not evaluate
+stopped: 'viaCallee': an expression did not evaluate
 stopped: 'unlocated': assertion does not hold, at a check with no source location
-stopped: 'throwsNowhere': uncaught exception 'Exn' is not thrown does not hold, at a check with no source location
-stopped: 'viaForwarder': not a reference
+stopped: 'throwsNowhere': uncaught exception is not thrown does not hold, at a check with no source location
+stopped: 'viaForwarder': an expression did not evaluate
 -/
 #guard_msgs in
 #eval interpret stopsProgram
+
+meta def branchesOnInt : Wire.Program :=
+  { composites := [], constrained := [],
+    procedures := [
+      { name := "branchOnInt", inputs := [], outputs := [], throws := none, requires := [], entry := true,
+        source := at_ 86, body := some { entry := "b0", handlers := [],
+                                         blocks := [blk "b0" [] (.condGoto (.int 1) "b0" "b0" (at_ 87))] } }] }
+
+/--
+info: stopped: 'branchOnInt': type error: procedure branchOnInt: expression 1 has type int, expected bool: Impossible to unify int with bool.
+-/
+#guard_msgs in
+#eval interpret branchesOnInt
 
 meta def arityCaller (lhs : List String) (args : List Wire.Expr) : Wire.Program :=
   { helperProgram with procedures := helperProgram.procedures.take 1 ++
@@ -291,7 +296,7 @@ meta def preludeProgram : Wire.Program :=
 /--
 info: 92: no int overflow on '+' does not hold
 98: cast from int32 to int8 does not hold
-99: uncaught exception 'java.lang.ArithmeticException' is not thrown does not hold
+99: call does not throw an uncaught 'java.lang.ArithmeticException' does not hold
 -/
 #guard_msgs in
 #eval interpret preludeProgram
@@ -629,5 +634,99 @@ info: Core type checking succeeded.
 -/
 #guard_msgs in
 #eval typeCheck bodilessKeepsGlobals
+
+-- An entry procedure cannot be called, also one that uses only the heap.
+meta def callsEntry : Wire.Program :=
+  { composites := [{ name := "Box", extending := [], fields := [{ name := "v", ty := i32 }] }],
+    constrained := [int32],
+    procedures := [
+      { name := "a", inputs := [], outputs := [], throws := none, requires := [], entry := true, source := at_ 220,
+        body := some { entry := "b0", handlers := [], blocks := [
+          blk "b0" [.init "b" (.named "Box") none (at_ 221), .new "b" "Box" (at_ 221),
+                    .writeField (.var "b") "Box" "v" (i32v 1) (at_ 222)] (.finish (at_ 223))] } },
+      { name := "b", inputs := [], outputs := [], throws := none, requires := [], entry := true, source := at_ 224,
+        body := some { entry := "b0", handlers := [], blocks := [
+          blk "b0" [.call [] "a" [] (at_ 225),
+                    .assert "unreached" (.bool false) none (at_ 226)] (.finish (at_ 227))] } }] }
+
+/--
+info: error: lowering: EntriesNotCalled: call of 'a': entry procedures cannot be called
+-/
+#guard_msgs in
+#eval interpret callsEntry
+
+/--
+info: Cortex lowering failed: EntriesNotCalled: call of 'a': entry procedures cannot be called
+-/
+#guard_msgs in
+#eval typeCheck callsEntry
+
+meta def callsSelected : Wire.Program :=
+  { composites := [], constrained := [],
+    procedures := [
+      { name := "helper", inputs := [], outputs := [], throws := none, requires := [], entry := false, source := at_ 9,
+        body := some { entry := "b0", handlers := [], blocks := [
+          blk "b0" [.assert "fails" (.bool false) none (at_ 10)] (.finish (at_ 11))] } },
+      { name := "main", inputs := [], outputs := [], throws := none, requires := [], entry := true, source := at_ 12,
+        body := some { entry := "b0", handlers := [], blocks := [
+          blk "b0" [.call [] "helper" [] (at_ 13)] (.finish (at_ 14))] } }] }
+
+/--
+info: 10: assertion does not hold
+-/
+#guard_msgs in
+#eval match Cortex.Cli.selectWireEntry callsSelected "helper" with
+  | .ok p => interpret p
+  | .error e => IO.println s!"selectWireEntry: {e}"
+
+meta def selectedRequires (isEntry : Bool) : Wire.Program :=
+  { composites := [], constrained := [],
+    procedures := [
+      { name := "run", inputs := [], outputs := [], throws := none,
+        requires := [{ cond := .bool false, summary := none }], entry := isEntry, source := at_ 59,
+        body := some { entry := "b0", handlers := [], blocks := [
+          blk "b0" [.assert "fails" (.bool false) none (at_ 60)] (.finish (at_ 61))] } }] }
+
+/--
+info: 60: assertion does not hold
+-/
+#guard_msgs in
+#eval interpret (selectedRequires true)
+
+/--
+info: 60: assertion does not hold
+-/
+#guard_msgs in
+#eval match Cortex.Cli.selectWireEntry (selectedRequires false) "run" with
+  | .ok p => interpret p
+  | .error e => IO.println s!"selectWireEntry: {e}"
+
+meta def virtualCallsEntry : Wire.Program :=
+  { composites := [{ name := "Base", extending := [], fields := [] },
+                   { name := "Box", extending := [], fields := [{ name := "v", ty := i32 }] }],
+    constrained := [int32],
+    procedures := [
+      { name := "Base$get", inputs := [{ name := "this", ty := .named "Base" }], outputs := [{ name := "r", ty := i32 }],
+        throws := none, requires := [], entry := true, source := at_ 230,
+        body := some { entry := "b0", handlers := [], blocks := [
+          blk "b0" [.init "b" (.named "Box") none (at_ 231), .new "b" "Box" (at_ 231),
+                    .set "r" (some (i32v 1)) (at_ 232)] (.finish (at_ 233))] } },
+      { name := "main", inputs := [], outputs := [], throws := none, requires := [], entry := true, source := at_ 234,
+        body := some { entry := "b0", handlers := [], blocks := [
+          blk "b0" [.init "o" (.named "Base") none (at_ 235), .new "o" "Base" (at_ 235),
+                    .init "r" i32 none (at_ 236), .virtualCall ["r"] "Base" "get" [.var "o"] (at_ 236),
+                    .assert "unreached" (.bool false) none (at_ 237)] (.finish (at_ 238))] } }] }
+
+/--
+info: error: lowering: EntriesNotCalled: call of 'Base$get': entry procedures cannot be called
+-/
+#guard_msgs in
+#eval interpret virtualCallsEntry
+
+/--
+info: Cortex lowering failed: EntriesNotCalled: call of 'Base$get': entry procedures cannot be called
+-/
+#guard_msgs in
+#eval typeCheck virtualCallsEntry
 
 end Cortex.WireTest

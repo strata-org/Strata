@@ -19,7 +19,8 @@ def exvVar : String := "$exv"
 def callThrown : String := "$callThrown"
 def callExc : String := "$callExc"
 def testVar : String := "$exnTest"
-def exnTy : LTy := mono (tcon "$AnyComposite")
+def anyExnName : TypeName := "$AnyComposite"
+def exnTy : LTy := mono (tcon anyExnName)
 def boolTy : LTy := mono .bool
 
 def ident (n : String) : Core.Expression.Ident := ⟨n, ()⟩
@@ -27,6 +28,7 @@ def ident (n : String) : Core.Expression.Ident := ⟨n, ()⟩
 structure St where
   blocks : Array (Label × LBlock) := #[]
   fresh : Nat := 0
+  saves : Array (String × LTy) := #[]
 
 abbrev M := StateM St
 
@@ -34,6 +36,12 @@ def freshLabel (base : String) : M Label := do
   let s ← get
   set { s with fresh := s.fresh + 1 }
   return s!"{base}$exn{s.fresh}"
+
+def saveVar (ty : LTy) : M String := do
+  let s ← get
+  let x := s!"$callResult{s.saves.size}"
+  set { s with saves := s.saves.push (x, ty) }
+  return x
 
 def addBlock (l : Label) (b : LBlock) : M Unit :=
   modify fun s => { s with blocks := s.blocks.push (l, b) }
@@ -73,7 +81,7 @@ def raiseMd : IRCmd → MD
   | .throw _ md | .call _ _ _ md | .virtualCall _ _ _ _ md => md
   | _ => .empty
 
-partial def splitBlock (throwing : Std.HashMap String String) (procThrows : Bool) (exitLabel : Label)
+partial def splitBlock (tys : Std.HashMap String LTy) (throwing : Std.HashMap String (String × List Nat)) (procThrows : Bool) (exitLabel : Label)
     (hs : List Handler) (label : Label) (pre : Array IRCmd) :
     List IRCmd → DetTransferCmd Label Core.Expression → M Unit
   | [], tr => addBlock label { cmds := pre.toList, transfer := tr }
@@ -83,27 +91,36 @@ partial def splitBlock (throwing : Std.HashMap String String) (procThrows : Bool
       let d ← dispatch procThrows exitLabel md "uncaught exception is not thrown" hs
       addBlock label { cmds := (pre.push (setCmd exvVar e md)).toList, transfer := .goto d }
       let dead ← freshLabel "$afterThrow"
-      splitBlock throwing procThrows exitLabel hs dead #[] cs tr
+      splitBlock tys throwing procThrows exitLabel hs dead #[] cs tr
     | .call lhs p args md =>
-      if let some ty := throwing.get? p then do
+      if let some (ty, inouts) := throwing.get? p then do
         let d ← dispatch procThrows exitLabel md s!"call does not throw an uncaught '{ty}'" hs
         let raise ← freshLabel "$raise"
+        let results ← lhs.zipIdx.mapM fun (x, i) => do
+          if inouts.contains i then return (x, none) else
+          match tys.get? x.name with
+          | some ty => return (x, some (← saveVar ty))
+          | none => return (x, none)
+        let targets := results.map fun (x, tmp) => match tmp with
+          | some t => ident t
+          | none => x
+        let assigns := results.filterMap fun (x, tmp) => tmp.map fun t => setCmd x.name (mkFvar t) md
         addBlock raise { cmds := [setCmd exvVar (mkFvar callExc) md], transfer := .goto d }
         let cont ← freshLabel "$noThrow"
-        let call : IRCmd := .call (lhs ++ [ident callThrown, ident callExc]) p args md
+        let call : IRCmd := .call (targets ++ [ident callThrown, ident callExc]) p args md
         addBlock label { cmds := (pre.push call).toList,
                          transfer := .condGoto (mkFvar callThrown) raise cont md }
-        splitBlock throwing procThrows exitLabel hs cont #[] cs tr
-      else splitBlock throwing procThrows exitLabel hs label (pre.push c) cs tr
-    | _ => splitBlock throwing procThrows exitLabel hs label (pre.push c) cs tr
+        splitBlock tys throwing procThrows exitLabel hs cont assigns.toArray cs tr
+      else splitBlock tys throwing procThrows exitLabel hs label (pre.push c) cs tr
+    | _ => splitBlock tys throwing procThrows exitLabel hs label (pre.push c) cs tr
 
-def lowerBody (throwing : Std.HashMap String String) (procThrows : Bool) (b : Body) : Body :=
+def lowerBody (tys : Std.HashMap String LTy) (throwing : Std.HashMap String (String × List Nat)) (procThrows : Bool) (b : Body) : Body :=
   let exitLabel := "$exnExit"
   let entry := "$exnEntry"
   let act : M Unit := do
     for (l, blk) in b.cfg.blocks do
       let hs := b.handlers.filter (·.covered.contains l)
-      splitBlock throwing procThrows exitLabel hs l #[] blk.cmds blk.transfer
+      splitBlock tys throwing procThrows exitLabel hs l #[] blk.cmds blk.transfer
   let ((), st) := act.run {}
   let raised := st.fresh > 0
   let inits : List IRCmd := if !raised && !procThrows then [] else
@@ -111,23 +128,36 @@ def lowerBody (throwing : Std.HashMap String String) (procThrows : Bool) (b : Bo
      .cmd (.init (ident callThrown) boolTy .nondet .empty),
      .cmd (.init (ident callExc) exnTy .nondet .empty),
      .cmd (.init (ident testVar) boolTy .nondet .empty)] ++
+    st.saves.toList.map (fun (x, ty) => .cmd (.init (ident x) ty .nondet .empty)) ++
     (if procThrows then [setCmd thrownOut ff] else [])
   let extra : List (Label × LBlock) :=
     [(entry, { cmds := inits, transfer := .goto b.cfg.entry })] ++
     (if procThrows then [(exitLabel, { cmds := [], transfer := .finish .empty })] else [])
   { cfg := { entry := entry, blocks := extra ++ st.blocks.toList }, handlers := [] }
 
-def lowerProcedure (throwing : Std.HashMap String String) (p : Procedure) : Procedure :=
+def lowerProcedure (globals : List (Core.Expression.Ident × LTy)) (throwing : Std.HashMap String (String × List Nat))
+    (p : Procedure) : Procedure :=
   let procThrows := p.throws.isSome
   let outputs := if procThrows then p.outputs ++ [(ident thrownOut, boolTy), (ident excOut, exnTy)]
     else p.outputs
-  { p with outputs, throws := none, body := p.body.map (lowerBody throwing procThrows) }
+  let tys : Std.HashMap String LTy := (globals ++ p.inputs ++ p.outputs).foldl (fun m (x, t) => m.insert x.name t) {}
+  let tys := match p.body with
+    | some b => b.cfg.blocks.foldl (fun m (_, blk) => blk.cmds.foldl (fun m c => match c with
+        | .cmd (.init x t _ _) => m.insert x.name t
+        | _ => m) m) tys
+    | none => tys
+  { p with outputs, throws := none, body := p.body.map (lowerBody tys throwing procThrows) }
 
 def run (prog : UnorderedProgram) : Except String UnorderedProgram := do
   prog.refuseVirtualCalls "LowerExceptions"
-  let throwing : Std.HashMap String String := prog.procedures.foldl
-    (fun s p => match p.throws with | some t => s.insert p.name t | none => s) {}
-  .ok (prog.mapProcedures (lowerProcedure throwing))
+  let throwing : Std.HashMap String (String × List Nat) := prog.procedures.foldl
+    (fun s p => match p.throws with
+      | some t =>
+        let inouts := p.outputs.zipIdx.filterMap fun ((x, _), i) =>
+          if p.inputs.any (·.1.name == x.name) then some i else none
+        s.insert p.name (t, inouts)
+      | none => s) {}
+  .ok (prog.mapProcedures (lowerProcedure prog.globals throwing))
 
 def pass : Pass := Pass.onUnordered "LowerExceptions" run
 

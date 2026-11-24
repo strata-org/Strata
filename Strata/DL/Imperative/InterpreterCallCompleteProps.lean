@@ -263,8 +263,8 @@ private theorem stepCmd_call_completeG
     exact denoting_bindPositional _ hd hmsrel
   · obtain ⟨i, rfl⟩ : ∃ k, i = k + 1 := ⟨i - 1, by omega⟩
     obtain ⟨j, rfl⟩ : ∃ k, j = k + 1 := ⟨j - 1, by omega⟩
-    rw [stepCmd]
-    simp (disch := omega) [hπ₀, hinst, hf, hev, hro, hlin, hlout, hri.length_eq,
+    rw [stepCmd, stepCmdWith]
+    simp (disch := omega) [CmdExt.view, hπ₀, hinst, hf, hev, hro, hlin, hlout, hri.length_eq,
       hrorel.length_eq, e1, hrun i j, e3, hms, hold, hwb, ReadValuesLength hrd, hbind.1,
       -List.forM_eq_forM]
   · simp only [List.map_append, rDefaultAssertEvents_abs, habs, hrb]

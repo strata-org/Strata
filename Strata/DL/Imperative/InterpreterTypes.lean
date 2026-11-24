@@ -38,13 +38,13 @@ def defaultMaxCallDepth : Nat := 1000
     belongs in that instance's own error type (`Core.EvalHalt` for `EvalM`), so
     there is no string-carrying catch-all to parse.
 
-    The inductive is flat, but its constructors fall into five situations a caller
+    The inductive is flat, but its constructors fall into six situations a caller
     can tell apart *from the constructor alone*.  The comment blocks below mark
     them:
 
     * **cannot compute** — the engine is fine and the program is fine, but the
       witness does not let replay compute a value (no fuel, no oracle choice, an
-      expression that does not reduce);
+      expression that does not reduce, a model binding that is missing);
     * **program error** — the replayed program is itself wrong, in a way the `Core`
       statement evaluator also errors on (`EvalError.InitVarExists`,
       `EvalError.AssignVarNotExists`, and the call-marshalling mismatches);
@@ -54,6 +54,8 @@ def defaultMaxCallDepth : Nat := 1000
     * **replay verdict** — not an error at all: replay reached a contradiction
       with an `assume`, so the candidate counterexample does not describe a real
       execution;
+    * **caller input mismatch** — the caller handed validation data that does not
+      belong together;
     * **deliberate stop** — not a failure: an instance's `emit` interrupted the run
       on purpose. -/
 inductive StopReason where
@@ -64,9 +66,11 @@ inductive StopReason where
   | callDepthExceeded
   | oracleExhausted
   | expectedBooleanChoice
+  | expectedValueChoice
   | illTypedValue
   | expressionDidNotEvaluate
   | expressionWasNotBoolean
+  | missingBinding (name : String)
   -- program error
   /-- An `init` whose target is already defined (statement evaluator:
       `EvalError.InitVarExists`). -/
@@ -101,6 +105,11 @@ inductive StopReason where
   /-- An `assume` condition is false under the replay environment (`label` is the
       `assume`'s label). -/
   | assumptionFalseUnderReplay (label : String)
+  -- caller input mismatch
+  /-- The link from a model-checking counterexample back to a program assertion,
+      handed to the translation into a replay counterexample, names a different
+      assertion than the obligation it was given. -/
+  | extractionLinkDoesNotMatchObligation
   -- deliberate stop (not a failure)
   /-- The run was **deliberately interrupted** — an instance's `emit` reached a
       condition it was told to stop on (for replay: the target assert/cover id).
@@ -117,9 +126,11 @@ def StopReason.describe : StopReason → String
   | .callDepthExceeded => "the call-depth limit was exceeded"
   | .oracleExhausted => "the nondeterministic-choice oracle was exhausted"
   | .expectedBooleanChoice => "expected a Boolean oracle choice"
+  | .expectedValueChoice => "expected a value oracle choice"
   | .illTypedValue => "an ill-typed value was produced"
   | .expressionDidNotEvaluate => "an expression did not evaluate"
   | .expressionWasNotBoolean => "an expression did not reduce to a Boolean"
+  | .missingBinding name => s!"the model has no binding for {name}"
   | .programInitTargetAlreadyDefined => "init target is already defined"
   | .programSetTargetUndefined => "set target is undefined"
   | .programCallInputArityMismatch procName =>
@@ -140,6 +151,8 @@ def StopReason.describe : StopReason → String
   | .unsupportedMissingBlockLabel => "CFG: missing block label"
   | .assumptionFalseUnderReplay label =>
       s!"assumption ({label}) is false under replay environment"
+  | .extractionLinkDoesNotMatchObligation =>
+      "extraction link does not match obligation"
   | .interrupted reason => s!"run interrupted: {reason}"
 
 instance : ToString StopReason where

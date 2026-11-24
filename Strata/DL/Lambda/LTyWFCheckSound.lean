@@ -836,7 +836,7 @@ theorem LMonoTy.instantiateWithCheck_sourceTyWF
     ∃ r0, SourceTyWF C TyVarAdmissibility.all Env.context.aliases t r0 := by
   have hknown := LMonoTy_instantiateWithCheck_knownInstance t C Env r Env' h
   obtain ⟨tI, EnvI, EnvR, hI, hR⟩ := LMonoTy.instantiateWithCheck_decompose t C Env r Env' h
-  obtain ⟨S, hSftvar, hmtys, hctx⟩ := LMonoTys.instantiateEnv_subst _ [t] Env [tI] EnvI hI
+  obtain ⟨S, hSftvar, hmtys, hctx, -⟩ := LMonoTys.instantiateEnv_subst _ [t] Env [tI] EnvI hI
   simp only [List.map_cons, List.map_nil, List.cons.injEq, and_true] at hmtys
   obtain ⟨r0, hr0⟩ := LMonoTy.resolveAliases_isOk t EnvI
   have haWF' : TContext.AliasesWF EnvI.context := by rw [hctx]; exact haWF

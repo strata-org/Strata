@@ -412,7 +412,8 @@ private theorem up_blockWF {ρ : Env Core.Expression} (hfac : Pinned ρ) {k : In
         [Stmt.block "" upBody #[]] = true
       rw [hdef]
       native_decide)
-    (fun _ _ => rfl) (fun ty hty => ?_) ⟨yTyping, fun x ty hx => ?_, ?_⟩ (fun m hm => ?_)
+    (fun _ _ => rfl) (fun _ _ => rfl) (fun ty hty => ?_) ⟨yTyping, fun x ty hx => ?_, ?_⟩
+    (fun m hm => ?_)
   · by_cases h : n = yId
     · subst h; rw [hy] at hn; cases hn; rfl
     · rw [hother n h] at hn; cases hn

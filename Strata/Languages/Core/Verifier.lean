@@ -7,16 +7,26 @@ module
 public import Strata.Pipeline.Messages
 
 public import Strata.Languages.Core.SMTEncoder
+public import Strata.Languages.Core.DefinitionSlicing
+public import Strata.Languages.Core.EvaluatorResults
 public import Strata.Languages.Core.LeanExport
 public import Strata.DL.Lambda.RecursiveAxioms
 public import Strata.Languages.Core.PipelinePhase
 public import Strata.Transform.CoreTypeCheck
+public import Strata.Languages.Core.Counterexample.Model
 public import Strata.Transform.WP.WPCoreProgram
 public import Strata.Transform.SSA.SSACoreProgram
 public import Strata.Transform.DeadDefElim
+public import Strata.Transform.GuardFwd
+public import Strata.Transform.DefInline
+public import Strata.Transform.WPLoop
+public import Strata.Transform.GuardProp
+public import Strata.Transform.CtorFold
+public import Strata.Transform.WPRewriteLoop
 import Strata.Transform.UnrollBoundedQuantifiers
 import Strata.Transform.BetaReduce
 import Strata.Transform.CallElim
+import Strata.Transform.CFGLoopElim
 import Strata.Transform.CommonSubexprElim
 import Strata.Transform.FilterProcedures
 import Strata.Transform.FunctionInlining
@@ -122,7 +132,7 @@ decreasing_by
 /-- Allocate a globally unique SMT-LIB identifier within the abstract encoder.
     Mirrors `Encoder.uniquify` but operates on `AbstractEncoderState`. -/
 private def uniquify (baseName : String) : AbstractEncoderM τ m String := do
-  let id := Strata.Name.findUnique baseName 1 (← get).base.usedNames
+  let id := findUniqueSMTName baseName (← get).base.usedNames
   modify fun st => { st with base.usedNames := st.base.usedNames.insert id }
   return id
 
@@ -332,10 +342,11 @@ def emitDatatypesAbstract [Monad m] [MonadExceptOf IO.Error m]
     | [] => pure ()
     | [d] =>
       let constrs ← datatypeConstrsM solver ctx.useArrayTheory d
-      let _ ← solver.declareDatatype d.name d.typeArgs
+      let _ ← solver.declareDatatype (Core.smtSortName d.name) (d.typeArgs.map Core.smtSortName)
         fun _ _ => .ok constrs
     | _ =>
-      let dtHeaders := usedBlock.map fun d => (d.name, d.typeArgs)
+      let dtHeaders := usedBlock.map fun d =>
+        (Core.smtSortName d.name, d.typeArgs.map Core.smtSortName)
       let allConstrs ← usedBlock.mapM (datatypeConstrsM solver ctx.useArrayTheory)
       let _ ← solver.declareDatatypes dtHeaders
         fun _ _ => .ok allConstrs
@@ -355,7 +366,7 @@ def declareContextAbstract [Monad m] [MonadExceptOf IO.Error m]
     (ufs : List UF) (ifs : List IF) (axms : List Term) (managed : Std.HashSet String) :
     AbstractEncoderM τ m Unit := do
   for s in sorts do
-    if !ctx.seenDatatypes.contains s.name then
+    if !ctx.seenDatatypes.contains (Core.coreSortName s.name) then
       let _ ← liftM (solver.declareSort s.name s.arity)
   if !datatypes.isEmpty then
     liftM (emitDatatypesAbstract solver { ctx with seenDatatypes := datatypes })
@@ -523,8 +534,6 @@ def typedVarToSMTFn (ctx : SMT.Context) (id : Core.Expression.Ident)
     let (ty', _) ← LMonoTy.toSMTType mty ctx
     return (id.name, ty')
 
-abbrev Result := Imperative.SMT.Result (Core.Expression.Ident)
-
 /-- The `set-option`s every solver starts from. -/
 def solverPreludeOptions (solver : String) (solverOptions : Array (String × String)) :
     Array (String × String) :=
@@ -545,10 +554,30 @@ def setSolverPrelude (solver : String) (solverOptions : Array (String × String)
 @[deprecated setSolverPrelude (since := "2026-10-27")]
 abbrev getSolverPrelude := @setSolverPrelude
 
+/-- The cvc5 flag that `cvc5FullSaturateQuant` adds to every cvc5 run, the satisfiability check
+    included (see `VerifyOptions.cvc5FullSaturateQuant`). -/
+def cvc5FullSaturateFlags (options : VerifyOptions) : Array String :=
+  if options.cvc5FullSaturateQuant then #["--full-saturate-quant"] else #[]
+
+/-- The flags added to a cvc5 query rerun after an `unknown` for incompleteness
+    (`cvc5RetryFullSaturateQuant`, with `cvc5RetryTimeout`); empty when there is no retry. Under
+    `incremental` there is none, even when `alwaysGenerateSMT` sends the queries through files,
+    so a run's verdicts do not depend on whether its SMT files are kept. The retry always has a
+    finite limit: `cvc5RetryTimeout`, else the query's own `solverTimeout`, else (when the query
+    has none) the default solver timeout, since enumerative instantiation may never stop on a
+    false goal that the first run left `unknown` quickly. -/
+def cvc5RetryFlags (options : VerifyOptions) : Array String :=
+  if options.cvc5RetryFullSaturateQuant && options.solver == "cvc5" && !options.incremental then
+    #["--full-saturate-quant"] ++
+      (if options.cvc5RetryTimeout > 0 then #[s!"--tlimit={options.cvc5RetryTimeout * 1000}"]
+       else if options.solverTimeout > 0 then #[]
+       else #[s!"--tlimit={VerifyOptions.default.solverTimeout * 1000}"])
+  else #[]
+
 def getSolverFlags (options : VerifyOptions) : Array String :=
   let produceModels :=
     match options.solver with
-    | "cvc5" => #["--produce-models"]
+    | "cvc5" => #["--produce-models"] ++ cvc5FullSaturateFlags options
     -- No need to specify -model for Z3 because we already have `get-value`
     -- in the generated SMT file.
     | _ => #[]
@@ -592,7 +621,8 @@ def incrementalLaunch (options : VerifyOptions) : IncrementalLaunch :=
   let limitMs := options.solverTimeout * 1000
   let flags := match options.solver with
     | "cvc5" =>
-      #["--quiet", "--lang", "smt", "--incremental", "--produce-models", s!"--tlimit-per={limitMs}"]
+      #["--quiet", "--lang", "smt", "--incremental", "--produce-models", s!"--tlimit-per={limitMs}"] ++
+        cvc5FullSaturateFlags options
     | "z3" => #["-in", s!"-t:{limitMs}"]
     | _ => #[]
   let timeKey : Option String := match options.solver with
@@ -650,7 +680,7 @@ def dischargeObligation
         assumptionTerms obligationTerm md satisfiabilityCheck validityCheck
         (label := label) (varDefinitions := varDefinitions) (varDeclarations := varDeclarations)
         (pctx := pctx)
-  Imperative.SMT.dischargeObligation
+  Imperative.SMT.dischargeObligationWithRetry
     (P := Core.Expression)
     encodeAct
     (typedVarToSMTFn ctx)
@@ -662,6 +692,7 @@ def dischargeObligation
     (skipSolver := options.skipSolver)
     (termCache := termCache)
     (pctx := pctx)
+    (retryOnIncomplete := cvc5RetryFlags options)
 
 /-- Discharge a proof obligation using the incremental solver backend.
     Spawns a live solver process, sends commands via stdin/stdout, and
@@ -705,17 +736,33 @@ open Strata
 
 public section
 
-def formatProofObligation (ob : Imperative.ProofObligation Expression) :
-    Std.Format :=
-  let flatEntries := ob.assumptions.flatten
+/-- The listing of an obligation: its label, its property, its definitions not named in
+    `unread` as `name := value` when `unread` is given, its assumptions and its goal. -/
+def formatProofObligationWith (unread : Option (Std.HashSet String))
+    (ob : Imperative.ProofObligation Expression) : Std.Format :=
+  let flatEntries : List (PathConditionEntry Expression) := ob.assumptions.flatten
+  let definitionLine := match unread with
+    | none => f!""
+    | some unread =>
+      let definitionFmt := flatEntries.filterMap fun (entry : PathConditionEntry Expression) =>
+        match entry with
+        | .varDecl x _ (.det e) =>
+          if unread.contains x.name then none else some f!"{x} := {Core.formatExprs [e]}"
+        | _ => none
+      if definitionFmt.isEmpty then f!""
+      else f!"\nDefinitions:\n{Std.Format.joinSep definitionFmt "\n"}"
   let assumptionFmt := flatEntries.filterMap fun
     | .assumption label expr => some f!"{label}: {Core.formatExprs [expr]}"
     | _ => none
   let assumptionLine := if assumptionFmt.isEmpty then f!""
                         else f!"\nAssumptions:\n{Std.Format.joinSep assumptionFmt "\n"}"
   f!"Label: {ob.label}\n\
-     Property: {ob.property}{assumptionLine}\n\
+     Property: {ob.property}{definitionLine}{assumptionLine}\n\
      Obligation:\n{Core.formatExprs [ob.obligation]}\n"
+
+def formatProofObligation (ob : Imperative.ProofObligation Expression) :
+    Std.Format :=
+  formatProofObligationWith none ob
 
 def formatProofObligations (obs : Array (Imperative.ProofObligation Expression)) :
     Std.Format :=
@@ -981,15 +1028,6 @@ private def symExecMaxSteps : Nat := 100000000
     run stops with an error (`toSymExecObligationProgram`). -/
 private def symExecMaxPaths : Nat := 10000
 
-/-- The blocks on a cycle reachable from the entry of `p`'s CFG body, in block order (`[]`
-    for a structured body). -/
-private def cfgLoopBlocks (p : Procedure) : List String :=
-  match p.body with
-  | .structured _ => []
-  | .cfg g =>
-    let onCycle := Imperative.CFG.cycleLabelsWith g.succMap [g.entry]
-    g.labels.filter onCycle.contains
-
 /-- The metadata field marking a check that is the only one in the program with its label and
     metadata. The per-path results of a marked check are grouped together even without a source
     range (`vcResultGroupKey`); for an unmarked one, label and metadata name several checks, so
@@ -1053,10 +1091,11 @@ private def markOnlyChecks (counts : Std.HashMap String Nat) (p : Procedure) : P
     one block per check no path reached. The lemma blocks and these become the `if *` branches
     of the obligation procedures, each block after exactly the `distinct` declarations before
     its lemma or procedure (`scopedObligationProgram`). Each
-    run stops past `symExecMaxPaths` paths. The whole run stops with an error, naming the
-    procedure and the reason, if the program fails a fact `SymExec.failedRequires` checks, a CFG
-    body has a loop (`cfgLoopBlocks`), or a procedure's run is incomplete (`symExecIncomplete`,
-    such as the path limit or a path that stopped); no obligations are produced then. -/
+    run stops past `symExecMaxPaths` paths. The whole run stops with an error if the program
+    fails a fact `SymExec.failedRequires` checks (a CFG body with a loop fails `noCFGCycles`), or,
+    naming the procedure and the reason, if a procedure's run is incomplete
+    (`symExecIncomplete`, such as the path limit or a path that stopped); no obligations are
+    produced then. -/
 def toSymExecObligationProgram (options : VerifyOptions) (program : Program)
     (moreFns : Lambda.Factory CoreLParams := Lambda.Factory.default)
     (policy : Option SymExec.MergePolicy := none) :
@@ -1092,10 +1131,6 @@ def toSymExecObligationProgram (options : VerifyOptions) (program : Program)
       | .proc p _ =>
         let p := markOnlyChecks counts p
         let pol := policy.getD (SymExec.MergePolicy.ofMode options.symExecMode)
-        let loops := cfgLoopBlocks p
-        if !loops.isEmpty then throw (Message.fromString
-            s!"symExec: procedure '{p.header.name}': its CFG body has a loop (through blocks \
-              {loops}), which --vcgen symexec does not analyze") else
         let r := SymExec.exploreProc { simpFuel := postEvalEnv.exprEnv.config.fuel,
                                        maxPaths := some symExecMaxPaths }
           symExecMaxSteps symExecRunFuel F p fnNames s!"{idx}_" pol
@@ -1115,6 +1150,9 @@ def toSymExecObligationProgram (options : VerifyOptions) (program : Program)
             "SymExec.steps" r.steps
           let stats := (stats.increment "SymExec.obligations" r.obligations.length).increment
             "SymExec.merges" r.merges
+          let stats := stats.increment "SymExec.joinValuesUnnamed" r.joinValuesUnnamed
+          let stats := stats.increment "SymExec.infeasible"
+            (r.countStatus (· matches .infeasible _))
           -- One tree-shaped block per procedure (each assumption written once, on the tree
           -- edge that introduces it), plus one block per unreached check.
           let axAssumes := axioms.toList.map fun (l, e) => Statement.assume l e #[]
@@ -1480,13 +1518,6 @@ def VCOutcome.merge (a b : VCOutcome) : VCOutcome :=
     solverLog := a.solverLog ++ b.solverLog
     mergedFrom := aPaths ++ bPaths }
 
-/--
-A model with values lifted to LExpr for display purposes.
-This is used for formatting models in a human-readable way
-using Core's expression formatter and for future use as program metadata.
--/
-abbrev LExprModel := List (Expression.Ident × LExpr CoreLParams.mono)
-
 /-- Format a model value using the Core DDM formatter.
     Renders constructors, applications, and primitives with Core syntax
     (e.g. `Cons(0, Nil)`, `Right(true)`). -/
@@ -1531,6 +1562,34 @@ structure VCResult where
   /-- model with values converted from `SMT.Term` to Core `LExpr`.
       The contents must be consistent with the outcome, if the outcome was a failure. -/
   lexprModel : LExprModel := []
+  /-- The variables the solver was asked for that a non-empty `lexprModel` has no value for:
+      the model is partial exactly when this is not empty. -/
+  modelMissing : List String := []
+  /-- The same as `modelMissing` for the satisfiability check's model and for the validity
+      check's model, each the `sat` model or `unknown` candidate that check's result carries. -/
+  checkModelMissing : List String × List String := ([], [])
+  /-- The satisfiability check's model (`.1`) and the validity check's model (`.2`), each
+      converted as `lexprModel` is and filtered as it is (a model filtered to nothing is empty):
+      the models a SARIF message prints. A component is `none` when the result was built without
+      that check's model (by a custom back end or by hand); the SARIF message then prints, for
+      that check, the model the outcome's check carries (`Sarif.sarifMessage`). -/
+  checkModels : Option LExprModel × Option LExprModel := (none, none)
+
+/-- The marker of a partial counterexample model, ` (partial; no value for …)` naming the
+    variables `missing` the model has no value for, or the empty string when `missing` is
+    empty. -/
+def partialModelMarkerOf (missing : List String) : String :=
+  if missing.isEmpty then ""
+  else s!" (partial; no value for {", ".intercalate missing})"
+
+/-- The marker of a partial `lexprModel` (`partialModelMarkerOf`). -/
+def VCResult.partialModelMarker (r : VCResult) : String :=
+  partialModelMarkerOf r.modelMissing
+
+/-- The heading of a printed counterexample model: `Model:`, followed, when the model is
+    partial, by the variables it has no value for. -/
+def VCResult.modelHeading (r : VCResult) : String :=
+  s!"Model:{r.partialModelMarker}"
 
 /-- Mask outcome properties that were not requested.
     When the evaluator resolves a check that wasn't requested by the
@@ -1558,10 +1617,15 @@ instance : ToFormat VCResult where
     | .ok outcome =>
       let modelFmt :=
         if r.verbose >= .models && !r.lexprModel.isEmpty then
-          f!"\nModel:\n{r.lexprModel}"
+          f!"\n{r.modelHeading}\n{r.lexprModel}"
         else f!""
       let prop := r.obligation.property
-      f!"Obligation: {r.obligation.label}\nProperty: {prop}\nResult: {outcome.emoji prop r.checkLevel r.checkMode} {outcome.label prop r.checkLevel r.checkMode}{modelFmt}"
+      -- At `--verbose debug`, the condition checked, as the VC generator stated it.
+      let condFmt :=
+        if r.verbose >= .debug then f!"\nCondition: {r.obligation.obligation}" else f!""
+      f!"Obligation: {r.obligation.label}\nProperty: {prop}{condFmt}\nResult: \
+        {outcome.emoji prop r.checkLevel r.checkMode} \
+        {outcome.label prop r.checkLevel r.checkMode}{modelFmt}"
 
 /-- Compact single-line outcome string: emoji + label
     (e.g. "✅ pass", "❌ fail"). Uses the property, check level,
@@ -1663,9 +1727,17 @@ def VCResult.merge (a b : VCResult) : VCResult :=
   | .ok oa, .ok ob =>
     let merged := oa.merge ob
     -- Keep the model from whichever result had a sat satisfiability or validity
-    let model := if oa.satisfiabilityProperty.isSat || oa.validityProperty.isSat
-                 then a.lexprModel else b.lexprModel
-    { a with outcome := .ok merged, lexprModel := model }
+    let src := if oa.satisfiabilityProperty.isSat || oa.validityProperty.isSat then a else b
+    { a with outcome := .ok merged, lexprModel := src.lexprModel,
+             modelMissing := src.modelMissing,
+             -- Each check keeps the `checkModelMissing` and `checkModels` components of the
+             -- result whose model `oa.merge ob` keeps for that check.
+             checkModelMissing :=
+               ((if oa.satisfiabilityProperty.isSat then a else b).checkModelMissing.1,
+                (if oa.validityProperty.isSat then a else b).checkModelMissing.2),
+             checkModels :=
+               ((if oa.satisfiabilityProperty.isSat then a else b).checkModels.1,
+                (if oa.validityProperty.isSat then a else b).checkModels.2) }
 
 /-- The grouping key of a `VCResult` (`mergeByAssertion`). A result with a source range is keyed
     by its display label (property summary, else label), its primary `FileRange` and the related
@@ -1716,6 +1788,29 @@ def modelOfResults (ctx : SMT.Context) (satResult validityResult : SMT.Result) :
     convertModel m (SMT.Context.getConstructorNames ctx)
   | _, _ => []
 
+/-- What a check reports about its counterexample beside the model reported: the variables
+    asked for that the model reported has no value for (`VCResult.modelMissing`), the same for
+    each check's own model (`VCResult.checkModelMissing`), and each check's own model
+    (`VCResult.checkModels`). -/
+structure ModelReport where
+  missing : List String := []
+  checkMissing : List String × List String := ([], [])
+  checkModels : LExprModel × LExprModel := ([], [])
+
+/-- The counterexample of the check results `satResult` and `validityResult`, keeping in every
+    model only the variables `keep` accepts: the model reported (`modelOfResults`) and its
+    `ModelReport`, whose lists of missing variables name, in `requested` order, the names in
+    `requested` the model has no value for, and are empty for an empty model. -/
+def reportModels (ctx : SMT.Context) (satResult validityResult : SMT.Result)
+    (requested : List String) (keep : String → Bool) : LExprModel × ModelReport :=
+  let kept (m : LExprModel) : LExprModel := m.filter fun (name, _) => keep name.name
+  let missingOf (m : LExprModel) : List String := if m.isEmpty then [] else
+    requested.filter fun v => !m.any (·.1.name == v)
+  let model := kept (modelOfResults ctx satResult validityResult)
+  let checkModels := (kept (modelOfResults ctx satResult .unsat),
+    kept (modelOfResults ctx .unsat validityResult))
+  (model, ⟨missingOf model, (missingOf checkModels.1, missingOf checkModels.2), checkModels⟩)
+
 /-- Which of the two solver checks an obligation needs, shared by every back end so they agree on
     what a verdict means. It is asked per obligation: an obligation
     annotated for a full check always gets both, and in deductive mode a property that passes when
@@ -1731,77 +1826,6 @@ def checksFor (property : Imperative.PropertyType)
     | .deductive, _ | .deductiveAssumingSatisfiablePaths, _ =>
       if property.passWhenUnreachable then (false, true) else (true, false)
     | .bugFinding, _ => (true, false)
-
-/-- What `evaluatorResults` needs to know about a path condition, read in one pass over it. -/
-inductive PathConditionShape where
-  /-- Every entry only declares or defines a variable. Such a path condition is satisfiable: each
-      entry is sent to the solver as a `declare-fun` or a non-recursive `define-fun`, which some
-      model always satisfies.
-
-      The solver also receives axioms that are not entries of the path condition: those of the
-      built-in functions the definitions use, such as `mapConst`'s, and those attached to the
-      program's own functions (`func.axioms`, and the per-constructor axioms of recursive
-      functions). Taking the path condition to be satisfiable therefore assumes that these
-      axioms are satisfiable together. If they are not, an assertion the solver would pass
-      vacuously is reported failing; no assertion is ever reported passing because of this.
-      `Core.factoryInterp_axiomsSatisfied` proves that the axioms of the polymorphic built-ins
-      (`Core.Factory`) hold together in one model. Two steps are assumed rather than proved:
-      that the specialized copies `MonomorphizeFunctions` makes of these built-ins, whose axioms
-      are what the solver receives, inherit that model; and that the axioms of the program's own
-      functions are satisfiable.
-      The evaluator also decides before encoding, so a definition the encoder cannot encode is
-      reported as this failure rather than as an analysis error. -/
-  | onlyDefinitions
-  /-- Some assumption is literally `false`: the evaluator already knows the path is dead. -/
-  | hasFalseAssumption
-  /-- Anything else. -/
-  | other
-  deriving DecidableEq
-
-/-- The shape of `obligation`'s path condition, read in one pass over its entries. -/
-def pathConditionShape (obligation : ProofObligation Expression) : PathConditionShape :=
-  obligation.assumptions.foldl (init := .onlyDefinitions) fun shape pc =>
-    pc.foldl (init := shape) fun shape entry =>
-      match shape, entry with
-      | .hasFalseAssumption, _ => .hasFalseAssumption
-      | _, .assumption _ e => if e.isFalse then .hasFalseAssumption else .other
-      | _, .distinct .. => .other
-      | shape, .varDecl .. => shape
-
-/-- Whether the premise of `deductiveAssumingSatisfiablePaths`, that every path to an assertion
-    can be taken, lets the evaluator decide that `obligation`, whose goal is literally `false`
-    and whose path condition has shape `shape`, fails: its path condition, whatever it holds, is
-    taken to be satisfiable without asking a solver. Covers are left to the solver, so they are
-    reported as in `deductive`, and so is a path condition with a literally false assumption,
-    which the evaluator already knows is dead. -/
-def usesSatisfiablePathsPremise (obligation : ProofObligation Expression)
-    (checkMode : VerificationMode) (shape : PathConditionShape) : Bool :=
-  checkMode == .deductiveAssumingSatisfiablePaths && obligation.property.passWhenUnreachable &&
-    shape != .hasFalseAssumption
-
-/-- The results the evaluator decides without a solver, for satisfiability and validity: `some r`
-    when the obligation alone settles that check, `none` when a solver is needed. A check not
-    asked for is `unknown`. -/
-def evaluatorResults (obligation : ProofObligation Expression) (checkMode : VerificationMode)
-    (satisfiabilityCheck validityCheck : Bool) : Option SMT.Result × Option SMT.Result :=
-  -- Satisfiability is settled if the obligation is literally false (unsat).
-  let sat : Option SMT.Result :=
-    if !satisfiabilityCheck then some .unknown
-    else if obligation.obligation.isFalse then some .unsat
-    else none
-  -- Validity is settled if the obligation is literally true (valid = unsat), or literally false
-  -- with a path condition known to be satisfiable (invalid = sat): one that only declares or
-  -- defines variables, or one that `usesSatisfiablePathsPremise` takes to be satisfiable.
-  let valid : Option SMT.Result :=
-    if !validityCheck then some .unknown
-    else if obligation.obligation.isTrue then some .unsat
-    else if obligation.obligation.isFalse then
-      let shape := pathConditionShape obligation
-      if shape == .onlyDefinitions || usesSatisfiablePathsPremise obligation checkMode shape then
-        some (.sat [])
-      else none
-    else none
-  (sat, valid)
 
 /-- The axiom-relevance cache that `mode` needs for `prog`, or `none` when
     pruning is off. -/
@@ -1891,6 +1915,33 @@ def seedsKeepLastCached (consequentFns : List String)
     acc := (← ExprFactsCache.facts e).opsLast.get.reverse.foldl List.keepLastStep acc
   return (consequentFns.reverse.foldl List.keepLastStep acc).2
 
+/-- `formatProofObligation` with the read definitions of the obligation listed after its
+    property, as `name := value`. -/
+def formatProofObligationWithReads (ob : Imperative.ProofObligation Expression) :
+    Std.Format :=
+  formatProofObligationWith (some (unreadDefinitions (readStateOf ob.assumptions.reverse) ob)) ob
+
+/-- `formatProofObligations` with each obligation's read definitions, the read states computed
+    incrementally along the obligations (`readFold`). -/
+def formatProofObligationsWithReads (obs : Array (Imperative.ProofObligation Expression)) :
+    Std.Format :=
+  let init : Imperative.PathConditions.FoldState ReadState Unit Expression := .init {}
+  let (fmts, _) := obs.foldl (init := (#[], init)) fun (fmts, st) ob =>
+    match (readFold.advance ob.assumptions.reverse).exec st with
+    | .ok st =>
+      (fmts.push (formatProofObligationWith (some (unreadDefinitions st.current ob)) ob), st)
+    | .error e => nomatch e
+  Std.Format.joinSep fmts.toList "\n"
+
+/-- `ps` without the assumptions and distinctness facts whose label is in `labels`; every
+    variable declaration and definition is kept, whatever its name. -/
+def removeLabeled (ps : PathConditions Expression) (labels : List String) :
+    PathConditions Expression :=
+  let labels : Std.HashSet String := Std.HashSet.ofList labels
+  ps.map fun pc => pc.filter fun
+    | .varDecl .. => true
+    | e => !labels.contains e.name
+
 /--
 Preprocess a proof obligation using symbolic simulation.
 Returns the symbolic results for satisfiability and validity independently
@@ -1899,7 +1950,13 @@ plus the labels of axiom assumptions found irrelevant to this obligation
 (empty when pruning is off or inapplicable). The returned obligation has the
 pruned axioms removed from its assumptions; the labels let a caller that
 needs the *original* assumptions (e.g. for cross-obligation sharing) apply
-the pruning at emission time instead.
+the pruning at emission time instead. The removal keeps every definition,
+whatever its name (`removeLabeled`).
+
+`evaluated` is the caller's `evaluatorResults` for the obligation, computed
+here when absent. The definitions named in `unread` (`unreadDefinitions`),
+which the caller leaves out of the query, are left out of the axiom-relevance
+seeds too.
 -/
 def preprocessObligation (obligation : ProofObligation Expression) (p : Program)
     (options : VerifyOptions) (satisfiabilityCheck validityCheck : Bool)
@@ -1916,9 +1973,11 @@ def preprocessObligation (obligation : ProofObligation Expression) (p : Program)
     -- be asked against the same `axiomCache` and axiom program; a fresh memo when absent.
     -- Same result.
     (relevanceMemo : Option (IO.Ref IrrelevantAxioms.RelevanceMemo) := .none)
+    (evaluated : Option (Option SMT.Result × Option SMT.Result) := .none)
+    (unread : Std.HashSet String := {})
     : EIO Message (ProofObligation Expression × Option SMT.Result × Option SMT.Result × List String) := do
-  let (peSatResult, peValResult) :=
-    evaluatorResults obligation options.checkMode satisfiabilityCheck validityCheck
+  let (peSatResult, peValResult) := evaluated.getD
+    (evaluatorResults obligation options.checkMode satisfiabilityCheck validityCheck)
   -- If evaluator resolved both, log for the assert(false) case
   if let (some _, some (.sat _)) := (peSatResult, peValResult) then
     if obligation.property == .assert then
@@ -1946,20 +2005,21 @@ def preprocessObligation (obligation : ProofObligation Expression) (p : Program)
         let relevanceMemo ← match relevanceMemo with
           | some ref => pure ref
           | none => (IO.mkRef ({} : IrrelevantAxioms.RelevanceMemo) : BaseIO _)
+        -- The definitions named in `unread` are left out of the seeds.
+        let seedAssumptions := (ProofObligation.withoutDefinitions obligation unread).assumptions
         let seeds ← match cache with
           | .directed _ =>
             (consequentFns ++ ·) <$>
-              ExprFactsCache.runIn exprCache (antecedentOpsCached obligation.assumptions axiomSet)
+              ExprFactsCache.runIn exprCache (antecedentOpsCached seedAssumptions axiomSet)
           | .callGraph .. =>
             if mode == .Precise then
               ExprFactsCache.runIn exprCache
-                (seedsKeepLastCached consequentFns obligation.assumptions axiomSet)
+                (seedsKeepLastCached consequentFns seedAssumptions axiomSet)
             else pure consequentFns
         let irrelevantAxioms ← (relevanceMemo.modifyGet fun memo =>
           IrrelevantAxioms.getIrrelevantAxiomsMemo (axiomProgram.getD p) cache seeds memo :
           BaseIO _)
-        let newAssumptions :=
-          Imperative.PathConditions.removeByNames obligation.assumptions irrelevantAxioms
+        let newAssumptions := removeLabeled obligation.assumptions irrelevantAxioms
         pure ({ obligation with assumptions := newAssumptions }, irrelevantAxioms)
   return (obligation, peSatResult, peValResult, prunedAxiomLabels)
 
@@ -1997,9 +2057,11 @@ def preprocessObligation (obligation : ProofObligation Expression) (p : Program)
     procedure or ill-formed call is reported even when the filter then drops it. Every later
     phase relies on its annotations and on the well-formed calls it establishes. The filter
     follows. Without `--vcgen symexec`, `assertNoCFGBodies` comes next, so a CFG body is refused
-    by a message naming the fact. Under `--vcgen symexec` CFG bodies go on to symbolic
-    execution: call elimination and precondition elimination rewrite the commands of their
-    blocks, and the other phases keep them as they are. -/
+    by a message naming the fact. Under `--vcgen symexec` CFG bodies go on to the path
+    explorer: before type checking, `hoistNondetChoices` declares the choices of
+    nondeterministic `goto`s in CFG loops at the entry; after the filter, `cfgLoopElim` cuts
+    the loops of CFG bodies at their headers; call elimination and precondition elimination
+    rewrite the commands of their blocks, and the other phases keep them as they are. -/
 def transformPipelinePhases (options : VerifyOptions := VerifyOptions.default)
     (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default) :
     List PipelinePhase :=
@@ -2015,7 +2077,15 @@ def transformPipelinePhases (options : VerifyOptions := VerifyOptions.default)
     else [ProgramFact.assertPhase .noCFGBodies]
   -- The filter runs before `assertNoCFGBodies`, so a caller naming structured
   -- procedures to verify is not refused for an excluded CFG body.
-  [typeCheckPipelinePhase options (moreFns := moreFns)] ++ filterPhases ++ cfgCheck ++
+  -- Under `--vcgen symexec` the loops of CFG bodies are cut at their headers before call
+  -- elimination, so every later phase sees acyclic CFG bodies. The choices of
+  -- nondeterministic `goto`s in CFG loops are declared at the entry before type checking,
+  -- which rejects a declaration on a cycle.
+  let symExecCFG := options.symExec.isSome && options.vcgen == .symbolic
+  let hoistChoices := if symExecCFG then [hoistNondetChoicesPipelinePhase] else []
+  let cutCFGLoops := if symExecCFG then [cfgLoopElimPipelinePhase] else []
+  hoistChoices ++ [typeCheckPipelinePhase options (moreFns := moreFns)] ++ filterPhases ++
+    cfgCheck ++ cutCFGLoops ++
     [callElimPipelinePhase, termCheckPipelinePhase, precondElimPipelinePhase]
     ++ postFilterPhases ++ [insertLoopInvariantAssertsPipelinePhase, loopElimPipelinePhase]
 
@@ -2063,7 +2133,7 @@ def declObligationsPipelinePhase
     (preserves := factSet![.noCFGBodies, .noCalls, .noLoops, .noLoopInvariants, .noLoopMeasures,
                          .noPrecondsFromFuncs, .noNondetGuards,
                          .noPolymorphicProcedures,
-                         .noPolymorphicFunctions, .typeAnnotated, .exitsCovered])
+                         .noPolymorphicFunctions, .typeAnnotated, .exitsCovered, .noCFGCycles])
     fun prog => do
       let (prog', stats) ← Transform.liftDiag
         (Core.declObligationsProgram options prog moreFns |>.mapError fun err =>
@@ -2072,16 +2142,21 @@ def declObligationsPipelinePhase
       return (true, prog')
 
 /-- The phases `--vcgen wp` runs in place of `symbolicEvalPipelinePhase`: the declaration phase,
-    the WP phase, the SSA phase, then the erasure of unread definitions. -/
+    the WP phase, the SSA phase, then the loop that repeats beta reduction, guard forwarding, the
+    inlining of single-use definitions, the erasure of unread definitions, guard propagation and
+    the constructor fold until a round changes nothing (`wpRewriteLoopPipelinePhase`). -/
 def wpVCGenPhases (options : VerifyOptions := VerifyOptions.default)
     (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default) : List PipelinePhase :=
   [declObligationsPipelinePhase options moreFns, wpPipelinePhase moreFns, ssaPipelinePhase moreFns,
-    deadDefElimPipelinePhase]
+    wpRewriteLoopPipelinePhase moreFns]
 
 /-- Experimental alternative to `symbolicEvalPipelinePhase` (`--vcgen symexec`): obligations by
     symbolic execution on the monadic interpreter (`toSymExecObligationProgram`). Requires the
     facts `SymExec.symExecRequires` lists (built from that list, so the two cannot drift). A
-    `policy` (any Lean merge policy) replaces the preset `options.symExecMode` names. -/
+    `policy` (any Lean merge policy) replaces the preset `options.symExecMode` names.
+
+    Its output declares each symbol it names a merged value with (`SymExec.newAssumes`), so it
+    establishes `noInits` only when no paths merge: under `never` and no `policy`. -/
 def symExecPipelinePhase
     (options : VerifyOptions := VerifyOptions.default)
     (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default)
@@ -2090,8 +2165,11 @@ def symExecPipelinePhase
   -- establishes `noCFGBodies` for the CFG bodies it accepts.
   modelPreservingPipelinePhase "symExec"
     (requires := ProgramFactSet.ofList SymExec.symExecRequires)
-    (establishes := factSet![.noCFGBodies, .staticSingleAssignment, .hasObligationForm,
-                             .noProcedureContracts, .noInits])
+    (establishes := if policy.isNone && options.symExecMode == .never then
+        factSet![.noCFGBodies, .staticSingleAssignment, .hasObligationForm,
+                 .noProcedureContracts, .noInits]
+      else factSet![.noCFGBodies, .staticSingleAssignment, .hasObligationForm,
+                    .noProcedureContracts])
     (preserves := factSet![.noCalls, .noLoops, .noLoopInvariants, .noLoopMeasures,
                          .noPrecondsFromFuncs,
                          .noPolymorphicProcedures,
@@ -2135,18 +2213,20 @@ def corePipelinePhases
     ++ (match options.vcgen with
         | .symbolic =>
           if options.symExec.isSome then
-            -- CSE runs whenever merging can happen (`always`, `pathsAbove`): each merge builds
-            -- an `ite` holding both branches' values, which later merges copy, and CSE names
-            -- each shared part once. Under `never` it runs only on a program with an
-            -- expression whose tree has more than `symExecPerPathCSETreeSize` nodes (a value
-            -- that copies itself, such as `r := r + r` repeated).
-            [symExecPipelinePhase options moreFns, betaReducePipelinePhase,
-              if options.symExecMode == .never then
-                commonSubexprElimPhase (minTreeSize := some symExecPerPathCSETreeSize)
-              else commonSubexprElimPhase]
+            -- Under `never`, CSE runs only on a program with an expression whose tree has
+            -- more than `symExecPerPathCSETreeSize` nodes (a value that copies itself, such as
+            -- `r := r + r` repeated). When paths can merge (`always`, `pathsAbove`) it does not
+            -- run: the explorer names each merged value at its join, and its output declares
+            -- those names, which CSE's `noInits` excludes.
+            if options.symExecMode == .never then
+              [symExecPipelinePhase options moreFns, betaReducePipelinePhase,
+                commonSubexprElimPhase (minTreeSize := some symExecPerPathCSETreeSize)]
+            else [symExecPipelinePhase options moreFns, betaReducePipelinePhase]
           else [symbolicEvalPipelinePhase options moreFns, betaReducePipelinePhase,
                 commonSubexprElimPhase]
-        -- CSE requires `noInits`, which the SSA phase does not establish.
+        -- CSE requires `noInits`, which the SSA phase does not establish. The rewrite loop
+        -- beta-reduces procedure bodies; `betaReducePipelinePhase` reduces the other
+        -- declarations (function bodies, axioms).
         | .wp => wpVCGenPhases options moreFns ++ [betaReducePipelinePhase])
 
 /-- What the back end needs of the program the pipeline hands it, as opposed to
@@ -2322,32 +2402,39 @@ def mkDischargeFn : MkDischargeFn := fun (options : VerifyOptions) (counter : IO
 
 open CSE (isCSEGeneratedName)
 
-/--
-Invoke a backend engine and get the analysis result for a
-given proof obligation.
--/
-def getObligationResult (assumptionTerms : List Term) (obligationTerm : Term)
-    (ctx : SMT.Context)
-    (obligation : ProofObligation Expression) (p : Program)
-    (options : VerifyOptions)
-    (discharge : DischargeFn)
-    (satisfiabilityCheck validityCheck : Bool)
-    (phases : List AbstractedPhase)
-    (varDefinitions : List VarDefinition := [])
-    (varDeclarations : List VarDeclaration := [])
-    -- Labels of the axioms pruning dropped from this query.
-    (prunedAxiomLabels : List String := [])
-    : EIO Message VCResult := do
-  -- Formatting the whole program is costly on a large one, so it is done only when the debug
-  -- trace below shows it.
-  let prog : Unit → Format := fun _ => f!"\n\n[DEBUG] Evaluated program:\n{Core.formatProgram p}"
-  let ans ← IO.toEIO
-      (fun e => Message.fromFormat f!"{e}")
-      (discharge assumptionTerms obligationTerm ctx satisfiabilityCheck validityCheck
-        varDefinitions varDeclarations)
-  -- The Lean export (`ExportConfig.exportCheck`). A cover asks whether its condition is
-  -- reachable, which a validity proof does not show, and a check that the backend reports as
-  -- an encoding error has no solver query: neither is exported.
+/-- The outcome `getObligationResult` reports for the solver's two answers: each passed through
+    the phases' model validation (`adjustForPhases`), the checks not asked for masked
+    (`maskOutcome`), and pruning's effect applied (`VCOutcome.afterPruning`). The solver log
+    holds the raw answers followed by what each phase decided. -/
+def outcomeOfAnswers (satResult validityResult : SMT.Result) (phases : List AbstractedPhase)
+    (obligation : ProofObligation Expression) (satisfiabilityCheck validityCheck : Bool)
+    (pruning : IrrelevantAxiomsMode) (prunedAxiomLabels : List String) : VCOutcome :=
+  let (adjSat, satPhaseLog) := satResult.adjustForPhases phases obligation
+  let (adjVal, valPhaseLog) := validityResult.adjustForPhases phases obligation
+  let smtLog := buildSolverLog satResult validityResult
+    satisfiabilityCheck validityCheck satPhaseLog valPhaseLog
+  let rawOutcome : VCOutcome := {
+    satisfiabilityProperty := adjSat,
+    validityProperty := adjVal,
+    solverLog := #[smtLog] }
+  maskOutcome rawOutcome satisfiabilityCheck validityCheck
+    |>.afterPruning pruning prunedAxiomLabels
+
+/-- The solver's outcome with the evaluator's answers, where it has them, in place of the
+    solver's. -/
+def withEvaluator (peSat? peVal? : Option SMT.Result) (o : VCOutcome) : VCOutcome :=
+  { o with satisfiabilityProperty := peSat?.getD o.satisfiabilityProperty,
+           validityProperty := peVal?.getD o.validityProperty }
+
+/-- The Lean export of one check (`ExportConfig.exportCheck`), when `options.leanExport` is set.
+    A cover asks whether its condition is reachable, which a validity proof does not show, and a
+    check that the backend reports as an encoding error has no solver query: neither is
+    exported. -/
+def exportObligation (ans : Except Imperative.SMT.SolverError (SMT.Result × SMT.Result × EncoderState))
+    (assumptionTerms : List Term) (obligationTerm : Term) (ctx : SMT.Context)
+    (obligation : ProofObligation Expression) (p : Program) (options : VerifyOptions)
+    (validityCheck : Bool) (varDefinitions : List VarDefinition)
+    (varDeclarations : List VarDeclaration) : EIO Message Unit := do
   if let some config := options.leanExport then
     if validityCheck && obligation.property != .cover then
       -- `skipSolver` is honoured by the batch backend only (`mkDischargeFn`): the incremental
@@ -2365,53 +2452,100 @@ def getObligationResult (assumptionTerms : List Term) (obligationTerm : Term)
         IO.toEIO (fun e => Message.fromFormat f!"{e}")
           (config.exportCheck functionAmong (if asked then answer else .notAsked)
             ctx assumptionTerms obligationTerm varDefinitions varDeclarations obligation.label)
-  match ans with
-  | .error solverError =>
-    let vcError : VCError := match solverError with
-      | .encoding e => .encoding (toString e)
-      | .timeout d => .solverTimeout d
-      | .crash d   => .solverCrash d
+
+/-- The error a backend's failure is reported as. -/
+def vcErrorOf : Imperative.SMT.SolverError → VCError
+  | .encoding e => .encoding (toString e)
+  | .timeout d => .solverTimeout d
+  | .crash d   => .solverCrash d
+
+/-- The debug trace of a backend failure: always for a solver failure, in debug mode only for an
+    encoding error, with the program in debug mode. -/
+def traceSolverError
+    (ans : Except Imperative.SMT.SolverError (SMT.Result × SMT.Result × EncoderState))
+    (obligation : ProofObligation Expression) (p : Program) (options : VerifyOptions) :
+    EIO Message Unit := do
+  if let .error solverError := ans then
     let traceInQuiet := match solverError with
       | .encoding _ => false
       | _ => true
     if traceInQuiet || options.verbose >= VerboseMode.debug then
-      dbg_trace f!"\n\nObligation {obligation.label}: {vcError}\
+      -- Formatting the whole program is costly on a large one, so it is done only when the
+      -- debug trace shows it.
+      let prog : Unit → Format := fun _ => f!"\n\n[DEBUG] Evaluated program:\n{Core.formatProgram p}"
+      dbg_trace f!"\n\nObligation {obligation.label}: {vcErrorOf solverError}\
                    {if options.verbose >= VerboseMode.debug then prog () else ""}"
-    return { obligation := obligation,
-             outcome := Except.error vcError,
-             verbose := options.verbose,
-             checkLevel := options.checkLevel,
-             checkMode := options.checkMode,
-             lexprModel := [] }
+      pure ()
+
+/-- The models a result reports for the solver's two answers (`reportModels`): the one a `sat`
+    or `unknown` answer offers (`unknown (some m)` arises when the solver returns a candidate
+    model it cannot certify, e.g. cvc5 with quantified bridge axioms; phases may promote it to
+    `sat`, and the model stays available for display), restricted to the variables
+    `Core.SMT.isReportedName` names, with the requested variables each model misses. -/
+def reportedModels (ctx : SMT.Context) (satResult validityResult : SMT.Result)
+    (varDefinitions : List VarDefinition) (requestedVars : List Expression.TypedIdent) :
+    LExprModel × ModelReport :=
+  let isReported := Core.SMT.isReportedName (definedNameSet varDefinitions)
+  reportModels ctx satResult validityResult
+    ((requestedVars.map (·.1.name)).filter isReported) isReported
+
+/-- The result `getObligationResult` reports for the backend's answer `ans`: an error for a
+    failure (`vcErrorOf`), and otherwise the outcome of the two answers (`outcomeOfAnswers`) with
+    the model they offer. -/
+@[expose] def obligationResultOf
+    (ans : Except Imperative.SMT.SolverError (SMT.Result × SMT.Result × EncoderState))
+    (ctx : SMT.Context) (obligation : ProofObligation Expression)
+    (options : VerifyOptions) (satisfiabilityCheck validityCheck : Bool)
+    (phases : List AbstractedPhase) (varDefinitions : List VarDefinition)
+    (prunedAxiomLabels : List String) (requestedVars : List Expression.TypedIdent) : VCResult :=
+  match ans with
+  | .error solverError =>
+    { obligation := obligation,
+      outcome := Except.error (vcErrorOf solverError),
+      verbose := options.verbose,
+      checkLevel := options.checkLevel,
+      checkMode := options.checkMode,
+      lexprModel := [] }
   | .ok (satResult, validityResult, estate) =>
-    -- Convert unvalidated sat results to unknown when phases require validation
-    let (adjSat, satPhaseLog) := satResult.adjustForPhases phases obligation
-    let (adjVal, valPhaseLog) := validityResult.adjustForPhases phases obligation
-    -- Build solver log: raw solver results followed by phase validation logs
-    let smtLog := buildSolverLog satResult validityResult
-      satisfiabilityCheck validityCheck satPhaseLog valPhaseLog
-    let rawOutcome : VCOutcome := {
-      satisfiabilityProperty := adjSat,
-      validityProperty := adjVal,
-      solverLog := #[smtLog] }
-    let outcome := maskOutcome rawOutcome satisfiabilityCheck validityCheck
-      |>.afterPruning options.removeIrrelevantAxioms prunedAxiomLabels
-    -- Extract model from sat or unknown-with-candidate results.
-    -- unknown (some m) arises when the solver returns a candidate model it cannot
-    -- certify (e.g. cvc5 with quantified bridge axioms). Phases may promote it
-    -- to sat; we still want the model available for display.
-    let model := modelOfResults ctx satResult validityResult
-    -- A counterexample reports the variables `Core.SMT.isReportedName` names.
-    let definedNames := definedNameSet varDefinitions
-    let model := model.filter fun (name, _) => Core.SMT.isReportedName definedNames name.name
-    let result := { obligation,
-                    outcome := .ok outcome,
-                    estate,
-                    verbose := options.verbose,
-                    checkLevel := options.checkLevel,
-                    checkMode := options.checkMode,
-                    lexprModel := model }
-    return result
+    let outcome := outcomeOfAnswers satResult validityResult phases obligation
+      satisfiabilityCheck validityCheck options.removeIrrelevantAxioms prunedAxiomLabels
+    let (model, report) := reportedModels ctx satResult validityResult varDefinitions requestedVars
+    { obligation,
+      outcome := .ok outcome,
+      estate,
+      verbose := options.verbose,
+      checkLevel := options.checkLevel,
+      checkMode := options.checkMode,
+      lexprModel := model, modelMissing := report.missing,
+      checkModelMissing := report.checkMissing,
+      checkModels := (some report.checkModels.1, some report.checkModels.2) }
+
+/--
+Invoke a backend engine and get the analysis result for a
+given proof obligation. The result depends only on the backend's answer.
+-/
+@[expose] def getObligationResult (assumptionTerms : List Term) (obligationTerm : Term)
+    (ctx : SMT.Context)
+    (obligation : ProofObligation Expression) (p : Program)
+    (options : VerifyOptions)
+    (discharge : DischargeFn)
+    (satisfiabilityCheck validityCheck : Bool)
+    (phases : List AbstractedPhase)
+    (varDefinitions : List VarDefinition := [])
+    (varDeclarations : List VarDeclaration := [])
+    -- Labels of the axioms pruning dropped from this query.
+    (prunedAxiomLabels : List String := [])
+    (requestedVars : List Expression.TypedIdent := [])
+    : EIO Message VCResult := do
+  let ans ← IO.toEIO
+      (fun e => Message.fromFormat f!"{e}")
+      (discharge assumptionTerms obligationTerm ctx satisfiabilityCheck validityCheck
+        varDefinitions varDeclarations)
+  exportObligation ans assumptionTerms obligationTerm ctx obligation p options validityCheck
+    varDefinitions varDeclarations
+  traceSolverError ans obligation p options
+  return obligationResultOf ans ctx obligation options satisfiabilityCheck validityCheck phases
+    varDefinitions prunedAxiomLabels requestedVars
 
 /-- Data needed to dispatch a single obligation to the solver. Produced by the
     sequential preprocessing phase and consumed by the (potentially parallel)
@@ -2453,17 +2587,14 @@ private def dispatchSolverJob (job : SolverJob) (p : Program)
   let resultOrErr ← (getObligationResult job.assumptionTerms job.obligationTerm job.ctx
     job.obligation p options discharge job.needSatCheck job.needValCheck phases
     (varDefinitions := job.varDefs) (varDeclarations := job.varDecls)
-    (prunedAxiomLabels := job.prunedAxiomLabels)).toBaseIO
+    (prunedAxiomLabels := job.prunedAxiomLabels)
+    (requestedVars := job.typedVarsInObligation)).toBaseIO
   match resultOrErr with
   | .error diag => return .error diag
   | .ok result =>
     let result := match result.outcome with
       | .ok solverOutcome =>
-        let satResult := job.peSatResult?.getD solverOutcome.satisfiabilityProperty
-        let valResult := job.peValResult?.getD solverOutcome.validityProperty
-        { result with outcome := .ok { solverOutcome with
-            satisfiabilityProperty := satResult,
-            validityProperty := valResult } }
+        { result with outcome := .ok (withEvaluator job.peSatResult? job.peValResult? solverOutcome) }
       | .error _ => result
     return .ok result
 
@@ -2528,11 +2659,15 @@ private def dispatchJobsParallel (jobs : List SolverJob) (p : Program)
     results := rmap[idx]? :: results
   return results
 
+/-- Whether `name` is a variable common-subexpression elimination invented
+    (`CSE.isCSEGeneratedName`). -/
+def isCSEDefinitionName (name : String) : Bool := isCSEGeneratedName name
+
 private
-def addCSEReferences (refs : Std.HashSet String) (e : Expression.Expr) :
-    Std.HashSet String :=
+def addCSEReferences (refs : Std.HashSet String) (e : Expression.Expr)
+    (generated : String → Bool := isCSEDefinitionName) : Std.HashSet String :=
   (Lambda.LExpr.freeVars e).foldl (fun refs (id, _) =>
-    if isCSEGeneratedName id.name then refs.insert id.name else refs) refs
+    if generated id.name then refs.insert id.name else refs) refs
 
 /-- The names `roots` reach through `definitions`: the least set that contains `roots` and, for
     every definition whose name it contains, the names `refs` returns for that definition's body.
@@ -2623,35 +2758,39 @@ def collectModelVars
     List (Lambda.IdentT Lambda.LMonoTy Unit) :=
   (collectModelVarsCached obligation varDefinitions varDeclarations).run' ExprFactsCache.empty
 
-/-- The CSE-generated definitions on the path of `obligation`, in order. -/
-def cseDefinitions (obligation : Imperative.ProofObligation Expression) :
-    List (String × Expression.Expr) :=
+/-- The definitions on the path of `obligation` of the variables `generated` names, by
+    default the CSE-generated ones, in order. -/
+def cseDefinitions (obligation : Imperative.ProofObligation Expression)
+    (generated : String → Bool := isCSEDefinitionName) : List (String × Expression.Expr) :=
   obligation.assumptions.flatMap fun pathCondition =>
     pathCondition.filterMap fun
       | .varDecl name _ (.det rhs) =>
-        if isCSEGeneratedName name.name then some (name.name, rhs) else none
+        if generated name.name then some (name.name, rhs) else none
       | _ => none
 
-/-- The names of the definitions of `definitions`, the CSE-generated
-    definitions of `obligation`, that `obligation` uses: those its goal and its
-    other path-condition entries reference, closed over the definitions' bodies
-    (see `pruneUnusedCSEDefinitions`). -/
+/-- The names of the definitions of `definitions`, the definitions of `obligation` of the
+    variables `generated` names (`cseDefinitions`), that `obligation` uses: those its goal and
+    its other path-condition entries reference, closed over the definitions' bodies (see
+    `pruneUnusedCSEDefinitions`). -/
 def neededCSEDefinitions (obligation : Imperative.ProofObligation Expression)
-    (definitions : List (String × Expression.Expr)) : Std.HashSet String :=
+    (definitions : List (String × Expression.Expr))
+    (generated : String → Bool := isCSEDefinitionName) : Std.HashSet String :=
+  let add (refs : Std.HashSet String) (e : Expression.Expr) := addCSEReferences refs e generated
   let rootRefs := obligation.assumptions.foldl (fun refs pathCondition =>
     pathCondition.foldl (fun refs entry =>
       match entry with
-      | .assumption _ e => addCSEReferences refs e
-      | .distinct _ es => es.foldl addCSEReferences refs
+      | .assumption _ e => add refs e
+      | .distinct _ es => es.foldl add refs
       | .varDecl name _ (.det rhs) =>
-        if isCSEGeneratedName name.name then refs
-        else addCSEReferences refs rhs
+        if generated name.name then refs
+        else add refs rhs
       | .varDecl _ _ .nondet => refs) refs)
-    (addCSEReferences {} obligation.obligation)
+    (add {} obligation.obligation)
   defClosure (fun e => (Lambda.LExpr.freeVars e).filterMap fun (id, _) =>
-    if isCSEGeneratedName id.name then some id.name else none) definitions rootRefs
+    if generated id.name then some id.name else none) definitions rootRefs
 
-/-- Remove CSE-generated definitions that cannot affect this obligation.
+/-- Remove the definitions of the variables `generated` names (by default the CSE-generated ones)
+that cannot affect this obligation.
 
 Symbolic evaluation combines every deferred obligation into one synthetic
 procedure before CSE runs. CSE may therefore hoist a repeated expression above
@@ -2665,24 +2804,44 @@ contradictory when the function does not terminate. An unencodable literal in
 such a definition would also prevent unrelated obligations from reaching the
 solver.
 
-Start from CSE variables referenced by the obligation and by non-CSE
-path-condition entries, close transitively over CSE definition bodies, and
-retain only those definitions. The original entry ordering is preserved, so
-every retained dependency is still emitted before its users. -/
+Start from the generated variables referenced by the obligation and by the
+other path-condition entries, close transitively over the generated
+definitions' bodies, and retain only those definitions. The original entry ordering is preserved, so
+every retained dependency is still emitted before its users.
+
+`generated` names the variables whose definitions may be left out, by default
+the CSE-generated ones (`pruneUnusedDefinitions` adds the path explorer's join
+symbols). -/
 def pruneUnusedCSEDefinitions
-    (obligation : Imperative.ProofObligation Expression) :
+    (obligation : Imperative.ProofObligation Expression)
+    (generated : String → Bool := isCSEDefinitionName) :
     Imperative.ProofObligation Expression :=
-  let definitions := cseDefinitions obligation
+  let definitions := cseDefinitions obligation generated
   if definitions.isEmpty then
     obligation
   else
-    let needed := neededCSEDefinitions obligation definitions
+    let needed := neededCSEDefinitions obligation definitions generated
     let assumptions := obligation.assumptions.map fun pathCondition =>
       pathCondition.filter fun
         | .varDecl name _ (.det _) =>
-          !isCSEGeneratedName name.name || needed.contains name.name
+          !generated name.name || needed.contains name.name
         | _ => true
     { obligation with assumptions }
+
+/-- Whether `name` is a variable a phase invented and defined (`init x := e`) rather than one
+    the program declares: a CSE-generated name, or a symbol the path explorer named a merged
+    value with (`SymExec.isJoinValueName`). -/
+def isGeneratedDefinitionName (name : String) : Bool :=
+  isCSEGeneratedName name || SymExec.isJoinValueName name
+
+/-- `pruneUnusedCSEDefinitions` for the definitions of every generated variable
+    (`isGeneratedDefinitionName`): a join symbol's definition is on the path of every
+    obligation after its join, including those that never read the merged variable, and like
+    a shared CSE definition it can bring in the axioms of functions the obligation does not
+    mention (a `Map` update brings `Map`'s). -/
+def pruneUnusedDefinitions (obligation : Imperative.ProofObligation Expression) :
+    Imperative.ProofObligation Expression :=
+  pruneUnusedCSEDefinitions obligation isGeneratedDefinitionName
 
 /-- Discharge `obligations`, in order, against the environment `E` built for the program they
     come from: each is asked of the solver `mkDischarge` gives, after the evaluator and the
@@ -2748,6 +2907,11 @@ def dischargeObligations (E : Env) (obligations : ProofObligations Expression)
           (SMT.setSolverPrelude options.solver options.solverOptions))
     else pure none
   let mut emState := emStateInit
+  -- What the path conditions read (`readFold`), threaded like `encState`, advanced only for
+  -- the obligations that reach the solver.
+  let mut readState : Imperative.PathConditions.FoldState ReadState Unit Expression := .init {}
+  -- The assumptions of the obligations' entries (`EvalTrail`), advanced for every obligation.
+  let mut evalTrail : EvalTrail := .init {}
   for obligation in obligations do
     -- `obligationsToVerify`: obligations not listed are skipped entirely.
     if let some labels := options.obligationsToVerify then
@@ -2758,9 +2922,24 @@ def dischargeObligations (E : Env) (obligations : ProofObligations Expression)
     -- The state encodes the *original* assumptions; `prunedAxiomLabels` applies
     -- the pruning as an emission-time label filter instead.
     let origObligation := obligation
+    let (evaluated, trail) := evaluatorResultsTrail evalTrail obligation options.checkMode
+      satisfiabilityCheck validityCheck
+    evalTrail := trail
+    -- The definitions the obligation does not read are left out of its query, and out of
+    -- its axiom-relevance seeds. Only an obligation that reaches the solver needs them.
+    let mut unread : Std.HashSet String := {}
+    if options.alwaysGenerateSMT || evaluated.1.isNone || evaluated.2.isNone then
+      match (readFold.advance obligation.assumptions.reverse).exec readState with
+      | .ok st =>
+        readState := st
+        unread := unreadDefinitions st.current obligation
+      | .error e => nomatch e
+    let unreadNow := unread
     let (obligation, peSatResult?, peValResult?, prunedAxiomLabels) ← pctx.withRepeatedPhase "evalDischarge" do
       preprocessObligation obligation p options satisfiabilityCheck validityCheck axiomCache axiomNames axiomProgram
         (exprCache := some exprCache) (relevanceMemo := some relevanceMemo)
+        (evaluated := some evaluated) (unread := unreadNow)
+    let obligation := ProofObligation.withoutDefinitions obligation unreadNow
     -- If evaluator resolved both checks, we're done, unless we always want to generate SMT queries
     if not options.alwaysGenerateSMT then
       if let (some peSat, some peVal) := (peSatResult?, peValResult?) then
@@ -2802,7 +2981,8 @@ def dischargeObligations (E : Env) (obligations : ProofObligations Expression)
       -- It advances over the obligation's history (encoding only the delta
       -- detection reports) and forks this obligation's result.
       let maybeTerms ← pctx.withRepeatedPhasePure "coreToSMT" fun _ =>
-        encodeObligationToSMTCached E.factory encState0 origObligation prunedAxiomLabels snapCache0
+        encodeObligationToSMTCached E.factory encState0 origObligation prunedAxiomLabels unreadNow
+          snapCache0
       match maybeTerms with
       | .error err =>
         let result := { obligation,
@@ -2819,6 +2999,10 @@ def dischargeObligations (E : Env) (obligations : ProofObligations Expression)
         let { assumptions := assumptionTerms, varDefs, varDecls,
               goal := obligationTerm, stats := encStats, .. } := encoded
         let ctx := encoded.declaredCtx options.removeIrrelevantDatatypes
+        -- An unread definition's variable is not declared either: no kept term mentions it.
+        let ctx := if unreadNow.isEmpty then ctx else
+          let ufs := ctx.ufs.toArray.filter fun uf => !(uf.args.isEmpty && unreadNow.contains uf.id)
+          { ctx with ufs := Strata.Util.OrderedSet.ofArray ufs }
         -- Shared managed definitions can mention variables from unrelated
         -- obligations. Follow only the definitions reachable from this
         -- obligation before deciding which user variables to request in a
@@ -2846,8 +3030,9 @@ def dischargeObligations (E : Env) (obligations : ProofObligations Expression)
               let (es, cf) ← es.syncAndEmit E.factory encState'.frames
                 encState'.current.ctx (pruned := !prunedAxiomLabels.isEmpty)
                 ctx obligationTerm obligation.metadata obligation.label
-                (managedNameSet varDefs varDecls) (definedNameSet varDefs) needSatCheck
-                needValCheck
+                (managedNameSet varDefs varDecls)
+                (unreadNow.fold (·.insert ·) (definedNameSet varDefs)) needSatCheck
+                needValCheck (sliced := unreadNow)
               pure (some es, cf)
           let discharge := mkDischarge options counter tempDir
             typedVarsInObligation obligation.metadata obligation.label (some termCache)
@@ -2856,14 +3041,12 @@ def dischargeObligations (E : Env) (obligations : ProofObligations Expression)
                         discharge needSatCheck needValCheck (externalPhases ++ corePhases)
                         (varDefinitions := varDefs) (varDeclarations := varDecls)
                         (prunedAxiomLabels := prunedAxiomLabels)
+                        (requestedVars := typedVarsInObligation)
           -- Merge evaluator results with solver results
           let result := match result.outcome with
             | .ok solverOutcome =>
-              let satResult := peSatResult?.getD solverOutcome.satisfiabilityProperty
-              let valResult := peValResult?.getD solverOutcome.validityProperty
-              { result with outcome := .ok { solverOutcome with
-                  satisfiabilityProperty := satResult,
-                  validityProperty := valResult } }
+              { result with
+                outcome := .ok (withEvaluator peSatResult? peValResult? solverOutcome) }
             | .error _ => result
           pure (ObligationDisposition.resolved result, encStats, encState', snapCache', emState1)
       ).toBaseIO
@@ -2905,12 +3088,12 @@ def dischargeObligations (E : Env) (obligations : ProofObligations Expression)
     if let some diag := firstError then throw diag
   return (results, stats)
 
-/-- The obligations `extractObligations` reads from a program, each without the CSE
-    definitions it does not use (see `pruneUnusedCSEDefinitions`). -/
+/-- The obligations `extractObligations` reads from a program, each without the generated
+    definitions it does not use (see `pruneUnusedDefinitions`). -/
 def obligationsOf (oblProgram : Program) :
     Except Message (ProofObligations Expression) :=
   match Core.ObligationExtraction.extractObligations oblProgram with
-  | .ok obs => .ok (obs.map pruneUnusedCSEDefinitions)
+  | .ok obs => .ok (obs.map pruneUnusedDefinitions)
   | .error e => .error (Message.fromFormat f!"ObligationExtraction error: {e}")
 
 private
@@ -2930,6 +3113,14 @@ def verifySingleEnv (oblProgram : Program)
   let E ← EIO.ofExcept
     (Core.buildEnv options oblProgram factory (registerCustomFunctions := true) |>.map (·.1))
   let obligations ← EIO.ofExcept (obligationsOf oblProgram)
+  -- Symbolic evaluation lists the obligations it builds (`toCoreProofObligationProgram`); the
+  -- obligations of any other VC generator are listed here, at `debug` verbosity, with the
+  -- definitions each reads.
+  if options.verbose >= .debug &&
+      !(externalPhases ++ corePhases).any (·.name == "symbolicEval") then do
+    dbg_trace f!"{Std.Format.line}VCs:"
+    dbg_trace f!"{formatProofObligationsWithReads obligations}"
+    pure ()
   dischargeObligations E obligations options counter tempDir axiomCache axiomNames axiomProgram
     externalPhases corePhases mkDischarge pctx
 
@@ -2991,6 +3182,10 @@ def verifyPipeline (program : Program)
       (PipelineContext.create (outputMode := mode) : BaseIO _)
   let profile := pctx.outputMode.showsProfiling
 
+  -- Only monomorphization marks a function as a copy (`FuncAttr.monoCopyOf`), so a mark on a
+  -- function the caller supplies is dropped, as `Env.addFactoryFunc` drops it from a program's.
+  let moreFns := Lambda.Factory.ofArray (moreFns.toArray.map fun f =>
+    { f with attr := Strata.DL.Util.FuncAttr.withoutMonoCopyOf f.attr })
   let factory ← EIO.ofExcept (Core.Factory.addFactory moreFns)
   -- The transforms that run and the phases that adjust solver results both come
   -- from the validated pipeline, so the two cannot drift apart. A pipeline's type

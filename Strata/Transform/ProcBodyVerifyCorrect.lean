@@ -10,6 +10,7 @@ public import Strata.Transform.CoreSpecificationProps
 public import Strata.Languages.Core.Analysis.ProcedureCorrectnessProps
 import Std.Tactic.BVDecide.Normalize.Prop
 import Strata.Languages.Core.ProcedureWF
+import Strata.Languages.Core.IdentifiersProps
 import Strata.Languages.Core.StatementSemanticsProps
 import Strata.DL.Imperative.Logic.TraceInterpProps
 import all Strata.Util.ListMap
@@ -438,12 +439,6 @@ private theorem PrefixStepsOK_det_init_map
         exact (h_not_old id List.mem_cons_self id'.name).symm
     · exact (CoreIdent.ne_mkOld id).symm
 
-private theorem mkOld_name_injective {a b : Expression.Ident}
-    (h : CoreIdent.mkOld a.name = CoreIdent.mkOld b.name) : a = b := by
-  have h1 := congrArg Lambda.Identifier.name h
-  simp [CoreIdent.mkOld, CoreIdent.oldStr] at h1
-  cases a; cases b; simp_all
-
 /-- If the original ids are Nodup, so are their mkOld images (since mkOld is injective). -/
 private theorem nodup_mkOld_map (ids : List Expression.Ident)
     (h_nodup : ids.Nodup) :
@@ -458,7 +453,7 @@ private theorem nodup_mkOld_map (ids : List Expression.Ident)
     · intro hmem
       simp only [List.mem_map] at hmem
       obtain ⟨id', hid'_mem, hid'_eq⟩ := hmem
-      have : id = id' := mkOld_name_injective hid'_eq.symm
+      have : id = id' := CoreIdent.eq_of_mkOld_eq hid'_eq.symm
       exact h_nodup.1 (this ▸ hid'_mem)
     · exact ih h_nodup.2
 

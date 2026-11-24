@@ -43,14 +43,14 @@ procedure Q()
 #end
 
 /--
-info: p_needs_later_axiom: not proved
+info: p_needs_later_axiom: refuted
 q_uses_earlier_axiom: proved
 -/
 #guard_msgs in
 #eval printProved axiomAfterPgm
 
 /--
-info: p_needs_later_axiom: not proved
+info: p_needs_later_axiom: refuted
 q_uses_earlier_axiom: proved
 -/
 #guard_msgs in
@@ -78,7 +78,7 @@ lemma [l_forall]: forall x : int :: R(x);
 #end
 
 /--
-info: l_needs_later_axiom: not proved
+info: l_needs_later_axiom: refuted
 l_uses_earlier_axiom: proved
 l_forall: proved
 -/
@@ -86,7 +86,7 @@ l_forall: proved
 #eval printProved lemmaPgm
 
 /--
-info: l_needs_later_axiom: not proved
+info: l_needs_later_axiom: refuted
 l_uses_earlier_axiom: proved
 l_forall: proved
 -/
@@ -126,8 +126,8 @@ lemma [l_uses_earlier_distinct]: a != b;
 #end
 
 /--
-info: p_needs_later_distinct: not proved
-l_needs_later_distinct: not proved
+info: p_needs_later_distinct: refuted
+l_needs_later_distinct: refuted
 q_uses_earlier_distinct: proved
 l_uses_earlier_distinct: proved
 -/
@@ -135,8 +135,8 @@ l_uses_earlier_distinct: proved
 #eval printProved distinctAfterPgm
 
 /--
-info: p_needs_later_distinct: not proved
-l_needs_later_distinct: not proved
+info: p_needs_later_distinct: refuted
+l_needs_later_distinct: refuted
 q_uses_earlier_distinct: proved
 l_uses_earlier_distinct: proved
 -/
@@ -144,8 +144,8 @@ l_uses_earlier_distinct: proved
 #eval printProved distinctAfterPgm { Core.VerifyOptions.quiet with vcgen := .wp }
 
 /--
-info: l_needs_later_distinct: not proved
-p_needs_later_distinct: not proved
+info: l_needs_later_distinct: refuted
+p_needs_later_distinct: refuted
 l_uses_earlier_distinct: proved
 q_uses_earlier_distinct: proved
 -/
@@ -194,11 +194,11 @@ lemma [l3_ab_bc]: a != b && b != c;
 #end
 
 /--
-info: p1_ab: not proved
-l1_bc: not proved
+info: p1_ab: refuted
+l1_bc: refuted
 p2_ab: proved
-p2_bc: not proved
-l2_bc: not proved
+p2_bc: refuted
+l2_bc: refuted
 p3_ab: proved
 p3_bc: proved
 l3_ab_bc: proved
@@ -207,11 +207,11 @@ l3_ab_bc: proved
 #eval printProved twoDistinctsPgm
 
 /--
-info: p1_ab: not proved
-l1_bc: not proved
+info: p1_ab: refuted
+l1_bc: refuted
 p2_ab: proved
-p2_bc: not proved
-l2_bc: not proved
+p2_bc: refuted
+l2_bc: refuted
 p3_ab: proved
 p3_bc: proved
 l3_ab_bc: proved
@@ -257,20 +257,20 @@ distinct [ad]: [a, d];
 
 /--
 info: e1_ab: proved
-e1_bc: not proved
+e1_bc: refuted
 e2_bc: proved
 e2_cd: proved
-e2_ad: not proved
+e2_ad: refuted
 -/
 #guard_msgs in
 #eval printProved distinctEdgesPgm
 
 /--
 info: e1_ab: proved
-e1_bc: not proved
+e1_bc: refuted
 e2_bc: proved
 e2_cd: proved
-e2_ad: not proved
+e2_ad: refuted
 -/
 #guard_msgs in
 #eval printProved distinctEdgesPgm { Core.VerifyOptions.quiet with vcgen := .wp }
@@ -310,7 +310,7 @@ procedure P2(x : bool)
 #end
 
 /--
-info: p1_needs_later_distinct: not proved
+info: p1_needs_later_distinct: refuted
 p2_else: proved
 p2_then: proved
 p2_after: proved
@@ -322,7 +322,7 @@ p2_after: proved
 the declarations. -/
 
 /--
-info: p1_needs_later_distinct: not proved
+info: p1_needs_later_distinct: refuted
 p2_else: proved
 p2_then: proved
 p2_after: proved
@@ -331,7 +331,7 @@ p2_after: proved
 #eval printProved exitReorderPgm { Core.VerifyOptions.quiet with incremental := true }
 
 /--
-info: p1_needs_later_distinct: not proved
+info: p1_needs_later_distinct: refuted
 p2_then: proved
 p2_else: proved
 p2_after: proved
@@ -342,7 +342,7 @@ p2_after: proved
 /-! The same in `--vcgen symexec`, with paths kept apart and with paths merged. -/
 
 /--
-info: p1_needs_later_distinct: not proved
+info: p1_needs_later_distinct: refuted
 p2_then: proved
 p2_after: proved
 p2_else: proved
@@ -351,7 +351,7 @@ p2_else: proved
 #eval printProved exitReorderPgm { Core.VerifyOptions.quiet with symExec := some .never }
 
 /--
-info: p1_needs_later_distinct: not proved
+info: p1_needs_later_distinct: refuted
 p2_then: proved
 p2_after: proved
 p2_else: proved
@@ -359,15 +359,15 @@ p2_else: proved
 #guard_msgs in
 #eval printProved exitReorderPgm { Core.VerifyOptions.quiet with symExec := some .always }
 
-/-! A pipeline that lists the declaration, WP, SSA and dead-definition phases by name
-(`Core.nameablePhases`) in place of symbolic evaluation is the order `--vcgen wp` runs, and
-gives the same verdicts. -/
+/-! A pipeline that lists the declaration, WP, SSA and rewrite-loop phases by name
+(`Core.nameablePhases`) in place of symbolic evaluation, and drops common-subexpression
+elimination, is the order `--vcgen wp` runs, and gives the same verdicts. -/
 
-/-- The default order's phase names with the declaration, WP, SSA and dead-definition phases in
-    place of symbolic evaluation and no common-subexpression elimination. -/
+/-- The default order's phase names with the declaration, WP, SSA and rewrite-loop phases in
+    place of symbolic evaluation and without common-subexpression elimination. -/
 private def wpPhaseNames : List String :=
   (Core.corePipelinePhases Core.VerifyOptions.quiet).map Core.phaseName |>.flatMap fun n =>
-    if n == "symbolicEval" then ["declObligations", "wp", "ssa", "deadDefElim"]
+    if n == "symbolicEval" then ["declObligations", "wp", "ssa", "wpLoop"]
     else if n == "commonSubexprElim" then [] else [n]
 
 /-- info: true -/
@@ -383,7 +383,7 @@ private def namedWPVerdicts : IO Unit := do
   printProved axiomAfterPgm opts (pipeline := some vp)
 
 /--
-info: p_needs_later_axiom: not proved
+info: p_needs_later_axiom: refuted
 q_uses_earlier_axiom: proved
 -/
 #guard_msgs in

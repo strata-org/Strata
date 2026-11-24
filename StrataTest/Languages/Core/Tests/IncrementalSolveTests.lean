@@ -224,7 +224,7 @@ procedure P()
   var m : Map int int;
   var b : Box;
   assume [boxed]: b == MkBox(m);
-  assert [sameBox]: b == MkBox(m);
+  assert [sameBox]: MkBox(m) == b;
 };
 #end
 
@@ -306,12 +306,12 @@ const c : int;
 axiom [cPos]: int.gt(c, 0);
 lemma [early]: int.gt(c, 1);
 axiom [cBig]: int.gt(c, 1);
-lemma [late]: int.gt(c, 1);
+lemma [late]: int.ge(c, 2);
 
 procedure p()
 {
-  assert [p1]: int.gt(c, 0);
-  assert [p2]: int.gt(c, 1);
+  assert [p1]: int.ge(c, 1);
+  assert [p2]: int.ge(c, 2);
 };
 #end
 
@@ -348,12 +348,12 @@ program Core;
 
 const c : int;
 axiom [cPos]: int.gt(c, 0);
-lemma [l1]: int.gt(c, 0);
+lemma [l1]: int.lt(0, c);
 lemma [l2]: int.ge(c, 1);
 function twice(n : int) : int { int.mul(n, 2) }
 lemma [l3]: int.gt(twice(c), 5);
 axiom [cBig]: int.gt(c, 1);
-lemma [afterAxiom]: int.gt(c, 1);
+lemma [afterAxiom]: int.ge(c, 2);
 #end
 
 /--
@@ -802,7 +802,7 @@ procedure P()
   var x : int;
   assume [pos]: int.gt(x, 0);
   assert [a1]: int.ge(x, 1);
-  assert [a2]: int.gt(x, 0);
+  assert [a2]: int.ge(x, 0);
   assume [more]: int.gt(x, 5);
   assert [b1]: int.ge(x, 6);
   assert [b2]: int.gt(x, 4);
@@ -1598,8 +1598,8 @@ axiom [bNeg]: int.lt(b, 0);
 
 procedure P()
 {
-  assert [usesA]: int.gt(a, 0);
-  assert [usesB]: int.lt(b, 0);
+  assert [usesA]: int.ge(a, 1);
+  assert [usesB]: int.le(b, int.neg(1));
 };
 #end
 
@@ -2229,7 +2229,7 @@ info: DoubleTwice.core.st: agree on 2
 HeapReasoning.core.st: agree on 50
 IrrelevantAxioms.core.st: agree on 1
 LoopSimple.core.st: agree on 8
-SafeBvOps.core.st: agree on 8
+SafeBvOps.core.st: agree on 8, 8 with a counterexample
 SimpleProc.core.st: agree on 2
 TwoLoops.core.st: agree on 4
 -/
@@ -2249,7 +2249,7 @@ info: DoubleTwice.core.st: agree on 2
 HeapReasoning.core.st: agree on 50
 IrrelevantAxioms.core.st: agree on 1
 LoopSimple.core.st: agree on 8
-SafeBvOps.core.st: agree on 8
+SafeBvOps.core.st: agree on 8, 8 with a counterexample
 SimpleProc.core.st: agree on 2
 TwoLoops.core.st: agree on 4
 -/
@@ -2503,7 +2503,7 @@ program Core;
 function f(x : int) : int { x }
 axiom [contra]: f(0) == 1;
 procedure P(x : int) {
-  assert [usesF]: f(0) == 1;
+  assert [usesF]: 1 == f(0);
   assert [other]: x == 3;
 };
 #end

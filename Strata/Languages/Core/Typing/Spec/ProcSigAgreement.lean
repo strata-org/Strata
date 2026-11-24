@@ -10,7 +10,9 @@ public import Strata.Languages.Core.Program
 /-! ## Agreement of procedure and function signatures
 
 `ProcSigAgree`: two procedures have the same parameter names and
-alias-equivalent parameter types. `FuncSigAgree`: two functions have the same
+alias-equivalent parameter types. `ProcSigInstOf`: two procedures have the same
+parameter names, and the second has every instantiation of the first's
+parameter types and type parameters. `FuncSigAgree`: two functions have the same
 name, type parameters and formal names and alias-equivalent signature types.
 `ProcedureCallsRel` and `ProcedureCallAgreement`: every named procedure of one
 program has a related procedure of the same name in another. -/
@@ -30,6 +32,22 @@ structure ProcSigAgree (A : List TypeAlias) (q1 q2 : Procedure) : Prop where
     AliasEquivList A q1.header.inputs.values q2.header.inputs.values
   outputsVals :
     AliasEquivList A q1.header.outputs.values q2.header.outputs.values
+
+/-- `q1` and `q2` have the same parameter names, and every instantiation of the parameter types
+    of `q1` is an instantiation of those of `q2` that also sends the type parameters of `q2` to
+    what it sends those of `q1`: a call typed against `q1` is typed against `q2`. -/
+structure ProcSigInstOf (q1 q2 : Procedure) : Prop where
+  inputsKeys : q1.header.inputs.keys = q2.header.inputs.keys
+  outputsKeys : q1.header.outputs.keys = q2.header.outputs.keys
+  inst : ∀ σ : List (TyIdentifier × LMonoTy), ∃ σ2 : List (TyIdentifier × LMonoTy),
+    q2.header.inputs.values.map (LMonoTy.subst (Strata.Util.HMaps.ofScopes [σ2])) =
+        q1.header.inputs.values.map (LMonoTy.subst (Strata.Util.HMaps.ofScopes [σ])) ∧
+      q2.header.outputs.values.map (LMonoTy.subst (Strata.Util.HMaps.ofScopes [σ2])) =
+        q1.header.outputs.values.map (LMonoTy.subst (Strata.Util.HMaps.ofScopes [σ])) ∧
+      q2.header.typeArgs.map
+          (fun a => LMonoTy.subst (Strata.Util.HMaps.ofScopes [σ2]) (.ftvar a)) =
+        q1.header.typeArgs.map
+          (fun a => LMonoTy.subst (Strata.Util.HMaps.ofScopes [σ]) (.ftvar a))
 
 /-- Two functions have agreeing signatures up to type aliases `A`: identical name,
     type parameters and formal names, and alias-equivalent formal and result types. -/

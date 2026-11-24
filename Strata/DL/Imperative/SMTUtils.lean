@@ -121,6 +121,78 @@ def runSolver (solver : String) (args : Array String) : IO IO.Process.Output := 
   --                         stdout: {repr output.stdout}"
   return output
 
+/-- The validity verdict after a retry: the retry's when it is `unsat`, the first otherwise. A
+    retried `sat` keeps the first `unknown` (and its candidate model), so a retry can turn an
+    `unknown` into a proof and never into a refutation. This holds for any retry of the same
+    validity query, whatever solver options the retry adds. -/
+def retryVerdict {Ident : Type} (first retried : Result Ident) : Result Ident :=
+  match retried with
+  | .unsat => .unsat
+  | _ => first
+
+/-- Whether cvc5's output for `(get-info :reason-unknown)` says `incomplete`: some line of the
+    output is exactly that response, so the same text inside a model or a message does not
+    count. -/
+def reasonUnknownIsIncomplete (stdout : String) : Bool :=
+  (stdout.splitOn "\n").any fun l => l.trimAscii.toString == "(:reason-unknown incomplete)"
+
+/-- Runs a best-effort step `act` (the retry); if it throws, `first` stands. -/
+def orFirst {α : Type} (first : α) (act : IO α) : IO α :=
+  try act catch _ => pure first
+
+/-- A path beside `filename`, hidden and unique to this call, for a query a solver is about to
+    read. It keeps the `.smt2` extension, by which solvers recognize the input language. Its name
+    has a fixed length, independent of `filename`, so it is valid wherever `filename` is. Any
+    later read of the query, such as a second solver run on it, must use this path and not the
+    public name, which another run may have written meanwhile. -/
+private def privateQueryPath (filename : String) : IO System.FilePath := do
+  let nonce := (← IO.getRandomBytes 8).foldl (fun n b => n * 256 + b.toNat) 0
+  let hex := String.ofList (Nat.toDigits 16 nonce)
+  let path : System.FilePath := filename
+  return path.withFileName s!".strata-{"".pushn '0' (16 - hex.length)}{hex}.smt2"
+
+/-- Runs `solver` on `text`, written to a file private to this call beside `name` (see
+    `privateQueryPath`), which is removed afterwards. A file this call did not create, because
+    its name was taken, is someone else's and is left alone. -/
+def runSolverOnText (solver name text : String) (args : Array String) :
+    IO IO.Process.Output := do
+  let path ← privateQueryPath name
+  let created ← IO.mkRef false
+  try
+    IO.FS.withFile path .writeNew fun h => do
+      created.set true
+      h.putStr text
+    runSolver solver (#[path.toString] ++ args)
+  finally
+    if ← created.get then try IO.FS.removeFile path catch _ => pure ()
+
+/-- The query file without its satisfiability check, or `none` if the check block is not found.
+    The cut removes the lines from the last `; Satisfiability` comment line up to the one
+    `; Validity` comment line after it (both written by `writeCheckSatBlock`). The check block
+    follows every declaration, so a declaration comment that repeats a marker (a constant named
+    `Validity`) does not move the cut. The removed check is a `check-sat-assuming`, which asserts
+    nothing, so the remaining validity check asks the same question. -/
+def validityCheckOnly (text : String) : Option String :=
+  let sat := "\n; Satisfiability\n"
+  let val := "\n; Validity\n"
+  match text.splitOn sat |>.reverse with
+  | after :: rest@(_ :: _) =>
+    match after.splitOn val with
+    | [_, tail] => some (sat.intercalate rest.reverse ++ val ++ tail)
+    | _ => none
+  | _ => none
+
+/-- Whether the solver's last answer on the query `text` written for `filename` (its validity
+    check) was `unknown` for `incomplete`: the query is rerun with `(get-info :reason-unknown)`
+    appended. Only cvc5 is asked; any other solver gives `false`. -/
+def reasonIsIncomplete (solver filename text : String) (args : Array String) : IO Bool := do
+  if solver != "cvc5" then return false
+  -- The last check in the file is the validity check (`writeCheckSatBlock` writes the
+  -- satisfiability check first when both run), so `:reason-unknown` refers to it.
+  let out ← runSolverOnText solver (filename ++ ".reason.smt2")
+    (text ++ "\n(get-info :reason-unknown)\n") args
+  return reasonUnknownIsIncomplete out.stdout
+
 /-- Classifies a per-obligation encoding or solver failure. -/
 inductive SolverError where
   | encoding (error : Strata.SMT.StringLit.EncodingError)
@@ -153,6 +225,198 @@ def failureOfMessage (detail : String) : SolverError :=
 -- SMTDDM-based parsing
 ---------------------------------------------------------------------
 
+/-- The value and width of an SMT-LIB `#b`/`#x` literal's digits (`binary`: one bit
+    per digit; otherwise hexadecimal: four), or `none` if a digit is out of range. -/
+private def bvLiteralValue (binary : Bool) (digits : List Char) : Option (Nat × Nat) :=
+  let digitVal (c : Char) : Option Nat :=
+    if binary then
+      if c == '0' then some 0 else if c == '1' then some 1 else none
+    else hexDigitValue? c
+  let base := if binary then 2 else 16
+  let bitsPerDigit := if binary then 1 else 4
+  let value := digits.foldlM (init := 0) fun acc c => (digitVal c).map (acc * base + ·)
+  value.map fun v => (v, digits.length * bitsPerDigit)
+
+/-- Where a left-to-right scan of a solver response is: outside string literals and quoted
+    symbols, inside a string literal (`"…"`), or inside a quoted symbol (`|…|`). -/
+inductive ResponseScan where
+  | code
+  | str
+  | quoted
+
+/-- A piece of a solver response: text outside string literals and quoted symbols (`code`), a
+    string literal with its quotes (`str`, in which `""` is an escaped quote), or a quoted
+    symbol with its bars (`quoted`). A response that ends inside a literal ends with a `str` or
+    `quoted` piece that lacks its closing quote or bar. -/
+inductive ResponseSegment where
+  | code (text : String)
+  | str (text : String)
+  | quoted (text : String)
+
+/-- The text of a piece of a solver response. -/
+def ResponseSegment.text : ResponseSegment → String
+  | .code t | .str t | .quoted t => t
+
+/-- Whether a piece of a solver response is outside string literals and quoted symbols. -/
+def ResponseSegment.isCode : ResponseSegment → Bool
+  | .code _ => true
+  | _ => false
+
+/-- The pieces of a solver response, in order: their texts concatenate to the response, and
+    every string literal and quoted symbol is a piece of its own. -/
+def responseSegments (s : String) : List ResponseSegment :=
+  (go .code "" #[] s.toList).toList
+where
+  /-- `out` followed by the pieces of the rest of the response, the scan being at the given
+      `ResponseScan` with the text `acc` of the current piece read so far. -/
+  go : ResponseScan → String → Array ResponseSegment → List Char → Array ResponseSegment
+    | .code, acc, out, [] => out.push (.code acc)
+    | .str, acc, out, [] => out.push (.str acc)
+    | .quoted, acc, out, [] => out.push (.quoted acc)
+    | .str, acc, out, '"' :: '"' :: rest => go .str ((acc.push '"').push '"') out rest
+    | .str, acc, out, '"' :: rest => go .code "" (out.push (.str (acc.push '"'))) rest
+    | .str, acc, out, c :: rest => go .str (acc.push c) out rest
+    | .quoted, acc, out, '|' :: rest => go .code "" (out.push (.quoted (acc.push '|'))) rest
+    | .quoted, acc, out, c :: rest => go .quoted (acc.push c) out rest
+    | .code, acc, out, '"' :: rest => go .str "\"" (out.push (.code acc)) rest
+    | .code, acc, out, '|' :: rest => go .quoted "|" (out.push (.code acc)) rest
+    | .code, acc, out, c :: rest => go .code (acc.push c) out rest
+  termination_by _ _ _ l => l.length
+
+/-- Apply `f` to every piece of a solver response outside string literals and quoted symbols
+    (`responseSegments`), copying string literals and quoted symbols unchanged. -/
+def rewriteResponseCode (f : String → String) (s : String) : String :=
+  (responseSegments s).foldl (init := "") fun acc seg =>
+    acc ++ if seg.isCode then f seg.text else seg.text
+
+/-- The characters of a solver response, each with whether it lies outside string literals and
+    quoted symbols (`responseSegments`). -/
+def responseChars (s : String) : List (Char × Bool) :=
+  (responseSegments s).flatMap fun seg => seg.text.toList.map (·, seg.isCode)
+
+/-- Rewrite every SMT-LIB bitvector literal `#b…`/`#x…` of a solver response into the
+    indexed form `(_ bvV W)` the SMTResponse dialect parses (`#b`/`#x` are not tokens
+    of it). String literals (`"…"`, with `""` as the escaped quote) and quoted symbols
+    (`|…|`) are copied unchanged. This works around the SMT dialect's missing literal syntax
+    (`Strata/DL/SMT/DDMTransform/Parse.lean`, the token list: `<hexadecimal> and <binary> are
+    not available yet`). -/
+def rewriteBVLiterals (s : String) : String :=
+  rewriteResponseCode (go "" ·.toList) s
+where
+  /-- `acc` followed by the rewrite of the rest of a piece outside string literals and quoted
+      symbols. -/
+  go : String → List Char → String
+    | acc, [] => acc
+    | acc, '#' :: k :: rest =>
+      if k == 'b' || k == 'x' then
+        let digits := rest.takeWhile Char.isAlphanum
+        match bvLiteralValue (k == 'b') digits with
+        | some (v, w) =>
+          if digits.isEmpty then go (acc.push '#') (k :: rest)
+          else go (acc ++ s!"(_ bv{v} {w})") (rest.drop digits.length)
+        | none => go (acc.push '#') (k :: rest)
+      else go (acc.push '#') (k :: rest)
+    | acc, c :: rest => go (acc.push c) rest
+  termination_by _ l => l.length
+  decreasing_by all_goals simp only [List.length_cons, List.length_drop] <;> omega
+
+/-- A character that ends a bare symbol of a solver response. -/
+def isResponseDelim (c : Char) : Bool := c == '(' || c == ')' || c == ' ' || c == '\n' ||
+  c == '\t' || c == '\r' || c == '"' || c == '|'
+
+/-- Quote every bare symbol of a solver response that starts with `@` (`@S_0` =>
+    `|@S_0|`). SMT-LIB reserves a leading `@` for solver-invented symbols, which cvc5
+    uses to name the elements of an uninterpreted sort, and the SMTResponse dialect
+    reads `@` only as a reserved word, so a bare one fails to parse and drops the whole
+    model; a quoted one parses as a symbol. A `@` that does not start a symbol (as in
+    `x@1`), string literals and already-quoted symbols are copied unchanged. This works
+    around the SMT dialect's symbol syntax (`Strata/DL/SMT/DDMTransform/Parse.lean`: the
+    `("at", "@")` entry of `specialCharsInSimpleSymbol`, and the `<symbol>` TODO `Support
+    quoted symbols`). -/
+def quoteSolverSymbols (s : String) : String :=
+  rewriteResponseCode (go true "" ·.toList) s
+where
+  /-- `acc` followed by the rewrite of the rest of a piece outside string literals and quoted
+      symbols; the `Bool` says whether the next character begins a token. -/
+  go : Bool → String → List Char → String
+    | _, acc, [] => acc
+    | start, acc, '@' :: rest =>
+      if start then
+        let sym := rest.takeWhile (fun c => !isResponseDelim c)
+        go false ((acc ++ "|@" ++ String.ofList sym).push '|') (rest.drop sym.length)
+      else go false (acc.push '@') rest
+    | _, acc, c :: rest => go (isResponseDelim c) (acc.push c) rest
+  termination_by _ _ l => l.length
+  decreasing_by all_goals simp only [List.length_cons, List.length_drop] <;> omega
+
+/-- Quote every bare `/` token of a solver response (`/` becomes `|/|`). A solver prints a
+    non-integral real as `(/ p q)`, and the SMTResponse dialect does not read `/` as a
+    symbol, so a bare one fails to parse and drops the whole model; a quoted one parses
+    as the symbol `/`. A `/` inside a longer symbol, string literals and quoted symbols
+    are copied unchanged. This works around the SMT dialect's symbol syntax
+    (`Strata/DL/SMT/DDMTransform/Parse.lean`: the `("slash", "/")` entry left out of
+    `specialCharsInSimpleSymbol`). -/
+def quoteDivisionSymbol (s : String) : String :=
+  rewriteResponseCode (go true "" ·.toList) s
+where
+  /-- `acc` followed by the rewrite of the rest of a piece outside string literals and quoted
+      symbols; the `Bool` says whether the next character begins a token. -/
+  go : Bool → String → List Char → String
+    | _, acc, [] => acc
+    | start, acc, '/' :: rest =>
+      if start && rest.head?.all isResponseDelim then go false (acc ++ "|/|") rest
+      else go false (acc.push '/') rest
+    | _, acc, c :: rest => go (isResponseDelim c) (acc.push c) rest
+
+/-- The parenthesized items directly inside the first parenthesized list of a solver
+    response, as strings: `((x 1) (y 2))` becomes `["(x 1)", "(y 2)"]`. Parentheses inside
+    string literals and quoted symbols (`responseChars`) do not count, and everything after
+    the first list is ignored. -/
+def valuationPairStrings (s : String) : List String := Id.run do
+  let mut depth := 0
+  let mut current : List Char := []
+  let mut items : Array String := #[]
+  for (c, code) in responseChars s do
+    let before := depth
+    if code then
+      if c == '(' then depth := depth + 1
+      else if c == ')' then
+        depth := depth - 1
+        if before == 1 then break
+    if before ≥ 2 || depth ≥ 2 then current := c :: current
+    if before ≥ 2 && depth == 1 then
+      items := items.push (String.ofList current.reverse)
+      current := []
+  return items.toList
+
+/-- The lines of a solver response (split at every `\n`), each with the `responseChars` of its
+    characters and whether it starts outside string literals and quoted symbols. -/
+def responseLines (s : String) : List (List (Char × Bool) × Bool) :=
+  let (lines, line, start) := (responseChars s).foldl (init := (#[], #[], true))
+    fun (lines, line, start) (c, code) =>
+      if c == '\n' then (lines.push (line.toList, start), #[], code)
+      else (lines, line.push (c, code), start)
+  (lines.push (line.toList, start)).toList
+
+/-- The lines of a solver response before its first verdict line: a line that is `sat`, `unsat`
+    or `unknown` up to surrounding whitespace and starts outside every parenthesis, string
+    literal and quoted symbol (`responseLines`). This is the part of the output that answers
+    the current check, when the output goes on with the verdict and model of a later check; a
+    line of a model value that reads like a verdict does not end it. -/
+def beforeVerdictLine (s : String) : String := Id.run do
+  let mut depth := 0
+  let mut kept : Array String := #[]
+  for (l, start) in responseLines s do
+    let text := String.ofList (l.map (·.1))
+    let t := text.trimAscii.toString
+    if depth == 0 && start && (t == "sat" || t == "unsat" || t == "unknown") then break
+    kept := kept.push text
+    for (c, code) in l do
+      if code then
+        if c == '(' then depth := depth + 1
+        else if c == ')' then depth := depth - 1
+  return "\n".intercalate kept.toList
+
 /--
 Parse a `(get-value ...)` model response using the SMTResponse DDM dialect.
 Uses `parseCategoryFromDialect` targeting `SMTResponse.GetValueResponse`
@@ -169,32 +433,47 @@ decoded.
 `declaredNames` are the names the program already uses. A symbol the solver
 invented for an element of an uninterpreted sort is renamed if it would collide
 with one of them; see `Strata.SMT.Symbol.ofSolverSymbol`.
+
+A response that does not parse as a whole is parsed one valuation pair at a time
+(`valuationPairStrings`), so a pair the dialect cannot read loses only its own
+binding. Only the text before the next verdict line (`beforeVerdictLine`) is read this way,
+so the model of a later check in the same output is never taken for this one.
 -/
 def parseModelDDMExcept (modelStr : String) (declaredNames : Std.HashSet String := {}) :
     IO (Except String (List (String × Strata.SMT.Term))) := do
-  let inputCtx := StrataDDM.Parser.stringInputContext "solver-model" modelStr
-  let op ←
-    try StrataDDM.Elab.parseCategoryFromDialect
-          Strata.SMTResponseDDM.smtResponseDialects q`SMTResponse.GetValueResponse inputCtx
-    catch e =>
-      return .error s!"the response does not parse as a (get-value ...) response: {e}"
-  match Strata.SMTResponseDDM.GetValueResponse.ofAst op with
-  | .ok (.get_value_response _ vps) =>
-    let pairs ← vps.val.toList.filterMapM fun vp =>
-      match vp with
-      | .valuation_pair _ t1 t2 => do
-        match Strata.SMTResponseDDM.translateFromDDMTermToUntyped t2 declaredNames with
-        | .ok t2' =>
-          return .some (Strata.SMTResponseDDM.formatArg (.op (Strata.SMTResponseDDM.Term.toAst t1)),
-                  t2')
-        | .error _ =>
-          -- The model has an SMT expression (e.g., (lambda ...)) which cannot
-          -- be represented in Strata.SMT.Term. Filter out this variable from
-          -- the model.
-          return .none
-    return .ok pairs
-  | .error _ =>
-    return .error "the response parses but is not a (get-value ...) valuation list"
+  let text := quoteSolverSymbols (quoteDivisionSymbol (rewriteBVLiterals modelStr))
+  match ← parsePairs text with
+  | .ok pairs => return .ok pairs
+  | .error e =>
+    let pairs ← (valuationPairStrings (beforeVerdictLine text)).flatMapM fun pair =>
+      return (← parsePairs s!"({pair})").toOption.getD []
+    return if pairs.isEmpty then .error e else .ok pairs
+where
+  /-- The pairs of one response, or why it does not parse. -/
+  parsePairs (text : String) : IO (Except String (List (String × Strata.SMT.Term))) := do
+    let inputCtx := StrataDDM.Parser.stringInputContext "solver-model" text
+    let op ←
+      try StrataDDM.Elab.parseCategoryFromDialect
+            Strata.SMTResponseDDM.smtResponseDialects q`SMTResponse.GetValueResponse inputCtx
+      catch e =>
+        return .error s!"the response does not parse as a (get-value ...) response: {e}"
+    match Strata.SMTResponseDDM.GetValueResponse.ofAst op with
+    | .ok (.get_value_response _ vps) =>
+      let pairs ← vps.val.toList.filterMapM fun vp =>
+        match vp with
+        | .valuation_pair _ t1 t2 => do
+          match Strata.SMTResponseDDM.translateFromDDMTermToUntyped t2 declaredNames with
+          | .ok t2' =>
+            return .some
+              (Strata.SMTResponseDDM.formatArg (.op (Strata.SMTResponseDDM.Term.toAst t1)), t2')
+          | .error _ =>
+            -- The model has an SMT expression (e.g., (lambda ...)) which cannot
+            -- be represented in Strata.SMT.Term. Filter out this variable from
+            -- the model.
+            return .none
+      return .ok pairs
+    | .error _ =>
+      return .error "the response parses but is not a (get-value ...) valuation list"
 
 /--
 Return true when a solver response carries no `(get-value …)` valuation to parse.
@@ -228,7 +507,9 @@ def modelValues (pairs : List (String × Strata.SMT.Term)) :
 /--
 Process a parsed model (list of key-string / value-Term pairs) against the
 expected variables, matching each variable's SMT-encoded name to its
-value in the model.
+value in the model. A variable with no SMT encoding or no value in `pairs` is
+left out of the result; the other variables keep their values. The result is an
+error only when `vars` is not empty and none of its variables has a value.
 
 The keys of `pairs` are escaped spellings, since the solver echoes what the emitter
 wrote through `Strata.SMT.Symbol.toSMTString`, while the `id` from `getSMTId` is the
@@ -237,13 +518,44 @@ unescaped name. `modelValues` maps each key back once, so each variable is a loo
 def processModel {P : PureExpr} [ToFormat P.Ident]
     (typedVarToSMTFn : P.Ident → P.Ty → Except Format (String × Strata.SMT.TermType))
     (vars : List P.TypedIdent) (pairs : List (String × Strata.SMT.Term))
-    (E : Strata.SMT.EncoderState) : Except Format (Model P.Ident) := do
+    (E : Strata.SMT.EncoderState) : Except Format (Model P.Ident) :=
   let values := modelValues pairs
-  vars.mapM fun (var, ty) => do
-    let id ← @getSMTId P.Ident P.Ty _ typedVarToSMTFn var ty E
-    match values[id]? with
-    | none => .error f!"Cannot find model for id: {id}"
-    | some value => .ok (var, value)
+  let model := vars.filterMap fun (var, ty) =>
+    ((@getSMTId P.Ident P.Ty _ typedVarToSMTFn var ty E).toOption.bind (values[·]?)).map (var, ·)
+  if model.isEmpty && !vars.isEmpty then .error f!"No model value for any of {vars.length} ids"
+  else .ok model
+
+/-- The `check-sat` answer at the start of `input`: its first line, decoded
+    (`Strata.SMT.splitFirstLine`), with the text after that line, where the answer's `get-value`
+    response starts. `none` when the line is not an answer. -/
+def answerAt (input : String) : Option (Strata.SMT.Decision × String) :=
+  match Strata.SMT.splitFirstLine input.toList with
+  | (some .timeout, _) | (none, _) => none
+  | (some d, rest) => some (d, String.ofList rest)
+
+/-- The satisfiability check's answer when it is asked (`answerAt`), with the text where the
+    validity check's answer is read: after the responses that follow the satisfiability answer
+    (`Strata.SMT.dropToVerdict`). A check not asked reads nothing. -/
+def readSatAnswer (stdout : String) (satisfiabilityCheck : Bool) :
+    Option (Option (Strata.SMT.Decision × String) × String) :=
+  if satisfiabilityCheck then
+    (answerAt stdout).map fun (d, rest) =>
+      (some (d, rest), String.ofList (Strata.SMT.dropToVerdict 0 .code rest.toList))
+  else some (none, stdout)
+
+/-- The validity check's answer when it is asked: the answer at the start of `remaining`
+    (`answerAt`). A check not asked reads nothing. -/
+def readValidityAnswer (remaining : String) (validityCheck : Bool) :
+    Option (Option (Strata.SMT.Decision × String)) :=
+  if validityCheck then (answerAt remaining).map some else some none
+
+/-- A check's result from its answer and the model that follows it, if any: `sat` and
+    `unknown` carry the model, `unsat` none. -/
+def Result.ofAnswer {Ident : Type} : Strata.SMT.Decision → Option (Model Ident) → Result Ident
+  | .sat, m => .sat (m.getD [])
+  | .unknown, m => .unknown m
+  | .unsat, _ => .unsat
+  | .timeout, _ => .unknown
 
 /--
 Interprets the output of SMT solver.
@@ -268,35 +580,24 @@ def solverResult {P : PureExpr} [ToFormat P.Ident]
     : IO (Except SolverError (Result P.Ident × Result P.Ident)) := do
   let stdout := output.stdout
 
-  -- The next verdict comes after the whole response to the previous verdict's `get-value`.
-  let skipToNextVerdict (input : String) : String :=
-    String.ofList (Strata.SMT.dropToVerdict 0 .code input.toList)
-
-  -- Parse the model that follows a sat/unknown verdict, falling back to the
-  -- given default on any error.
-  let parseFollowingModel (rest : String) (default : Result P.Ident) :
-      IO (Result P.Ident) := do
+  -- The model in the `get-value` response that follows a `sat` or `unknown` answer, if it
+  -- parses and gives a value to some variable (`processModel`); it decorates the answer and
+  -- never changes it.
+  let modelAfter (rest : String) : IO (Option (Model P.Ident)) := do
     let rawModel ← parseModelDDM rest E.usedNames
     match processModel typedVarToSMTFn vars rawModel E with
-    | .ok model =>
-      match default with
-      | .sat _     => return .sat model
-      | .unknown _ => return .unknown (some model)
-      | other      => return other
-    | .error _ => return default
+    | .ok model => return some model
+    | .error _ => return none
 
-  let parseVerdict (input : String) : IO (Option (Result P.Ident × String)) := do
-    let (decision, restChars) := Strata.SMT.splitFirstLine input.toList
-    let rest := String.ofList restChars
-    match decision with
-    | some .sat =>
-      let r ← parseFollowingModel rest (.sat [])
-      return some (r, skipToNextVerdict rest)
-    | some .unsat => return some (.unsat, skipToNextVerdict rest)
-    | some .unknown =>
-      let r ← parseFollowingModel rest .unknown
-      return some (r, skipToNextVerdict rest)
-    | _ => return none
+  -- The result of one check: its answer (`readSatAnswer`, `readValidityAnswer`) with the model
+  -- that follows it.
+  let resultOf : Option (Strata.SMT.Decision × String) → IO (Result P.Ident)
+    | none => return .unknown
+    | some (d, rest) => do
+      let m ← match d with
+        | .sat | .unknown => modelAfter rest
+        | .unsat | .timeout => pure none
+      return Result.ofAnswer d m
 
   let mkError (output : IO.Process.Output) : SolverError :=
     let stderr := output.stderr
@@ -310,14 +611,15 @@ def solverResult {P : PureExpr} [ToFormat P.Ident]
     if isTimeoutOutput output then .timeout detail else .crash detail
 
   -- Parse results based on which checks are enabled
-  match ← (if satisfiabilityCheck then parseVerdict stdout else pure (some (.unknown, stdout))) with
-  | some (satResult, remaining) =>
-    match ← (if validityCheck then parseVerdict remaining else pure (some (.unknown, remaining))) with
-    | some (validityResult, _) => return .ok (satResult, validityResult)
-    | none =>
-      return .error (mkError output)
-  | none =>
-    return .error (mkError output)
+  match readSatAnswer stdout satisfiabilityCheck with
+  | none => return .error (mkError output)
+  | some (satAnswer, remaining) =>
+    let satResult ← resultOf satAnswer
+    match readValidityAnswer remaining validityCheck with
+    | none => return .error (mkError output)
+    | some valAnswer =>
+      let validityResult ← resultOf valAnswer
+      return .ok (satResult, validityResult)
 
 /-- Emit a block of `set-info` attributes describing the source location and
     an optional application-specific `(name, rawValue)` pair. `message.snd` is
@@ -450,11 +752,19 @@ def dischargeObligationIncremental {P : PureExpr} [ToFormat P.Ident] [BEq P.Iden
 Writes the proof obligation to file, discharge the obligation using SMT solver,
 and parse the output of the SMT solver.
 
+The solver reads the query from a file private to this call, which is renamed to `filename`
+afterwards, so a verdict is always the answer to the query this call wrote, even when another
+verification writes the same `filename` at the same time. The file left under `filename` is
+then the query of whichever call renamed its file last.
+
 When two-sided checking is enabled, the generated SMT file will contain two
 `(check-sat-assuming)` commands, one for `P ∧ Q` and one for `P ∧ ¬Q`,
 and the return value includes both decisions.
+
+A validity verdict `unknown` that cvc5 gives for incompleteness is rerun once with
+`retryOnIncomplete` added, when it is not empty (see `retryVerdict`).
 -/
-def dischargeObligation {P : PureExpr} [ToFormat P.Ident] [BEq P.Ident]
+def dischargeObligationWithRetry {P : PureExpr} [ToFormat P.Ident] [BEq P.Ident]
   (encodeSMT : Strata.SMT.SolverEncodingM (List String × Strata.SMT.EncoderState))
   (typedVarToSMTFn : P.Ident → P.Ty → Except Format (String × Strata.SMT.TermType))
   (vars : List P.TypedIdent)
@@ -464,39 +774,119 @@ def dischargeObligation {P : PureExpr} [ToFormat P.Ident] [BEq P.Ident]
   (skipSolver : Bool := false)
   -- Term→SMT-LIB string cache shared across a procedure's obligations; `none` on the parallel path.
   (termCache : Option (IO.Ref (Std.HashMap Strata.SMT.Term String)) := none)
-  (pctx : Strata.Pipeline.PipelineContext) :
+  (pctx : Strata.Pipeline.PipelineContext)
+  -- Flags of a rerun after an `unknown` for incompleteness; empty for no rerun.
+  (retryOnIncomplete : Array String := #[]) :
   IO (Except SolverError (Result P.Ident × Result P.Ident × Strata.SMT.EncoderState)) := do
   -- Seed the solver's term-string cache from the shared ref (if any).
   let initState : Strata.SMT.SolverState ←
     match termCache with
     | some ref => do let m ← ref.get; pure { termStrings := m }
     | none => pure {}
-  let (encoded, solverState) ← pctx.withPhase "writeSMTLib" do
-    Strata.SMT.Solver.withFileWriter filename (state := initState) do
-      let r ← encodeSMT.run
-      pctx.withRepeatedPhase "flushFile" Strata.SMT.Solver.flush
-      pure r
-  let (_ids, estate) ← match encoded with
+  let query ← privateQueryPath filename
+  -- Where the query is left: under `filename`, or where it was written if it cannot be moved.
+  let publish : IO System.FilePath := do
+    -- Nothing to move when the call failed before the file was created.
+    if !(← query.pathExists) then return filename
+    try
+      IO.FS.rename query filename
+      return filename
+    catch e =>
+      let warn := Strata.Pipeline.emitMessage { category := "vcFile", impact := .internalWarning }
+        s!"could not rename {query} to {filename} ({e}); the query is kept at {query}"
+      discard (warn.run pctx).toBaseIO
+      return query
+  -- Set once the query is completely written; until then the private file is incomplete.
+  let written ← IO.mkRef false
+  -- Set once this call has created the private file; a name already taken is another call's
+  -- file, which this call must not touch.
+  let created ← IO.mkRef false
+  -- An incomplete query is removed rather than put under `filename`, where it would replace a
+  -- complete query another run wrote.
+  let finish : IO System.FilePath := do
+    if ← written.get then publish
+    else
+      if ← created.get then try IO.FS.removeFile query catch _ => pure ()
+      return filename
+  let writeAndSolve :
+      IO (Except SolverError (Option (IO.Process.Output × Option String) × Strata.SMT.EncoderState)) := do
+    let (encoded, solverState) ← pctx.withPhase "writeSMTLib" do
+      Strata.SMT.Solver.withFileWriter query.toString (state := initState) (mode := .writeNew) do
+        created.set true
+        let r ← encodeSMT.run
+        pctx.withRepeatedPhase "flushFile" Strata.SMT.Solver.flush
+        pure r
+    let (_ids, estate) ← match encoded with
+      | .ok value => pure value
+      | .error error => return Except.error (SolverError.encoding error)
+    written.set true
+    -- Persist newly produced strings back to the shared ref.
+    match termCache with
+    | some ref => ref.set solverState.termStrings
+    | none => pure ()
+    if skipSolver then return .ok (none, estate)
+    -- The solver names the file it read in its messages; they name the file the user keeps.
+    let output ← pctx.withPhase "runSolver" do
+      let out ← runSolver smtsolver (#[query.toString] ++ solver_options)
+      pure { out with stdout := out.stdout.replace query.toString filename,
+                      stderr := out.stderr.replace query.toString filename }
+    -- A retry reruns this call's own query, so its text is read before the file takes the
+    -- public name, which another run may write meanwhile. The retry is best effort, so a text
+    -- that cannot be read only skips it.
+    let text ← if retryOnIncomplete.isEmpty || !validityCheck then pure none
+      else try some <$> IO.FS.readFile query catch _ => pure none
+    return .ok (some (output, text), estate)
+  let solved ← try writeAndSolve catch e => do discard finish; throw e
+  let kept ← finish
+  let (solver_output, estate) ← match solved with
     | .ok value => pure value
-    | .error error => return .error (.encoding error)
-  -- Persist newly produced strings back to the shared ref.
-  match termCache with
-  | some ref => ref.set solverState.termStrings
-  | none => pure ()
+    | .error e => return .error e
 
-  if printFilename then IO.println s!"Wrote problem to {filename}."
+  if printFilename then IO.println s!"Wrote problem to {kept}."
 
-  if skipSolver then
-    return .ok (.unknown, .unknown, estate)
-
-  let solver_output ← pctx.withPhase "runSolver" do
-    runSolver smtsolver (#[filename] ++ solver_options)
+  let some (solver_output, queryText) := solver_output
+    | return .ok (.unknown, .unknown, estate)
   let parsed ← pctx.withPhase "parseResult" do
     solverResult typedVarToSMTFn vars solver_output estate smtsolver
       satisfiabilityCheck validityCheck
+  -- Only an `unknown` whose `:reason-unknown` is `incomplete` is retried: a timeout or a
+  -- resource limit is not. The retry is best effort: if the probe or the retry fails (a file
+  -- cannot be read, a solver cannot be run), the first verdict stands.
+  let retry : IO (Except SolverError (Result P.Ident × Result P.Ident)) := match parsed with
+    | .ok (satR, valR@(.unknown _)) => do
+      let some queryText := queryText | return parsed
+      if !(← reasonIsIncomplete smtsolver filename queryText solver_options) then return parsed
+      -- The retry asks only the validity check: its satisfiability check, if any, is dropped,
+      -- since only the validity verdict of the retry is used.
+      let validityOnly := if satisfiabilityCheck then validityCheckOnly queryText else none
+      let out2 ← pctx.withPhase "runSolverRetry" do
+        runSolverOnText smtsolver (filename ++ ".retry.smt2") (validityOnly.getD queryText)
+          (solver_options ++ retryOnIncomplete)
+      let parsed2 ← solverResult typedVarToSMTFn vars out2 estate smtsolver
+        (satisfiabilityCheck && validityOnly.isNone) validityCheck
+      match parsed2 with
+      | .ok (_, val2) => return .ok (satR, retryVerdict valR val2)
+      | .error _ => return parsed
+    | _ => return parsed
+  let parsed ← orFirst parsed retry
   match parsed with
   | .error e => return .error e
   | .ok (satResult, validityResult) => return .ok (satResult, validityResult, estate)
+
+/-- `dischargeObligationWithRetry` without a retry. -/
+def dischargeObligation {P : PureExpr} [ToFormat P.Ident] [BEq P.Ident]
+  (encodeSMT : Strata.SMT.SolverEncodingM (List String × Strata.SMT.EncoderState))
+  (typedVarToSMTFn : P.Ident → P.Ty → Except Format (String × Strata.SMT.TermType))
+  (vars : List P.TypedIdent)
+  (smtsolver filename : String)
+  (solver_options : Array String) (printFilename : Bool)
+  (satisfiabilityCheck validityCheck : Bool)
+  (skipSolver : Bool := false)
+  (termCache : Option (IO.Ref (Std.HashMap Strata.SMT.Term String)) := none)
+  (pctx : Strata.Pipeline.PipelineContext) :
+  IO (Except SolverError (Result P.Ident × Result P.Ident × Strata.SMT.EncoderState)) :=
+  dischargeObligationWithRetry encodeSMT typedVarToSMTFn vars smtsolver filename solver_options
+    printFilename satisfiabilityCheck validityCheck skipSolver termCache pctx
 
 ---------------------------------------------------------------------
 end -- public section

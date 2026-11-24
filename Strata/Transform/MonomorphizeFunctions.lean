@@ -259,8 +259,8 @@ def collectFromCommand (c : Command) : List Expression.Expr :=
   ((Command.mapExprM (M := StateM (Array Expression.Expr))
       (fun e => do modify (·.push e); pure e) c).run #[]).2.toList
 
-/-- All references to polymorphic functions in a procedure's commands and
-    pre/postconditions. -/
+/-- All references to polymorphic functions in a procedure's commands, CFG
+    transfers and block metadata, and pre/postconditions. -/
 def collectFromProcedure (polyfunDecls : PolymorphicFuncDecls)
     (factory : Lambda.Factory CoreLParams) (proc : Procedure) : List FuncSpecialization :=
   let specExprs := proc.spec.preconditions.values.map (·.expr) ++
@@ -270,7 +270,7 @@ def collectFromProcedure (polyfunDecls : PolymorphicFuncDecls)
   let bodyExprs := match proc.body with
     | .structured ss => Statements.collectExprs ss
     | .cfg cfg => cfg.blocks.flatMap fun (_, b) =>
-        b.cmds.flatMap collectFromCommand ++
+        b.md.exprs ++ b.cmds.flatMap collectFromCommand ++
         (match b.transfer with | .condGoto pp _ _ _ => [pp] | .finish _ => [])
   (specExprs ++ bodyExprs).flatMap (collectFuncSpecializations polyfunDecls factory)
 
@@ -297,7 +297,8 @@ def rewriteProcedure (polyfunDecls : PolymorphicFuncDecls)
         let transfer ← match b.transfer with
           | .condGoto pp lt lf md => (fun p => DetTransferCmd.condGoto p lt lf md) <$> rw pp
           | .finish md => pure (.finish md)
-        pure (l, { b with cmds := cmds, transfer := transfer }))
+        let md ← b.md.mapExprsM rw
+        pure (l, { b with cmds := cmds, transfer := transfer, md := md }))
       pure (Procedure.Body.cfg { cfg with blocks := blocks })
   pure { proc with
     spec := { proc.spec with preconditions := pre', postconditions := post' },
@@ -466,6 +467,11 @@ def updateFunctionsInProgram
     | _ => out := out.push decl
   return { decls := out.toList }
 
+/-- `f`, marked as the copy of the factory function `base` (`FuncAttr.monoCopyOf`). The SMT
+    encoder reads a factory function as `base` only when it carries this mark. -/
+@[expose] def markCopyOf (base : String) (f : Function) : Function :=
+  { f with attr := f.attr.push (.monoCopyOf base) }
+
 /-- Rebuild `factory`, dropping every polymorphic entry and appending the
     specialized copies produced by the worklist.  Rewrites op references inside
     each specialized body (so factory-internal references become their specialized
@@ -482,11 +488,12 @@ def updateFactory (polyfuncDecls : PolymorphicFuncDecls) (factory : Lambda.Facto
       let rewrittenFunc ← mangleOpsInFunctionDecl polyfuncDecls factory lfunc.toFunc
       kept := kept.push { lfunc with toFunc := rewrittenFunc }
 
-  -- Append specialized copies (their bodies also rewritten).
+  -- Append specialized copies (their bodies also rewritten), each marked as a copy of the
+  -- function it specializes.
   for (fs, tf) in specializedFnsInFactory do
     let rewritten ← mangleOpsInFunctionDecl polyfuncDecls factory tf
     let concreteEval := (factory.get? fs.name).bind (·.concreteEval)
-    kept := kept.push { toFunc := rewritten, concreteEval }
+    kept := kept.push { toFunc := markCopyOf fs.name rewritten, concreteEval }
   return Lambda.Factory.ofArray kept
 
 
@@ -620,7 +627,7 @@ def monomorphizeFunctionsPipelinePhase : PipelinePhase :=
                          .noLoopMeasures, .staticSingleAssignment, .noBetaRedexes,
                          .noPrecondsFromFuncs, .noNondetGuards, .noProcedureContracts,
                          .noPolymorphicProcedures,
-                         .typeAnnotated, .noInits, .exitsCovered])
+                         .typeAnnotated, .noInits, .exitsCovered, .noCFGCycles])
     fun prog => monomorphizeFunctions prog
 
 end Core

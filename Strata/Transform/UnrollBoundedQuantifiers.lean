@@ -725,7 +725,7 @@ def Core.unrollBoundedQuantifiersPipelinePhase : Core.PipelinePhase :=
                          .noPrecondsFromFuncs, .noNondetGuards, .hasObligationForm,
                          .noProcedureContracts,
                          .noPolymorphicProcedures,
-                         .noPolymorphicFunctions, .typeAnnotated, .noInits])
+                         .noPolymorphicFunctions, .typeAnnotated, .noInits, .noCFGCycles])
     fun prog => do
       let F ← Core.Transform.getFactory
       let (prog', counts) := Core.UnrollBoundedQuantifiers.unrollBoundedQuantifiersProgram F prog

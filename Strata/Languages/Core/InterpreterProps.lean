@@ -29,7 +29,8 @@ Key theorems:
   fixpoint evaluator `evalFully` returns; `evalBounded_intConst`: it returns an integer literal
   unchanged at every fuel; `boundedEvalMono_core`, `boundedEvalComplete_core`: it is upward
   fuel-monotone and reaches every `Expression.eval` value of a literal or a variable
-  (`EvalCompleteFragment`) at some fuel.
+  (`EvalCompleteFragment`) at some fuel; `evalBounded_mono`:
+  the same monotonicity stated pointwise for `evalBounded`.
 * `replayStepCmd_cmd`, `runCoreInterp_eq`: unfolding equations of the stepper and run loop.
 * `isValue_hasVal`, `replayValueOps_typedSound`, `valueOfTy_of_ops`: Core's executable value and
   type checks are sound for its semantic ones. -/
@@ -109,6 +110,13 @@ theorem evalBounded_intConst (n : Nat) (f : @Lambda.Factory CoreLParams)
 theorem boundedEvalMono_core : Imperative.BoundedEvalMono Expression := fun _ _ _ _ _ _ hle h => by
   obtain ⟨hd, he, ht⟩ := evalBounded_eq_some_iff.1 h
   exact evalBounded_eq_some_iff.2 ⟨hd, by grind [Lambda.eval_value_true_mono_le], ht⟩
+
+/-- `evalBounded` is upward-monotone in fuel: `boundedEvalMono_core` restated pointwise over
+    `evalBounded` instead of `InterpLang.boundedEval`, with the fuel bound as first argument. -/
+theorem evalBounded_mono {a b : Nat} (hle : a ≤ b) (factory : Lambda.Factory CoreLParams)
+    (store : RStore Expression) (e v : Expression.Expr)
+    (h : evalBounded a factory store e = some v) : evalBounded b factory store e = some v :=
+  boundedEvalMono_core a b factory store e v hle h
 
 /-- The expressions on which Core's bounded evaluator is complete for `Expression.eval`: literals
     and variables. -/

@@ -78,7 +78,7 @@ def order (prog : UnorderedProgram) : Except String OrderedProgram := do
   unless prog.globals.isEmpty do throw "globals must be lowered before Ordering"
   unless prog.globalInit.isEmpty do throw "global initialization must be lowered before Ordering"
   return { decls := prog.opaqueTypes.map .opaqueType ++ (datatypeGroups prog.datatypes).map .datatypes ++
-    prog.procedures.map .procedure }
+    prog.functions.map .function ++ prog.procedures.map .procedure }
 
 def run : Program → Except String Program
   | .unordered p => .ordered <$> order p

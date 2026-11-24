@@ -27,6 +27,3 @@ lake exe transforms --with-html-single --output _out/transforms
 lake exe irtranslation --with-html-single --output _out/irtranslation
 cp strata-hourglass.png _out/langdef/html-single/
 cp -r ../api/.lake/build/doc _out/api
-
-# Copy the updated Verso site files over the generated sites (see apply-verso-update.sh).
-./apply-verso-update.sh _out

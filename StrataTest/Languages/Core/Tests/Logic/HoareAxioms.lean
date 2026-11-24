@@ -25,6 +25,9 @@ A constant `c` with no definition, whose value differs from model to model, an a
 - `witness_contract`: the same fact in the form of the `contract` field of
   `Core.Specification.ProcedureAssertsValidOnTraces.denote`, from
   `Core.Specification.contract_of_contractTriple`.
+- `witness_procedureAssertsValidOnTraces`: `Witness` satisfies
+  `Core.Specification.ProcedureAssertsValidOnTraces.denote`, from
+  `Core.Specification.procedureAssertsValidOnTraces_of_contractTriple`.
 
 ## The position of a declaration decides
 
@@ -128,6 +131,16 @@ theorem witness_contract (ss : Core.Statements)
   Core.Specification.contract_of_contractTriple witness_meets_contract witnessProc ss
     (by native_decide) hbody (by native_decide) ρ₀ ρ' trace hentry hrun
 
+/-- **Procedure correctness for `Witness`.** Every assertion of every finite execution of the
+    body is valid, and every finished run meets the contract:
+    `Core.Specification.ProcedureAssertsValidOnTraces.denote`, from
+    `Core.Specification.procedureAssertsValidOnTraces_of_contractTriple`. -/
+theorem witness_procedureAssertsValidOnTraces (ss : Core.Statements)
+    (hbody : witnessProc.body = .structured ss) :
+    Core.Specification.ProcedureAssertsValidOnTraces.denote testParams "Witness" axiomAST :=
+  Core.Specification.procedureAssertsValidOnTraces_of_contractTriple witness_meets_contract
+    (by native_decide) hbody (by native_decide)
+
 /-! ## The position of a declaration decides -/
 
 /-- A procedure with an empty body meets its contract when the declarations before it
@@ -173,7 +186,7 @@ private theorem not_contractTriple_ensures_false (p : Core.Program) (n : String)
   rw [hbody] at htb
   let ρ : Imperative.Env Core.Expression :=
     { store := fun _ => none, factory := boolFactory model }
-  have ⟨_hvalid, hpostF⟩ := htb ρ ρ []
+  have ⟨_hvalid, hpostF⟩ := Strata.Logic.Hoare.TripleWith.run htb ρ ρ []
     ⟨⟨preAsPredicate_of_no_pre _ _ ρ hpre, rfl,
       oldInoutAsPredicate_of_no_inout _ ρ hinout,
       (fun id ty hmem => by rw [hinputs] at hmem; cases hmem),

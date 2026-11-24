@@ -104,3 +104,73 @@ Result: ✅ pass
 -/
 #guard_msgs in
 #eval Strata.Core.verify setPgm
+
+---------------------------------------------------------------------
+-- Extensionality depends on the SMT encoding. Two sets with the same members are
+-- equal under the array encoding, but not provably so under the default encoding,
+-- whose `Set.*` axioms speak only about membership. The tests run quietly, so they
+-- pin the verdicts and not the models the solver chooses.
+private def setExtPgm :=
+#strata
+program Core;
+
+procedure SetExt(s : Set int, t : Set int)
+{
+  assume [same_members]: (forall x : int :: Set.contains(s, x) == Set.contains(t, x));
+  assert [ext]: s == t;
+};
+#end
+
+/--
+info:
+Obligation: ext
+Property: assert
+Result: ❓ unknown
+-/
+#guard_msgs in
+#eval Strata.Core.verify setExtPgm (options := .quiet)
+
+/--
+info:
+Obligation: ext
+Property: assert
+Result: ✅ pass
+-/
+#guard_msgs in
+#eval Strata.Core.verify setExtPgm
+  (options := { Core.VerifyOptions.quiet with useArrayTheory := true })
+
+---------------------------------------------------------------------
+-- `Set` is uninterpreted in Strata, so five pairwise-distinct `Set bool` values are
+-- consistent and `assert false` must fail. cvc5 and z3 both define a sort named `Set`
+-- (cvc5's has exactly four `Set Bool` values), so the encoder must not emit Strata's
+-- sort under that name.
+private def setCardPgm :=
+#strata
+program Core;
+
+procedure SetCard(a : Set bool, b : Set bool, c : Set bool, d : Set bool, e : Set bool)
+{
+  assume [pairwise_distinct]: !(a == b) && !(a == c) && !(a == d) && !(a == e) && !(b == c) &&
+    !(b == d) && !(b == e) && !(c == d) && !(c == e) && !(d == e);
+  assert [unreachable]: false;
+};
+#end
+
+/--
+info:
+Obligation: unreachable
+Property: assert
+Result: ❌ fail
+-/
+#guard_msgs in
+#eval Strata.Core.verify setCardPgm (options := .quiet)
+
+/--
+info:
+Obligation: unreachable
+Property: assert
+Result: ❌ fail
+-/
+#guard_msgs in
+#eval Strata.Core.verify setCardPgm (options := { Core.VerifyOptions.quiet with solver := "z3" })

@@ -218,6 +218,63 @@ def callElim (p : Core.Program)
 
 end CallElimExamples
 
+/-! ## Temporaries avoid the program's variable names
+
+`h` declares a variable with the name each kind of temporary would get: `tmp_arg_0` for the first
+argument, `tmp_j_3` for the output `j`, and, after the call, `old_j_6` for `old j`. Each temporary
+takes the next name the program does not declare, so no `init` of a temporary overwrites a
+program variable. -/
+section CallElimFreshTemporaries
+
+def CallElimTestTakenNames :=
+#strata
+program Core;
+procedure f(x : int, inout j : int, out y : int)
+spec {
+  ensures (y == x);
+  ensures (j == old j);
+};
+procedure h(inout j : int) {
+  var tmp_arg_0 : int := 5;
+  var tmp_j_3 : int := 6;
+  var b : int;
+  call f(7, inout j, out b);
+  var old_j_6 : int := 7;
+};
+#end
+
+/--
+info: program Core;
+
+procedure f (x : int, inout j : int, out y : int)
+spec {
+  ensures [f_ensures_0]: y == x;
+  ensures [f_ensures_1]: j == old j;
+  } {
+  
+};
+procedure h (inout j : int)
+{
+  var tmp_arg_0 : int := 5;
+  var tmp_j_3 : int := 6;
+  var b : int;
+  var tmp_arg_1 : int := 7;
+  var tmp_arg_2 : int := j;
+  var tmp_j_4 : int := j;
+  var tmp_b_5 : int := b;
+  var old_j_7 : int := j;
+  havoc j;
+  havoc b;
+  assume [$__callElimAssume_f_ensures_0_8]: b == tmp_arg_1;
+  assume [$__callElimAssume_f_ensures_1_9]: j == old_j_7;
+  var old_j_6 : int := 7;
+};
+-/
+#guard_msgs in
+#eval IO.println (toString (callElim (translate CallElimTestTakenNames)))
+
+end CallElimFreshTemporaries
+
 /-! ## Call elimination at the call's type instance
 
 Each program below except `unknownProg` and `conflictProg` is a fully annotated Core AST.

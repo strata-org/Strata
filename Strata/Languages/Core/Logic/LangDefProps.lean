@@ -138,6 +138,8 @@ theorem InitEnvWF.of_defUseOk {params : InitEnvWFParams} {s : Statement}
     (hlab : ∀ l ∈ Stmt.labels s, ∀ p ∈ params.prefixBlockLabels, ¬ p.toList.isPrefixOf l.toList)
     (hdu : Stmt.defUseWellFormed (fun n => (ρ.store n).isSome) params.declaredFuncs s = Bool.true)
     (hfd : ∀ nm, Core.isNameInFactory nm = Bool.true → params.declaredFuncs ⟨nm, ()⟩ = Bool.true)
+    (hrfd : ∀ f : Expression.Ident, f.name ∈ ρ.factory.factory →
+      params.declaredFuncs f = Bool.true)
     (hinit : Stmt.InitTypesInhabited (P := Expression) (C := Command) ρ.factory s)
     (hty : ∃ Γ, StoreHasTyping ρ.factory ρ.store Γ ∧ Stmt.fvarTypesWellAnnotated Γ s)
     (hmt : ∀ m ∈ Stmt.measures s,
@@ -153,6 +155,7 @@ theorem InitEnvWF.of_defUseOk {params : InitEnvWFParams} {s : Statement}
   exitsNotReserved := hlab
   defUseOk := hdu
   factoryDeclared := hfd
+  runtimeFactoryDeclared := hrfd
   initTypesInhabited := hinit
   fvarTypesOk := hty
   measuresTyped := hmt
@@ -183,6 +186,8 @@ theorem BlockInitEnvWF.of_defUseOk {params : InitEnvWFParams} {bss : Statements}
       ¬ p.toList.isPrefixOf l.toList)
     (hdu : Block.defUseWellFormed (fun n => (ρ.store n).isSome) params.declaredFuncs bss = Bool.true)
     (hfd : ∀ nm, Core.isNameInFactory nm = Bool.true → params.declaredFuncs ⟨nm, ()⟩ = Bool.true)
+    (hrfd : ∀ f : Expression.Ident, f.name ∈ ρ.factory.factory →
+      params.declaredFuncs f = Bool.true)
     (hinit : Block.InitTypesInhabited (P := Expression) (C := Command) ρ.factory bss)
     (hty : ∃ Γ, StoreHasTyping ρ.factory ρ.store Γ ∧ Block.fvarTypesWellAnnotated Γ bss)
     (hmt : ∀ m ∈ Block.measures bss,
@@ -207,6 +212,7 @@ theorem BlockInitEnvWF.of_defUseOk {params : InitEnvWFParams} {bss : Statements}
     rw [← hname]
     exact hres ident hdefined pfx hpfx
   factoryDeclared := hfd
+  runtimeFactoryDeclared := hrfd
   initTypesInhabited := hinit
   fvarTypesOk := hty
   measuresTyped := hmt
@@ -232,7 +238,7 @@ theorem blockInitEnvWF_cons_head {params : InitEnvWFParams} {s : Statement} {ss 
       (by rw [Block.definedVars]; exact List.mem_append.mpr (Or.inl hn)))
     h.reservedFreshCore
     (fun l hl => h.exitsNotReserved l (by rw [Block.labels]; exact List.mem_append.mpr (Or.inl hl)))
-    hdu.1 h.factoryDeclared
+    hdu.1 h.factoryDeclared h.runtimeFactoryDeclared
     (fun ty hty => h.initTypesInhabited ty
       (by rw [Block.initTypes]; exact List.mem_append.mpr (Or.inl hty)))
     (by
@@ -278,7 +284,7 @@ theorem blockInitEnvWF_append_head {params : InitEnvWFParams} {ss₁ ss₂ : Sta
     (fun l hl => h.exitsNotReserved l
       (by rw [Imperative.Block.labels_append]; exact List.mem_append.mpr (Or.inl hl)))
     (Imperative.Block.defUseWellFormed_of_append_left h.defUseOk)
-    h.factoryDeclared
+    h.factoryDeclared h.runtimeFactoryDeclared
     (fun ty hty => h.initTypesInhabited ty
       (by rw [Block.initTypes_append]; exact List.mem_append.mpr (Or.inl hty)))
     (by
@@ -300,7 +306,7 @@ theorem blockInitEnvWF_of_block {params : InitEnvWFParams} {ss : Statements}
   simp only [Stmt.definedVars, Bool.false_eq_true, ite_false] at hdefs hdnr
   exact BlockInitEnvWF.of_defUseOk h.toWellFormedSemanticEval h.storeWellDefined hdefs hdnr
     h.reservedFresh (fun l hl => h.exitsNotReserved l (by rw [Stmt.labels]; exact hl))
-    hdu h.factoryDeclared
+    hdu h.factoryDeclared h.runtimeFactoryDeclared
     (fun ty hty => h.initTypesInhabited ty (by simp only [Stmt.initTypes]; exact hty))
     (by
       obtain ⟨Γ, hσ, hw⟩ := h.fvarTypesOk
@@ -324,7 +330,7 @@ theorem blockInitEnvWF_of_ite_then {params : InitEnvWFParams} {c : Expression.Ex
     (fun n hn => hdnr n (List.mem_append.mpr (Or.inl hn)))
     h.reservedFresh
     (fun l hl => h.exitsNotReserved l (by rw [Stmt.labels]; exact List.mem_append.mpr (Or.inl hl)))
-    hdu.1.2 h.factoryDeclared
+    hdu.1.2 h.factoryDeclared h.runtimeFactoryDeclared
     (fun ty hty => h.initTypesInhabited ty
       (by simp only [Stmt.initTypes]; exact List.mem_append.mpr (Or.inl hty)))
     (by
@@ -350,7 +356,7 @@ theorem blockInitEnvWF_of_ite_else {params : InitEnvWFParams} {c : Expression.Ex
     (fun n hn => hdnr n (List.mem_append.mpr (Or.inr hn)))
     h.reservedFresh
     (fun l hl => h.exitsNotReserved l (by rw [Stmt.labels]; exact List.mem_append.mpr (Or.inr hl)))
-    hdu.2 h.factoryDeclared
+    hdu.2 h.factoryDeclared h.runtimeFactoryDeclared
     (fun ty hty => h.initTypesInhabited ty
       (by simp only [Stmt.initTypes]; exact List.mem_append.mpr (Or.inr hty)))
     (by
@@ -373,7 +379,7 @@ theorem blockInitEnvWF_of_loop_body {params : InitEnvWFParams} {g : Expression.E
   simp only [Stmt.definedVars, Bool.false_eq_true, ite_false] at hdefs hdnr
   exact BlockInitEnvWF.of_defUseOk h.toWellFormedSemanticEval h.storeWellDefined hdefs hdnr
     h.reservedFresh (fun l hl => h.exitsNotReserved l (by rw [Stmt.labels]; exact hl))
-    hdu.2 h.factoryDeclared
+    hdu.2 h.factoryDeclared h.runtimeFactoryDeclared
     (fun ty hty => h.initTypesInhabited ty (by simp only [Stmt.initTypes]; exact hty))
     (by
       obtain ⟨Γ, hσ, hw⟩ := h.fvarTypesOk
@@ -435,7 +441,7 @@ theorem blockInitEnvWF_cons_tailE {params : InitEnvWFParams} {s : Statement} {ss
     (fun n hn => ?_) (fun n hn => h.definedVarsNotReservedCore n ?_)
     (fun n hn => ?_)
     (fun l hl => h.exitsNotReserved l (by rw [Block.labels]; exact List.mem_append.mpr (Or.inr hl)))
-    ?_ h.factoryDeclared
+    ?_ h.factoryDeclared (hfac ▸ h.runtimeFactoryDeclared)
     (fun ty hty => hfac ▸ h.initTypesInhabited ty
       (by rw [Block.initTypes]; exact List.mem_append.mpr (Or.inr hty)))
     ?_ ?_
@@ -539,6 +545,7 @@ theorem initEnvWF_loop_iterateE {params : InitEnvWFParams} {g : Expression.Expr}
     · exact absurd hx (by simp)
   refine InitEnvWF.of_defUseOk (hfac ▸ h.toWellFormedSemanticEval) hproj (fun n hn => ?_)
     h.definedVarsNotReserved (fun n hn => ?_) h.exitsNotReserved ?_ h.factoryDeclared
+    (hfac ▸ h.runtimeFactoryDeclared)
     (hfac ▸ h.initTypesInhabited) ?_ ?_
   · have hdef := h.defsUndefined n hn
     show (projectStore ρ.store ρ_inner.store n).isNone
@@ -562,22 +569,24 @@ theorem initEnvWF_loop_iterateE {params : InitEnvWFParams} {g : Expression.Expr}
 
 For an *empty* body every field of `BlockInitEnvWF` that mentions the statements is
 vacuous, so the condition reduces to the generic evaluator well-formedness,
-`storeWellDefined`, and the two conditions that mention only `params`.  This is what
+`storeWellDefined`, and the conditions that mention only `params` and the factory.  This is what
 lets a test exhibit a concrete initial environment (to *refute* a contract) without
 discharging the def-use and freshness machinery. -/
 
 /-- The block condition on an *empty* body, from evaluator well-formedness, store
-    well-definedness, and the two conditions that mention only `params`.  Every
+    well-definedness, and the conditions that mention only `params` and the factory.  Every
     remaining field quantifies over the body's statements and so is vacuous. -/
 theorem blockInitEnvWF_nil {params : InitEnvWFParams} {ρ : Imperative.Env Expression}
     (hwf : WellFormedSemanticEval (P := Expression) ρ.factory)
     (hsv : Imperative.WellFormedStore ρ.store ρ.factory)
     (hpref : params.prefixIdents = [])
     (hfd : ∀ nm, Core.isNameInFactory nm = Bool.true →
-      params.declaredFuncs ⟨nm, ()⟩ = Bool.true) :
+      params.declaredFuncs ⟨nm, ()⟩ = Bool.true)
+    (hrfd : ∀ f : Expression.Ident, f.name ∈ ρ.factory.factory →
+      params.declaredFuncs f = Bool.true) :
     BlockInitEnvWF params [] ρ := by
   refine BlockInitEnvWF.of_defUseOk hwf hsv (fun n hn => ?_) (fun n hn => ?_)
-    (fun n _ p hp => ?_) (fun l hl => by simp [Block.labels] at hl) rfl hfd
+    (fun n _ p hp => ?_) (fun l hl => by simp [Block.labels] at hl) rfl hfd hrfd
     (by intro ty hty; simp [Block.initTypes] at hty)
     ⟨fun _ => none, fun _ _ h => by simp at h, trivial⟩
     (by simp [Block.measures])
@@ -593,10 +602,12 @@ theorem blockInitEnvWF_procBlock_nil {params : InitEnvWFParams} {ρ : Imperative
     (hsv : Imperative.WellFormedStore ρ.store ρ.factory)
     (hpref : params.prefixIdents = [])
     (hfd : ∀ nm, Core.isNameInFactory nm = Bool.true →
-      params.declaredFuncs ⟨nm, ()⟩ = Bool.true) :
+      params.declaredFuncs ⟨nm, ()⟩ = Bool.true)
+    (hrfd : ∀ f : Expression.Ident, f.name ∈ ρ.factory.factory →
+      params.declaredFuncs f = Bool.true) :
     BlockInitEnvWF params [Imperative.Stmt.block l [] md] ρ := by
   refine BlockInitEnvWF.of_defUseOk hwf hsv (fun n hn => ?_) (fun n hn => ?_)
-    (fun n _ p hp => ?_) (fun l hl => by simp [Block.labels, Stmt.labels] at hl) ?_ hfd
+    (fun n _ p hp => ?_) (fun l hl => by simp [Block.labels, Stmt.labels] at hl) ?_ hfd hrfd
     (by intro ty hty; simp [Block.initTypes, Stmt.initTypes] at hty)
     ⟨fun _ => none, fun _ _ h => by simp at h,
       by simp [Block.fvarTypesWellAnnotated, Stmt.fvarTypesWellAnnotated]⟩

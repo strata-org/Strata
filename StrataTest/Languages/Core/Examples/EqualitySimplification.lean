@@ -249,10 +249,10 @@ procedure Conflicts(x : int)
 {
   assume x == 1;
   assume x == 2;
-  assert [twoValues]: x == 1;
+  assert [twoValues]: 1 == x;
   assume f(1) == 1;
   assume f(1) == 2;
-  assert [twoTermValues]: f(1) == 1;
+  assert [twoTermValues]: 1 == f(1);
 };
 procedure Scopes(c : bool)
 {
@@ -436,7 +436,7 @@ procedure BoolDef(x : int)
 {
   var b : bool := x == 1;
   assume b;
-  assert [boolDef]: x == 1;
+  assert [boolDef]: 1 == x;
 };
 #end
 
@@ -633,7 +633,7 @@ procedure P(x : int)
 {
   assume x == 1;
   assume !(x == 1);
-  assert [vacuous]: x == 1;
+  assert [vacuous]: 1 == x;
 };
 procedure Q(x : int, y : int)
 {

@@ -8,6 +8,7 @@ public import Strata.Pipeline.Messages
 
 public import Strata.Languages.Core.PipelinePhase
 public import Strata.Languages.Core.MarkerLabels
+import Strata.Languages.Core.NameSets
 import Strata.Languages.Core.StatementType
 import Strata.Languages.Core.CallWF
 import Strata.DL.Lambda.LExprType
@@ -42,9 +43,14 @@ by the callee's contract, as a flat sequence of commands: `init`s for the argume
 `old` temporaries, `assert`s of the (non-free) preconditions, `havoc`s of the call's outputs, and
 `assume`s of the postconditions. It introduces no control flow, so the result can replace the
 call in a structured body or in a CFG block alike. `vt` gives the declared types of the
-variables in scope at the call, and `taken` the type names the callee's opaque types must avoid.
+variables in scope at the call, `taken` the type names the callee's opaque types must avoid,
+and `takenVars` the names the temporaries avoid: the program's variable names
+(`Program.varNames`), since a temporary named like a program variable would overwrite it, and,
+as a precaution, its declaration names, since the SMT encoding names a free variable and a
+nullary function by their own names.
 -/
-def callElimCall (taken : Std.HashSet String) (vt : TypeSpec.TypeScopes) (procName : String)
+def callElimCall (taken takenVars : Std.HashSet String) (vt : TypeSpec.TypeScopes)
+    (procName : String)
     (tyArgs : Option (List Expression.Ty)) (callArgs : List (CallArg Expression))
     (md : Imperative.MetaData Expression) : CoreTransformM (List Command) := do
   let lhs := CallArg.getLhs callArgs
@@ -99,13 +105,13 @@ def callElimCall (taken : Std.HashSet String) (vt : TypeSpec.TypeScopes) (procNa
   let oldVars := oldPairs.map (·.1)
 
   let genArgTrips :=
-    genArgExprIdentsTrip (Lambda.LMonoTySignature.toTrivialLTy instantiatedInputs) args
+    genArgExprIdentsTrip takenVars (Lambda.LMonoTySignature.toTrivialLTy instantiatedInputs) args
   let argTrips
       : List ((Expression.Ident × Expression.Ty) × Expression.Expr)
       ← genArgTrips
 
   let genOutTrips :=
-    genOutExprIdentsTrip (Lambda.LMonoTySignature.toTrivialLTy instantiatedOutputs) lhs
+    genOutExprIdentsTrip takenVars (Lambda.LMonoTySignature.toTrivialLTy instantiatedOutputs) lhs
   let outTrips
       : List ((Expression.Ident × Expression.Ty) × Expression.Ident)
       ← genOutTrips
@@ -113,7 +119,7 @@ def callElimCall (taken : Std.HashSet String) (vt : TypeSpec.TypeScopes) (procNa
   -- Generate fresh variables for "old g" (one per modified variable in lhs).
   -- For input/output parameters, look up types from the callee's inputs.
   let oldParams := oldPairs.map (·.2)
-  let genOldIdents ← genOldExprIdents oldVars
+  let genOldIdents ← genOldExprIdents takenVars oldVars
   let oldTys ← oldParams.mapM fun param => do
     match instantiatedInputs.find? param with
     | some ty => pure (Lambda.LTy.forAll [] ty)
@@ -195,32 +201,35 @@ def callElimCall (taken : Std.HashSet String) (vt : TypeSpec.TypeScopes) (procNa
 
 /-- Call elimination on a single command: a `call` is replaced by its callee's contract
     (`callElimCall`); every other command is declined (`.none`). -/
-def callElimCommand (taken : Std.HashSet String) (vt : TypeSpec.TypeScopes) (c : Command) :
+def callElimCommand (taken takenVars : Std.HashSet String) (vt : TypeSpec.TypeScopes)
+    (c : Command) :
     CoreTransformM (Option (List Command)) :=
   match c with
   | .call procName tyArgs callArgs md =>
-    .some <$> callElimCall taken vt procName tyArgs callArgs md
+    .some <$> callElimCall taken takenVars vt procName tyArgs callArgs md
   | _ => return .none
 
 /--
-Call elimination on a single statement, given the declared types `vt` of the variables in scope
-and the type names `taken` the opaque types of a call must avoid: a `call` statement is
+Call elimination on a single statement, given the declared types `vt` of the variables in scope,
+the type names `taken` the opaque types of a call must avoid, and the variable names
+`takenVars` its temporaries must avoid: a `call` statement is
 rewritten by `callElimCommand`; every other statement returns `.none` so that `runStmtsRecTyped`
 traverses into it.
 -/
-def callElimCmd (taken : Std.HashSet String) (vt : TypeSpec.TypeScopes) (s : Statement)
+def callElimCmd (taken takenVars : Std.HashSet String) (vt : TypeSpec.TypeScopes) (s : Statement)
   : CoreTransformM (Option (List Statement)) := do
     match s with
-      | .cmd c => return (← callElimCommand taken vt c).map (·.map .cmd)
+      | .cmd c => return (← callElimCommand taken takenVars vt c).map (·.map .cmd)
       | _ => return .none
 
 /-- Call Elimination for an entire program by walking through all procedure
 bodies, structured ones and the blocks of CFG ones. -/
 def callElim' (p : Program) : CoreTransformM (Bool × Program) :=
   let taken := p.typeNamesWithPrefix callElimTyPrefix
+  let takenVars := p.varNames.insertMany (p.declaredNames ++ p.funcNames)
   declareGeneratedTypes callElimTyPrefix taken
-    (runProgramTyped (targetProcList := .none) (callElimCmd taken) p
-      (cfgCmd := some (callElimCommand taken)))
+    (runProgramTyped (targetProcList := .none) (callElimCmd taken takenVars) p
+      (cfgCmd := some (callElimCommand taken takenVars)))
 
 end CallElim
 
@@ -265,7 +274,7 @@ def callElimPipelinePhase : PipelinePhase where
   preserves := factSet![.wellFormedCalls, .noCFGBodies, .noLoops, .noLoopInvariants,
                       .noLoopMeasures, .noPrecondsFromFuncs, .noNondetGuards, .noProcedureContracts,
                          .noPolymorphicProcedures,
-                         .noPolymorphicFunctions, .typeAnnotated, .exitsCovered]
+                         .noPolymorphicFunctions, .typeAnnotated, .exitsCovered, .noCFGCycles]
 
 end Core
 

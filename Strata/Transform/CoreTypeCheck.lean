@@ -66,7 +66,7 @@ def typeCheckPipelinePhase
                          .noLoopMeasures, .staticSingleAssignment, .noBetaRedexes,
                          .noPrecondsFromFuncs, .noNondetGuards, .noProcedureContracts,
                          .noPolymorphicProcedures,
-                         .noPolymorphicFunctions, .noInits])
+                         .noPolymorphicFunctions, .noInits, .noCFGCycles])
     fun prog => do
       match Core.typeCheck options prog factory moreFns with
       | .ok prog' => return (true, prog')

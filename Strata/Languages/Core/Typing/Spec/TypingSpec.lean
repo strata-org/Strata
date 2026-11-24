@@ -113,7 +113,9 @@ inductive CmdExtWellTyped (C : LContext CoreLParams) (P : Program) :
       CmdExtWellTyped C P ts (.cmd c) ts'
   /-- A well-formed call (`WF.WFcallProp`) of a procedure of `P` whose formals, instantiated by
       `σ`, are the types of its arguments and of its declared left-hand sides. The call stores,
-      for each type parameter of the procedure in order, the monotype `σ` sends it to. -/
+      for each type parameter of the procedure in order, the monotype `σ` sends it to, and each
+      stored type argument (a `forAll []` monotype, as the premise above forces) is well
+      kinded. -/
   | call : ∀ ts (pname : String) tyArgs callArgs proc md (σ : List (TyIdentifier × LMonoTy)) ts',
       Program.Procedure.find? P pname = some proc →
       WF.WFcallProp P pname callArgs →
@@ -131,6 +133,7 @@ inductive CmdExtWellTyped (C : LContext CoreLParams) (P : Program) :
           some (.forAll [] (LMonoTy.subst (HMaps.ofScopes [σ]) (proc.header.outputs.values[i])))) →
       tyArgs = some (proc.header.typeArgs.map
         (fun a => .forAll [] (LMonoTy.subst (HMaps.ofScopes [σ]) (.ftvar a)))) →
+      (∀ tys, tyArgs = some tys → ∀ ty ∈ tys, C.WellKindedTy ty.toMonoTypeUnsafe) →
       HMaps.Equiv ts' ts →
       CmdExtWellTyped C P ts (.call pname tyArgs callArgs md) ts'
 

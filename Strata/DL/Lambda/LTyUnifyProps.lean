@@ -2168,6 +2168,21 @@ theorem LTy.openFull_eq_subst_ofZip (vars : List TyIdentifier) (mty : LMonoTy)
     LTy.openFull (.forAll vars mty) vals = LMonoTy.subst (Subst.ofZip vars vals) mty := by
   simp only [LTy.openFull, LTy.boundVars, LTy.toMonoTypeUnsafe, Subst.ofZip]
 
+/-- `Subst.ofNullaryConsts` sends a variable to the constant paired with its first occurrence. -/
+theorem Subst.find?_ofNullaryConsts (pairs : List (TyIdentifier × String)) (x : TyIdentifier) :
+    HMaps.find? (Subst.ofNullaryConsts pairs) x
+      = (pairs.find? (fun p => p.1 == x)).map fun p => LMonoTy.tcons p.2 [] := by
+  simp only [Subst.ofNullaryConsts, HMaps.find?_single_scope, HMap.find?_ofList_findSome?,
+    List.map_reverse, List.reverse_reverse]
+  induction pairs with
+  | nil => rfl
+  | cons hd tl ih =>
+    by_cases hx : hd.1 == x
+    · simp only [List.map_cons, List.findSome?_cons, hx, ite_true, List.find?_cons,
+        Option.map_some]
+    · simp only [List.map_cons, List.findSome?_cons, hx, List.find?_cons]
+      exact ih
+
 /-- Every value of `Subst.ofNullaryConsts` is the nullary constant named by one of the pairs. -/
 theorem Subst.mem_values_ofNullaryConsts {pairs : List (TyIdentifier × String)}
     {v : LMonoTy} (h : v ∈ HMaps.values (Subst.ofNullaryConsts pairs)) :
@@ -2760,14 +2775,18 @@ private theorem subst_ftvar_of_values_ftvar (S : Subst)
   · obtain ⟨y, hy⟩ := hvals x t hfind
     exact ⟨y, by simp only [hfind, hy]⟩
 
-/-- Instantiating type parameters renames them to type variables and keeps the context. -/
+/-- Instantiating type parameters renames them to type variables and keeps the context. The
+    renaming depends only on the parameters and the environment: instantiating the parameters
+    themselves yields their images. -/
 theorem LMonoTys.instantiateEnv_subst {IDMeta : Type}
     [DecidableEq IDMeta] [Hashable IDMeta] [ToFormat IDMeta]
     (ids : List TyIdentifier) (mtys : LMonoTys) (Env : TEnv IDMeta)
     (mtys' : LMonoTys) (Env' : TEnv IDMeta)
     (h : LMonoTys.instantiateEnv ids mtys Env = .ok (mtys', Env')) :
     ∃ S : Subst, (∀ x : TyIdentifier, ∃ y, LMonoTy.subst S (.ftvar x) = .ftvar y) ∧
-      mtys' = mtys.map (LMonoTy.subst S) ∧ Env'.context = Env.context := by
+      mtys' = mtys.map (LMonoTy.subst S) ∧ Env'.context = Env.context ∧
+      LMonoTys.instantiateEnv ids (ids.map LMonoTy.ftvar) Env
+        = .ok (ids.map (fun a => LMonoTy.subst S (.ftvar a)), Env') := by
   unfold LMonoTys.instantiateEnv at h
   cases hinst : LMonoTys.instantiate ids mtys Env.genEnv with
   | error e => rw [hinst] at h; exact absurd h (by simp)
@@ -2788,7 +2807,7 @@ theorem LMonoTys.instantiateEnv_subst {IDMeta : Type}
       exact TGenEnv.genTyVars_context ids.length Env.genEnv freshtvs genEnv1 hgen
     have hlen : freshtvs.length = ids.length := TGenEnv.genTyVars_length _ _ _ _ hgen
     refine ⟨Strata.Util.HMaps.ofScopes [List.zip ids (List.map LMonoTy.ftvar freshtvs)],
-      ?_, ?_, hctx⟩
+      ?_, ?_, hctx, ?_⟩
     · refine subst_ftvar_of_values_ftvar _ ?_
       intro x t hfind
       have hsingle : HMaps.find? (Strata.Util.HMaps.ofScopes
@@ -2803,6 +2822,14 @@ theorem LMonoTys.instantiateEnv_subst {IDMeta : Type}
       obtain ⟨y, -, hy⟩ := List.mem_map.mp hin
       exact ⟨y, hy.symm⟩
     · rw [← hmtys, ← hmtysI, LMonoTys.subst_eq_map]
+    · have hrun : LMonoTys.instantiateEnv ids (ids.map LMonoTy.ftvar) Env
+          = .ok (LMonoTys.subst (Strata.Util.HMaps.ofScopes
+              [List.zip ids (List.map LMonoTy.ftvar freshtvs)]) (ids.map LMonoTy.ftvar),
+            { Env with genEnv := genEnv1 }) := by
+        simp only [LMonoTys.instantiateEnv, LMonoTys.instantiate, bind, Except.bind, hgen]
+      rw [hrun, LMonoTys.subst_eq_map, List.map_map]
+      rw [← hEnv, hgenEnv]
+      rfl
 
 /-- `openVars` looks a type variable up in `vars` zipped against `vals`. -/
 theorem LMonoTy.openVars_ftvar (vars : List TyIdentifier) (vals : LMonoTys) (x : TyIdentifier) :
@@ -2837,6 +2864,65 @@ theorem LMonoTy.openVars_ftvar_of_zip (P : LMonoTy → Prop) (x : TyIdentifier) 
       exact LMonoTy.openVars_ftvar_of_zip P x vs
         (by simpa only [List.length_cons, Nat.add_right_cancel_iff] using hlen)
         (fun p hp => hab p (List.mem_cons_of_mem _ hp)) h
+
+/-- For distinct variables, looking up a listed variable in `as` zipped with `as.map g` gives the
+    pair whose value is `g` of the variable. -/
+private theorem find?_zip_map_of_mem (g : TyIdentifier → LMonoTy) {as : List TyIdentifier}
+    (hnd : as.Nodup) {a : TyIdentifier} (ha : a ∈ as) :
+    (List.zip as (as.map g)).find? (fun p => p.1 == a) = some (a, g a) := by
+  have hmem : (a, g a) ∈ List.zip as (as.map g) := List.mem_zip_map_self as g ha
+  exact find?_zip_of_mem as (as.map g) a (g a) hmem hnd
+
+/-- For distinct variables `as`, the substitution zipping `as` with `g` of each variable sends a
+    listed variable `a` to `g a`. -/
+public theorem LMonoTy.subst_ofScopes_zip_map_ftvar (g : TyIdentifier → LMonoTy)
+    {as : List TyIdentifier} (hnd : as.Nodup) {a : TyIdentifier} (ha : a ∈ as) :
+    LMonoTy.subst (Strata.Util.HMaps.ofScopes [as.zip (as.map g)]) (.ftvar a) = g a := by
+  have hlen : as.length = (as.map g).length := by simp only [List.length_map]
+  rw [LExpr.subst_ofScopes_zip_eq_openVars as (as.map g) (.ftvar a) hlen hnd,
+    LMonoTy.openVars_ftvar, find?_zip_map_of_mem g hnd ha]
+
+/-- For distinct type parameters `as` covering the free variables of `ty`, substituting for each
+    parameter `b` the result of applying `σ'` then `S` to it is the same as applying `σ'` then
+    `S` to `ty`. -/
+public theorem LMonoTy.subst_ofScopes_zip_map_comp (S : Subst) (σ' : List (TyIdentifier × LMonoTy))
+    {as : List TyIdentifier} (hnd : as.Nodup) {ty : LMonoTy}
+    (hfv : ∀ x ∈ LMonoTy.freeVars ty, x ∈ as) :
+    LMonoTy.subst (Strata.Util.HMaps.ofScopes [as.zip (as.map (fun b =>
+      LMonoTy.subst S (LMonoTy.subst (Strata.Util.HMaps.ofScopes [σ']) (.ftvar b))))]) ty =
+      LMonoTy.subst S (LMonoTy.subst (Strata.Util.HMaps.ofScopes [σ']) ty) := by
+  symm
+  refine LMonoTy.subst_subst_of_pointwise _ _ _ ty fun x hx => ?_
+  exact (LMonoTy.subst_ofScopes_zip_map_ftvar (fun b =>
+    LMonoTy.subst S (LMonoTy.subst (Strata.Util.HMaps.ofScopes [σ']) (.ftvar b))) hnd
+    (hfv x hx)).symm
+
+/-- Looking up a listed variable in `as` zipped with `ms`, of the same length, gives a pair whose
+    value is in `ms`. -/
+private theorem exists_find?_zip_of_mem (a : TyIdentifier) (as : List TyIdentifier)
+    (ms : LMonoTys) (hlen : as.length = ms.length) (hnd : as.Nodup) (ha : a ∈ as) :
+    ∃ m ∈ ms, (List.zip as ms).find? (fun p => p.1 == a) = some (a, m) := by
+  obtain ⟨i, hi, hia⟩ := List.getElem_of_mem ha
+  have hi' : i < ms.length := by omega
+  subst hia
+  have hz : i < (List.zip as ms).length := by
+    simp only [List.length_zip]
+    omega
+  have hpair : (List.zip as ms)[i] = (as[i], ms[i]) := by
+    simp only [List.getElem_zip]
+  have hmem : (as[i], ms[i]) ∈ List.zip as ms :=
+    List.mem_iff_getElem.2 ⟨i, hz, hpair⟩
+  exact ⟨ms[i], List.getElem_mem hi', find?_zip_of_mem as ms as[i] ms[i] hmem hnd⟩
+
+/-- For distinct variables `as` and as many monotypes `ms`, the substitution zipping `as` with
+    `ms` sends a listed variable to one of the monotypes. -/
+public theorem LMonoTy.subst_ofScopes_zip_ftvar_mem {as : List TyIdentifier} {ms : LMonoTys}
+    (hlen : as.length = ms.length) (hnd : as.Nodup) {a : TyIdentifier} (ha : a ∈ as) :
+    ∃ m ∈ ms, LMonoTy.subst (Strata.Util.HMaps.ofScopes [as.zip ms]) (.ftvar a) = m := by
+  obtain ⟨m, hm, hfind⟩ := exists_find?_zip_of_mem a as ms hlen hnd ha
+  refine ⟨m, hm, ?_⟩
+  rw [LExpr.subst_ofScopes_zip_eq_openVars as ms (.ftvar a) hlen hnd, LMonoTy.openVars_ftvar,
+    hfind]
 
 /-- `openVars` fixes a bitvector type. -/
 theorem LMonoTy.openVars_bitvec (vars : List TyIdentifier) (vals : LMonoTys) (n : Nat) :
@@ -3183,6 +3269,14 @@ theorem ambientTargets_generated {gen : TyIdentifier → Bool} {S : Subst} {g : 
   cases hg'
   exact hgen
 
+/-- The renaming of no variable has only empty scopes. -/
+theorem Subst.hasEmptyScopes_ofRenaming_nil : Subst.hasEmptyScopes (Subst.ofRenaming []) := by
+  simp [Subst.hasEmptyScopes, Subst.ofRenaming]
+
+/-- Substituting the renaming of no variable changes no type. -/
+theorem LMonoTy.subst_ofRenaming_nil : LMonoTy.subst (Subst.ofRenaming []) = id :=
+  funext (LMonoTy.subst_of_hasEmptyScopes Subst.hasEmptyScopes_ofRenaming_nil)
+
 /-- Every key of `Subst.ofRenaming ρ` is a renamed variable of `ρ`. -/
 theorem Subst.mem_keys_ofRenaming {ρ : List (TyIdentifier × TyIdentifier)} {x : TyIdentifier}
     (hx : x ∈ HMaps.keys (Subst.ofRenaming ρ)) : x ∈ ρ.map Prod.fst := by
@@ -3202,6 +3296,110 @@ theorem Subst.mem_freeVars_ofRenaming {ρ : List (TyIdentifier × TyIdentifier)}
   simp only [LMonoTy.freeVars, List.mem_singleton] at hxv
   subst hxv
   exact List.mem_map.mpr ⟨q, hq, rfl⟩
+
+/-- `Subst.ofRenaming ρ` sends every type variable to a type variable. -/
+theorem Subst.ofRenaming_ftvar (ρ : List (TyIdentifier × TyIdentifier)) (x : TyIdentifier) :
+    ∃ y, LMonoTy.subst (Subst.ofRenaming ρ) (.ftvar x) = .ftvar y := by
+  cases hf : HMaps.find? (Subst.ofRenaming ρ) x with
+  | none => exact ⟨x, LMonoTy.subst_ftvar_of_none hf⟩
+  | some v =>
+    rw [LMonoTy.subst_ftvar_of_some hf]
+    simp only [Subst.ofRenaming] at hf
+    rw [HMaps.find?_single_scope, HMap.find?_ofList_map_snd] at hf
+    simp only [Option.map_eq_some_iff] at hf
+    obtain ⟨_, -, rfl⟩ := hf
+    exact ⟨_, rfl⟩
+
+/-- The renaming substitution of `ρ`, with distinct renamed variables, sends a type variable to
+    the name `ρ` pairs it with, or to itself when `ρ` does not rename it. -/
+theorem Subst.ofRenaming_ftvar_lookup {ρ : List (TyIdentifier × TyIdentifier)}
+    (hfst : (ρ.map Prod.fst).Nodup) (a : TyIdentifier) :
+    LMonoTy.subst (Subst.ofRenaming ρ) (.ftvar a) = .ftvar ((ρ.lookup a).getD a) := by
+  cases hla : ρ.lookup a with
+  | none =>
+    have hnot : a ∉ ρ.map Prod.fst := by
+      intro hin
+      obtain ⟨p, hp, hpa⟩ := List.mem_map.mp hin
+      have hne := List.lookup_eq_none_iff.mp hla p hp
+      simp only [hpa, bne_self_eq_false] at hne
+      exact Bool.false_ne_true hne
+    have hfind : HMaps.find? (Subst.ofRenaming ρ) a = none := by
+      simp only [Subst.ofRenaming]
+      rw [HMaps.find?_single_scope]
+      refine HMap.find?_ofList_of_not_mem ?_
+      simpa only [List.map_map, Function.comp_def] using hnot
+    rw [LMonoTy.subst_ftvar_of_none hfind]
+    rfl
+  | some n =>
+    have hmem := List.mem_of_lookup_eq_some hla
+    have hkeys : ((ρ.map fun q => (q.1, LMonoTy.ftvar q.2)).map Prod.fst).Nodup := by
+      simpa only [List.map_map, Function.comp_def] using hfst
+    have hfind : HMaps.find? (Subst.ofRenaming ρ) a = some (LMonoTy.ftvar n) := by
+      simp only [Subst.ofRenaming]
+      rw [HMaps.find?_single_scope]
+      exact HMap.find?_ofList_of_mem_of_nodup hkeys
+        (List.mem_map.mpr ⟨(a, n), hmem, rfl⟩)
+    rw [LMonoTy.subst_ftvar_of_some hfind]
+    rfl
+
+/-- `S`, preceded by a scope sending each target `p.2` of the renaming `ρ` to the image under
+    `S` of the variable `p.1` it renames: applied after `Subst.ofRenaming ρ`, it undoes the
+    renaming and then applies `S`. -/
+def Subst.afterRenaming (S : Subst) (ρ : List (TyIdentifier × TyIdentifier)) : Subst :=
+  HMaps.push S (HMap.ofList (ρ.map fun p => (p.2, LMonoTy.subst S (.ftvar p.1))))
+
+/-- `Subst.afterRenaming S ρ` sends every type variable to a type variable when `S` does. -/
+theorem Subst.afterRenaming_ftvar {S : Subst} (ρ : List (TyIdentifier × TyIdentifier))
+    (hS : ∀ x : TyIdentifier, ∃ y, LMonoTy.subst S (.ftvar x) = .ftvar y) (x : TyIdentifier) :
+    ∃ y, LMonoTy.subst (Subst.afterRenaming S ρ) (.ftvar x) = .ftvar y := by
+  cases hf : HMap.find? (HMap.ofList (ρ.map fun p => (p.2, LMonoTy.subst S (.ftvar p.1)))) x with
+  | none =>
+    obtain ⟨y, hy⟩ := hS x
+    refine ⟨y, ?_⟩
+    rw [← hy]
+    exact LMonoTy.subst_ftvar_congr x (HMaps.find?_push_of_none _ _ x hf)
+  | some v =>
+    rw [Subst.afterRenaming, LMonoTy.subst_ftvar_of_some (HMaps.find?_push_of_some _ _ x v hf)]
+    have hv := HMap.mem_values_ofList _ v (HMap.find?_mem_values _ hf)
+    simp only [List.map_map, Function.comp_def, List.mem_map] at hv
+    obtain ⟨p, -, rfl⟩ := hv
+    exact hS p.1
+
+/-- Renaming the type variables of `t` by `ρ` and then applying `Subst.afterRenaming S ρ` is
+    applying `S`, when `ρ` renames distinct variables to distinct names that do not occur in `t`. -/
+theorem LMonoTy.subst_afterRenaming (S : Subst) (ρ : List (TyIdentifier × TyIdentifier))
+    (hfst : (ρ.map Prod.fst).Nodup) (hsnd : (ρ.map Prod.snd).Nodup) (t : LMonoTy)
+    (hfresh : ∀ p ∈ ρ, p.2 ∉ LMonoTy.freeVars t) :
+    LMonoTy.subst (Subst.afterRenaming S ρ) (LMonoTy.subst (Subst.ofRenaming ρ) t) =
+      LMonoTy.subst S t := by
+  refine LMonoTy.subst_subst_of_pointwise _ _ _ t fun x hx => ?_
+  by_cases hmem : x ∈ ρ.map Prod.fst
+  · obtain ⟨p, hp, rfl⟩ := List.mem_map.mp hmem
+    have hkeys1 : ((ρ.map fun q => (q.1, LMonoTy.ftvar q.2)).map Prod.fst).Nodup := by
+      simpa only [List.map_map, Function.comp_def] using hfst
+    have h1 : HMaps.find? (Subst.ofRenaming ρ) p.1 = some (.ftvar p.2) := by
+      simp only [Subst.ofRenaming]
+      rw [HMaps.find?_single_scope]
+      exact HMap.find?_ofList_of_mem_of_nodup hkeys1 (List.mem_map.mpr ⟨p, hp, rfl⟩)
+    have hkeys2 : ((ρ.map fun q => (q.2, LMonoTy.subst S (.ftvar q.1))).map Prod.fst).Nodup := by
+      simpa only [List.map_map, Function.comp_def] using hsnd
+    have h2 : HMap.find? (HMap.ofList (ρ.map fun q => (q.2, LMonoTy.subst S (.ftvar q.1)))) p.2 =
+        some (LMonoTy.subst S (.ftvar p.1)) :=
+      HMap.find?_ofList_of_mem_of_nodup hkeys2 (List.mem_map.mpr ⟨p, hp, rfl⟩)
+    rw [LMonoTy.subst_ftvar_of_some h1, Subst.afterRenaming,
+      LMonoTy.subst_ftvar_of_some (HMaps.find?_push_of_some _ _ _ _ h2)]
+  · have h1 : HMaps.find? (Subst.ofRenaming ρ) x = none := by
+      simp only [Subst.ofRenaming]
+      rw [HMaps.find?_single_scope]
+      refine HMap.find?_ofList_of_not_mem ?_
+      simpa only [List.map_map, Function.comp_def] using hmem
+    have hnsnd : x ∉ (ρ.map fun q => (q.2, LMonoTy.subst S (.ftvar q.1))).map Prod.fst := by
+      simp only [List.map_map, Function.comp_def, List.mem_map]
+      rintro ⟨p, hp, rfl⟩
+      exact hfresh p hp hx
+    rw [LMonoTy.subst_ftvar_of_none h1]
+    exact LMonoTy.subst_ftvar_congr x
+      (HMaps.find?_push_of_none _ _ x (HMap.find?_ofList_of_not_mem hnsnd))
 
 /-- `Subst.ofRenaming ρ` is well formed when no target name of `ρ` is also a renamed variable. -/
 private theorem Subst.ofRenaming_WF (ρ : List (TyIdentifier × TyIdentifier))

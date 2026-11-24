@@ -702,6 +702,81 @@ procedure catchInLoop() returns (r: int)
 };
 #end
 
+-- A procedure that throws without declaring it is not given a `throws` type on
+-- the route to Core: the call of `q` keeps its uncaught-exception obligation.
+/--
+info: procedure p (inout $heap : $Heap)
+cfg $cteEntry {
+  $cteEntry: {
+    goto $heapEntry;
+  }
+  $heapEntry: {
+    var $heapNextSnap : int;
+    goto $exnEntry;
+  }
+  $exnEntry: {
+    var $exv : $Composite;
+    var $callThrown : bool;
+    var $callExc : $Composite;
+    var $exnTest : bool;
+    goto $entry;
+  }
+  $entry: {
+    goto $start;
+  }
+  $uncaught$exn0: {
+    assert [uncaught_exception]: false;
+    assume [uncaught_exception]: false;
+    return;
+  }
+  $raise$exn1: {
+    $exv := $callExc;
+    goto $uncaught$exn0;
+  }
+  $start: {
+    $heapNextSnap := $Heap..nextReference!($heap);
+    call q(out $callThrown, out $callExc, inout $heap);
+    assume [heapMonotone]: int.le($heapNextSnap, $Heap..nextReference!($heap));
+    assume [allocated]: int.lt($Composite..ref!($callExc), $Heap..nextReference!($heap));
+    branch ($callThrown) goto $raise$exn1 else goto $noThrow$exn2;
+  }
+  $noThrow$exn2: {
+    goto $return;
+  }
+  $return: {
+    return;
+  }
+};
+type check: ok
+-/
+#guard_msgs in
+#eval printCortexCoreCFG (procs := ["p"]) <|
+#strata
+program Laurel;
+composite Exn { var code: int }
+procedure q()
+  throws (e: Exn)
+  opaque
+  modifies *
+{
+    var ex: Exn := new Exn;
+    throw ex
+};
+procedure p()
+  opaque
+  modifies *
+{
+    q()
+};
+procedure main()
+  entry
+  opaque
+  modifies *
+{
+    try { p() } catch err { }
+};
+#end
+
 -- A procedure without a body keeps its structured body, next to a procedure
 -- with a CFG body that calls it.
 /--
@@ -742,5 +817,109 @@ procedure callsDeclared(x: int) returns (r: int)
   opaque
 {
     r := declared(x)
+};
+#end
+
+/--
+info: procedure main ()
+cfg $cteEntry {
+  $cteEntry: {
+    goto $globalsEntry;
+  }
+  $globalsEntry: {
+    var $heapData$init : (Map int (Map $Field $Box));
+    var $heap : $Heap := $MkHeap($heapData$init, 0);
+    goto $heapEntry;
+  }
+  $heapEntry: {
+    var $heapNextSnap : int;
+    goto $exnEntry;
+  }
+  $exnEntry: {
+    var $exv : $Composite;
+    var $callThrown : bool;
+    var $callExc : $Composite;
+    var $exnTest : bool;
+    goto $entry;
+  }
+  $entry: {
+    var $inoutArg : int;
+    var y : int;
+    var $c10 : $Composite;
+    goto $start;
+  }
+  $start: {
+    y := 1;
+    goto $loop_head$7;
+  }
+  $loop_head$7: {
+    branch (int.lt(y, 3)) goto $loop_body$8 else goto $loop_exit$9;
+  }
+  $loop_body$8: {
+    goto $region$15;
+  }
+  $catch$exn0: {
+    $c10 := $exv;
+    goto $catch_dispatch$11;
+  }
+  $raise$exn1: {
+    $exv := $callExc;
+    goto $catch$exn0;
+  }
+  $region$15: {
+    $inoutArg := y;
+    $heapNextSnap := $Heap..nextReference!($heap);
+    call inc(inout $inoutArg, out $callThrown, out $callExc, inout $heap);
+    assume [heapMonotone]: int.le($heapNextSnap, $Heap..nextReference!($heap));
+    assume [allocated]: int.lt($Composite..ref!($callExc), $Heap..nextReference!($heap));
+    branch ($callThrown) goto $raise$exn1 else goto $noThrow$exn2;
+  }
+  $noThrow$exn2: {
+    y := $inoutArg;
+    goto $region$16;
+  }
+  $region$16: {
+    goto $try_end$14;
+  }
+  $catch_dispatch$11: {
+    assert [assert_18]: false;
+    goto $try_end$14;
+  }
+  $try_end$14: {
+    goto $loop_head$7;
+  }
+  $loop_exit$9: {
+    assert [assert_22]: y == 3;
+    assert [assert_23]: y == 4;
+    goto $return;
+  }
+  $return: {
+    return;
+  }
+};
+type check: ok
+-/
+#guard_msgs in
+#eval printCortexCoreCFG (procs := ["main"]) <|
+#strata
+program Laurel;
+composite Exn { var code: int }
+procedure inc(x: int) returns (x: int)
+  throws (e: Exn)
+  opaque
+{
+    x := x + 1;
+    if x > 100 then { var ex: Exn := new Exn; throw ex }
+};
+procedure main() entry
+  opaque
+  modifies *
+{
+    var y: int := 1;
+    while (y < 3) {
+      try { y := inc(y) } catch err { assert false }
+    };
+    assert y == 3;
+    assert y == 4
 };
 #end

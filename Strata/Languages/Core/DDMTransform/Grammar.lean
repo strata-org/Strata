@@ -1021,12 +1021,17 @@ op cfg_cmds_nil () : CFGCmds =>;
 @[scope(cmds)]
 op cfg_cmds (@[nonempty] cmds : NewlineSepBy Statement) : CFGCmds => cmds "\n";
 
-// A single CFG basic block: label, commands, transfer. The transfer is in scope
-// of the block's own commands, so its condition sees the locals they declare.
+// A single CFG basic block: optional annotations, label, commands, transfer.
+// The transfer is in scope of the block's own commands, so its condition sees
+// the locals they declare. The annotations (`@[key]`, `@[key = "s"]`,
+// `@[key = (e)]`) become the block's metadata; they are not in scope of the
+// block's commands, so an expression in them sees what is in scope at the
+// start of the block (e.g. a loop invariant on a loop-header block).
 category CFGBlock;
 @[scope(cmds)]
-op cfg_block (label : Ident, cmds : CFGCmds, @[scope(cmds)] tr : Transfer) : CFGBlock =>
-  label ":" " {" indent(2, "\n" cmds tr) "\n}";
+op cfg_block (annots : Option MetadataAnn, label : Ident, cmds : CFGCmds,
+              @[scope(cmds)] tr : Transfer) : CFGBlock =>
+  annots:0 label ":" " {" indent(2, "\n" cmds tr) "\n}";
 
 // A list of CFG blocks
 category CFGBlocks;

@@ -353,7 +353,9 @@ def DetBlock.subst (S : Subst) (blk : DetBlock String Command Expression) :
     cmds := blk.cmds.map (Command.subst S),
     transfer := match blk.transfer with
       | .condGoto p lt lf md => .condGoto (LExpr.applyTypeSubst p S) lt lf md
-      | .finish md => .finish md }
+      | .finish md => .finish md
+    -- Expression-valued block metadata (a loop invariant) is substituted too.
+    md := blk.md.mapExprs (LExpr.applyTypeSubst · S) }
 
 /-! ## Types are declared where they are stored
 

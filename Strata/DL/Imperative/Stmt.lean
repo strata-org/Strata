@@ -1580,6 +1580,12 @@ restricts *which* statements occur, says nothing about their order or about scop
   | .cmd (.cmd (.assert _ _ _)) | .cmd (.cmd (.cover _ _ _)) => true
   | _ => false
 
+/-- The metadata of a statement: that of its command, or the metadata the statement carries. -/
+@[expose] def Stmt.getMetaData {P : PureExpr} : Stmt P (CmdExt P) → MetaData P
+  | .cmd (.cmd c) => c.getMetaData
+  | .cmd (.call _ _ _ md) | .block _ _ md | .ite _ _ _ md | .loop _ _ _ _ md | .exit _ md
+  | .typeDecl _ md => md
+
 mutual
 /-- Every identifier occurring in a statement (binders and free variables). -/
 @[expose] def Stmt.idents {P : PureExpr} [HasFvars P] : Stmt P (CmdExt P) → List P.Ident
@@ -1676,6 +1682,27 @@ end
   | (.ite .nondet thenSs elseSs _) :: _ =>
       Block.readsDefined defined thenSs && Block.readsDefined defined elseSs
   | _ :: rest => Block.readsDefined defined rest
+
+/-- Every `.assert` is the last statement of its list, checked in the branches of every `.ite`
+    too (not inside blocks or loops). It is stricter than `Block.onlyChecksAfterAssert`, which
+    lets `assert`s and `cover`s follow an `assert`: here nothing follows one, so with
+    `Block.nondetIteLast` every path holds at most one `assert`. -/
+@[expose] def Block.onlyAssertLast {P : PureExpr} : Block P (CmdExt P) → Bool
+  | [] => true
+  | (.cmd (.cmd (.assert _ _ _))) :: rest => rest.isEmpty
+  | (.ite _ thenSs elseSs _) :: rest =>
+      Block.onlyAssertLast thenSs && Block.onlyAssertLast elseSs && Block.onlyAssertLast rest
+  | _ :: rest => Block.onlyAssertLast rest
+
+/-- A step budget for running a statement list: 3 for the end of the list and for each
+    statement, plus 2 and the budgets of the bodies for each `ite` and `block`. Loops are counted
+    as one statement. -/
+@[expose] def Block.stepBudget {P : PureExpr} {C : Type} : Block P C → Nat
+  | [] => 3
+  | (.ite _ thenSs elseSs _) :: rest =>
+      5 + Block.stepBudget thenSs + Block.stepBudget elseSs + Block.stepBudget rest
+  | (.block _ body _) :: rest => 5 + Block.stepBudget body + Block.stepBudget rest
+  | _ :: rest => 3 + Block.stepBudget rest
 
 /-! ## Free, assigned and checked variables
 

@@ -154,7 +154,7 @@ theorem liveDel_tc {u : Unit}
 private theorem init_det_a (hκ : κ ≠ .top) {ty : P.Ty} {e : P.Expr} {md : MetaData P}
     (h : (wpStmt κ d true (.cmd (.cmd (.init x ty (.det e) md)))).run s = .ok (r, s')) :
     ArmW d [x] s s' r := by
-  simp only [wpStmt, Bool.not_true, Bool.false_eq_true, ↓reduceIte, pure_bind] at h
+  simp only [wpStmt, keepInit, Bool.not_true, Bool.false_eq_true, ↓reduceIte, pure_bind] at h
   peel h ⟨⟨we, rd⟩, s1, h1⟩ ⟨n, s2, h2⟩ _ ⟨xd, s4, h4⟩ _ ⟨_, s5, h5⟩ ⟨_, s6, h6⟩ rfl
   have m1 := wRen_w (D := []) h1
   obtain ⟨m2, t2, c2, hn⟩ := wDecl_k (D := []) h2
@@ -178,7 +178,7 @@ private theorem init_det_a (hκ : κ ≠ .top) {ty : P.Ty} {e : P.Expr} {md : Me
 private theorem init_nondet_a {ty : P.Ty} {md : MetaData P}
     (h : (wpStmt κ d true (.cmd (.cmd (.init x ty .nondet md)))).run s = .ok (r, s')) :
     ArmW d [x] s s' r := by
-  simp only [wpStmt, Bool.not_true, Bool.false_eq_true, ↓reduceIte] at h
+  simp only [wpStmt, keepInit, pure_bind, Bool.not_true, Bool.false_eq_true, ↓reduceIte] at h
   peel h ⟨n, s2, h2⟩ _ ⟨_, s5, h5⟩ rfl
   obtain ⟨hm2, ht2, hc2, hn⟩ := wDecl_k (D := []) h2
   obtain ⟨ht5, hc5⟩ := liveDel_tc h5

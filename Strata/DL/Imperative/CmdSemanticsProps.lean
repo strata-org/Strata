@@ -42,8 +42,8 @@ evaluation relation `EvalCmdE`. Key results:
   `EvalCmdE_preserves_typedAt` preserve a slot's recorded value type across
   initialization, update, and command evaluation; `UpdateStates_typedAt` does so
   for a positional write-back whose values have the types the targets held.
-- None-preservation: `InitState_preserves_none` and `UpdateState_preserves_none`
-  preserve undefined slots.
+- None-preservation: `InitState_preserves_none`, `UpdateState_preserves_none` and
+  `UpdateStates_preserves_none` preserve undefined slots.
 - Store domain and values: `evalCmdE_preserves_none_of_not_def`,
   `evalCmdE_preserves_isSome`, `evalCmdE_definedVars_isSome` (a command defines
   every slot it declares), and `evalCmdE_storeWellDefined` (a command leaves a
@@ -73,7 +73,9 @@ evaluation relation `EvalCmdE`. Key results:
   deterministic `init` or `set` can step), `StoreHasTyping.update`,
   `StoreHasTyping.eq_none_of_store_none` (a typing a store conforms to types only defined
   variables), `EvalCmdE.init_storeHasTyping`, `EvalCmdE.preserves_storeHasTyping` (commands
-  keep a store conforming to its typing).
+  keep a store conforming to its typing), `EvalCmdE.init_storeFresh` and
+  `StoreFresh.projectStore` (an `init` and a projection keep a store binding nothing outside a
+  typing).
 - Evaluation: `EvalsTo.det` (evaluation is deterministic); under `WellFormedSemanticEvalVal`
   results in a well-formed store are values (`EvalsTo.value`); under
   `WellFormedSemanticEvalVar` a variable evaluates to its value in the store (`EvalsTo.var`).
@@ -433,6 +435,26 @@ theorem UpdateState_preserves_none {P : PureExpr} {σ σ' : SemanticStore P}
     · subst hxy; rw [h_none] at h_was; exact absurd h_was (by simp)
     · rw [h_other y hxy]; exact h_none
 
+/-- A positional write-back leaves every undefined slot undefined. -/
+theorem UpdateStates_preserves_none {P : PureExpr} {σ σ' : SemanticStore P}
+    {xs : List P.Ident} {vs : List P.Val} {y : P.Ident}
+    (h : UpdateStates σ xs vs σ') (h_none : σ y = none) : σ' y = none := by
+  induction h with
+  | update_none => exact h_none
+  | update_some hup _ ih => exact ih (UpdateState_preserves_none hup h_none)
+
+/-- The point update of an unbound name is an `InitState` step. -/
+theorem InitState.of_update {P : PureExpr} [DecidableEq P.Ident] {σ : SemanticStore P}
+    {x : P.Ident} {v : P.Val} (h : σ x = none) :
+    InitState (P := P) σ x v (SemanticStore.update σ x v) :=
+  ⟨h, ite_eq_left rfl, fun _ hne => ite_eq_right hne.symm⟩
+
+/-- The point update of a bound name is an `UpdateState` step. -/
+theorem UpdateState.of_update {P : PureExpr} [DecidableEq P.Ident] {σ : SemanticStore P}
+    {x : P.Ident} {old : P.Val} {v : P.Val} (h : σ x = some old) :
+    UpdateState (P := P) σ x v (SemanticStore.update σ x v) :=
+  ⟨h, ite_eq_left rfl, fun _ hne => ite_eq_right hne.symm⟩
+
 /-- `InitState` writes `some v`, so the slot cannot come back `none`. -/
 private theorem initState_isSome {P : PureExpr}
     {σ σ' : SemanticStore P} {x : P.Ident} {v : P.Val}
@@ -575,6 +597,25 @@ theorem EvalCmdE.init_nondet_inv {x : P.Ident} {ty : P.Ty}
     ∃ v, HasVal.valueOfTy F v ty ∧ σ x = none ∧ σ' x = some v ∧
       (∀ y, x ≠ y → σ' y = σ y) ∧ evs = [] :=
   match h with | .eval_init_unconstrained (.init h0 h1 hfr) hty _ => ⟨_, hty, h0, h1, hfr, rfl⟩
+
+/-- An `init` of `x` takes a store that binds nothing outside a typing `Γ` to a store that binds
+nothing outside a typing `Γ'`, when every variable that `Γ'` leaves untyped is not `x` and is
+untyped by `Γ`. -/
+theorem EvalCmdE.init_storeFresh {Γ Γ' : VarTyping P} {x : P.Ident} {ty : P.Ty}
+    {e : ExprOrNondet P} (hΓ : ∀ y, Γ' y = none → y ≠ x ∧ Γ y = none) (hs : StoreFresh σ Γ)
+    (he : EvalCmdE P F σ (.init x ty e md) σ' evs) : StoreFresh σ' Γ' := by
+  intro y hy
+  obtain ⟨hyx, hΓy⟩ := hΓ y hy
+  have hother : ∀ z, x ≠ z → σ' z = σ z := by
+    cases e with
+    | det e =>
+      obtain ⟨_, _, _, _, hfr, _⟩ := EvalCmdE.init_det_inv he
+      exact hfr
+    | nondet =>
+      obtain ⟨_, _, _, _, hfr, _⟩ := EvalCmdE.init_nondet_inv he
+      exact hfr
+  rw [hother y (Ne.symm hyx)]
+  exact hs y hΓy
 
 /-- A deterministic `set x := e` step evaluates `e` to a value `v` of the type stored at `x`,
 writes `v` to `x`, keeps every other variable and emits no event. -/
@@ -1221,6 +1262,114 @@ theorem InitStatesSomeMonotone'
   · simp_all
   · apply ih <;> simp_all
 
+/-- In an evaluated expression list, the value at each position is the evaluation of the
+    expression at that position. -/
+theorem EvalExpressions.getElem?_eval {P : PureExpr} [HasFvars P] {f : P.Factory}
+    {σ : SemanticStore P} {exprs : List P.Expr} {vs : List P.Val}
+    (h : EvalExpressions f σ exprs vs) {i : Nat} {ex : P.Expr}
+    (hex : exprs[i]? = some ex) :
+    ∃ v, vs[i]? = some v ∧ P.eval f σ ex = some v := by
+  induction h generalizing i with
+  | eval_none => simp only [List.getElem?_nil, reduceCtorEq] at hex
+  | eval_some _ hev _ ih =>
+    cases i with
+    | zero =>
+      simp only [List.getElem?_cons_zero, Option.some.injEq] at hex
+      subst hex
+      exact ⟨_, rfl, hev⟩
+    | succ i => exact ih hex
+
+/-- After initializing slots from values, each slot holds the value at its position. -/
+theorem InitStates.getElem?_store {P : PureExpr} {σ σ' : SemanticStore P}
+    {xs : List P.Ident} {vs : List P.Val} (h : InitStates σ xs vs σ') {i : Nat}
+    {x : P.Ident} (hx : xs[i]? = some x) : ∃ v, vs[i]? = some v ∧ σ' x = some v := by
+  induction h generalizing i with
+  | init_none => simp only [List.getElem?_nil, reduceCtorEq] at hx
+  | init_some hinit hrest ih =>
+    cases i with
+    | zero =>
+      simp only [List.getElem?_cons_zero, Option.some.injEq] at hx
+      subst hx
+      cases hinit with
+      | init _ hsome _ => exact ⟨_, rfl, InitStatesSomeMonotone hsome hrest⟩
+    | succ i => exact ih hx
+
+/-- Reading bound slots that hold values succeeds. -/
+theorem ReadValues.exists_of_bound {P : PureExpr} [HasVal P] {f : P.Factory}
+    {σ : SemanticStore P} {xs : List P.Ident}
+    (hbound : ∀ x ∈ xs, ∃ v, σ x = some v ∧ HasVal.value f v) :
+    ∃ vs, ReadValues f σ xs vs := by
+  induction xs with
+  | nil => exact ⟨[], .read_none⟩
+  | cons x rest ih =>
+    obtain ⟨v, hv, hval⟩ := hbound x List.mem_cons_self
+    obtain ⟨vs, hrest⟩ := ih (fun y hy => hbound y (List.mem_cons_of_mem _ hy))
+    exact ⟨v :: vs, .read_some hv hval hrest⟩
+
+/-- Evaluating expressions whose free variables are bound and that each evaluate to a value
+    satisfying `Q` succeeds, with values that satisfy `Q`. -/
+theorem EvalExpressions.exists_of_evaluable {P : PureExpr} [HasFvars P] {f : P.Factory}
+    {σ : SemanticStore P} {es : List P.Expr} {Q : P.Val → Prop}
+    (heval : ∀ e ∈ es, SemanticStore.varsDefined (· ∈ HasFvars.getFvars (P := P) e) σ ∧
+      ∃ v, P.eval f σ e = some v ∧ Q v) :
+    ∃ vs, EvalExpressions f σ es vs ∧ ∀ v ∈ vs, Q v := by
+  induction es with
+  | nil => exact ⟨[], .eval_none, fun _ hv => absurd hv List.not_mem_nil⟩
+  | cons e rest ih =>
+    obtain ⟨hdef, v, hv, hq⟩ := heval e List.mem_cons_self
+    obtain ⟨vs, hrest, hqs⟩ := ih (fun e' he' => heval e' (List.mem_cons_of_mem _ he'))
+    refine ⟨v :: vs, .eval_some hdef hv hrest, ?_⟩
+    intro w hw
+    rcases List.mem_cons.1 hw with rfl | hw'
+    · exact hq
+    · exact hqs w hw'
+
+/-- Evaluating a list of expressions yields exactly one value per expression. -/
+theorem EvalExpressionsLength {P : PureExpr} [HasFvars P] {f : P.Factory}
+    {σ : SemanticStore P} {es : List P.Expr} {vs : List P.Val}
+    (h : EvalExpressions f σ es vs) : es.length = vs.length := by
+  induction h with
+  | eval_none => rfl
+  | eval_some _ _ _ ih => simp only [List.length_cons, ih]
+
+/-- Initializing slots leaves every other slot as it was. -/
+theorem InitStates.eq_of_not_mem {P : PureExpr} {σ σ' : SemanticStore P} {xs : List P.Ident}
+    {vs : List P.Val} (h : InitStates σ xs vs σ') {y : P.Ident} (hy : y ∉ xs) :
+    σ' y = σ y := by
+  induction h with
+  | init_none => rfl
+  | @init_some σ0 x v σ1 xs0 vs0 σ2 hinit hrest ih =>
+    cases hinit with
+    | init _ _ hother =>
+      have hxy : x ≠ y := by
+        rintro rfl
+        exact hy List.mem_cons_self
+      rw [ih (fun hmem => hy (List.mem_cons_of_mem _ hmem)), hother y hxy]
+
+/-- After initializing slots from values that satisfy `Q`, each initialized slot holds a value
+    that satisfies `Q`. -/
+theorem InitStates.exists_slot {P : PureExpr} {σ σ' : SemanticStore P} {xs : List P.Ident}
+    {vs : List P.Val} {Q : P.Val → Prop} (h : InitStates σ xs vs σ') (hq : ∀ v ∈ vs, Q v)
+    {x : P.Ident} (hx : x ∈ xs) : ∃ v, σ' x = some v ∧ Q v := by
+  obtain ⟨i, hi⟩ := List.mem_iff_getElem?.1 hx
+  obtain ⟨v, hv, hσ⟩ := InitStates.getElem?_store h hi
+  exact ⟨v, hσ, hq v (List.mem_of_getElem? hv)⟩
+
+/-- Reading slots gives, at each position, the value stored in the slot. -/
+theorem ReadValues.getElem?_store {P : PureExpr} [HasVal P] {f : P.Factory}
+    {σ : SemanticStore P} {ks : List P.Ident} {vs : List P.Val} (h : ReadValues f σ ks vs)
+    {i : Nat} {k : P.Ident} (hk : ks[i]? = some k) :
+    ∃ v, vs[i]? = some v ∧ σ k = some v ∧ HasVal.value f v := by
+  induction h generalizing i with
+  | read_none => simp only [List.getElem?_nil, reduceCtorEq] at hk
+  | read_some hx hval _ ih =>
+    cases i with
+    | zero =>
+      simp only [List.getElem?_cons_zero, Option.some.injEq] at hk
+      subst hk
+      exact ⟨_, rfl, hx, hval⟩
+    | succ i => exact ih hk
+
 /-- If a store defines every requested key and all of its bindings are values, those keys admit a corresponding `ReadValues` derivation. -/
 theorem isDefinedReadValues {P : PureExpr} [HasVal P] {f : P.Factory}
   {σ : SemanticStore P} {ks : List P.Ident} :
@@ -1587,6 +1736,27 @@ theorem StoreHasTyping.eq_none_of_store_none {f : P.Factory} {σ : SemanticStore
     rw [hv] at h
     cases h
 
+omit [DecidableEq P.Ident] in
+/-- Projecting an inner store through a parent store keeps conformance to a typing that both
+    stores conform to. -/
+theorem StoreHasTyping.projectStore {f : P.Factory} {σp σ : SemanticStore P}
+    {Γ : VarTyping P} (hp : StoreHasTyping f σp Γ) (hs : StoreHasTyping f σ Γ) :
+    StoreHasTyping f (Imperative.projectStore σp σ) Γ := by
+  intro x ty hx
+  obtain ⟨vp, hvp, _⟩ := hp x ty hx
+  obtain ⟨v, hv, hvty⟩ := hs x ty hx
+  refine ⟨v, ?_, hvty⟩
+  simp only [Imperative.projectStore, hvp, Option.isSome_some, ite_true]
+  exact hv
+
+omit [HasBool P] [DecidableEq P.Ident] in
+/-- Projecting an inner store through a parent store that binds nothing outside a typing gives a
+    store that binds nothing outside it. -/
+theorem StoreFresh.projectStore {σp σ : SemanticStore P} {Γ : VarTyping P}
+    (hs : StoreFresh σp Γ) : StoreFresh (Imperative.projectStore σp σ) Γ := by
+  intro x hx
+  simp only [Imperative.projectStore, hs x hx, Option.isSome_none, Bool.false_eq_true, ite_false]
+
 variable [HasFvar P]
 
 /-- **Progress for `init`.**  A deterministic `init` of a fresh variable whose
@@ -1702,25 +1872,6 @@ theorem UpdateState.eq_update {σ σ' : SemanticStore P} {x : P.Ident} {v : P.Va
     (h : UpdateState (P := P) σ x v σ') :
     (∃ old, σ x = some old) ∧ σ' = SemanticStore.update σ x v :=
   h.rec (by grind [SemanticStore.update])
-
-end
-end Imperative
-
-namespace Imperative
-public section
-variable {P : PureExpr}
-
-/-- The point update of an unbound name is an `InitState` step. -/
-theorem InitState.of_update [DecidableEq P.Ident] {σ : SemanticStore P} {x : P.Ident}
-    {v : P.Val} (h : σ x = none) :
-    InitState (P := P) σ x v (SemanticStore.update σ x v) :=
-  ⟨h, ite_eq_left rfl, fun _ hne => ite_eq_right hne.symm⟩
-
-/-- The point update of a bound name is an `UpdateState` step. -/
-theorem UpdateState.of_update [DecidableEq P.Ident] {σ : SemanticStore P} {x : P.Ident}
-    {old : P.Val} {v : P.Val} (h : σ x = some old) :
-    UpdateState (P := P) σ x v (SemanticStore.update σ x v) :=
-  ⟨h, ite_eq_left rfl, fun _ hne => ite_eq_right hne.symm⟩
 
 end
 end Imperative

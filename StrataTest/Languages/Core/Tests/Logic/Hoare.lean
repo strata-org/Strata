@@ -586,7 +586,8 @@ theorem noReq_violates_contract :
   have hbody : noReqProc.body = .structured [] := by native_decide
   have htbm := htb
   rw [hbody] at htbm
-  have ⟨_hvalid, hpostF⟩ := htbm (xIs1Env model) (xIs1Env model) []
+  have ⟨_hvalid, hpostF⟩ := Strata.Logic.Hoare.TripleWith.run htbm (xIs1Env model)
+    (xIs1Env model) []
     ⟨⟨preAsPredicate_of_no_pre _ noReqProc (xIs1Env model) (by native_decide), rfl,
       oldInoutAsPredicate_of_no_inout noReqProc (xIs1Env model) (by native_decide),
       inputAsPredicate_xIs1 model noReqProc (by native_decide),
@@ -656,7 +657,8 @@ theorem offByOne_violates_contract :
   have hbody : offByOneProc.body = .structured [] := by native_decide
   have htbm := htb
   rw [hbody] at htbm
-  have ⟨_hvalid, hpostF⟩ := htbm (xIs1Env model) (xIs1Env model) []
+  have ⟨_hvalid, hpostF⟩ := Strata.Logic.Hoare.TripleWith.run htbm (xIs1Env model)
+    (xIs1Env model) []
     ⟨⟨preAsPredicate_of_binds _ offByOneProc (xIs1Env model)
         [(⟨"x", ()⟩, some (Lambda.LMonoTy.tcons "int" []), Lambda.LConst.intConst 1)] rfl
         (by native_decide)
@@ -1560,6 +1562,34 @@ private theorem chk_input_mem :
     (chkX, Lambda.LMonoTy.int) ∈ chkProc.header.inputs.toList := by
   native_decide
 
+/-- Every finite execution of `[assume la e mda, assert lb e mdb]` emits a prefix of the trace
+    of its run: nothing, the assumption, or both events. -/
+private theorem assume_assert_prefix_inv (π : String → Option Core.Procedure)
+    {la lb : String} {e : Core.Expression.Expr}
+    {mda mdb : Imperative.MetaData Core.Expression}
+    {ρ : Imperative.Env Core.Expression} {cfg : Config Core.Expression Core.Command}
+    {trace : List (Event Core.Expression)}
+    (h : StepStmtStarE Core.Expression (Core.EvalCommandE π)
+        (.stmts [Core.Statement.assume la e mda, Core.Statement.assert lb e mdb] ρ) trace cfg) :
+    ∃ suffix, trace ++ suffix =
+      [Event.assume ⟨ρ.factory, ρ.store, la, e, mda⟩,
+       Event.assert ⟨ρ.factory, ρ.store, lb, e, mdb⟩] := by
+  rcases stmts_append_prefixE (EvalCmd := Core.EvalCommandE π)
+      [Core.Statement.assume la e mda] [Core.Statement.assert lb e mdb] ρ h with
+    ⟨_, h₁⟩ | ⟨ρ₁, tr₁, tr₂, rfl, hterm₁, _, h₂⟩
+  · obtain ⟨_, h₁⟩ := singleton_prefixE h₁
+    rcases cmd_prefixE h₁ with ⟨_, rfl⟩ | ⟨_, rfl⟩
+    · exact ⟨_, rfl⟩
+    · obtain ⟨rfl, _⟩ := EvalCmdExtE.assumeRun_inv (π := π) (.inl h₁)
+      exact ⟨_, rfl⟩
+  · obtain ⟨rfl, rfl⟩ := EvalCmdExtE.assumeRun_inv (π := π)
+      (singletonRun_to_stmtRunE (Core.EvalCommandE π) (.inl hterm₁))
+    obtain ⟨_, h₂⟩ := singleton_prefixE h₂
+    rcases cmd_prefixE h₂ with ⟨_, rfl⟩ | ⟨_, rfl⟩
+    · exact ⟨_, rfl⟩
+    · obtain ⟨rfl, _⟩ := EvalCmdExtE.assertRun_inv (π := π) (.inl h₂)
+      exact ⟨[], rfl⟩
+
 /-- **Valid, and fully proved.**  The `assume` supplies the very fact the `ensures`
     asserts, and the `assert` on the same expression is valid because that fact
     precedes it. -/
@@ -1571,24 +1601,28 @@ theorem chk_meets_contract :
   refine (Core.Logic.Hoare.block chkPgmAST.findProcByString? testParams
     ?_
     (Imperative.Logic.Hoare.postWF_of_definedVars_nil _ (by native_decide)))
-  -- The inner body `[assume x==1, assert x==1]`, proved directly from the event run.
-  intro ρ₀ ρ' trace hpre hwf hrun
-  obtain ⟨hρ', htr⟩ := assume_assert_run_inv chkPgmAST.findProcByString? hrun
-  subst ρ'
-  subst htr
+  -- The inner body `[assume x==1, assert x==1]`, proved directly from the event runs.
+  intro ρ₀ hpre hwf
   obtain ⟨_hpre, hfac, _hold, hinput, -⟩ := hpre
   obtain ⟨v, hx, hv⟩ := hinput chkX Lambda.LMonoTy.int chk_input_mem
   obtain ⟨i, hvi⟩ := Lambda.SemValue.exists_ofInt hv
   have htc : v.tc = ρ₀.factory.model.tcInterp := hwf.storeWellDefined chkX v hx
   rw [hvi, htc] at hx
-  refine ⟨?_, fun hreach => ?_⟩
-  · -- The assertion is discharged by the preceding assumption on the same expression.
+  refine ⟨fun cfg trace hrun => ?_, fun ρ' trace hrun hreach => ?_⟩
+  · -- A finite execution emits a prefix of the run's trace, whose assertion is discharged by
+    -- the preceding assumption on the same expression.
+    obtain ⟨suffix, hsuffix⟩ := assume_assert_prefix_inv chkPgmAST.findProcByString? hrun
+    refine Trace.AssertionsValid.left_of_append _ (right := suffix) ?_
+    rw [hsuffix]
     refine ⟨fun _ world hassum => ?_, trivial⟩
     have ha := hassum ⟨ρ₀.factory, ρ₀.store, "a", chkParts.1, chkParts.2.1⟩ (by simp)
     rcases ha with ⟨_, hex⟩ | ⟨hne, _⟩
     · exact .inl ⟨hfac, hex⟩
     · exact absurd hfac hne
   · -- Reachability forces the input to be `1`, giving the semantic postcondition.
+    obtain ⟨hρ', htr⟩ := assume_assert_run_inv chkPgmAST.findProcByString? hrun
+    subst ρ'
+    subst htr
     obtain ⟨world, hassum⟩ := hreach
     have ha := hassum ⟨ρ₀.factory, ρ₀.store, "a", chkParts.1, chkParts.2.1⟩ (by simp)
     rcases ha with ⟨_, hex⟩ | ⟨hne, _⟩
@@ -2068,6 +2102,141 @@ example (x : Core.Expression.Ident) (ty : Core.Expression.Ty)
   simp [Imperative.dropVars, Imperative.Block.definedVars,
     Imperative.Stmt.definedVars, Imperative.HasVarsImp.definedVars,
     Imperative.CmdExt.definedVars, Imperative.Cmd.definedVars] at hbad
+
+
+/-! ## A failing assertion before a loop that never terminates
+
+`procedure Spin() { assert [a]: false; while (true) {} }`
+
+No run of the body finishes, yet it does not meet its contract: the partial triple checks
+the assertions of every finite execution, and the execution that has just run the `assert`
+fails it.  This is what `ProcedureAssertsValidOnTraces` asks for too. -/
+
+private def spinPgm : Program :=
+#strata
+program Core;
+
+procedure Spin()
+{
+  assert [a]: false;
+  while (true) {
+  }
+};
+#end
+
+private def spinPgmAST : Core.Program := cstToAST spinPgm
+
+private def spinProc : Core.Procedure :=
+  (spinPgmAST.findProcByString? "Spin").get!
+
+/-- The asserted expression and its metadata, and the statements after the `assert`. -/
+private def spinParts : Core.Expression.Expr × Imperative.MetaData Core.Expression ×
+    Core.Statements :=
+  match spinProc.body with
+  | .structured (Imperative.Stmt.cmd (Imperative.CmdExt.cmd (Imperative.Cmd.assert _ e md)) ::
+      rest) => (e, md, rest)
+  | _ => default
+
+/-- The translated body is the `assert` followed by the loop. -/
+private theorem spin_body_eq :
+    spinProc.body = .structured (Core.Statement.assert "a" spinParts.1 spinParts.2.1 ::
+      spinParts.2.2) := by
+  native_decide
+
+/-- The asserted expression is the literal `false`. -/
+private theorem spin_expr_eq :
+    spinParts.1 = Lambda.LExpr.boolConst Core.valueLoc false := by
+  native_decide
+
+/-- The environment with an empty store over the runtime factory of `model`. -/
+private def spinEnv (model : Lambda.Interp Core.Factory) : Imperative.Env Core.Expression :=
+  { store := fun _ => none, factory := boolFactory model }
+
+/-- The body's gate admits `spinEnv`: the body names no variable. -/
+private theorem spinEnv_blockWF (model : Lambda.Interp Core.Factory) :
+    Core.Logic.BlockInitEnvWF testParams
+      [Stmt.block "" (Core.Statement.assert "a" spinParts.1 spinParts.2.1 :: spinParts.2.2) #[]]
+      (spinEnv model) :=
+  Core.Logic.BlockInitEnvWF.of_defUseOk
+    (Core.coreFactory_WellFormedSemanticEval _ rfl)
+    (fun _ _ hn => by cases hn)
+    (by intro n hn
+        rw [show Block.definedVars (P := Core.Expression) (C := Core.Command)
+          [Stmt.block "" (Core.Statement.assert "a" spinParts.1 spinParts.2.1 :: spinParts.2.2)
+            #[]] false = [] from by native_decide] at hn
+        simp at hn)
+    (by intro n hn p hp; simp [testParams] at hp)
+    (by intro n hn p hp; simp [testParams] at hp)
+    (by intro l hl p hp; simp [testParams] at hp)
+    (by
+      show Block.defUseWellFormed (fun _ => false) testParams.declaredFuncs _ = true
+      native_decide)
+    (by intro nm _; rfl)
+    (by intro f _; rfl)
+    (by
+      intro ty hty
+      rw [show Block.initTypes (P := Core.Expression) (C := Core.Command)
+        [Stmt.block "" (Core.Statement.assert "a" spinParts.1 spinParts.2.1 :: spinParts.2.2)
+          #[]] = [] from by native_decide] at hty
+      simp at hty)
+    ⟨(fun _ => none : VarTyping Core.Expression), ⟨(fun _ _ hty => nomatch hty),
+      (Block.fvarTypesWellAnnotatedB_iff (P := Core.Expression) (C := Core.Command) _ _).1
+        (by native_decide)⟩⟩
+    (by
+      intro m hm
+      rw [show Block.measures (P := Core.Expression) (C := Core.Command)
+        [Stmt.block "" (Core.Statement.assert "a" spinParts.1 spinParts.2.1 :: spinParts.2.2)
+          #[]] = [] from by native_decide] at hm
+      simp at hm)
+
+/-- From `spinEnv`, the body's procedure block runs into the `assert`, emitting it. -/
+private theorem spin_prefix (model : Lambda.Interp Core.Factory)
+    (π : String → Option Core.Procedure) :
+    StepStmtStarE Core.Expression (Core.EvalCommandE π)
+      (.stmts [Stmt.block "" (Core.Statement.assert "a" spinParts.1 spinParts.2.1 ::
+        spinParts.2.2) #[]] (spinEnv model))
+      [Event.assert ⟨(spinEnv model).factory, (spinEnv model).store, "a", spinParts.1,
+        spinParts.2.1⟩]
+      (.seq (.block (some "") (spinEnv model).store
+        (.seq (.terminal (spinEnv model)) spinParts.2.2)) []) := by
+  refine .step _ [] _ _ _ .step_stmts_cons ?_
+  refine .step _ [] _ _ _ (.step_seq_inner .step_block) ?_
+  refine .step _ [] _ _ _ (.step_seq_inner (.step_block_body .step_stmts_cons)) ?_
+  exact .step _ _ _ [] _ (.step_seq_inner (.step_block_body (.step_seq_inner
+    (.step_cmd (Core.EvalCommandE.cmd_sem Imperative.EvalCmdE.eval_assert)))) :
+      StepStmtE Core.Expression (Core.EvalCommandE π) _ _ _) (.refl _)
+
+/-- **Invalid, although no run finishes.**  `assert false; while (true) {}` does not meet its
+    (empty) contract: the execution that has just run the `assert` emits an assertion that
+    holds in no world. -/
+theorem spin_violates_contract :
+    ¬ Core.Logic.Hoare.Procedure.contractTriple spinPgmAST testParams "Spin" := by
+  have hfactory : spinPgmAST.factoryBeforeProcedure "Spin" = Core.Factory :=
+    Core.Program.factoryBeforeProcedure_eq_core_of_noFunctions (by decide +kernel)
+  obtain ⟨model⟩ := Core.factoryInterp_nonempty
+  intro h
+  rw [Core.Logic.Hoare.Procedure.contractTriple, hfactory] at h
+  obtain ⟨proc, hproc, hinsts⟩ := h
+  obtain rfl : proc = spinProc := (procOf_eq hproc).symm
+  obtain ⟨_htyped, htb⟩ := hinsts [] _
+    ((Core.Procedure.instantiateTypes_of_typeArgs_nil (by native_decide)).2 ⟨rfl, rfl⟩)
+  rw [spin_body_eq] at htb
+  have hvalid := (htb (spinEnv model)
+    ⟨⟨preAsPredicate_of_no_pre _ spinProc (spinEnv model) (by native_decide), rfl,
+      oldInoutAsPredicate_of_no_inout spinProc (spinEnv model) (by native_decide),
+      (fun id ty hmem => by
+        rw [show spinProc.header.inputs.toList = [] from by native_decide] at hmem
+        cases hmem),
+      Core.Logic.Hoare.Procedure.outputAsPredicate_of_no_outputs _ (by native_decide)⟩,
+      Core.Specification.axiomsBeforeProcedureDecl_of_noAxioms (by decide +kernel) _⟩
+    (spinEnv_blockWF model)).1 _ _ (spin_prefix model spinPgmAST.findProcByString?)
+  rcases hvalid.1 trivial (someValuation _) (fun _ hc => by simp at hc) with
+    ⟨_, hex⟩ | ⟨hne, _⟩
+  · change Core.Expression.eval (spinEnv model).factory (spinEnv model).store spinParts.1 =
+      some (HasBool.ttVal (spinEnv model).factory) at hex
+    rw [spin_expr_eq, Core.eval_boolConst] at hex
+    exact HasBool.ttVal_ne_ffVal _ (Option.some.inj hex).symm
+  · exact hne rfl
 
 
 end Strata

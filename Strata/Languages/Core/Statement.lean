@@ -262,6 +262,23 @@ def Command.mapExpr (f : Expression.Expr → Expression.Expr) : Command → Comm
   | .call pname tyArgs args md => .call pname tyArgs (args.map (CallArg.mapInput f)) md
   | c => c
 
+/-- Erase every annotation of a command: expression types, the declared type of `init` and the
+    type arguments of a `call`. -/
+def Command.eraseAnnots (c : Command) : Command :=
+  Command.mapExpr Lambda.LExpr.eraseTypes
+    (match c with
+      | .cmd (.init name _ e md) => .cmd (.init name Lambda.LTy.erased e md)
+      | .call pname _ args md => .call pname none args md
+      | c => c)
+
+/-- Erase every annotation of a statement, including guards, measures and invariants. -/
+def Statement.eraseAnnots (s : Statement) : Statement :=
+  Imperative.Stmt.mapExpr Lambda.LExpr.eraseTypes Command.eraseAnnots s
+
+/-- Erase every annotation of a list of statements. -/
+def Statements.eraseAnnots (ss : Statements) : Statements :=
+  Imperative.Block.mapExpr Lambda.LExpr.eraseTypes Command.eraseAnnots ss
+
 /-- Apply a function to all user-facing expressions in a statement. -/
 def Statement.mapExprs (f : Expression.Expr → Expression.Expr) (s : Statement) : Statement :=
   Imperative.Stmt.mapExpr f (Command.mapExpr f) s
@@ -365,6 +382,36 @@ def allStmtsTys (p : LMonoTy → Bool) (ss : List Statement) : Bool :=
   | [] => true
   | s :: rest => allStmtTys p s && allStmtsTys p rest
 end
+
+mutual
+
+/-- Every type an `init` in the statement declares a variable at, and every type argument a
+    call in it carries, satisfies `p`. -/
+@[expose] def Statement.AllDeclTys (p : LTy → Prop) : Statement → Prop
+  | .cmd (.cmd (.init _ ty _ _)) => p ty
+  | .cmd (.cmd _) => True
+  | .cmd (.call _ tyArgs _ _) => ∀ tys, tyArgs = some tys → ∀ ty ∈ tys, p ty
+  | .block _ body _ => Statements.AllDeclTys p body
+  | .ite _ thenb elseb _ => Statements.AllDeclTys p thenb ∧ Statements.AllDeclTys p elseb
+  | .loop _ _ _ body _ => Statements.AllDeclTys p body
+  | .exit _ _ => True
+  | .typeDecl _ _ => True
+
+/-- Every statement of the list satisfies `Statement.AllDeclTys p`. -/
+@[expose] def Statements.AllDeclTys (p : LTy → Prop) : List Statement → Prop
+  | [] => True
+  | s :: ss => Statement.AllDeclTys p s ∧ Statements.AllDeclTys p ss
+
+end
+
+/-- Every `init` in the statement declares a ground monotype, and every call that carries type
+    arguments carries ground monotypes. -/
+@[expose] def Statement.Ground (s : Statement) : Prop :=
+  Statement.AllDeclTys LTy.GroundMono s
+
+/-- Every statement of the list is ground (`Statement.Ground`). -/
+@[expose] def Statements.Ground (ss : List Statement) : Prop :=
+  Statements.AllDeclTys LTy.GroundMono ss
 
 /-! ## Collectors over commands and statements
 

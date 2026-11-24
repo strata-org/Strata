@@ -620,15 +620,18 @@ run_elab do
 variable has a function's name, but the phase that names common subexpressions `$__cse.<n>`
 does not look at the functions. The procedure below gets two such variables. With a function
 named like the first or like the second, the context of each check has one symbol for the
-two: neither check is exported and each is reported, on the per-obligation path, sent alone
-by the incremental backend, and walked by it (symbolic execution puts the two checks into one
-session). With another function name both checks are exported. -/
+two: neither check is exported and each is reported, on the per-obligation path and sent alone
+by the incremental backend. With another function name both checks are exported. Walked by the
+incremental backend under `--vcgen symexec`, which puts the two checks into one session and
+merges paths, no phase names common subexpressions, so both checks are exported with every
+function name. -/
 #guard_msgs in
 run_elab do
   liftM (m := IO) <| withSolver fun standIn => IO.FS.withTempDir fun root => do
     for (name, backend) in [("batch", #[]), ("alone", #["--incremental"]),
         ("walk", #["--incremental", "--vcgen", "symexec"])] do
-      for (function, exported) in [("$__cse.0", []), ("$__cse.1", []), ("c", ["a", "b"])] do
+      for function in ["$__cse.0", "$__cse.1", "c"] do
+        let exported := if name == "walk" || function == "c" then ["a", "b"] else []
         let source := root / s!"shadow-{function}.core.st"
         IO.FS.writeFile source s!"program Core;\n\
           function {function}() : bool \{ false }\n\

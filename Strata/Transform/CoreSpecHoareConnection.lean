@@ -90,7 +90,7 @@ theorem triple_of_overapproximatesTraces_matches (π : String → Option Procedu
     (fun tr => ∀ ev ∈ tr, ev.condition.factory.factory = F) (fun _ => True) ?_
     (fun _ _ _ _ _ _ _ _ => trivial) hin ?_ ?_ ?_
   · intro ρ₀ ρ' trace hp _ hrun ev hev
-    rw [coreBlock_terminatesAt_events_factory hnc hrun ev hev]
+    rw [coreBlock_events_factory hnc hrun ev hev]
     exact hpin ρ₀ hp
   · intro _ _ hs _ hrel hv
     exact Trace.AssertionsValid.of_all_assertionValid _ fun aid =>

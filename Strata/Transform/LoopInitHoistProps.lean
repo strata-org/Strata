@@ -2343,7 +2343,7 @@ theorem blockInitEnvWF {params : InitEnvWFParams}
   have hemb : embedStmts bs = ss := embedStmts_projectStmts hp
   have huniqBase : Block.uniqueInits (C := Cmd Expression) bs :=
     (Imperative.embedStmts_uniqueInits bs).mp (by rwa [hemb])
-  obtain ⟨hwf, hsv, hdefs, hdnr, hres, hlab, hdu, hfd, hinit, hty, hmt⟩ :=
+  obtain ⟨hwf, hsv, hdefs, hdnr, hres, hlab, hdu, hfd, hrfd, hinit, hty, hmt⟩ :=
     blockInitEnvWF_projectBase h hp
   have hdu' : Block.defUseWellFormed (C := Cmd Expression)
       (fun n => (ρ.store n).isSome) params.declaredFuncs
@@ -2352,7 +2352,7 @@ theorem blockInitEnvWF {params : InitEnvWFParams}
       bs (fun n => (ρ.store n).isSome) params.declaredFuncs hdu huniqBase
   refine Core.Logic.BlockInitEnvWF.ofBaseEmbed hwf hsv ?_ ?_ hres
     (by rw [Imperative.LoopInitHoistProducerProps.Block.hoistP_labels]; exact hlab)
-    hdu' hfd ?_ ?_
+    hdu' hfd hrfd ?_ ?_
     (by rw [Imperative.LoopInitHoistProducerProps.Block.hoistP_measures]; exact hmt)
   · intro n hn
     exact hdefs n ((Imperative.LoopInitHoistProducerProps.Block.hoistP_initVars_perm bs).mem_iff.mp hn)

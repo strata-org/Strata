@@ -229,6 +229,14 @@ private theorem good_liveAdd (xs : List P.Ident) : Good CP (liveAdd xs : WM P Un
 private theorem good_liveDel (x : P.Ident) : Good CP (liveDel x : WM P Unit) fun _ => True :=
   good_modify _
 
+/-- `keepInit` is a `Good` step. -/
+private theorem good_keepInit (x : P.Ident) (f : Bool) :
+    Good CP (keepInit x f : WM P Bool) fun _ => True :=
+  good_of_eq fun st _ _ hr => by
+    rw [keepInit_run] at hr
+    cases hr
+    exact ⟨rfl, Nat.le_refl _, rfl, rfl, rfl, rfl, .of_eq rfl⟩
+
 end
 
 omit iW in

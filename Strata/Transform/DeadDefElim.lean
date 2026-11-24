@@ -174,6 +174,25 @@ open Imperative Imperative.DeadDefElim
 
 end DeadDefElim
 
+/-- The declaration with its structured procedure body rewritten by `f`, and the test `changed`
+    on the old and the new body; any other declaration unchanged, with `false`. -/
+@[expose] def Decl.mapStructuredBody (f : Statements → Statements)
+    (changed : Statements → Statements → Bool) : Decl → Decl × Bool
+  | .proc q md => match q.body with
+    | .structured ss =>
+      let ss' := f ss
+      (.proc { q with body := .structured ss' } md, changed ss ss')
+    | .cfg _ => (.proc q md, false)
+  | d => (d, false)
+
+/-- Every procedure of the program with its structured body rewritten by `f`, every other
+    declaration unchanged, and whether `changed` holds of the old and the new body of some
+    procedure (by default: whether some procedure body changed). -/
+@[expose] def Program.mapStructuredBodies (f : Statements → Statements) (p : Program)
+    (changed : Statements → Statements → Bool := fun ss ss' => ss' != ss) : Bool × Program :=
+  let r := p.decls.map (Decl.mapStructuredBody f changed)
+  (r.any (·.2), { decls := r.map (·.1) })
+
 /-- The dead-definition elimination pipeline phase: removes from each procedure body
     the `init`s whose variable no later statement mentions
     (`Core.DeadDefElim.deadDefElimProgram`).  It requires a program

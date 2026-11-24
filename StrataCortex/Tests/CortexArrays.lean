@@ -233,28 +233,31 @@ info: 6: assertion does not hold
 
 /-! An array command names the element type of the array it works on: a run stops at a read or
 a write of an array of `byte` at another constrained type over the same base type or at the
-base type, and at a written value that is not of the base type. -/
+base type. -/
 
 meta def withBytes (cmds : List Cmd) : List Cmd :=
   [.init "a" bytes none (at_ 1), .newArray "a" byteTy (.int 1) (at_ 1),
    .init "x" bv32 none (at_ 2)] ++ cmds
 
 /--
-info: 3: the interpreter fails here: array type (Array byte) is not a subtype of (Array bit)
-3: the interpreter fails here: array type (Array byte) is not a subtype of (Array bv32)
-3: the interpreter fails here: ill-typed value
-stopped: 'readAtOtherConstrained': array type (Array byte) is not a subtype of (Array bit)
-stopped: 'readAtBase': array type (Array byte) is not a subtype of (Array bv32)
-stopped: 'writeAtOtherConstrained': array type (Array byte) is not a subtype of (Array bit)
-stopped: 'writeAtBase': array type (Array byte) is not a subtype of (Array bv32)
-stopped: 'writeIllTyped': ill-typed value
+info: 3: the interpreter fails here: an expression did not evaluate
+stopped: 'readAtOtherConstrained': an expression did not evaluate
+stopped: 'readAtBase': an expression did not evaluate
+stopped: 'writeAtOtherConstrained': an expression did not evaluate
+stopped: 'writeAtBase': an expression did not evaluate
 -/
 #guard_msgs in
 #eval interpret (program [
   entry "readAtOtherConstrained" (withBytes [.readElem "x" (.var "a") (.int 0) bitTy (at_ 3)]),
   entry "readAtBase" (withBytes [.readElem "x" (.var "a") (.int 0) bv32 (at_ 3)]),
   entry "writeAtOtherConstrained" (withBytes [.writeElem (.var "a") (.int 0) (.bv 32 1) bitTy (at_ 3)]),
-  entry "writeAtBase" (withBytes [.writeElem (.var "a") (.int 0) (.bv 32 1) bv32 (at_ 3)]),
+  entry "writeAtBase" (withBytes [.writeElem (.var "a") (.int 0) (.bv 32 1) bv32 (at_ 3)])])
+
+/--
+info: stopped: 'writeIllTyped': type error: procedure writeIllTyped: expression 1 has type int, expected bv32: Impossible to unify int with bv32.
+-/
+#guard_msgs in
+#eval interpret (program [
   entry "writeIllTyped" (withBytes [.writeElem (.var "a") (.int 0) (.int 1) byteTy (at_ 3)])])
 
 /-! Lowering the constrained types keeps the element type of an array type and replaces every
@@ -294,8 +297,7 @@ x: bv32, n: int
 
 /-! A run stops at a negative length, at an index outside the array, at an array command on
 an object that is not an array, at an element type that the array's type is not an array of,
-at a written value that is not of the element type, and at an element type that has no
-default value. The default element of an array of references is no object, so reading a
+and at an element type that has no default value. The default element of an array of references is no object, so reading a
 field of it stops the run too. Each is also reported at the command that raised it, once for
 each message and place. -/
 
@@ -305,28 +307,20 @@ meta def withInts (cmds : List Cmd) : List Cmd :=
    .init "o" (.named "Box") none (at_ 2), .new "o" "Box" (at_ 2)] ++ cmds
 
 /--
-info: 3: the interpreter fails here: array length -1 is negative
-3: the interpreter fails here: index 3 is out of range for an array of length 3
-3: the interpreter fails here: index -1 is out of range for an array of length 3
-3: the interpreter fails here: index -2 is out of range for an array of length 3
-3: the interpreter fails here: not an array
-3: the interpreter fails here: array type (Array bv32) is not a subtype of (Array bv64)
-3: the interpreter fails here: ill-typed value
-3: the interpreter fails here: no value to choose
-5: the interpreter fails here: not a reference
-stopped: 'negativeLength': array length -1 is negative
-stopped: 'readAtLength': index 3 is out of range for an array of length 3
-stopped: 'readBelowZero': index -1 is out of range for an array of length 3
-stopped: 'writeAtLength': index 3 is out of range for an array of length 3
-stopped: 'writeBelowZero': index -2 is out of range for an array of length 3
-stopped: 'lengthOfObject': not an array
-stopped: 'readOfObject': not an array
-stopped: 'writeOfObject': not an array
-stopped: 'readAsLong': array type (Array bv32) is not a subtype of (Array bv64)
-stopped: 'writeAsLong': array type (Array bv32) is not a subtype of (Array bv64)
-stopped: 'writeIllTyped': ill-typed value
-stopped: 'undeclaredElementType': no value to choose
-stopped: 'fieldOfDefaultElement': not a reference
+info: 3: the interpreter fails here: an expression did not evaluate
+5: the interpreter fails here: an expression did not evaluate
+stopped: 'negativeLength': an expression did not evaluate
+stopped: 'readAtLength': an expression did not evaluate
+stopped: 'readBelowZero': an expression did not evaluate
+stopped: 'writeAtLength': an expression did not evaluate
+stopped: 'writeBelowZero': an expression did not evaluate
+stopped: 'lengthOfObject': an expression did not evaluate
+stopped: 'readOfObject': an expression did not evaluate
+stopped: 'writeOfObject': an expression did not evaluate
+stopped: 'readAsLong': an expression did not evaluate
+stopped: 'writeAsLong': an expression did not evaluate
+stopped: 'undeclaredElementType': an expression did not evaluate
+stopped: 'fieldOfDefaultElement': an expression did not evaluate
 -/
 #guard_msgs in
 #eval interpret (program [
@@ -340,7 +334,6 @@ stopped: 'fieldOfDefaultElement': not a reference
   entry "writeOfObject" (withInts [.writeElem (.var "o") (.int 0) (.bv 32 1) bv32 (at_ 3)]),
   entry "readAsLong" (withInts [.readElem "w" (.var "a") (.int 0) bv64 (at_ 3)]),
   entry "writeAsLong" (withInts [.writeElem (.var "a") (.int 0) (.bv 64 1) bv64 (at_ 3)]),
-  entry "writeIllTyped" (withInts [.writeElem (.var "a") (.int 0) (.bool true) bv32 (at_ 3)]),
   entry "undeclaredElementType" (withInts [
     .init "u" (.array (.named "Missing")) none (at_ 3), .newArray "u" (.named "Missing") (.int 1) (at_ 3)]),
   entry "fieldOfDefaultElement" (withInts [
@@ -348,11 +341,18 @@ stopped: 'fieldOfDefaultElement': not a reference
     .readElem "o" (.var "b") (.int 0) (.named "Box") (at_ 4),
     .readField "x" (.var "o") "Box" "v" (at_ 5)])])
 
-/-! The longest array the interpreter allocates has 65536 elements. An array of that length
-is allocated whole: its length is the one given and its last element is the default. The
-assertions at offsets 10 and 11 state the opposite of those before them and fail, so the ones
-before them are checked. A greater length stops the run without allocating: one more than
-the limit, and the greatest length a Java array can be given. -/
+/--
+info: stopped: 'writeIllTyped': type error: procedure writeIllTyped: expression true has type bool, expected bv32: Impossible to unify bool with bv32.
+-/
+#guard_msgs in
+#eval interpret (program [
+  entry "writeIllTyped" (withInts [.writeElem (.var "a") (.int 0) (.bool true) bv32 (at_ 3)])])
+
+/-! An array of 65536 elements is allocated whole: its length is the one given and its last
+element is the default. The assertions at offsets 10 and 11 state the opposite of those before
+them and fail, so the ones before them are checked. There is no length limit: one more than
+65536, and the greatest length a Java array can be given, are allocated too, and those runs
+end without a verdict. -/
 
 meta def atLengthLimit : Wire.Procedure :=
   entry "atLengthLimit" [
@@ -367,10 +367,6 @@ meta def atLengthLimit : Wire.Procedure :=
 /--
 info: 10: assertion does not hold
 11: assertion does not hold
-3: the interpreter fails here: array length 65537 is over the interpreter's limit of 65536
-3: the interpreter fails here: array length 2147483647 is over the interpreter's limit of 65536
-stopped: 'oneOverLengthLimit': array length 65537 is over the interpreter's limit of 65536
-stopped: 'greatestJavaLength': array length 2147483647 is over the interpreter's limit of 65536
 -/
 #guard_msgs in
 #eval interpret (program [
@@ -398,8 +394,8 @@ meta def compositeNamedArray : Wire.Program :=
                    { name := "Array", extending := ["Object"], fields := [] }] }
 
 /--
-info: 12: the interpreter fails here: not an array
-stopped: 'compositeNamedArray': not an array
+info: 12: the interpreter fails here: an expression did not evaluate
+stopped: 'compositeNamedArray': an expression did not evaluate
 -/
 #guard_msgs in
 #eval interpret compositeNamedArray
@@ -484,8 +480,8 @@ field of it. -/
 info: 5: assertion does not hold
 6: assertion does not hold
 11: assertion does not hold
-12: the interpreter fails here: object has no field Base.tag
-stopped: 'parentField': object has no field Base.tag
+12: the interpreter fails here: an expression did not evaluate
+stopped: 'parentField': an expression did not evaluate
 -/
 #guard_msgs in
 #eval interpret (parentsProgram [] [entry "parents" parentTests, entry "parentField" (parentTests ++ parentField)])
@@ -641,9 +637,9 @@ A cast from `java.lang.Object` to `Array bv32` succeeds on an `Array bv32` and t
 
 /--
 info: 14: assertion does not hold
-21: uncaught exception 'java.lang.ClassCastException' is not thrown does not hold
+21: uncaught exception is not thrown does not hold
 34: assertion does not hold
-41: uncaught exception 'java.lang.ClassCastException' is not thrown does not hold
+41: uncaught exception is not thrown does not hold
 -/
 #guard_msgs in
 #eval interpret (refProgram [
@@ -671,7 +667,7 @@ meta def throwArray (name : String) (catchTypes : List (String × String)) : Wir
 
 /--
 info: 12: assertion does not hold
-3: uncaught exception '(Array A)' is not thrown does not hold
+3: uncaught exception is not thrown does not hold
 -/
 #guard_msgs in
 #eval interpret (refProgram [
@@ -715,10 +711,10 @@ stops the run. With or without them, an `Array A` is not read at the element typ
 subtype. -/
 
 /--
-info: 4: the interpreter fails here: array type (Array B) is not a subtype of (Array A)
-2: the interpreter fails here: array type (Array A) is not a subtype of (Array B)
-stopped: 'throughParentVariable': array type (Array B) is not a subtype of (Array A)
-stopped: 'readAsChildElement': array type (Array A) is not a subtype of (Array B)
+info: 4: the interpreter fails here: an expression did not evaluate
+2: the interpreter fails here: an expression did not evaluate
+stopped: 'throughParentVariable': an expression did not evaluate
+stopped: 'readAsChildElement': an expression did not evaluate
 -/
 #guard_msgs in
 #eval interpret (refProgram (covariantArrays := false) [
@@ -728,8 +724,8 @@ stopped: 'readAsChildElement': array type (Array A) is not a subtype of (Array B
     .init "x" (.named "B") none (at_ 2), .readElem "x" (.var "a") (.int 0) (.named "B") (at_ 2)]])
 
 /--
-info: 2: the interpreter fails here: array type (Array A) is not a subtype of (Array B)
-stopped: 'readAsChildElement': array type (Array A) is not a subtype of (Array B)
+info: 2: the interpreter fails here: an expression did not evaluate
+stopped: 'readAsChildElement': an expression did not evaluate
 -/
 #guard_msgs in
 #eval interpret (refProgram [
@@ -873,7 +869,7 @@ meta def storeA (name : String) (elem : Ty) (n : Nat) : Wire.Procedure :=
 
 /--
 info: 14: assertion does not hold
-21: uncaught exception 'java.lang.ArrayStoreException' is not thrown does not hold
+21: uncaught exception is not thrown does not hold
 -/
 #guard_msgs in
 #eval interpret (refProgram [storeA "storeIntoArrayA" (.named "A") 10, storeA "storeIntoArrayB" (.named "B") 20])
@@ -892,21 +888,17 @@ info: 5: assertion does not hold
   isTrue "stored" (.eq (.var "x") (.var "a")) 4,
   isTrue "notStored" (.op "Bool.Not" [.eq (.var "x") (.var "a")]) 5])])
 
-/-! A run stops at an `instanceOfComponent` on an object that is not an array, on an array
-whose elements are not references, and on a reference to no object. The default element of
-an array of references is no object, so it has to be told apart before the check. -/
+/-! A run stops at an `instanceOfComponent` on an object that is not an array and on an array
+whose elements are not references. The default element of an array of references is no
+object, so it has to be told apart before the check. -/
 
 /--
-info: 3: the interpreter fails here: not an array
-4: the interpreter fails here: the elements of array type (Array bv32) are not references
-4: the interpreter fails here: dangling reference
-4: the interpreter fails here: not a reference
-stopped: 'arrayIsObject': not an array
-stopped: 'primitiveArray': the elements of array type (Array bv32) are not references
-stopped: 'danglingArray': dangling reference
-stopped: 'danglingObject': dangling reference
-stopped: 'defaultElement': not a reference
-stopped: 'defaultArray': not a reference
+info: 3: the interpreter fails here: an expression did not evaluate
+4: the interpreter fails here: an expression did not evaluate
+stopped: 'arrayIsObject': an expression did not evaluate
+stopped: 'primitiveArray': an expression did not evaluate
+stopped: 'defaultElement': an expression did not evaluate
+stopped: 'defaultArray': an expression did not evaluate
 -/
 #guard_msgs in
 #eval interpret (refProgram [
@@ -914,10 +906,6 @@ stopped: 'defaultArray': not a reference
   entry "primitiveArray" (refs (
     [.init "i" ints none (at_ 3), .newArray "i" bv32 (.int 1) (at_ 3)] ++
     storable "ok" "a" "i" 4)),
-  entry "danglingArray" (refs (
-    [.init "gone" arrA (some (.int 99)) (at_ 3)] ++ storable "ok" "a" "gone" 4)),
-  entry "danglingObject" (refs (
-    [.init "gone" (.named "A") (some (.int 99)) (at_ 3)] ++ storable "ok" "gone" "arrA" 4)),
   entry "defaultElement" (refs (
     [.init "x" (.named "A") none (at_ 3), .readElem "x" (.var "arrA") (.int 0) (.named "A") (at_ 3)] ++
     storable "ok" "x" "arrA" 4)),

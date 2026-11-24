@@ -6,6 +6,7 @@
 module
 
 import Strata.Languages.Core.ObligationExtraction
+import Strata.Languages.Core.ObligationExtractionProps
 import Strata.Transform.InsertLoopInvariantAsserts
 import Strata.Transform.LoopElim
 import Strata.Transform.PrecondElim
@@ -144,8 +145,8 @@ fields configure the solver, output, or pipeline stopping points, which have
 no bearing on the generated VCs or their denotation.
 -/
 structure Options where
-  /-- Use SMT-LIB Array theory for `Map` types instead of an uninterpreted
-  sort with axiomatized `select`/`update` functions. -/
+  /-- Use SMT-LIB Array theory for `Map` and `Set` types instead of declared
+  sorts with axiomatized `select`/`update` and `Set.*` functions. -/
   useArrayTheory : Bool := true
 
 /--
@@ -266,9 +267,9 @@ def genSMTVCsFailure (program : Program)
 /--
 State semantic correctness of the SMT verification conditions generated for a
 program under the given metaverifier options. For example,
-`options.useArrayTheory` selects how the SMT encoder treats `Map` types: under
-`true` they become SMT-LIB arrays, under `false` an uninterpreted sort with
-axiomatized `select`/`update` functions.
+`options.useArrayTheory` selects how the SMT encoder treats `Map` and `Set` types:
+under `true` they become SMT-LIB arrays, under `false` declared sorts with
+axiomatized `select`/`update` and `Set.*` functions.
 -/
 def smtVCsCorrect (program : Program)
     (options : MetaVerifier.Options := {}) : Prop :=

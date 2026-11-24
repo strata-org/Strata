@@ -227,6 +227,33 @@ def computePostIdoms (cfg : CFG String (DetBlock String CmdT P)) :
     | none => pure ()
   return out
 
+/-- The back edges of `cfg`, by loop header: each edge `b → h` from a block `b` in `reachable`
+to a block `h` that dominates it (`dom`, from `computeDominators`) makes `h` a loop header.
+The headers come in the order of their first back edge in block order, each with the sources
+of its back edges in block order. -/
+def backEdges (dom : Std.HashMap String (List String)) (reachable : Std.HashSet String)
+    (cfg : CFG String (DetBlock String CmdT P)) : Array (String × Array String) := Id.run do
+  let mut headers : Array String := #[]
+  let mut srcs : Std.HashMap String (Array String) := {}
+  for (b, blk) in cfg.blocks do
+    if reachable.contains b then
+      for t in blk.transfer.targets do
+        if Dom.dominates dom t b then
+          if !srcs.contains t then headers := headers.push t
+          srcs := srcs.insert t ((srcs.getD t #[]).push b)
+  return headers.map fun h => (h, srcs.getD h #[])
+
+/-- The blocks in `reachable` that carry a `loopInvariant` but are not loop headers
+(`backEdges`), in block order. A loop invariant means something only on a header. -/
+def misplacedInvariants (dom : Std.HashMap String (List String))
+    (reachable : Std.HashSet String) (cfg : CFG String (DetBlock String CmdT P)) :
+    List String :=
+  let headers : Std.HashSet String := .ofList ((backEdges dom reachable cfg).toList.map (·.1))
+  cfg.blocks.filterMap fun (l, blk) =>
+    if reachable.contains l && !headers.contains l && !blk.md.loopInvariantValues.isEmpty then
+      some l
+    else none
+
 end -- public section
 
 end CFG

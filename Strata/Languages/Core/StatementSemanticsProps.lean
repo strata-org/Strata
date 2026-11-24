@@ -22,6 +22,7 @@ import all Strata.Languages.Core.StatementSemantics
 import all Strata.DL.Imperative.Cmd
 import all Strata.DL.Imperative.Stmt
 import Std.Tactic.BVDecide.Normalize.BitVec
+import Strata.Languages.Core.IdentifiersProps
 
 public section
 
@@ -29,7 +30,8 @@ public section
 
 Metatheory of Core's event statement semantics (`EvalCommandE`,
 `CoreStepStarE`).  Key results include `withOldSnapshots_preserves_wf` for
-constructing well-formed call frames, beyond the remaining
+constructing well-formed call frames, `withOldSnapshots_mkOld` (the saved copy of a parameter
+holds its value), beyond the remaining
 `updatedStates`/`InitVars`/`HavocVars` plumbing:
 
 - Core's call semantics is the generic one at `Expression`: `callEntry_iff`,
@@ -144,6 +146,19 @@ theorem CoreBodyExecE.structured
       (.stmt (Stmt.block "" ss #[]) ρ) emitted (.terminal ρ')) :
     CoreBodyExecE π (.structured ss) ρ ρ'.store emitted := BigStepE.structured h
 
+/-- A complete run of a structured body from a store ends in a finished configuration of the
+    block that runs the body, with the same factory. -/
+theorem CoreBodyExecE.structured_terminal {π : String → Option Procedure} {p : Procedure}
+    {ss : List Statement} {f : Expression.Factory} {σ σ' : CoreStore}
+    {evs : Trace Expression} (hbody : p.body = .structured ss)
+    (hrun : CoreBodyExecE π p.body ⟨σ, f⟩ σ' evs) :
+    ∃ ρ' : Env Expression,
+      CoreStepStarE π (.stmt (Stmt.block "" ss #[]) ⟨σ, f⟩) evs (.terminal ρ') ∧
+        σ' = ρ'.store ∧ ρ'.factory = f := by
+  rw [hbody] at hrun
+  cases hrun with
+  | structured hstar => exact ⟨_, hstar, rfl, (starE_preserves_factory hstar).symm⟩
+
 /-- Base-command step of Core's event contract relation. -/
 theorem EvalCommandContractE.cmd_sem {π : String → Option Procedure}
     {fac : Expression.Factory} {σ σ' : CoreStore} {c : Imperative.Cmd Expression}
@@ -165,6 +180,21 @@ theorem EvalCommandContractE.call_sem {π : String → Option Procedure}
       (defaultAssertEvents fac σAO (Imperative.Calls.checksAtCall md p.spec.preconditions) ++
         assumeEvents fac σO p.spec.postconditions) :=
   EvalCmdExtContractE.call_sem hπ hentry hhavoc hexit
+
+/-- The saved starting value of an in-out parameter, in a store extended with `old` snapshots,
+    is the value of the parameter. -/
+theorem withOldSnapshots_mkOld {snap : List Expression.Ident} {σ : CoreStore}
+    {g : Expression.Ident} (hg : g ∈ snap) :
+    Calls.withOldSnapshots (P := Expression) snap σ (CoreIdent.mkOld g.name) = σ g := by
+  unfold Calls.withOldSnapshots
+  cases hf : snap.find? (fun g' => HasOldIdent.mkOld g' == CoreIdent.mkOld g.name) with
+  | none =>
+    exfalso
+    exact (List.find?_eq_none.1 hf g hg) (beq_iff_eq.2 rfl)
+  | some g' =>
+    have hp0 := List.find?_some hf
+    have hp : CoreIdent.mkOld g'.name = CoreIdent.mkOld g.name := beq_iff_eq.1 hp0
+    rw [CoreIdent.eq_of_mkOld_eq hp]
 
 /-- Adding `old` snapshots only copies existing bindings, so it preserves store
 well-formedness. -/
@@ -848,13 +878,6 @@ theorem InitStatesApp' :
       assumption
   . simp only [InitStateUpdated Hinit']
     exact Hup
-
-/-- Evaluating a list of expressions yields exactly one value per expression. -/
-theorem EvalExpressionsLength :
-  EvalExpressions (P := Expression) fac σ ks vs →
-  ks.length = vs.length := by
-  intros Hrd
-  induction Hrd <;> simp_all
 
 theorem InitVarsInitStates : InitVars σ vars σ' →
   ∃ modvals, InitStates σ vars modvals σ' := by
@@ -1739,19 +1762,6 @@ variable (π : String → Option Procedure)
 Command-level store facts for `UpdateState`/`UpdateStates`, used by the
 event-trace store-domain results below. -/
 
-/-- `UpdateState` cannot define a slot that was undefined: it requires its
-    target to already hold a value, and leaves every other slot unchanged. -/
-private theorem updateState_preserves_none
-    {σ σ' : SemanticStore Expression} {x : Expression.Ident} {v : Expression.Val}
-    (h : UpdateState Expression σ x v σ') :
-    ∀ y, σ y = none → σ' y = none := by
-  cases h with
-  | update h_some _ h_other =>
-    intro y hy
-    by_cases hxy : x = y
-    · subst hxy; rw [hy] at h_some; exact absurd h_some (by simp)
-    · rw [h_other y hxy]; exact hy
-
 /-- `UpdateState` cannot undefine a slot: the target keeps a value and every
     other slot is unchanged. -/
 private theorem updateState_preserves_isSome
@@ -1764,17 +1774,6 @@ private theorem updateState_preserves_isSome
     by_cases hxy : x = y
     · subst hxy; rw [h_some']; simp
     · rw [h_other y hxy]; exact hy
-
-/-- Pointwise lift of `updateState_preserves_none` along a whole write-back. -/
-private theorem updateStates_preserves_none
-    {σ σ' : SemanticStore Expression} {xs : List Expression.Ident}
-    {vs : List Expression.Val}
-    (h : UpdateStates σ xs vs σ') :
-    ∀ y, σ y = none → σ' y = none := by
-  induction h with
-  | update_none => exact fun _ hy => hy
-  | update_some hupd _ ih =>
-    exact fun y hy => ih y (updateState_preserves_none hupd y hy)
 
 /-- Pointwise lift of `updateState_preserves_isSome` along a whole write-back. -/
 private theorem updateStates_preserves_isSome
@@ -1824,7 +1823,7 @@ theorem evalCommandE_preserves_none_of_not_def
   | call_sem _ _ _ hexit =>
     unfold Calls.CallExit at hexit
     obtain ⟨_, _, _, hupd, -⟩ := hexit
-    exact updateStates_preserves_none hupd y h_none
+    exact UpdateStates_preserves_none hupd h_none
 
 /-! ### Event-trace store-domain characterization
 

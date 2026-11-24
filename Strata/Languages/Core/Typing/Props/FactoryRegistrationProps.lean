@@ -230,16 +230,13 @@ theorem FactorySigsAllowed.addMutualBlock {C C' : Expression.TyContext}
       mtyAllTyConsNames isAllowedName arg.2 = true)
     (h : C.addMutualBlock block = .ok C') :
     FactorySigsAllowed C' := by
-  obtain ⟨-, ds, fgen, fs, ks, -, hfgen, hfs, -, rfl⟩ :=
-    LContext.addMutualBlock_ok_eq C C' block h
+  obtain ⟨fgen, hfgen, hlist⟩ := LContext.addMutualBlock_functions_toList h
   intro lf hlf
-  simp only [Factory.addFactory, Factory.tryAddAll] at hfs
-  rw [← Array.foldlM_toList] at hfs
-  rcases Factory.mem_foldlM_tryPush _ C.functions fs hfs lf hlf with
-    hold | hnew
-  · exact hC lf hold
-  · have hnew' : lf ∈ fgen.toArray := by simpa using hnew
-    exact genBlockFactory_sigsAllowed block fgen hnames hargs hfgen lf hnew'
+  rw [Array.mem_def, hlist, List.mem_append] at hlf
+  rcases hlf with hold | hnew
+  · exact hC lf (Array.mem_def.mpr hold)
+  · exact genBlockFactory_sigsAllowed block fgen hnames hargs hfgen lf
+      (Array.mem_def.mpr hnew)
 
 end -- public section
 

@@ -38,11 +38,11 @@ A total triple is a partial triple together with that condition, so a partial tr
 `{Pre} s {Post}` and a total triple `{Pre} s {True}` give the total triple `{Pre} s {Post}`
 (`TripleWith.of_partial_of_true`).
 
-The assertions are checked step by step, so they are valid on every finite execution, not only
-on the finished ones the partial triple speaks of (`TripleWith.allAssertsValidOnTracesWhen`).
-Without that, `assume x > 0; assert false; assume x < 0; while (true) {}` would meet any total
-triple: it has no finished run, and its divergence starts only after an assumption that no world
-reaching the failing assertion satisfies.
+The assertions are checked step by step, so they are valid on every finite execution
+(`TripleWith.allAssertsValidOnTracesWhen`), as the partial triple requires.  Without that,
+`assume x > 0; assert false; assume x < 0; while (true) {}` would meet any total triple: it has
+no finished run, and its divergence starts only after an assumption that no world reaching the
+failing assertion satisfies.
 
 The termination counts every step of the language, including a command that runs a whole
 procedure body: in Core, a call is one step, so a triple about a call says that the call can
@@ -83,7 +83,7 @@ variable (L : EventLang P (Event P))
     and every run of `s` that terminates normally or by an exit (`L.TerminatesAt`) with a
     reachable trace ends in an environment satisfying `Post`.  The partial-correctness
     `Strata.Logic.Hoare.TripleWith` follows (`TripleWith.to_partial`): the first part gives
-    the validity of the assertions of every finished run. -/
+    the validity of the assertions of every finite execution. -/
 @[expose] def TripleWith (conditionInterp : ConditionInterp P)
     (params : L.InitEnvWFParamsTy)
     (Pre : Env P → Prop) (s : L.StmtT) (Post : Env P → Prop) : Prop :=
@@ -97,16 +97,14 @@ end
 variable {L : EventLang P (Event P)}
 
 /-- A total triple gives the partial triple with the same pre- and postcondition: the
-    assertions of every finished run hold in every world. -/
+    assertions of every finite execution hold in every world. -/
 theorem TripleWith.to_partial {params : L.InitEnvWFParamsTy} {Pre Post : Env P → Prop}
     {s : L.StmtT} (h : TripleWith L conditionInterp params Pre s Post) :
     Strata.Logic.Hoare.TripleWith L conditionInterp params Pre s Post := by
-  intro ρ₀ ρ' trace hpre hinit hrun
+  intro ρ₀ hpre hinit
   obtain ⟨hterm, hpost⟩ := h ρ₀ hpre hinit
-  refine ⟨(Trace.AssertionsValid_iff_assertionsHoldIn _ trace).2 fun w => ?_, hpost ρ' trace hrun⟩
-  rcases hrun with hrun | ⟨_, hrun⟩
-  · exact (hterm w).assertionsHoldIn hrun
-  · exact (hterm w).assertionsHoldIn hrun
+  exact ⟨fun _ trace hrun => (Trace.AssertionsValid_iff_assertionsHoldIn _ trace).2 fun w =>
+    (hterm w).assertionsHoldIn hrun, hpost⟩
 
 /-- A total triple from a partial triple and termination with valid assertions from every admitted
     entry satisfying the precondition. -/
@@ -116,8 +114,7 @@ private theorem TripleWith.of_partial {params : L.InitEnvWFParamsTy}
     (hterm : ∀ ρ₀, Pre ρ₀ → L.initEnvWF params s ρ₀ →
       L.TerminatesAndAssertsValid conditionInterp s ρ₀) :
     TripleWith L conditionInterp params Pre s Post :=
-  fun ρ₀ hpre hinit => ⟨hterm ρ₀ hpre hinit, fun ρ' trace hrun =>
-    (hpartial ρ₀ ρ' trace hpre hinit hrun).2⟩
+  fun ρ₀ hpre hinit => ⟨hterm ρ₀ hpre hinit, (hpartial ρ₀ hpre hinit).2⟩
 
 /-- **Partial correctness and termination give total correctness.**  A partial triple
     `{Pre} s {Post}` and a total triple `{Pre} s {True}` give the total triple
@@ -447,9 +444,9 @@ theorem while_rule (params : InitEnvWFParams P)
   have hbodyInv : Strata.Logic.Hoare.TripleWith (EventLang.imperativeBlockE P CmdT evalCmd
       blockInitEnvWF) I bparams
       (fun ρ => Inv ρ ∧ P.eval ρ.factory ρ.store guard = some (HasBool.ttVal ρ.factory))
-      body Inv := fun ρ₀ ρ' trace hpre hinit hrun =>
-    let h := TripleWith.to_partial (hbody (M ρ₀)) ρ₀ ρ' trace ⟨hpre, rfl⟩ hinit hrun
-    ⟨h.1, fun hreach => (h.2 hreach).1⟩
+      body Inv := fun ρ₀ hpre hinit =>
+    let h := TripleWith.to_partial (hbody (M ρ₀)) ρ₀ ⟨hpre, rfl⟩ hinit
+    ⟨h.1, fun ρ' trace hrun hreach => (h.2 ρ' trace hrun hreach).1⟩
   have hInvProj : Imperative.Logic.Hoare.PostWF body Inv := fun ρ hInv =>
     (hInv_proj (M ρ + 1) ρ ⟨hInv, Nat.lt_succ_self _⟩).1
   -- One reachable iteration from an invariant entry with a true guard ends in the invariant,

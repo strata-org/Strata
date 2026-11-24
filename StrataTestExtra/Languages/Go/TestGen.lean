@@ -21,6 +21,8 @@ public meta import Strata.Util.IonDeserializer
 public import Strata.Util.IonDeserializer
 public meta import StrataTest.Languages.Go.GenTestUtil
 public import StrataTest.Languages.Go.GenTestUtil
+public meta import StrataTest.Util.TestDir
+public import StrataTest.Util.TestDir
 -- Cases 36/37 parse, decode, print and verify a real `Laurel.LaurelProgram`.
 public meta import StrataLaurel.Implementation
 public import StrataLaurel.Implementation
@@ -29,6 +31,7 @@ public import StrataLaurel.Implementation.Grammar.AbstractToConcreteTreeTranslat
 
 open Strata.Go
 open Strata.Go.TestUtil
+open Strata.TestUtil
 
 /-!
 # `getIonGoSerializer%` adversarial tests
@@ -729,62 +732,57 @@ def adversarialPackage : Array (String × String) := Id.run do
     Lean.logWarning "Go adversarial round trip skipped: go not found"
     return
 
-  let dir : System.FilePath := "/tmp/strata-go-adv-roundtrip"
-  prepareTempDir dir
+  withTestDir fun dir => do
+    writeGoFiles (dir / "gotest") { files := adversarialPackage }
+    IO.FS.writeFile (dir / "main.go") (← IO.FS.readFile (goTestData / "shapes_main.go"))
+    if let some reason ← writeGoModule dir "advtest" then
+      Lean.logWarning s!"Go adversarial round trip skipped: {reason}"
+      return
 
-  writeGoFiles (dir / "gotest") { files := adversarialPackage }
-  IO.FS.writeFile (dir / "main.go") (← IO.FS.readFile (goTestData / "shapes_main.go"))
-  if let some reason ← writeGoModule dir "advtest" then
-    Lean.logWarning s!"Go adversarial round trip skipped: {reason}"
-    cleanupTempDir dir
-    return
+    -- The toolchain checks for this closure. `go vet` runs the type checker, so a vet-clean
+    -- result also means the package compiles.
+    if let some err ← checkGoClean dir then Lean.throwError err
 
-  -- The toolchain checks for this closure. `go vet` runs the type checker, so a vet-clean
-  -- result also means the package compiles.
-  if let some err ← checkGoClean dir then Lean.throwError err
+    if let some err ← runTool "go" #["build", "-buildvcs=false", "-o", "driver", "."] dir then
+      Lean.throwError err
 
-  if let some err ← runTool "go" #["build", "-buildvcs=false", "-o", "driver", "."] dir then
-    Lean.throwError err
+    let out := dir / "out"
+    IO.FS.createDirAll out
+    let run ← IO.Process.output { cmd := "./driver", args := #[out.toString], cwd := dir }
+    if run.exitCode != 0 then
+      Lean.throwError s!"Go driver failed (exit {run.exitCode}):\n{run.stdout}\n{run.stderr}"
 
-  let out := dir / "out"
-  IO.FS.createDirAll out
-  let run ← IO.Process.output { cmd := "./driver", args := #[out.toString], cwd := dir }
-  if run.exitCode != 0 then
-    Lean.throwError s!"Go driver failed (exit {run.exitCode}):\n{run.stdout}\n{run.stderr}"
+    let mut failures : Array String := #[]
+    for (label, chk) in roundTripChecks do
+      let path := out / s!"{label}.ion"
+      if !(← path.pathExists) then
+        failures := failures.push s!"{label}: the Go driver wrote no {label}.ion"
+        continue
+      match chk (← IO.FS.readBinFile path) with
+      | .ok _ => pure ()
+      | .error e => failures := failures.push s!"{label}: {e}"
+    -- Every case is reported, not just the first: a systematic error (e.g. a
+    -- broken symbol table) fails all of them and the list is the diagnosis.
+    unless failures.isEmpty do
+      Lean.throwError s!"{failures.size} wire round trip(s) failed:\n\
+                        {"\n".intercalate failures.toList}"
 
-  let mut failures : Array String := #[]
-  for (label, chk) in roundTripChecks do
-    let path := out / s!"{label}.ion"
-    if !(← path.pathExists) then
-      failures := failures.push s!"{label}: the Go driver wrote no {label}.ion"
-      continue
-    match chk (← IO.FS.readBinFile path) with
-    | .ok _ => pure ()
-    | .error e => failures := failures.push s!"{label}: {e}"
-  -- Every case is reported, not just the first: a systematic error (e.g. a
-  -- broken symbol table) fails all of them and the list is the diagnosis.
-  unless failures.isEmpty do
-    Lean.throwError s!"{failures.size} wire round trip(s) failed:\n\
-                      {"\n".intercalate failures.toList}"
-
-  -- `Option (Option T)` is LOSSY in this encoding, and that is a property of the
-  -- format rather than of the Go backend: the encoding maps `none` to an Ion null
-  -- at every level, so `some none` and `none` are the same byte and the
-  -- deserializer has no way to tell them apart. Pinned here rather than asserted away, because
-  -- "fixing" it in one backend (say, by emitting a typed null for the inner
-  -- `none`) without changing `getIonDeserializer%` and the Java backend would
-  -- silently split the wire format in two. Java has the identical hole.
-  let someNone ← IO.FS.readBinFile (out / "nest-some-none.ion")
-  let plainNone ← IO.FS.readBinFile (out / "nest-empty.ion")
-  if someNone.toList != plainNone.toList then
-    Lean.throwError "`Option (Option T)`: `some none` and `none` now encode \
-                     differently. That may well be an improvement, but it is a \
-                     wire-format change: `getIonDeserializer%` still decodes any \
-                     Ion null to `none`, and the Java backend still emits one. \
-                     Update the `Option` section of docs/GoIonCodeGen.md and all \
-                     three sides together."
-
-  cleanupTempDir dir
+    -- `Option (Option T)` is LOSSY in this encoding, and that is a property of the
+    -- format rather than of the Go backend: the encoding maps `none` to an Ion null
+    -- at every level, so `some none` and `none` are the same byte and the
+    -- deserializer has no way to tell them apart. Pinned here rather than asserted away, because
+    -- "fixing" it in one backend (say, by emitting a typed null for the inner
+    -- `none`) without changing `getIonDeserializer%` and the Java backend would
+    -- silently split the wire format in two. Java has the identical hole.
+    let someNone ← IO.FS.readBinFile (out / "nest-some-none.ion")
+    let plainNone ← IO.FS.readBinFile (out / "nest-empty.ion")
+    if someNone.toList != plainNone.toList then
+      Lean.throwError "`Option (Option T)`: `some none` and `none` now encode \
+                       differently. That may well be an improvement, but it is a \
+                       wire-format change: `getIonDeserializer%` still decodes any \
+                       Ion null to `none`, and the Java backend still emits one. \
+                       Update the `Option` section of docs/GoIonCodeGen.md and all \
+                       three sides together."
 
 /-! ## The real target: `laurelGoGen`'s `Laurel.LaurelProgram` closure
 
@@ -824,72 +822,66 @@ def runGenerator (exe : System.FilePath) (args : Array String) :
 -- The package-name and prune checks need only the executable, so they run before
 -- the `haveGo` guard and are not lost along with the toolchain checks.
 #eval show Lean.Elab.Command.CommandElabM Unit from do
-  let dir : System.FilePath := "/tmp/strata-go-laurelgen"
-  prepareTempDir dir
+  withTestDir fun dir => do
+    -- The CLI validates the package argument before substituting it into every
+    -- generated file.
+    let invalidDir := dir / "invalid"
+    let invalid ← IO.Process.output
+      { cmd := laurelGoGenExe.toString, args := #["init", invalidDir.toString] }
+    if invalid.exitCode == 0 then
+      Lean.throwError "laurelGoGen accepted reserved package name `init`"
+    unless (invalid.stderr.splitOn "not a valid Go package name").length > 1 do
+      Lean.throwError s!"laurelGoGen returned an unclear invalid-package error:\n\
+                        {invalid.stdout}\n{invalid.stderr}"
+    if ← invalidDir.pathExists then
+      Lean.throwError "laurelGoGen wrote files before rejecting an invalid package name"
 
-  -- The CLI validates the package argument before substituting it into every
-  -- generated file.
-  let invalidDir := dir / "invalid"
-  let invalid ← IO.Process.output
-    { cmd := laurelGoGenExe.toString, args := #["init", invalidDir.toString] }
-  if invalid.exitCode == 0 then
-    Lean.throwError "laurelGoGen accepted reserved package name `init`"
-  unless (invalid.stderr.splitOn "not a valid Go package name").length > 1 do
-    Lean.throwError s!"laurelGoGen returned an unclear invalid-package error:\n\
-                      {invalid.stdout}\n{invalid.stderr}"
-  if ← invalidDir.pathExists then
-    Lean.throwError "laurelGoGen wrote files before rejecting an invalid package name"
+    let outputDir := dir / "laurel"
+    IO.FS.createDirAll outputDir
+    let staleFile := outputDir / "RemovedType.go"
+    IO.FS.writeFile staleFile
+      s!"{generatedGoFileMarker}\n\npackage laurel\n"
+    let handwrittenFile := outputDir / "handwritten.go"
+    IO.FS.writeFile handwrittenFile "package laurel\n"
+    let quotedMarkerFile := outputDir / "gen_check_test.go"
+    IO.FS.writeFile quotedMarkerFile
+      s!"package laurel\n\n// A handwritten test may quote \
+         {generatedGoFileMarker}\n"
 
-  let outputDir := dir / "laurel"
-  IO.FS.createDirAll outputDir
-  let staleFile := outputDir / "RemovedType.go"
-  IO.FS.writeFile staleFile
-    s!"{generatedGoFileMarker}\n\npackage laurel\n"
-  let handwrittenFile := outputDir / "handwritten.go"
-  IO.FS.writeFile handwrittenFile "package laurel\n"
-  let quotedMarkerFile := outputDir / "gen_check_test.go"
-  IO.FS.writeFile quotedMarkerFile
-    s!"package laurel\n\n// A handwritten test may quote \
-       {generatedGoFileMarker}\n"
+    runGenerator laurelGoGenExe #["laurel", outputDir.toString]
+    if ← staleFile.pathExists then
+      Lean.throwError "laurelGoGen left an obsolete generated type file in the output directory"
+    unless ← handwrittenFile.pathExists do
+      Lean.throwError "laurelGoGen removed a handwritten Go file from the output directory"
+    unless ← quotedMarkerFile.pathExists do
+      Lean.throwError "laurelGoGen removed a handwritten file that merely quoted \
+                      the generated marker"
+    unless ← haveGo do
+      Lean.logWarning "laurelGoGen toolchain checks skipped: go not found"
+      return
+    if let some reason ← writeGoModule dir "laurelgen" then
+      Lean.logWarning s!"laurelGoGen toolchain checks skipped: {reason}"
+      return
 
-  runGenerator laurelGoGenExe #["laurel", outputDir.toString]
-  if ← staleFile.pathExists then
-    Lean.throwError "laurelGoGen left an obsolete generated type file in the output directory"
-  unless ← handwrittenFile.pathExists do
-    Lean.throwError "laurelGoGen removed a handwritten Go file from the output directory"
-  unless ← quotedMarkerFile.pathExists do
-    Lean.throwError "laurelGoGen removed a handwritten file that merely quoted \
-                    the generated marker"
-  unless ← haveGo do
-    Lean.logWarning "laurelGoGen toolchain checks skipped: go not found"
-    cleanupTempDir dir
-    return
-  if let some reason ← writeGoModule dir "laurelgen" then
-    Lean.logWarning s!"laurelGoGen toolchain checks skipped: {reason}"
-    cleanupTempDir dir
-    return
+    -- Three fixed runtime files plus one per Lean type in the closure. The exact
+    -- count is deliberately NOT pinned because it tracks the Laurel AST. A floor
+    -- instead ensures the generator emitted the type closure rather than only the
+    -- runtime, since an empty closure still compiles and vets clean.
+    let emitted := (← (dir / "laurel").readDir).map (·.fileName)
+    if emitted.size < 20 then
+      Lean.throwError s!"laurelGoGen emitted only {emitted.size} files: {emitted}"
+    for runtime in ["ion_value.go", "ion_binary.go", "opt.go"] do
+      unless emitted.contains runtime do
+        Lean.throwError s!"laurelGoGen did not emit the fixed runtime file {runtime}"
+    -- One directory, flat: a Go package is a directory, so package-path nesting is
+    -- a Java-ism.
+    for entry in ← (dir / "laurel").readDir do
+      if ← entry.path.isDir then
+        Lean.throwError s!"laurelGoGen must emit one flat directory, found \
+                          subdirectory {entry.fileName}"
 
-  -- Three fixed runtime files plus one per Lean type in the closure. The exact
-  -- count is deliberately NOT pinned because it tracks the Laurel AST. A floor
-  -- instead ensures the generator emitted the type closure rather than only the
-  -- runtime, since an empty closure still compiles and vets clean.
-  let emitted := (← (dir / "laurel").readDir).map (·.fileName)
-  if emitted.size < 20 then
-    Lean.throwError s!"laurelGoGen emitted only {emitted.size} files: {emitted}"
-  for runtime in ["ion_value.go", "ion_binary.go", "opt.go"] do
-    unless emitted.contains runtime do
-      Lean.throwError s!"laurelGoGen did not emit the fixed runtime file {runtime}"
-  -- One directory, flat: a Go package is a directory, so package-path nesting is
-  -- a Java-ism.
-  for entry in ← (dir / "laurel").readDir do
-    if ← entry.path.isDir then
-      Lean.throwError s!"laurelGoGen must emit one flat directory, found \
-                        subdirectory {entry.fileName}"
-
-  if let some err ← checkGoClean dir then Lean.throwError err
-  if let some err ← runTool "go" #["build", "./..."] dir then Lean.throwError err
-
-  cleanupTempDir dir
+    if let some err ← checkGoClean dir then Lean.throwError err
+    if let some err ← runTool "go" #["build", "./..."] dir then Lean.throwError err
 
 /-! ## A Go-built `Laurel.LaurelProgram`, decoded and verified
 
@@ -964,99 +956,93 @@ def printLaurel (p : Strata.Laurel.LaurelProgram) : String :=
     Lean.logWarning "Laurel end-to-end round trip skipped: go not found"
     return
 
-  let dir : System.FilePath := "/tmp/strata-go-laurel-e2e"
-  prepareTempDir dir
+  withTestDir fun dir => do
+    -- The generated package goes in a subdirectory and the driver imports it, so
+    -- this exercises the cross-package use a real Go front-end needs.
+    runGenerator laurelGoGenExe #["laurel", (dir / "laurel").toString]
+    IO.FS.writeFile (dir / "main.go") (← IO.FS.readFile (goTestData / "laurel_main.go"))
+    if let some reason ← writeGoModule dir "e2e" then
+      Lean.logWarning s!"Laurel end-to-end round trip skipped: {reason}"
+      return
 
-  -- The generated package goes in a subdirectory and the driver imports it, so
-  -- this exercises the cross-package use a real Go front-end needs.
-  runGenerator laurelGoGenExe #["laurel", (dir / "laurel").toString]
-  IO.FS.writeFile (dir / "main.go") (← IO.FS.readFile (goTestData / "laurel_main.go"))
-  if let some reason ← writeGoModule dir "e2e" then
-    Lean.logWarning s!"Laurel end-to-end round trip skipped: {reason}"
-    cleanupTempDir dir
-    return
+    if let some err ← runTool "go"
+        #["build", "-buildvcs=false", "-o", "laurel-driver", "."] dir then
+      Lean.throwError err
+    let run ← IO.Process.output
+      { cmd := "./laurel-driver", args := #[dir.toString], cwd := dir }
+    if run.exitCode != 0 then
+      Lean.throwError s!"the Go Laurel driver failed (exit {run.exitCode}):\n\
+                        {run.stdout}\n{run.stderr}"
 
-  if let some err ← runTool "go"
-      #["build", "-buildvcs=false", "-o", "laurel-driver", "."] dir then
-    Lean.throwError err
-  let run ← IO.Process.output
-    { cmd := "./laurel-driver", args := #[dir.toString], cwd := dir }
-  if run.exitCode != 0 then
-    Lean.throwError s!"the Go Laurel driver failed (exit {run.exitCode}):\n\
-                      {run.stdout}\n{run.stderr}"
+    -- Step 1: the Go-produced bytes decode through `readLaurelIonProgram`.
+    let goodBytes ← IO.FS.readBinFile (dir / "laurel-good.ion")
+    let goProgram ← Strata.readLaurelIonProgram goodBytes
 
-  -- Step 1: the Go-produced bytes decode through `readLaurelIonProgram`.
-  let goodBytes ← IO.FS.readBinFile (dir / "laurel-good.ion")
-  let goProgram ← Strata.readLaurelIonProgram goodBytes
+    -- Step 2: it is the same program as the concrete syntax.
+    let textProgram ← Strata.parseLaurelText "<laurel-reference>" laurelReferenceSource
+    let goText := printLaurel goProgram
+    let refText := printLaurel textProgram
+    if goText != refText then
+      Lean.throwError s!"the Go-built program is not the reference program.\n\
+        from Go:\n{goText}\n\nfrom Laurel source:\n{refText}"
 
-  -- Step 2: it is the same program as the concrete syntax.
-  let textProgram ← Strata.parseLaurelText "<laurel-reference>" laurelReferenceSource
-  let goText := printLaurel goProgram
-  let refText := printLaurel textProgram
-  if goText != refText then
-    Lean.throwError s!"the Go-built program is not the reference program.\n\
-      from Go:\n{goText}\n\nfrom Laurel source:\n{refText}"
+    -- `LiteralInt` uses arbitrary-precision `*big.Int`. These boundary and
+    -- beyond-boundary values are asserted on Lean's printed decoded AST, proving
+    -- that they survive Go -> Ion -> `readLaurelIonProgram`.
+    let bigBytes ← IO.FS.readBinFile (dir / "laurel-bigint.ion")
+    let bigProgram ← Strata.readLaurelIonProgram bigBytes
+    let bigText := printLaurel bigProgram
+    for numeral in ["18446744073709551615", "18446744073709551616"] do
+      unless (bigText.splitOn numeral).length > 1 do
+        Lean.throwError s!"the literal {numeral} did not survive the round trip; \
+          the decoded program printed as:\n{bigText}"
 
-  -- `LiteralInt` uses arbitrary-precision `*big.Int`. These boundary and
-  -- beyond-boundary values are asserted on Lean's printed decoded AST, proving
-  -- that they survive Go -> Ion -> `readLaurelIonProgram`.
-  let bigBytes ← IO.FS.readBinFile (dir / "laurel-bigint.ion")
-  let bigProgram ← Strata.readLaurelIonProgram bigBytes
-  let bigText := printLaurel bigProgram
-  for numeral in ["18446744073709551615", "18446744073709551616"] do
-    unless (bigText.splitOn numeral).length > 1 do
-      Lean.throwError s!"the literal {numeral} did not survive the round trip; \
-        the decoded program printed as:\n{bigText}"
+    -- Step 3: the verdict. Without a solver there is no verdict to check, so the
+    -- decode and structural comparison above still ran and only this part is
+    -- skipped.
+    unless ← haveSolver do
+      Lean.logWarning "Laurel verification verdict skipped: cvc5 not found"
+      return
 
-  -- Step 3: the verdict. Without a solver there is no verdict to check, so the
-  -- decode and structural comparison above still ran and only this part is
-  -- skipped.
-  unless ← haveSolver do
-    Lean.logWarning "Laurel verification verdict skipped: cvc5 not found"
-    cleanupTempDir dir
-    return
+    -- Check every message: the provable program below produces none at all, so
+    -- filtering by category could hide a failure.
+    let errorsOf (p : Strata.Laurel.LaurelProgram) : IO (Array Strata.Message) :=
+      Strata.Laurel.analyzeToMessages p quietVerifyOptions
 
-  -- Check every message: the provable program below produces none at all, so
-  -- filtering by category could hide a failure.
-  let errorsOf (p : Strata.Laurel.LaurelProgram) : IO (Array Strata.Message) :=
-    Strata.Laurel.analyzeToMessages p quietVerifyOptions
+    -- The provable program must produce no errors. A verifier that reported one
+    -- here would make the failing case below meaningless.
+    let goodErrors ← errorsOf goProgram
+    unless goodErrors.isEmpty do
+      Lean.throwError s!"the Go-built program should verify, but reported \
+        {goodErrors.size} error(s):\n\
+        {"\n".intercalate (goodErrors.toList.map (·.message))}"
 
-  -- The provable program must produce no errors. A verifier that reported one
-  -- here would make the failing case below meaningless.
-  let goodErrors ← errorsOf goProgram
-  unless goodErrors.isEmpty do
-    Lean.throwError s!"the Go-built program should verify, but reported \
-      {goodErrors.size} error(s):\n\
-      {"\n".intercalate (goodErrors.toList.map (·.message))}"
-
-  -- The same procedure with `assert i == n + 1` must fail, and must fail *at the
-  -- range the Go program stamped on that node*. Checking the position is what
-  -- proves source provenance survived Go -> Ion -> Lean: a generator that dropped
-  -- `FileRange` would still produce a diagnostic, just an unusable one.
-  let badBytes ← IO.FS.readBinFile (dir / "laurel-bad.ion")
-  let badProgram ← Strata.readLaurelIonProgram badBytes
-  let badErrors ← errorsOf badProgram
-  if badErrors.isEmpty then
-    Lean.throwError "`assert i == n + 1` must not verify"
-  let (wantStart, wantStop) := badAssertRange
-  let onTheAssert := badErrors.filter fun m =>
-    m.fileRange.range.start.byteIdx == wantStart &&
-      m.fileRange.range.stop.byteIdx == wantStop
-  let describe (m : Strata.Message) : String :=
-    s!"{Std.format m.fileRange.file}:{m.fileRange.range.start.byteIdx}-\
-      {m.fileRange.range.stop.byteIdx}: {m.message}"
-  if onTheAssert.isEmpty then
-    Lean.throwError s!"the failing assert must be reported at bytes \
-      {wantStart}-{wantStop} (the range the Go program stamped on it). Reported \
-      instead:\n{"\n".intercalate (badErrors.toList.map describe)}"
-  -- And attributed to the URI the Go program declared, so a diagnostic cannot be
-  -- blamed on the wrong producer.
-  for m in onTheAssert do
-    let uri := toString (Std.format m.fileRange.file)
-    unless (uri.splitOn "go-front-end").length > 1 do
-      Lean.throwError s!"diagnostic attributed to {uri}, but the Go program \
-        declared itself the source"
-
-  cleanupTempDir dir
+    -- The same procedure with `assert i == n + 1` must fail, and must fail *at the
+    -- range the Go program stamped on that node*. Checking the position is what
+    -- proves source provenance survived Go -> Ion -> Lean: a generator that dropped
+    -- `FileRange` would still produce a diagnostic, just an unusable one.
+    let badBytes ← IO.FS.readBinFile (dir / "laurel-bad.ion")
+    let badProgram ← Strata.readLaurelIonProgram badBytes
+    let badErrors ← errorsOf badProgram
+    if badErrors.isEmpty then
+      Lean.throwError "`assert i == n + 1` must not verify"
+    let (wantStart, wantStop) := badAssertRange
+    let onTheAssert := badErrors.filter fun m =>
+      m.fileRange.range.start.byteIdx == wantStart &&
+        m.fileRange.range.stop.byteIdx == wantStop
+    let describe (m : Strata.Message) : String :=
+      s!"{Std.format m.fileRange.file}:{m.fileRange.range.start.byteIdx}-\
+        {m.fileRange.range.stop.byteIdx}: {m.message}"
+    if onTheAssert.isEmpty then
+      Lean.throwError s!"the failing assert must be reported at bytes \
+        {wantStart}-{wantStop} (the range the Go program stamped on it). Reported \
+        instead:\n{"\n".intercalate (badErrors.toList.map describe)}"
+    -- And attributed to the URI the Go program declared, so a diagnostic cannot be
+    -- blamed on the wrong producer.
+    for m in onTheAssert do
+      let uri := toString (Std.format m.fileRange.file)
+      unless (uri.splitOn "go-front-end").length > 1 do
+        Lean.throwError s!"diagnostic attributed to {uri}, but the Go program \
+          declared itself the source"
 
 end Strata.Go.AdvTest

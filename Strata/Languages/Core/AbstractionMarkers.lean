@@ -9,7 +9,8 @@ public import Strata.Init
 
 /-! # Marker assumptions of the abstraction phases
 
-An abstraction phase (call elimination, insertion of loop invariant checks, loop elimination)
+An abstraction phase (call elimination, insertion of loop invariant checks, loop elimination,
+CFG loop elimination)
 replaces code by an over-approximation and labels the assumptions it places on the paths through
 that over-approximation with a reserved prefix. The phase's model check reads these labels in an
 obligation's path condition (`obligationHasLabelPrefix`): a counterexample on such a path may come
@@ -37,10 +38,16 @@ def insertLoopInvAssumePrefix : String := "$__insertLoopInvAssume_"
     of its negation around the arbitrary iteration. -/
 def loopElimAssumePrefix : String := "$__loopElimAssume_"
 
+/-- Label prefix of the marker assumptions of CFG loop elimination: the assumptions of its cut of
+    each loop, before and after the havoc of the loop's variables. -/
+def CFGLoopElim.cfgLoopElimAssumePrefix : String := "$__cfgLoopElimAssume_"
+
 /-- The label prefixes of the marker assumptions of the abstraction phases: those of call
-    elimination, of the insertion of loop invariant checks and of loop elimination. -/
+    elimination, of the insertion of loop invariant checks, of loop elimination and of CFG loop
+    elimination. -/
 def abstractionMarkerPrefixes : List String :=
-  [CallElim.callElimAssumePrefix, insertLoopInvAssumePrefix, loopElimAssumePrefix]
+  [CallElim.callElimAssumePrefix, insertLoopInvAssumePrefix, loopElimAssumePrefix,
+   CFGLoopElim.cfgLoopElimAssumePrefix]
 
 /-- Whether `label` is the label of a marker assumption of an abstraction phase: it starts with
     one of `abstractionMarkerPrefixes`. -/

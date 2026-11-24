@@ -177,6 +177,8 @@ theorem BlockInitEnvWF.ofBaseEmbed {params : InitEnvWFParams}
     (hdu : Block.defUseWellFormed (C := Cmd Expression)
       (fun n => (ρ.store n).isSome) params.declaredFuncs bs = Bool.true)
     (hfd : ∀ nm, Core.isNameInFactory nm = Bool.true → params.declaredFuncs ⟨nm, ()⟩ = Bool.true)
+    (hrfd : ∀ f : Expression.Ident, f.name ∈ ρ.factory.factory →
+      params.declaredFuncs f = Bool.true)
     (hinit : Block.InitTypesInhabited (P := Expression) (C := Cmd Expression) ρ.factory bs)
     (hty : ∃ Γ, StoreHasTyping ρ.factory ρ.store Γ ∧
       Block.fvarTypesWellAnnotated (C := Cmd Expression) Γ bs)
@@ -184,7 +186,7 @@ theorem BlockInitEnvWF.ofBaseEmbed {params : InitEnvWFParams}
       Expression.HasType (Expression.annotationTyping m) m (HasInt.intTy (P := Expression))) :
     BlockInitEnvWF params (embedStmts bs) ρ := by
   refine BlockInitEnvWF.of_defUseOk hwf hsv ?_ ?_ hres
-    (by rw [Imperative.embedStmts_labels]; exact hlab) ?_ hfd ?_ ?_
+    (by rw [Imperative.embedStmts_labels]; exact hlab) ?_ hfd hrfd ?_ ?_
     (by rw [Imperative.embedStmts_measures]; exact hmt)
   · intro n hn; exact hdefs n (by rwa [Imperative.embedStmts_definedVars] at hn)
   · intro n hn; exact hdnr n (by rwa [Imperative.embedStmts_definedVars] at hn)
@@ -258,6 +260,7 @@ theorem blockInitEnvWF_projectBase {params : InitEnvWFParams} {ss : Statements}
     ∧ Block.defUseWellFormed (C := Cmd Expression)
         (fun n => (ρ.store n).isSome) params.declaredFuncs bs = Bool.true
     ∧ (∀ nm, Core.isNameInFactory nm = Bool.true → params.declaredFuncs ⟨nm, ()⟩ = Bool.true)
+    ∧ (∀ f : Expression.Ident, f.name ∈ ρ.factory.factory → params.declaredFuncs f = Bool.true)
     ∧ Block.InitTypesInhabited (P := Expression) (C := Cmd Expression) ρ.factory bs
     ∧ (∃ Γ, StoreHasTyping ρ.factory ρ.store Γ ∧
         Block.fvarTypesWellAnnotated (C := Cmd Expression) Γ bs)
@@ -266,7 +269,7 @@ theorem blockInitEnvWF_projectBase {params : InitEnvWFParams} {ss : Statements}
   have hemb : embedStmts bs = ss := embedStmts_projectStmts hp
   refine ⟨h.toWellFormedSemanticEval, h.storeWellDefined, ?_, ?_, h.reservedFreshCore,
     fun l hl => h.exitsNotReserved l (by rw [← hemb, Imperative.embedStmts_labels]; exact hl),
-    ?_, h.factoryDeclared, ?_, ?_,
+    ?_, h.factoryDeclared, h.runtimeFactoryDeclared, ?_, ?_,
     fun m hm => h.measuresTyped m (by rw [← hemb, Imperative.embedStmts_measures]; exact hm)⟩
   · intro n hn
     exact h.defsUndefined n (by rw [← hemb, Imperative.embedStmts_definedVars]; exact hn)
@@ -289,9 +292,9 @@ theorem blockInitEnvWF_project_embed {params : InitEnvWFParams} {ss : Statements
     {bs : List (Imperative.Stmt Expression (Cmd Expression))} {ρ : Imperative.Env Expression}
     (h : BlockInitEnvWF params ss ρ) (hp : projectStmts ss = some bs) :
     BlockInitEnvWF params (embedStmts bs) ρ := by
-  obtain ⟨hwf, hsv, hdefs, hdnr, hres, hlab, hdu, hfd, hinit, hty, hmt⟩ :=
+  obtain ⟨hwf, hsv, hdefs, hdnr, hres, hlab, hdu, hfd, hrfd, hinit, hty, hmt⟩ :=
     blockInitEnvWF_projectBase h hp
-  exact BlockInitEnvWF.ofBaseEmbed hwf hsv hdefs hdnr hres hlab hdu hfd hinit hty hmt
+  exact BlockInitEnvWF.ofBaseEmbed hwf hsv hdefs hdnr hres hlab hdu hfd hrfd hinit hty hmt
 
 /-! ## Runs of call-free statement lists -/
 

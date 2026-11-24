@@ -1198,16 +1198,15 @@ theorem Step.OpsConsistent_preserved
 (`Factory.BodyInlineAnnotated`) and the factory's concrete evaluators return annotated results on
 annotated arguments (`Factory.EvalAnnotatedOn`). -/
 theorem Step.fvars_annotated_preservedOn
-    {F : @Factory T} {env : Env T}
+    {F : @Factory T} {env : Env T} {tyMap : Map T.Identifier LMonoTy}
     {e₁ e₂ : LExpr T.mono}
     (hstep : Step F env e₁ e₂)
-    (hEnvTy : Env.Typed env)
-    (hAnnot : fvars_annotated_by hEnvTy.tyMap e₁)
+    (hAnnot : fvars_annotated_by tyMap e₁)
     (hEnvAnnot : ∀ (x : T.Identifier) (e : LExpr T.mono), env x = some e →
-        fvars_annotated_by hEnvTy.tyMap e)
-    (hFBodyAnnot : Factory.BodyInlineAnnotated F hEnvTy.tyMap)
-    (hFEvalAnnot : Factory.EvalAnnotatedOn F hEnvTy.tyMap)
-    : fvars_annotated_by hEnvTy.tyMap e₂ := by
+        fvars_annotated_by tyMap e)
+    (hFBodyAnnot : Factory.BodyInlineAnnotated F tyMap)
+    (hFEvalAnnot : Factory.EvalAnnotatedOn F tyMap)
+    : fvars_annotated_by tyMap e₂ := by
   induction hstep with
   | expand_fvar x e henv => exact fvars_annotated_by_replaceMetadata1 _ (hEnvAnnot x e henv)
   | beta e1 v2 eres heq =>
@@ -1253,17 +1252,16 @@ theorem Step.fvars_annotated_preservedOn
 
 /-- A single step preserves `fvars_annotated_by`. -/
 theorem Step.fvars_annotated_preserved
-    {F : @Factory T} {env : Env T}
+    {F : @Factory T} {env : Env T} {tyMap : Map T.Identifier LMonoTy}
     {e₁ e₂ : LExpr T.mono}
     (hstep : Step F env e₁ e₂)
-    (hEnvTy : Env.Typed env)
-    (hAnnot : fvars_annotated_by hEnvTy.tyMap e₁)
+    (hAnnot : fvars_annotated_by tyMap e₁)
     (hEnvAnnot : ∀ (x : T.Identifier) (e : LExpr T.mono), env x = some e →
-        fvars_annotated_by hEnvTy.tyMap e)
-    (hFBodyAnnot : Factory.BodyAnnotated F hEnvTy.tyMap)
-    (hFEvalAnnot : Factory.EvalAnnotated F hEnvTy.tyMap)
-    : fvars_annotated_by hEnvTy.tyMap e₂ :=
-  Step.fvars_annotated_preservedOn hstep hEnvTy hAnnot hEnvAnnot hFBodyAnnot.inline hFEvalAnnot.on
+        fvars_annotated_by tyMap e)
+    (hFBodyAnnot : Factory.BodyAnnotated F tyMap)
+    (hFEvalAnnot : Factory.EvalAnnotated F tyMap)
+    : fvars_annotated_by tyMap e₂ :=
+  Step.fvars_annotated_preservedOn hstep hAnnot hEnvAnnot hFBodyAnnot.inline hFEvalAnnot.on
 
 /-- Multi-step version of `Step.type_preserved`, `Step.OpsConsistent_preservedOn` and
 `Step.fvars_annotated_preservedOn`: `StepStar` preserves `HasTypeA`, `OpsConsistent` and
@@ -1283,7 +1281,7 @@ theorem StepStar.type_preservedOn
   | step x y z hstep hrest ih =>
     exact ih (Step.type_preserved hstep h₁ hFWF.wt hFWF.evalWt hOps hEnvWF.lc hEnvWF.typed hAnnot)
       (Step.OpsConsistent_preservedOn hstep hOps hEnvWF.ops hFWF.bodyOps hFWF.evalOps)
-      (Step.fvars_annotated_preservedOn hstep hEnvWF.typed hAnnot hEnvWF.annot
+      (Step.fvars_annotated_preservedOn hstep hAnnot hEnvWF.annot
         hFWF.bodyAnnot hFWF.evalAnnot)
 
 /-- Multi-step version of `Step.denote_preservedAt`: if `e₁` reduces to `e₂` and both are
@@ -1315,7 +1313,7 @@ theorem StepStar.denote_preservedAt
       hEnvWF.typed hAnnot
     exact h_step_eq.trans (ih h_mid h₂
       (Step.OpsConsistent_preservedOn hstep hOps hEnvWF.ops hFWF.bodyOps hFWF.evalOps)
-      (Step.fvars_annotated_preservedOn hstep hEnvWF.typed hAnnot hEnvWF.annot
+      (Step.fvars_annotated_preservedOn hstep hAnnot hEnvWF.annot
         hFWF.bodyAnnot hFWF.evalAnnot))
 
 /-- Multi-step version: `HasTypeA` is preserved by `StepStar`.

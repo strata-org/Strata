@@ -57,7 +57,12 @@ Key results for `StepStmtE` / `StepStmtStarE`:
   `stmts_exitsCoveredByBlocks_noEscapeE`, and `exitsCoveredByBlocks_noEscapeE`:
   well-paired exits cannot escape.
 - `seqT_reaches_terminalE` and `stmtsT_cons_terminalE` provide step-counted
-  completion inversions used by the event loop rule.
+  completion inversions used by the event loop rule; `seqT_run_decomposeE` is the
+  step-counted decomposition of a `.seq` run to any configuration.
+- `stmts_append_prefixE`, `block_run_inner_prefixE`, `stmt_block_prefixE`,
+  `singleton_prefixE` and `cmd_prefixE` decompose finite runs that need not finish: a
+  finite run of a concatenation, a block frame, a block statement, a one-element list or a
+  command emits the trace of a finite run of its parts.
 - `Config.varsDefined_star_ofE`, `Config.varsUndefinedScoped_star_ofE`,
   `Config.varsUndefinedThroughout_star_ofE`, and
   `Config.storeWellDefined_star_ofE` preserve store-domain properties across
@@ -1269,6 +1274,122 @@ theorem stmts_prefix_appendE
               (c := .seq (.exiting label ρ₁) (rest ++ sfx))
               .step_seq_exit)
           simpa using hrun
+
+/-- Decompose a traced `.seq inner ss` run to an arbitrary target, keeping step counts: still
+inside the head, the head terminated and the tail continues, or the head exited.  Each part is
+a `Type`-valued run no longer than the whole, and a strictly shorter one once the frame itself
+stepped. -/
+theorem seqT_run_decomposeE
+    {inner : Config P CmdT} {ss : List (Stmt P CmdT)} {cfg : Config P CmdT}
+    {tr : List EventT}
+    (hstar : ReflTransTraceT (StepStmtE P EvalCmd) (.seq inner ss) tr cfg) :
+    (∃ inner', cfg = .seq inner' ss ∧
+      ∃ (h1 : ReflTransTraceT (StepStmtE P EvalCmd) inner tr inner'), h1.len ≤ hstar.len) ∨
+    (∃ (ρ₁ : Env P) (tr₁ tr₂ : List EventT), tr = tr₁ ++ tr₂ ∧
+      ∃ (h1 : ReflTransTraceT (StepStmtE P EvalCmd) inner tr₁ (.terminal ρ₁)),
+      ∃ (h2 : ReflTransTraceT (StepStmtE P EvalCmd) (.stmts ss ρ₁) tr₂ cfg),
+      h1.len + h2.len < hstar.len) ∨
+    (∃ lbl ρ₁, cfg = .exiting lbl ρ₁ ∧
+      ∃ (h1 : ReflTransTraceT (StepStmtE P EvalCmd) inner tr (.exiting lbl ρ₁)),
+      h1.len < hstar.len) := by
+  match hstar with
+  | .refl _ => exact .inl ⟨inner, rfl, .refl _, by simp⟩
+  | .step _ emitted _ restTr _ (.step_seq_inner hE) hrest =>
+    rcases seqT_run_decomposeE hrest with
+      ⟨inner', hcfg, h1, hlen⟩ | ⟨ρ₁, tr₁, tr₂, htr, h1, h2, hlen⟩ | ⟨lbl, ρ₁, hcfg, h1, hlen⟩
+    · exact .inl ⟨inner', hcfg, .step _ _ _ _ _ hE h1, by simp only [ReflTransTraceT.len]; omega⟩
+    · exact .inr (.inl ⟨ρ₁, emitted ++ tr₁, tr₂, by rw [htr]; simp [List.append_assoc],
+        .step _ _ _ _ _ hE h1, h2, by simp only [ReflTransTraceT.len]; omega⟩)
+    · exact .inr (.inr ⟨lbl, ρ₁, hcfg, .step _ _ _ _ _ hE h1,
+        by simp only [ReflTransTraceT.len]; omega⟩)
+  | .step _ _ _ restTr _ .step_seq_done hrest =>
+    exact .inr (.inl ⟨_, [], restTr, by simp, .refl _, hrest,
+      by simp only [ReflTransTraceT.len]; omega⟩)
+  | .step _ _ _ _ _ .step_seq_exit hrest =>
+    match hrest with
+    | .refl _ => exact .inr (.inr ⟨_, _, rfl, .refl _, by simp only [ReflTransTraceT.len]; omega⟩)
+    | .step _ _ _ _ _ h _ => exact nomatch h
+termination_by hstar.len
+decreasing_by all_goals (simp only [ReflTransTraceT.len]; omega)
+
+/-- Decompose a finite traced run of `.stmts (ss₁ ++ ss₂)` by what `ss₁` did: either the
+whole run is a finite run of `ss₁` (still inside it, or escaping by an `exit`), or `ss₁`
+terminated at some `ρ₁` emitting `tr₁` and a finite run of `ss₂` from `ρ₁` emitted the rest. -/
+theorem stmts_append_prefixE
+    (ss₁ ss₂ : List (Stmt P CmdT)) (ρ : Env P) {cfg : Config P CmdT} {tr : List EventT}
+    (h : StepStmtStarE P EvalCmd (.stmts (ss₁ ++ ss₂) ρ) tr cfg) :
+    (∃ cfg', StepStmtStarE P EvalCmd (.stmts ss₁ ρ) tr cfg') ∨
+    (∃ ρ₁ tr₁ tr₂, tr = tr₁ ++ tr₂ ∧
+      StepStmtStarE P EvalCmd (.stmts ss₁ ρ) tr₁ (.terminal ρ₁) ∧
+      ∃ cfg', StepStmtStarE P EvalCmd (.stmts ss₂ ρ₁) tr₂ cfg') := by
+  induction ss₁ generalizing ρ tr cfg with
+  | nil =>
+    exact .inr ⟨ρ, [], tr, by simp,
+      .step _ [] _ [] _ .step_stmts_nil (.refl _), cfg, by simpa using h⟩
+  | cons s rest ih =>
+    simp only [List.cons_append] at h
+    rcases stmts_cons_headE EvalCmd h with ⟨_, htr⟩ | hseq
+    · subst htr
+      exact .inl ⟨_, .refl _⟩
+    rcases seq_run_decomposeE EvalCmd hseq with
+      ⟨inner', _, hs⟩ | ⟨ρ₁, tr₁, tr₂, htr, hs, hr⟩ | ⟨lbl, ρ₁, _, hs⟩
+    · exact .inl ⟨.seq inner' rest,
+        .step _ _ _ _ _ .step_stmts_cons (seq_inner_starE EvalCmd hs)⟩
+    · have hcons := stmts_cons_stepE EvalCmd s rest ρ ρ₁ hs
+      subst htr
+      rcases ih ρ₁ hr with ⟨cfg', hr'⟩ | ⟨ρ₂, tr₂₁, tr₂₂, htr', hterm, hk⟩
+      · exact .inl ⟨cfg', ReflTransTrace.trans _ hcons hr'⟩
+      · subst htr'
+        exact .inr ⟨ρ₂, tr₁ ++ tr₂₁, tr₂₂, by simp [List.append_assoc],
+          ReflTransTrace.trans _ hcons hterm, hk⟩
+    · exact .inl ⟨.seq (.exiting lbl ρ₁) rest,
+        .step _ _ _ _ _ .step_stmts_cons (seq_inner_starE EvalCmd hs)⟩
+
+/-- A finite traced run inside a `.block` frame emits a trace of a finite run of the frame's
+inner configuration: entering and leaving the block emit nothing. -/
+theorem block_run_inner_prefixE
+    {inner : Config P CmdT} {label : Option String} {σ_parent : SemanticStore P}
+    {cfg : Config P CmdT} {tr : List EventT}
+    (h : StepStmtStarE P EvalCmd (.block label σ_parent inner) tr cfg) :
+    ∃ inner', StepStmtStarE P EvalCmd inner tr inner' := by
+  rcases block_run_to_finalE h with
+    ⟨inner', _, hr⟩ | ⟨_, hr, _⟩ | ⟨_, _, _, hr, _⟩ | ⟨_, _, _, hr, _⟩ <;> exact ⟨_, hr⟩
+
+/-- A finite traced run of a block statement emits a trace of a finite run of its body. -/
+theorem stmt_block_prefixE {l : String} {ss : List (Stmt P CmdT)} {md : MetaData P}
+    {ρ : Env P} {cfg : Config P CmdT} {tr : List EventT}
+    (h : StepStmtStarE P EvalCmd (.stmt (.block l ss md) ρ) tr cfg) :
+    ∃ cfg', StepStmtStarE P EvalCmd (.stmts ss ρ) tr cfg' := by
+  cases h with
+  | refl => exact ⟨_, .refl _⟩
+  | step _ _ _ _ _ hstep hrest =>
+    cases hstep with
+    | step_block => simpa using block_run_inner_prefixE hrest
+
+/-- A finite traced run of a command statement has not stepped yet, or has terminated. -/
+theorem cmd_prefixE {c : CmdT} {ρ : Env P} {cfg : Config P CmdT} {tr : List EventT}
+    (h : StepStmtStarE P EvalCmd (.stmt (.cmd c) ρ) tr cfg) :
+    (cfg = .stmt (.cmd c) ρ ∧ tr = []) ∨ ∃ ρ', cfg = .terminal ρ' := by
+  cases h with
+  | refl => exact .inl ⟨rfl, rfl⟩
+  | step _ _ _ _ _ hstep hrest =>
+    cases hstep with
+    | step_cmd _ => exact .inr ⟨_, (stepStmtStarE_from_terminal hrest).1⟩
+
+/-- A finite traced run of the one-element list `[s]` emits a trace of a finite run of `s`. -/
+theorem singleton_prefixE
+    {s : Stmt P CmdT} {ρ : Env P} {cfg : Config P CmdT} {tr : List EventT}
+    (h : StepStmtStarE P EvalCmd (.stmts [s] ρ) tr cfg) :
+    ∃ cfg', StepStmtStarE P EvalCmd (.stmt s ρ) tr cfg' := by
+  rcases stmts_cons_headE EvalCmd h with ⟨_, htr⟩ | hseq
+  · subst htr
+    exact ⟨_, .refl _⟩
+  rcases seq_run_decomposeE EvalCmd hseq with
+    ⟨_, _, hs⟩ | ⟨ρ₁, tr₁, tr₂, htr, hs, hr⟩ | ⟨_, _, _, hs⟩
+  · exact ⟨_, hs⟩
+  · obtain ⟨rfl, _⟩ := stmts_nil_runE EvalCmd hr
+    exact ⟨_, by simpa [htr] using hs⟩
+  · exact ⟨_, hs⟩
 
 end EventTraceReflTransTHelpers
 

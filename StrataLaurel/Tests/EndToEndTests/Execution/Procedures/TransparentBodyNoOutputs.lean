@@ -33,7 +33,6 @@ show. -/
 program Laurel;
 
 procedure transparentBodyNoOuts()
-  entry
 {
   assert true;
   3

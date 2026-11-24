@@ -505,9 +505,16 @@ private theorem wName_carries {x n : P.Ident} {st st' : WSt P}
 private theorem opsWalk_cmd {O : List P.Ident} (κ : RE P) (d : Nat) (f : Bool) (c : CmdExt P)
     (hc : ∀ o ∈ Stmt.getOps (.cmd c : PStmt P), o ∈ O) : OpsWalk O (wpStmt κ d f (.cmd c)) := by
   intro st a st' hC h
-  unfold wpStmt at h
   rcases c with ((⟨x, ty, e | _, md⟩ | ⟨x, e | _, md⟩ | ⟨l, e, md⟩ | ⟨l, e, md⟩ | ⟨l, e, md⟩) |
     ⟨p, args, md⟩)
+  all_goals try
+    rw [wpStmt_init_run] at h
+    split at h
+    rotate_left
+    · cases h
+      exact ⟨hC, by simp [Rope.toList_nil]⟩
+    simp only [wpStmt, keepInit, pure_bind] at h
+  all_goals try unfold wpStmt at h
   all_goals try first | cases h | (cases f; cases h; exact ⟨hC, by simp [Rope.toList_nil]⟩)
   all_goals wp_inv h
   · split at h <;> wp_inv h <;> obtain ⟨⟨⟨we, rd⟩, s1⟩, h1, ⟨n, s2⟩, h2, rfl, rfl⟩ := h

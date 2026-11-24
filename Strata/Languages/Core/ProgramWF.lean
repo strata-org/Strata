@@ -13,8 +13,11 @@ import all Strata.Languages.Core.ProgramType
 import all Strata.Languages.Core.StatementType
 import all Strata.Languages.Core.TypeDecl
 import all Strata.Languages.Core.RecFuncBlockType
+import all Strata.DL.Lambda.LExprTypeEnv
 import Strata.Languages.Core.Typing.Soundness.TypeDecl
 import Strata.Languages.Core.Typing.Soundness.RecFuncBlockInversion
+import Strata.Languages.Core.Typing.Props.FunctionTypeProps
+import Strata.DL.Lambda.LExprTypeEnvProps
 import Strata.Util.ExceptProps
 import Strata.Util.Tactics
 import Std.Do.Triple.SpecLemmas
@@ -405,6 +408,46 @@ private theorem RecFuncBlock.typeCheckIn_idents (S S' : Std.HashSet String)
   rw [hC]
   unfold RecFuncBlock.fullContext
   exact foldl_addFactoryFunction_idents
+
+/-- Inversion of an accepted declaration step at a function declaration, for any continuation
+    `k`; the continuation runs in the unchanged environment, with the scope type-name set
+    extended with the type names of the checked signature. -/
+theorem Program.typeCheck.stepThen_func_inversion
+    (program : Program) {PS : Thunk (Std.HashSet String)} {S : Std.HashSet String}
+    (C : Expression.TyContext) (Env : Expression.TyEnv)
+    (i : Identifiers Unit) (func : Function) (md : MetaData Expression) {α : Type}
+    (k : Decl → Expression.TyContext → Expression.TyEnv → Std.HashSet String →
+      Except Strata.Message α) (res : α)
+    (h : Program.typeCheck.stepThen program PS S { C with idents := i } Env
+          (Decl.func func md) k = .ok res) :
+    ∃ (idents : Identifiers Unit) (renamed func' : Function),
+      (∃ f, Identifiers.addListWithError i (Decl.func func md).names f = .ok idents)
+      ∧ ¬ func.isRecursive
+      ∧ func.name.name ∉ C.functions
+      ∧ Function.typeCheckIn (Thunk.pure S)
+          { C with idents := idents } Env.pushEmptySubstScope func = .ok (renamed, func')
+      ∧ k (Decl.func func' md) { C.addFactoryFunction func'.toLFunc with idents := idents }
+          Env (S.insertMany (funcSigTyNames func'.toLFunc)) = .ok res := by
+  simp only [Program.typeCheck.stepThen, Decl.routePropBeforeRegistration, Decl.propCheck?,
+    Decl.routeDistinctBeforeRegistration, bind, Except.bind, tryCatch, tryCatchThe,
+    MonadExceptOf.tryCatch, Except.tryCatch] at h
+  elim_err h with idents hidents
+  elim_err h with resres hres
+  elim_err hres with inner hinner
+  simp only [Except.ok.injEq] at hres
+  subst hres
+  elim_err hinner with hnotrec
+  elim_err hinner with hfresh
+  elim_err hinner with tcres htc
+  obtain ⟨renamed, func'⟩ := tcres
+  simp only [Except.ok.injEq] at hinner
+  subst hinner
+  dsimp only [] at h
+  rw [addFactoryFunction_setIdents] at h
+  exact ⟨idents, renamed, func', ⟨_, hidents⟩, hnotrec,
+    Function.checkNameFresh_ok (C := { C with idents := idents })
+      (Except.mapError_ok_h' hfresh),
+    Except.mapError_ok_h' htc, h⟩
 
 /-- An accepted declaration step registers the declaration's names, and its continuation runs in a
     context whose identifiers are that registration. -/

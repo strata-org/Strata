@@ -159,7 +159,8 @@ def nondetElimPipelinePhase : PipelinePhase :=
                          .noLoopMeasures, .noBetaRedexes, .noPrecondsFromFuncs,
                          .noProcedureContracts,
                          .noPolymorphicProcedures,
-                         .noPolymorphicFunctions, .typeAnnotated, .exitsCovered])
+                         .noPolymorphicFunctions, .typeAnnotated, .exitsCovered,
+                         .noCFGCycles])
 
 end NondetElim
 end Core

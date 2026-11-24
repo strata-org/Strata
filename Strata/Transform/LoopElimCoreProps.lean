@@ -31,7 +31,7 @@ bridge the call-free Core event semantics to the big-step semantics and use the 
 Imperative-level, nor in `LoopElimProps`, which `LoopElimCorrect` imports.
 
 Key theorems: `Core.LoopElim.overapproximatesTraces_of_blockRel`,
-`Core.LoopElim.overapproximatesTraces_whenLoopExitsLocal_of_blockRel`,
+`Core.LoopElim.overapproximatesTraces_over_of_blockRel`,
 `Core.LoopElim.assertValid_of_blockRel`, `Core.LoopElim.triple_of_blockRel`,
 `Core.LoopElim.validOnTracesVerifier_of_blockRel`. -/
 
@@ -108,16 +108,12 @@ theorem overapproximatesTraces_of_blockRel (params : InitEnvWFParams) (L : List 
     exact ⟨_, evs', star_core π (brun_star hWB hb), rfl, habs⟩
   · exact blockInitEnvWF_of_blockRel hrel hwf
 
-/-- **Eliminating the loops of a Core statement list whose loop iterations never leave their loop
-    by an `exit` over-approximates its traces, its completed runs reflecting assertion validity
-    under `DenoteBasedInterp F`.**  For `T` as in `overapproximatesTraces_of_blockRel`, a
-    call-free list `ss` with `Block.loopExitsLocal ss` that `T` maps to `ss'`, and every entry
-    environment over `F` satisfying the gate at `params` with `L` reserved: as
-    `overapproximatesTraces_of_blockRel`, with every terminating or exiting run of `ss` matched
-    by a run of `ss'` whose trace also has valid assertions only if the source's has
-    (`Trace.ImpliesAssertValidity`) and is reachable if the source's is
-    (`Trace.ImpliesReachability`), under `DenoteBasedInterp F`. -/
-theorem overapproximatesTraces_whenLoopExitsLocal_of_blockRel (params : InitEnvWFParams)
+/-- **Eliminating the loops of a Core statement list over-approximates its traces, over one
+    Lambda factory.**  For `T` as in `overapproximatesTraces_of_blockRel`, a call-free list `ss`
+    that `T` maps to `ss'`, and every entry environment over `F` satisfying the gate at `params`
+    with `L` reserved: as `overapproximatesTraces_of_blockRel`, with the inserted true
+    assumptions captured under a factory over `F`. -/
+theorem overapproximatesTraces_over_of_blockRel (params : InitEnvWFParams)
     (L : List String) {T : Statements → Option Statements}
     (hT : ∀ ss ss' ρ, T ss = some ss' → BlockInitEnvWF (params.extendBlockLabels L) ss ρ →
       BlockRel ss ss')
@@ -125,61 +121,53 @@ theorem overapproximatesTraces_whenLoopExitsLocal_of_blockRel (params : InitEnvW
     OverapproximatesTraces2UptoWhen
       (Trace.HasExtraEvents
         (Trace.PreservesLastEvent (RComp Trace.MayDropEvents
-          (Trace.InsertsTrueAssumes (WellFormedSemanticEval (P := Expression)))))
-        (Trace.InsertsTrueAssumes (WellFormedSemanticEval (P := Expression)) []))
-      (fun trace trace' =>
-        RComp Trace.MayDropEvents
-          (Trace.InsertsTrueAssumes (WellFormedSemanticEval (P := Expression))) trace trace' ∧
-        Trace.ImpliesAssertValidity (DenoteBasedInterp F) trace trace' ∧
-        Trace.ImpliesReachability (DenoteBasedInterp F) trace trace')
+          (Trace.InsertsTrueAssumes (fun G : Expression.Factory => G.factory = F))))
+        (Trace.InsertsTrueAssumes (fun G : Expression.Factory => G.factory = F) []))
+      (RComp Trace.MayDropEvents
+        (Trace.InsertsTrueAssumes (fun G : Expression.Factory => G.factory = F)))
       -- Both executions start from the same environment, over `F`.
       (fun (ρ₀ ρ₀' : Env Expression) => ρ₀ = ρ₀' ∧ ρ₀.factory.factory = F)
       -- Completed runs end in the same environment.
       (· = ·)
       (EventLang.coreBlock π) (EventLang.coreBlock π) T
-      -- The bridge to the big-step semantics requires a call-free source; no loop iteration
-      -- leaves its loop by an `exit`.
-      (fun ss => Statements.noCalls ss = Bool.true ∧ Block.loopExitsLocal ss)
+      -- The bridge to the big-step semantics requires a call-free source.
+      (fun ss => Statements.noCalls ss = Bool.true)
       (params.extendBlockLabels L) params := by
-  intro ss ss' ht ⟨hnc, hloc⟩ ρ₀ ρ₀' ⟨hEq, hpin⟩ hwf
+  intro ss ss' ht hnc ρ₀ ρ₀' ⟨hEq, hpin⟩ hwf
   subst hEq
-  have h0 := overapproximatesTraces_of_blockRel π params L hT ss ss' ht hnc ρ₀ ρ₀ rfl hwf
   have hrel := hT ss ss' ρ₀ ht hwf
+  have hwf' := blockInitEnvWF_of_blockRel hrel hwf
   obtain ⟨σ₀, F₀⟩ := ρ₀
   have hWB := hwf.bool
   have hvar := hwf.var
   have hF : WellFormedSemanticEval (P := Expression) F₀ := hwf.toWellFormedSemanticEval
   have hdu := hwf.defUseOk
   have hT := hwf.storeWellDefined
-  -- A condition captured under the entry factory, over `F`, holds when it evaluates to `true`.
-  have htr : (DenoteBasedInterp F).TrueStutterHolds (· = F₀) :=
-    fun _ hc he _ => .inl ⟨hc ▸ hpin, he⟩
-  -- A run of the source as a big-step run has a run of the output with the same outcome.
-  have hsim : ∀ {trace o}, BRun F₀ ss σ₀ trace o → ∃ evs', BRun F₀ ss' σ₀ evs' o ∧
-      RComp Trace.MayDropEvents
-        (Trace.InsertsTrueAssumes (WellFormedSemanticEval (P := Expression))) trace evs' ∧
-      Trace.ImpliesAssertValidity (DenoteBasedInterp F) trace evs' ∧
-      Trace.ImpliesReachability (DenoteBasedInterp F) trace evs' := by
-    intro trace o hb
-    obtain ⟨evs', hb', habs, hv⟩ :=
-      run_sim_valid (allowed := (· = F₀)) htr hvar hWB hF.val.eval_tt rfl hrel hloc hdu hT hb
-    exact ⟨evs', hb', Trace.mayDropEvents_insertsTrueAssumes_mono (fun _ h => h ▸ hF) habs,
-      hv, fun ⟨w, hw⟩ => ⟨w, Trace.mayDropEvents_insertsTrueAssumes_assumptionsHold htr habs hw⟩⟩
-  refine ⟨h0.1, fun ρ' trace h => ?_, fun l ρ' trace h => ?_, h0.2.2.2⟩
+  refine ⟨fun cfg trace h => ?_, fun ρ' trace h => ?_, fun l ρ' trace h => ?_, hwf'⟩
+  · have h' := star_evalE h hnc
+    by_cases htr : trace = []
+    · subst htr
+      exact ⟨_, [], .refl _, [], [], rfl, .inl ⟨rfl, rfl⟩, .nil⟩
+    obtain ⟨evs', hb, habs⟩ := reach_sim (allowed := fun G : Expression.Factory => G.factory = F)
+      hvar hWB hF.val.eval_tt hpin hrel hdu hT (star_breach h' htr)
+    obtain ⟨cfg', hc⟩ := breach_star hWB hb
+    exact ⟨cfg', evs', star_core π hc, evs', [], by simp, habs, .nil⟩
   · have h' := star_evalE h hnc
     have hE := starE_preserves_factory h'
+    obtain ⟨evs', hb, habs⟩ := run_sim (allowed := fun G : Expression.Factory => G.factory = F)
+      hvar hWB hF.val.eval_tt hpin hrel hdu hT (star_brun.1 h')
     obtain ⟨σ', F'⟩ := ρ'
     simp only at hE
     subst hE
-    obtain ⟨evs', hb, hrel'⟩ := hsim (star_brun.1 h')
-    exact ⟨_, evs', star_core π (brun_star hWB hb), rfl, hrel'⟩
+    exact ⟨_, evs', star_core π (brun_star hWB hb), rfl, habs⟩
   · have h' := star_evalE h hnc
     have hE := starE_preserves_factory h'
+    obtain ⟨evs', hb, habs⟩ := run_sim (allowed := fun G : Expression.Factory => G.factory = F)
+      hvar hWB hF.val.eval_tt hpin hrel hdu hT (star_brun.2 h')
     obtain ⟨σ', F'⟩ := ρ'
     simp only at hE
     subst hE
-    obtain ⟨evs', hb, hrel'⟩ := hsim (star_brun.2 h')
-    exact ⟨_, evs', star_core π (brun_star hWB hb), rfl, hrel'⟩
+    exact ⟨_, evs', star_core π (brun_star hWB hb), rfl, habs⟩
 
 /-- **Assertion validity transported back through loop elimination.**  For an interpretation `I`
     under which every condition that evaluates to `true` under a factory satisfying
@@ -209,26 +197,36 @@ theorem assertValid_of_blockRel (params : InitEnvWFParams) (L : List String)
     hvalid
 
 /-- **A Hoare triple transported back through loop elimination.**  For a call-free Core
-    statement list `ss` whose loop iterations never leave their loop by an `exit`
-    (`Block.loopExitsLocal`), with its loops eliminated into `ss'` (`BlockRel`) from every entry
+    statement list `ss` with its loops eliminated into `ss'` (`BlockRel`) from every entry
     satisfying `BlockInitEnvWF` at `params` with `L` reserved, and a precondition admitting only
     entry environments over `F`: a Core triple `{Pre} ss' {Post}` over `F` at `params` gives the
-    triple `{Pre} ss {Post}` at `params` with `L` reserved. -/
+    triple `{Pre} ss {Post}` at `params` with `L` reserved.  Each assertion of a finite
+    execution of `ss` is reflected through the execution ending at it, which a finite
+    execution of `ss'` replays up to that assertion; each completed run of `ss` has a run of
+    `ss'` ending in the same environment whose assumptions hold where the source's do. -/
 theorem triple_of_blockRel (params : InitEnvWFParams) (L : List String)
     {ss ss' : Statements}
     (hrel : ∀ ρ, BlockInitEnvWF (params.extendBlockLabels L) ss ρ → BlockRel ss ss')
-    (hnc : Statements.noCalls ss = Bool.true) (hloc : Block.loopExitsLocal ss)
+    (hnc : Statements.noCalls ss = Bool.true)
     {F : Lambda.Factory CoreLParams} {Pre Post : Env Expression → Prop}
     (hpin : ∀ ρ₀, Pre ρ₀ → ρ₀.factory.factory = F)
     (h : Core.Logic.Hoare.Triple π params Pre ss' Post F) :
-    Core.Logic.Hoare.Triple π (params.extendBlockLabels L) Pre ss Post F :=
-  overapproximatesTraces2UptoWhen_triple_general (EventLang.coreBlock π) (EventLang.coreBlock π)
-    (DenoteBasedInterp F) _ _ (· = ·) _ _ _ params ss ss'
+    Core.Logic.Hoare.Triple π (params.extendBlockLabels L) Pre ss Post F := by
+  -- A condition captured under a factory over `F` holds when it evaluates to `true`.
+  have htr : (DenoteBasedInterp F).TrueStutterHolds (fun G => G.factory = F) :=
+    fun _ hc he _ => .inl ⟨hc, he⟩
+  exact overapproximatesTraces2UptoWhen_triple_of_reflectsLastAssertion (EventLang.coreBlock π)
+    (EventLang.coreBlock π) (DenoteBasedInterp F)
+    (Trace.PreservesLastEvent.reflectsLastAssertion fun h hw =>
+      Trace.mayDropEvents_insertsTrueAssumes_assumptionsHold htr h hw)
+    _ _ (· = ·) _ _ _ params ss ss'
     (ite_eq_left_iff.mpr fun h => absurd rfl h)
-    (overapproximatesTraces_whenLoopExitsLocal_of_blockRel π params L (single_blockRel hrel) F)
-    h ⟨hnc, hloc⟩
-    (fun ρ₀ hpre => ⟨rfl, hpin ρ₀ hpre⟩) (fun _ _ h => h.2.1) (fun _ _ h _ => h.2.2)
-    (fun _ _ h hp => h ▸ hp)
+    (overapproximatesTraces_over_of_blockRel π params L (single_blockRel hrel) F)
+    h hnc
+    (fun _ _ _ _ _ h => have ⟨_, hp⟩ := star_prefix (star_evalE h hnc) rfl; ⟨_, star_core π hp⟩)
+    (fun ρ₀ hpre _ => ⟨ρ₀, ⟨rfl, hpin ρ₀ hpre⟩, hpre⟩)
+    (fun _ _ h _ ⟨w, hw⟩ => ⟨w, Trace.mayDropEvents_insertsTrueAssumes_assumptionsHold htr h hw⟩)
+    (fun _ _ _ _ _ _ _ h hp => h ▸ hp)
 
 /-- **A verifier run after loop elimination is sound on the source.**  For a transformation `T`
     eliminating the loops of its input (`BlockRel`) from every entry satisfying `BlockInitEnvWF`

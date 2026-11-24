@@ -9,6 +9,7 @@ public import Strata.DL.Imperative.Cmd
 public import Strata.DL.Imperative.Stmt
 public import Strata.DL.Imperative.StmtProps
 public import Strata.Util.ListMap
+import all Strata.DL.Imperative.Cmd
 
 /-! # Properties of Imperative commands
 
@@ -31,6 +32,9 @@ Key results:
 - `Cmd.definedVars_substIdentMany` / `Cmd.modifiedVars_substIdentMany` — renaming
   leaves a command's defined (`init`) variables unchanged and maps its modified
   (`set`) variables through `renameLookup`.
+- `CallArg.resultArgs_length_eq`, `CallArg.getLhs_getElem?_of_resultArgs`,
+  `Calls.getInputExprs_getElem?_of_inputArgs` — how a call's result and input arguments line up
+  by position with its result variables and input expressions.
 - `Stmt.initVars_cmd_substIdentMany_*` — a `substIdentMany`-rewritten non-`init`
   command contributes no init vars.  These live here, with the rename lemmas they
   are built from, rather than with the general `Stmt.initVars_*` family in
@@ -314,6 +318,14 @@ theorem Stmt.initVars_cmd_substIdentMany_cover [HasSubstFvar P] [HasFvars P]
     Stmt.initVars (P := P) (Stmt.cmd (Cmd.substIdentMany scope (Cmd.cover label b md))) = [] :=
   Stmt.initVars_cmd_substIdentMany_of_definedVars_nil scope _ rfl
 
+/-- Mapping a function that fixes every expression over a guard or right-hand side changes
+    nothing. -/
+theorem ExprOrNondet.map_id (f : P.Expr → P.Expr) (hf : ∀ e, f e = e) (e : ExprOrNondet P) :
+    e.map f = e := by
+  cases e with
+  | det e => simp only [ExprOrNondet.map, hf]
+  | nondet => rfl
+
 section
 variable [HasFvars P]
 
@@ -341,6 +353,149 @@ theorem Cmd.mem_getVars_of_typed [HasFvar P] [LawfulHasFvars P] (c : Cmd P) {x :
     exact LawfulHasFvars.mem_getFvars_of_typed _ _ _ h
 
 end
+
+/-! ### Call arguments -/
+
+/-- A call has as many result arguments as result variables. -/
+theorem CallArg.resultArgs_length_eq (args : List (CallArg P)) :
+    (CallArg.resultArgs args).length = (CallArg.getLhs args).length := by
+  induction args with
+  | nil => rfl
+  | cons a rest ih =>
+    cases a <;> simp only [CallArg.resultArgs, CallArg.getLhs, List.filter_cons,
+      List.filterMap_cons, Bool.false_eq_true, ↓reduceIte,
+      List.length_cons] at ih ⊢ <;> omega
+
+/-- A call has as many input arguments as input expressions. -/
+theorem Calls.inputArgs_length_eq [HasFvar P] (args : List (CallArg P)) :
+    (CallArg.inputArgs args).length = (Calls.getInputExprs args).length := by
+  induction args with
+  | nil => rfl
+  | cons a rest ih =>
+    cases a <;> simp only [CallArg.inputArgs, Calls.getInputExprs,
+      List.filter_cons, List.filterMap_cons, Bool.false_eq_true, ↓reduceIte,
+      List.length_cons] at ih ⊢ <;> omega
+
+/-- A result argument that is an `inout` or `out` argument at a position names the result
+    variable at that position. -/
+theorem CallArg.getLhs_getElem?_of_resultArgs (args : List (CallArg P)) {k : Nat}
+    {w : P.Ident}
+    (h : (CallArg.resultArgs args)[k]? = some (.inoutArg w) ∨
+      (CallArg.resultArgs args)[k]? = some (.outArg w)) :
+    (CallArg.getLhs args)[k]? = some w := by
+  induction args generalizing k with
+  | nil => simp only [CallArg.resultArgs, List.filter_nil, List.getElem?_nil] at h; grind
+  | cons a rest ih =>
+    cases a with
+    | inArg ex =>
+      simp only [CallArg.resultArgs, List.filter_cons, Bool.false_eq_true,
+        ↓reduceIte] at h
+      simp only [CallArg.getLhs, List.filterMap_cons]
+      exact ih h
+    | inoutArg id =>
+      simp only [CallArg.resultArgs, List.filter_cons, ↓reduceIte] at h
+      simp only [CallArg.getLhs, List.filterMap_cons]
+      cases k with
+      | zero =>
+        simp only [List.getElem?_cons_zero, Option.some.injEq, CallArg.inoutArg.injEq,
+          reduceCtorEq, or_false] at h
+        rw [h]; rfl
+      | succ k =>
+        have htail : (CallArg.resultArgs rest)[k]? = some (.inoutArg w) ∨
+            (CallArg.resultArgs rest)[k]? = some (.outArg w) := by
+          simpa only [CallArg.resultArgs, List.getElem?_cons_succ] using h
+        exact ih htail
+    | outArg id =>
+      simp only [CallArg.resultArgs, List.filter_cons, ↓reduceIte] at h
+      simp only [CallArg.getLhs, List.filterMap_cons]
+      cases k with
+      | zero =>
+        simp only [List.getElem?_cons_zero, Option.some.injEq, CallArg.outArg.injEq,
+          reduceCtorEq, false_or] at h
+        rw [h]; rfl
+      | succ k =>
+        have htail : (CallArg.resultArgs rest)[k]? = some (.inoutArg w) ∨
+            (CallArg.resultArgs rest)[k]? = some (.outArg w) := by
+          simpa only [CallArg.resultArgs, List.getElem?_cons_succ] using h
+        exact ih htail
+
+/-- An `out` variable of a call is one of its result variables. -/
+theorem CallArg.mem_getLhs_of_mem_getOutArgs {args : List (CallArg P)}
+    {w : P.Ident} (hw : w ∈ CallArg.getOutArgs args) : w ∈ CallArg.getLhs args := by
+  induction args with
+  | nil => simp only [CallArg.getOutArgs, List.filterMap_nil, List.not_mem_nil] at hw
+  | cons a rest ih =>
+    cases a with
+    | inArg ex =>
+      simp only [CallArg.getOutArgs, List.filterMap_cons] at hw
+      simp only [CallArg.getLhs, List.filterMap_cons]
+      exact ih hw
+    | inoutArg id =>
+      simp only [CallArg.getOutArgs, List.filterMap_cons] at hw
+      simp only [CallArg.getLhs, List.filterMap_cons, List.mem_cons]
+      exact .inr (ih hw)
+    | outArg id =>
+      simp only [CallArg.getOutArgs, List.filterMap_cons, List.mem_cons] at hw
+      simp only [CallArg.getLhs, List.filterMap_cons, List.mem_cons]
+      rcases hw with rfl | hw
+      · exact .inl rfl
+      · exact .inr (ih hw)
+
+/-- An input argument that is an `inout` argument at a position passes a reference to its
+    variable at that position of the input expressions. -/
+theorem Calls.getInputExprs_getElem?_of_inputArgs [HasFvar P] (args : List (CallArg P)) {i : Nat}
+    {v : P.Ident} (h : (CallArg.inputArgs args)[i]? = some (.inoutArg v)) :
+    (Calls.getInputExprs args)[i]? = some (HasFvar.mkFvar v) := by
+  induction args generalizing i with
+  | nil => simp only [CallArg.inputArgs, List.filter_nil, List.getElem?_nil, reduceCtorEq] at h
+  | cons a rest ih =>
+    cases a with
+    | inArg ex =>
+      simp only [CallArg.inputArgs, List.filter_cons, ↓reduceIte] at h
+      simp only [Calls.getInputExprs, List.filterMap_cons]
+      cases i with
+      | zero => simp only [List.getElem?_cons_zero, Option.some.injEq, reduceCtorEq] at h
+      | succ i =>
+        have htail : (CallArg.inputArgs rest)[i]? = some (.inoutArg v) := by
+          simpa only [CallArg.inputArgs, List.getElem?_cons_succ] using h
+        exact ih htail
+    | inoutArg id =>
+      simp only [CallArg.inputArgs, List.filter_cons, ↓reduceIte] at h
+      simp only [Calls.getInputExprs, List.filterMap_cons]
+      cases i with
+      | zero =>
+        obtain rfl : id = v := by
+          simpa only [List.getElem?_cons_zero, Option.some.injEq, CallArg.inoutArg.injEq] using h
+        rfl
+      | succ i =>
+        have htail : (CallArg.inputArgs rest)[i]? = some (.inoutArg v) := by
+          simpa only [CallArg.inputArgs, List.getElem?_cons_succ] using h
+        exact ih htail
+    | outArg id =>
+      simp only [CallArg.inputArgs, List.filter_cons, Bool.false_eq_true,
+        ↓reduceIte] at h
+      simp only [Calls.getInputExprs, List.filterMap_cons]
+      exact ih h
+
+/-- The `out` variables of a call are those of its result arguments. -/
+theorem CallArg.getOutArgs_resultArgs (args : List (CallArg P)) :
+    CallArg.getOutArgs (CallArg.resultArgs args) = CallArg.getOutArgs args := by
+  induction args with
+  | nil => rfl
+  | cons a rest ih =>
+    cases a with
+    | inArg ex =>
+      simp only [CallArg.resultArgs, CallArg.getOutArgs, List.filter_cons,
+        List.filterMap_cons, Bool.false_eq_true, ↓reduceIte] at ih ⊢
+      exact ih
+    | inoutArg id =>
+      simp only [CallArg.resultArgs, CallArg.getOutArgs, List.filter_cons,
+        List.filterMap_cons, ↓reduceIte] at ih ⊢
+      exact ih
+    | outArg id =>
+      simp only [CallArg.resultArgs, CallArg.getOutArgs, List.filter_cons,
+        List.filterMap_cons, ↓reduceIte] at ih ⊢
+      rw [ih]
 
 end -- public section
 

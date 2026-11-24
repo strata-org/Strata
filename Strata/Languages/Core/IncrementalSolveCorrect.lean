@@ -9,6 +9,7 @@ public import Strata.Languages.Core.IncrementalSolve
 public import Strata.Languages.Core.ObligationExtraction
 import all Strata.Languages.Core.IncrementalSolve
 import all Strata.Languages.Core.ObligationExtraction
+import Strata.Languages.Core.ObligationExtractionProps
 import all Strata.DL.Imperative.EvalContext
 import Strata.Util.ExceptProps
 

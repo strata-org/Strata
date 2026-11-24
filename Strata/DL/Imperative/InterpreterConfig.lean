@@ -27,6 +27,7 @@ the inner store without the block's names, never the parent store.
 * `IConfig`, `IConfig.abs F` (the semantic configuration an `IConfig` stands for under the
   factory `F`), `IConfig.Denoting`, `IConfig.Denotes` (an `IConfig` whose stores denote under
   `F`, and one that denotes a given semantic configuration);
+* `IConfig.Done`: the configurations the monadic interpreter stops at;
 * `ScopeFrame.Exact`, `IConfig.Tracked`: the frames list exactly the block-local names, so that
   the exit store is the semantic projection;
 * `DefinesWithin`, `CmdDefsSound`: a command relation defines only the names `CmdDefs` lists.
@@ -323,6 +324,18 @@ inductive IConfig (P : PureExpr) [InterpLang P] (CmdT : Type) : Type where
   /-- The inner configuration under `k + 1` sequence contexts with no remaining statements. -/
   | seqs : IConfig P CmdT → Nat → IConfig P CmdT
 
+/-- The configurations the monadic interpreter stops at (`runInterp` returns them unchanged):
+    finished (`terminal`) or exiting a block at the outermost level (`exiting`).  The interpreter
+    counterpart of `Config.Done`. -/
+@[expose] def IConfig.Done : IConfig P CmdT → Prop
+  | .terminal _ | .exiting _ _ => True
+  | _ => False
+
+instance (c : IConfig P CmdT) : Decidable c.Done :=
+  match c with
+  | .terminal _ | .exiting _ _ => isTrue trivial
+  | .stmt .. | .stmts .. | .block .. | .seq .. | .seqs .. => isFalse nofun
+
 /-- `c` under `k` sequence contexts with no remaining statements. -/
 @[expose] def Config.wrapSeqs (c : Config P CmdT) : Nat → Config P CmdT
   | 0 => c
@@ -344,6 +357,17 @@ inductive IConfig (P : PureExpr) [InterpLang P] (CmdT : Type) : Type where
   | .seqs inner k => inner.unseqs.wrapSeqs (k + 1)
   | .seq inner ss => .seq inner.unseqs ss
   | .block l fr inner => .block l fr inner.unseqs
+  | c => c
+
+/-- The interpreter configuration with the monadic interpreter's own bookkeeping forgotten, as
+    in a configuration built from a semantic one: every scope frame is an embedded frame
+    (`defined = none`) and every sequence context with no remaining statements joins a sequence
+    tower (`IConfig.seqNil`).  Environments and parent stores are kept. -/
+@[expose] def IConfig.norm : IConfig P CmdT → IConfig P CmdT
+  | .block l fr inner => .block l { fr with defined := none } inner.norm
+  | .seq inner [] => inner.norm.seqNil
+  | .seq inner ss => .seq inner.norm ss
+  | .seqs inner k => Nat.repeat IConfig.seqNil (k + 1) inner.norm
   | c => c
 
 /-- The semantic configuration an interpreter configuration stands for under the factory `F`:
@@ -443,6 +467,80 @@ inductive IConfig (P : PureExpr) [InterpLang P] (CmdT : Type) : Type where
 @[expose] def IConfig.Denotes [DecidableEq P.Ident] (F : P.Factory) (c : IConfig P CmdT)
     (d : Config P CmdT) : Prop :=
   c.Denoting F ∧ c.Tracked ∧ c.abs F = d
+
+/-! ## Program points and the active path -/
+
+/-- Over-approximation of the variables the rest of the run from `cfg` may read: for the
+    statements still to execute at every level of the continuation stack (the enclosing `seq`
+    tails and `block` bodies included), the variables they read (`Stmt.getVars`) and the names
+    they assign or define (`Stmt.modifiedOrDefinedVars`). -/
+def IConfig.readVars [HasFvars P] [HasVarsImp P CmdT] (cfg : IConfig P CmdT) : List P.Ident :=
+  match cfg with
+  | .stmt s _ => s.getVars ++ s.modifiedOrDefinedVars false
+  | .stmts ss _ => Block.getVars ss ++ Block.modifiedOrDefinedVars ss false
+  | .terminal _ | .exiting _ _ => []
+  | .seq inner rest =>
+    inner.readVars ++ Block.getVars rest ++ Block.modifiedOrDefinedVars rest false
+  | .seqs inner _ | .block _ _ inner => inner.readVars
+
+/-- Same program point, on configurations whose sequence towers are canonical
+    (`IConfig.norm`): identical remaining statements at every level of the continuation stack,
+    ignoring the stores, factories and scope frames. -/
+def IConfig.samePointN [DecidableEq CmdT] [DecidableEq P.Expr] (c c' : IConfig P CmdT) : Bool :=
+  match c, c' with
+  | .stmt s _, .stmt s' _ => decide (s = s')
+  | .stmts ss _, .stmts ss' _ => decide (ss = ss')
+  | .terminal _, .terminal _ => true
+  | .exiting l _, .exiting l' _ => l == l'
+  | .seq i rest, .seq i' rest' => i.samePointN i' && decide (rest = rest')
+  | .seqs i k, .seqs i' k' => k == k' && i.samePointN i'
+  | .block l _ i, .block l' _ i' => l == l' && i.samePointN i'
+  | _, _ => false
+
+/-- The sub-configuration `n` levels down the active path (the `inner` of `.seq` and
+    `.block`; each of the `k + 1` contexts of a sequence tower `.seqs inner k` is one level), if
+    the path is that long. -/
+@[expose] def IConfig.subAt : IConfig P CmdT → Nat → Option (IConfig P CmdT)
+  | c, 0 => some c
+  | .seq inner _, n + 1 => inner.subAt n
+  | .block _ _ inner, n + 1 => inner.subAt n
+  | .seqs inner k, n + 1 => if n < k then some (.seqs inner (k - n - 1)) else inner.subAt (n - k)
+  | _, _ + 1 => none
+
+/-- The statement about to execute, with its environment and its depth on the active
+    path, when the innermost active configuration is a `.stmt`. -/
+@[expose] def IConfig.focus : IConfig P CmdT → Option (Stmt P CmdT × IEnv P × Nat)
+  | .stmt s env => some (s, env, 0)
+  | .seq inner _ => inner.focus.map fun (s, env, d) => (s, env, d + 1)
+  | .block _ _ inner => inner.focus.map fun (s, env, d) => (s, env, d + 1)
+  | .seqs inner k => inner.focus.map fun (s, env, d) => (s, env, d + k + 1)
+  | _ => none
+
+/-- The depth of the innermost active configuration. -/
+@[expose] def IConfig.activeDepth : IConfig P CmdT → Nat
+  | .seq inner _ => inner.activeDepth + 1
+  | .block _ _ inner => inner.activeDepth + 1
+  | .seqs inner k => inner.activeDepth + k + 1
+  | _ => 0
+
+/-- Replace the innermost `.stmt _` frame (the one `IConfig.focus` finds) by `r`,
+    keeping every enclosing frame and recording the replaced statement in the frame of its
+    block, as an interpreter step does: the configuration the monadic interpreter reaches when
+    that statement's step returns `r`. -/
+def IConfig.replaceNextStmt [DecidableEq P.Ident] [CmdDefs P CmdT] (r : IConfig P CmdT) :
+    IConfig P CmdT → IConfig P CmdT
+  | .stmt _ _ => r
+  | .seq inner rest => .seq (IConfig.replaceNextStmt r inner) rest
+  | .seqs inner k => .seqs (IConfig.replaceNextStmt r inner) k
+  | .block label fr inner => .block label (fr.record inner.levelCmd?)
+    (IConfig.replaceNextStmt r inner)
+  | c => c
+
+/-- The next command a configuration executes, with its environment. -/
+def IConfig.nextCmd? (c : IConfig P CmdT) : Option (CmdT × IEnv P) :=
+  match c.focus with
+  | some (.cmd cmd, env, _) => some (cmd, env)
+  | _ => none
 
 /-! ## Replay candidates -/
 

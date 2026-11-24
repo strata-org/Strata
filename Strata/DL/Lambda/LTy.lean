@@ -160,6 +160,12 @@ inductive LTy : Type where
 
 abbrev LTys := List LTy
 
+/-- The placeholder that stands for an erased type. -/
+@[expose] def LMonoTy.erased : LMonoTy := .ftvar ""
+
+/-- The placeholder that stands for an erased type scheme. -/
+@[expose] def LTy.erased : LTy := .forAll [] LMonoTy.erased
+
 /-- Apply a function to the body of a type scheme. -/
 @[expose] def mapLTyTys (f : LMonoTy → LMonoTy) : LTy → LTy
   | .forAll vs mty => .forAll vs (f mty)
