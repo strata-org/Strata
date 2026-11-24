@@ -131,9 +131,10 @@ def callArgType? (vt : TypeSpec.TypeScopes) : Expression.Expr → Option Lambda.
 /-- The type instance of a call to `proc` whose stored type arguments are `tyArgs`: the instance
     `Procedure.callTypeArgs` gives; every other parameter gets a fresh opaque type at
     `prefixStr` that is not in `taken`, and so does every parameter when the matching fails. On a
-    type-checked program the matching cannot fail; the fallback serves callers that pass a
-    program that was not type-checked. An error means the stored `tyArgs` disagree with the
-    argument types. -/
+    type-checked program the matching cannot fail, and the checker rejects a call that leaves a
+    callee type parameter undetermined (`ProcWellTyped.declTyVarsBound`), so the fresh opaque
+    types serve only programs that were not type-checked. An error means the stored `tyArgs`
+    disagree with the argument types. -/
 def callTypeSubst (prefixStr : String) (taken : Std.HashSet String) (vt : TypeSpec.TypeScopes)
     (proc : Procedure) (callArgs : List (Imperative.CallArg Expression))
     (tyArgs : Option (List Expression.Ty)) : CoreGenM (Except String Lambda.Subst) := do
@@ -255,9 +256,9 @@ def bumpCounter (key : String) : CoreTransformM Nat := do
 
 /-- Runs `t`, then declares at the start of its output a nullary type for
     each name the generator drew at `prefixStr` during the run (the opaque
-    types of `callTypeSubst`), except the names in `taken`, which the generator
-    drew and skipped. `taken` is the input program's type names with
-    `prefixStr`; `t` must keep the program's type names. -/
+    types of `callTypeSubst`), except the names in `taken`, which the generator drew and
+    skipped. `taken` is the input program's type names with `prefixStr`; `t` must keep the
+    program's type names. -/
 def declareGeneratedTypes (prefixStr : String) (taken : Std.HashSet String)
     (t : CoreTransformM (Bool × Program)) :
     CoreTransformM (Bool × Program) := do

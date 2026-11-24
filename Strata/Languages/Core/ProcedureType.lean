@@ -622,6 +622,56 @@ private def checkCondition (C : Core.Expression.TyContext) (Env : Core.Expressio
     throw (conditionErrorMessage C.knownTypes procName σ label chk.md ambientRigidRefinedMsg)
   .ok { chk with expr := expr }
 
+/-- The type variables, outside `typeArgs`, in the declared type of the local that the command `c`
+    declares or in the type arguments of the call that it makes. -/
+def cmdUnboundTyVars (typeArgs : List TyIdentifier) (c : Command) : List TyIdentifier :=
+  (cmdCollect (fun _ => []) LMonoTy.freeVars c).filter (· ∉ typeArgs) |>.eraseDups
+
+/-- The part of an error message that names the unbound type variables `vs`. A generated variable
+    that unification left unsolved is reported without its name. -/
+def unboundTyVarsPhrase (vs : List TyIdentifier) : String :=
+  match vs.filter isAllowedName with
+  | [] => "an unresolved type variable, which is not a type parameter of the procedure"
+  | [v] => s!"type variable '{v}', which is not a type parameter of the procedure"
+  | written =>
+    s!"type variables {", ".intercalate (written.map fun v => s!"'{v}'")}, which are not type \
+      parameters of the procedure"
+
+/-- What is wrong with the command `c` when it mentions a type variable outside `typeArgs`: its
+    metadata and an error text, and `none` when it does not. A local is reported with its name
+    unless the name is reserved, and a call with its callee. -/
+def cmdUnboundMsg? (typeArgs : List TyIdentifier) (c : Command) :
+    Option (MetaData Expression × String) :=
+  match cmdUnboundTyVars typeArgs c with
+  | [] => none
+  | vs =>
+    -- Only `init` and `call` collect types. A call's type arguments are recomputed by the
+    -- checker, so an unbound variable in one is either a generated variable that nothing solved
+    -- or a written variable that an argument's type carried in.
+    some (match c with
+      | .cmd (.init x _ _ md) =>
+        let who := if isAllowedName x.name then s!"local '{x.name}'" else "a local"
+        (md, s!"{who} is declared at {unboundTyVarsPhrase vs}")
+      | .call callee _ _ md =>
+        match vs.filter isAllowedName with
+        | [] => (md, s!"the call to '{callee}' does not determine one of its type parameters")
+        | _ => (md, s!"the call to '{callee}' is instantiated at {unboundTyVarsPhrase vs}")
+      | _ => (.empty, "a command mentions a type variable that is not a type parameter of the \
+          procedure"))
+
+/-- Error unless every type variable in a local's declared type or in a call type argument of
+    `body` is one of the type parameters `typeArgs`. The error reports every offending command, in
+    order and without repeats, and is located at the first, or at `md`, the procedure's metadata,
+    when that command has no source location. -/
+def checkDeclTyVarsBound (procName : CoreIdent) (md : MetaData Expression)
+    (typeArgs : List TyIdentifier) (body : Procedure.Body) : Except Message Unit :=
+  match (bodyCmds body).filterMap (cmdUnboundMsg? typeArgs) with
+  | [] => .ok ()
+  | (cmdMd, m) :: rest =>
+    let loc := if (Imperative.getFileRange cmdMd).isSome then cmdMd else md
+    throw (loc.toDiagnosticF
+      f!"{procedureMsgPrefix procName}{"; ".intercalate (m :: rest.map (·.2)).eraseDups}")
+
 /-- Check the names of a procedure header (`checkSignatureNames`). -/
 def checkHeaderNames (C : Core.Expression.TyContext) (h : Procedure.Header) :
     Except Format Unit :=
@@ -692,6 +742,7 @@ def typeCheckCore (scope progSigs : Thunk (Std.HashSet String))
       let _ ← ensureAmbientRigidVarsFixed name C'.rigidTypeVars bodyEnv'.stateSubstInfo.subst
       .ok (Procedure.Body.structured
         (if sk.isEmpty then ssOut else mapStmtsTys (deskolemizeTy sk) ssOut))
+  checkDeclTyVarsBound name md h.typeArgs body'
   let proc' : Procedure :=
     { proc with
       header := h,

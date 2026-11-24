@@ -935,7 +935,8 @@ end CallInstanceTests
 
 A program may declare a type named like the opaque type inlining gives a callee type parameter
 that the call does not determine. Here the axiom makes `$__inlinety_0` a singleton, under which
-the assertion of `Q` holds, so the inlined assertion must be at another type. -/
+the assertion of `Q` holds, so the inlined assertion must be at another type. The checker rejects
+such a call, so the pass is run directly on the unchecked program. -/
 section InlineAvoidsTypeNames
 open Core.CallFixtures Core.TestUtil
 
@@ -961,6 +962,13 @@ procedure P ()
 };
 -/
 #guard_msgs in
+#eval IO.println (toString (runInlineCall capturedInlineTypePgm).stripMetaData)
+
+/--
+info: Procedure 'P': the call to 'Q' does not determine one of its type
+parameters
+-/
+#guard_msgs (whitespace := lax) in
 #eval match Core.typeCheck .quiet capturedInlineTypePgm with
   | .ok p => IO.println (toString (runInlineCall p).stripMetaData)
   | .error e => IO.println e.message
@@ -971,22 +979,18 @@ def capturedLocalInlineTypePgm : Program :=
   capturedLocalTypeProg "$__inlinety_0" []
     [Statement.assert "qa" (singletonAll (tv "a")) .empty]
 
-/--
-info:
-Obligation: qa
-Property: assert
-Result: ❌ fail
+-- As in CallElim.lean, the printed program cannot be shown, so the output is checked directly.
+#guard ((toString (runInlineCall capturedLocalInlineTypePgm).stripMetaData).splitOn
+  "forall x : $__inlinety_1 ::").length > 1
 
-Obligation: $__inline1_qa
-Property: assert
-Result: ❓ unknown
+/--
+info: Procedure 'P': the call to 'Q' does not determine one of its type
+parameters
 -/
-#guard_msgs in
+#guard_msgs (whitespace := lax) in
 #eval match Core.typeCheck .quiet capturedLocalInlineTypePgm with
-  | .ok p =>
-    EIO.toIO (fun s => IO.userError s)
-      (Core.verifyProgram (runInlineCall p) { Core.VerifyOptions.default with verbose := .quiet })
-  | .error e => throw (IO.userError e.message)
+  | .ok p => IO.println (toString (runInlineCall p).stripMetaData)
+  | .error e => IO.println e.message
 
 end InlineAvoidsTypeNames
 end

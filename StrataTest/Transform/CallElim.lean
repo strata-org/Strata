@@ -483,24 +483,13 @@ procedure Caller ()
 #eval IO.println (toString (callElim (qTyArgsProg qReflDecl (some [.forAll [] .int]))))
 #guard (callElim (qTyArgsProg qReflDecl (some [.forAll [] .int]))).allExprs LExpr.fullyAnnotated
 
--- Call elimination on the checked program: the stored type argument of `a` is a generated type
--- variable, so `a` gets an opaque type.
+-- `q<a>()` has no arguments, so the call does not determine `a`, and the checker rejects the
+-- caller. The unchecked `qProg` test above shows the opaque type call elimination gives `a`.
 /--
-info: program Core;
-
-type $__cety_0;
-procedure q<a> ()
-spec {
-  requires [q_requires_0]: forall y : a :: y == y;
-  } {
-  
-};
-procedure Caller ()
-{
-  assert [callElimAssert_q_requires_0_1]: forall y : $__cety_0 :: y == y;
-};
+info: Procedure 'Caller': the call to 'q' does not determine one of its type
+parameters
 -/
-#guard_msgs in
+#guard_msgs (whitespace := lax) in
 #eval match Core.typeCheck .quiet (qProg qReflDecl) with
   | .ok p => IO.println (toString (callElim p).stripMetaData)
   | .error e => IO.println e.message
@@ -897,7 +886,8 @@ end CallInstanceTests
 
 A program may declare a type named like the opaque type call elimination gives a callee type
 parameter that the call does not determine. Here the axiom makes `$__cety_0` a singleton, under
-which the precondition of `Q` holds, so the precondition must be checked at another type. -/
+which the precondition of `Q` holds, so the precondition must be checked at another type. The
+checker rejects such a call, so the pass is run directly on the unchecked program. -/
 section CallInstanceAvoidsTypeNames
 open Core.CallFixtures Core.TestUtil
 
@@ -922,33 +912,34 @@ procedure P ()
 };
 -/
 #guard_msgs in
+#eval IO.println (toString (callElim capturedCallTypePgm).stripMetaData)
+
+/--
+info: Procedure 'P': the call to 'Q' does not determine one of its type
+parameters
+-/
+#guard_msgs (whitespace := lax) in
 #eval match Core.typeCheck .quiet capturedCallTypePgm with
   | .ok p => IO.println (toString (callElim p).stripMetaData)
   | .error e => IO.println e.message
-
-/--
-info:
-Obligation: callElimAssert_Q_requires_0_2
-Property: assert
-Result: ❓ unknown
--/
-#guard_msgs in
-#eval EIO.toIO (fun s => IO.userError s)
-  (Core.verifyProgram capturedCallTypePgm { Core.VerifyOptions.default with verbose := .quiet })
-
 
 /-- A type declared inside a procedure body is avoided as well. Here the assumption makes the
     local `$__cety_0` a singleton, so the precondition of `Q` must be checked at another type. -/
 def capturedLocalCallTypePgm : Program :=
   capturedLocalTypeProg "$__cety_0" [singletonAll (tv "a")] []
 
+-- The printed program cannot be shown with `#guard_msgs`: the local type declaration has no
+-- printable form, so the printer reports a conversion error with a scope dump after the program.
+-- Check the generated type directly: the assertion is at `$__cety_1`, not at the declared type.
+#guard ((toString (callElim capturedLocalCallTypePgm).stripMetaData).splitOn
+  "forall x : $__cety_1 ::").length > 1
+
 /--
-info:
-Obligation: callElimAssert_Q_requires_0_2
-Property: assert
-Result: ❓ unknown
+error: ❌ Type checking error.
+Procedure 'P': the call to 'Q' does not determine one of its type
+parameters
 -/
-#guard_msgs in
+#guard_msgs (whitespace := lax) in
 #eval EIO.toIO (fun s => IO.userError s)
   (Core.verifyProgram capturedLocalCallTypePgm
     { Core.VerifyOptions.default with verbose := .quiet })

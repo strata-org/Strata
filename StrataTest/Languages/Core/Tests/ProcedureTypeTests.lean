@@ -21,8 +21,8 @@ namespace Core
 section Tests
 open Std (ToFormat Format format)
 open Procedure Statement Lambda Lambda.LTy.Syntax Lambda.LExpr.SyntaxMono Core.Syntax
-open Core.TestUtil (anyFunction callTyArgs cfgProc coreVerdict identityDecl listDecl mkProc
-  translate tyArgsOfResult verdictOf)
+open Core.TestUtil (anyFunction callTyArgs cfgProc coreVerdict declNondet identityDecl listDecl
+  mkProc translate tyArgsOfResult verdictOf)
 
 /--
 info: ok: (procedure P (x : int, out y : int)
@@ -345,15 +345,13 @@ info: [some ["int"], some ["bool"]]
 #eval checkedTyArgs tyArgsCfgPgm
 
 -- `q<a>()` has no arguments, so the call does not determine `a`. The checker stores a generated
--- type variable for it and accepts the program.
+-- type variable for it, which is not a type parameter of the caller, so it rejects the program.
 /--
-info: [Strata.Core] Type checking succeeded.
-
----
-info: [some ["$__ty0"]]
+info: REJECTED: Procedure 'Caller': the call to 'q' does not determine one of its type
+parameters
 -/
-#guard_msgs in
-#eval checkedTyArgs (Core.CallFixtures.qProg Core.CallFixtures.qReflDecl)
+#guard_msgs (whitespace := lax) in
+#eval coreVerdict (Core.CallFixtures.qProg Core.CallFixtures.qReflDecl)
 
 /-! ## Distinct call results -/
 
@@ -1765,6 +1763,100 @@ info: REJECTED: Procedure 'p', condition 'ens': Type $__rigid_a is not an instan
 #eval firstLineOf <| procedureVerdict cfgIllTypedControl
 
 end AnnotationHygiene
+
+/-! ## Unbound type variables in locals and call type arguments -/
+
+section UnboundTyVars
+
+/-- `p() { var y : 'b := * }`: no type parameter `b`, and nothing solves it. -/
+private def unboundLocalPgm : Program := { decls :=
+  [mkProc "p" [] [] [] [declNondet "y" (.ftvar "b")]] }
+
+/--
+info: REJECTED: Procedure 'p': local 'y' is declared at type variable 'b',
+which is not a type parameter of the procedure
+-/
+#guard_msgs (whitespace := lax) in
+#eval coreVerdict unboundLocalPgm
+
+/-- `p() { var y : 'b := *; var z : 'c := * }`: two written variables, both unsolved. The error
+    names both. -/
+private def twoUnboundLocalsPgm : Program := { decls :=
+  [mkProc "p" [] [] [] [declNondet "y" (.ftvar "b"), declNondet "z" (.ftvar "c")]] }
+
+/--
+info: REJECTED: Procedure 'p': local 'y' is declared at type variable 'b', which is not a type
+parameter of the procedure; local 'z' is declared at type variable 'c', which is not a type
+parameter of the procedure
+-/
+#guard_msgs (whitespace := lax) in
+#eval coreVerdict twoUnboundLocalsPgm
+
+/-- `Caller() { var y : 'b := *; call q() }`: a written unbound variable and a call that leaves
+    `q`'s type parameter undetermined. The error reports both. -/
+private def unboundLocalAndCallPgm : Program := { decls :=
+  [Core.CallFixtures.qReflDecl,
+   mkProc "Caller" [] [] []
+     [declNondet "y" (.ftvar "b"), Statement.call "q" none [] .empty]] }
+
+/--
+info: REJECTED: Procedure 'Caller': local 'y' is declared at type variable 'b', which is not a type
+parameter of the procedure; the call to 'q' does not determine one of its type parameters
+-/
+#guard_msgs (whitespace := lax) in
+#eval coreVerdict unboundLocalAndCallPgm
+
+/-- `Caller() { var x : 'b := *; call q(x) }` with `q<a>(x : a)`: the call determines `a`, but at
+    the written variable `b`, which is not a type parameter of `Caller`. -/
+private def callAtUnboundWrittenPgm : Program := { decls :=
+  [Core.CallFixtures.qArgDecl,
+   mkProc "Caller" [] [] []
+     [declNondet "x" (.ftvar "b"),
+      Statement.call "q" none [.inArg (.fvar Core.coreLoc ⟨"x", ()⟩ none)] .empty]] }
+
+/--
+info: REJECTED: Procedure 'Caller': local 'x' is declared at type variable 'b', which is not a type
+parameter of the procedure; the call to 'q' is instantiated at type variable 'b', which is not a
+type parameter of the procedure
+-/
+#guard_msgs in
+#eval coreVerdict callAtUnboundWrittenPgm
+
+/-- `p() { var x : 'b := *; var y : int := x }`: the written `b` is solved to `int`. -/
+private def solvedLocalPgm : Program := { decls :=
+  [mkProc "p" [] [] []
+    [declNondet "x" (.ftvar "b"),
+     Statement.init "y" (.forAll [] .int) (.det (.fvar Core.coreLoc ⟨"x", ()⟩ none)) .empty]] }
+
+/-- info: ACCEPTED -/
+#guard_msgs in
+#eval coreVerdict solvedLocalPgm
+
+/-- `p<a>() { var y : a := * }`: the local mentions only the procedure's own type parameter. -/
+private def polymorphicLocalPgm : Program := { decls :=
+  [mkProc "p" ["a"] [] [] [declNondet "y" (.ftvar "a")]] }
+
+/-- info: ACCEPTED -/
+#guard_msgs in
+#eval coreVerdict polymorphicLocalPgm
+
+-- An unsolved type variable on an operator annotation, not on a local, stays accepted.
+open Strata in
+private def opAnnotPgm :=
+#strata
+program Core;
+function n<a>() : a;
+procedure P()
+{
+  assert (n() == n());
+};
+#end
+
+/-- info: ACCEPTED -/
+#guard_msgs in
+#eval coreVerdict (translate opAnnotPgm)
+
+end UnboundTyVars
 
 ---------------------------------------------------------------------
 end Tests

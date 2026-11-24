@@ -49,6 +49,8 @@ Further key results:
   only at monotypes; `StatementsWellTyped.initTypes_mono` says every variable it declares has a
   monotype, and `ProcWellTyped.initTypesMono` says the same for a well-typed procedure with a
   structured body.
+  `ProcWellTyped.declTysScoped` says the type variables of its local declarations and call type
+  arguments are type parameters of the procedure.
 * `procBodyScopes_find?_some`, `procBodyScopes_find?_none`: which names a procedure's body scope
   binds, and at which types. `procBodyScopes_inst`: the body scope of an instance of a procedure
   is that of the procedure with the type arguments substituted.
@@ -469,6 +471,14 @@ theorem ProgramWellTyped.procWellTyped {C0 : LContext CoreLParams} {ts0 : TypeSc
   obtain ⟨_, _, hds⟩ := h
   exact DeclsWellTyped.procWellTyped hds hmem
 
+/-- A procedure found by name in a well-typed program is well typed. -/
+theorem ProgramWellTyped.procWellTyped_of_find? {C0 : LContext CoreLParams} {ts0 : TypeScopes}
+    {P : Program} {n : String} {proc : Procedure}
+    (h : ProgramWellTyped C0 ts0 P) (hfind : Program.Procedure.find? P n = some proc) :
+    ∃ C, ProcWellTyped P C ts0 proc := by
+  obtain ⟨_, hmem, -⟩ := Program.Procedure.find?_mem_decls P n proc hfind
+  exact h.procWellTyped hmem
+
 /-! ### Well-typed bodies declare variables only at monotypes -/
 
 /-- Every variable a well-typed base command declares is declared at a monotype. -/
@@ -572,6 +582,21 @@ theorem ProcWellTyped.initTypesMono {P : Program} {C : LContext CoreLParams} {ts
     rename_i hstmts
     simp only [Procedure.initTypesMono, hss, List.all_eq_true]
     exact StatementsWellTyped.initTypes_mono hstmts
+
+/-- In a well-typed procedure with a structured body, every type variable in a local
+    declaration's type or a call type argument is a type parameter of the procedure. -/
+theorem ProcWellTyped.declTysScoped {P : Program} {C : LContext CoreLParams} {ts : TypeScopes}
+    {proc : Procedure} {ss : List Statement} (h : ProcWellTyped P C ts proc)
+    (hss : proc.body = .structured ss) :
+    Statements.AllDeclTys (fun ty => ∀ τ, ty = .forAll [] τ →
+      ∀ a ∈ LMonoTy.freeVars τ, a ∈ proc.header.typeArgs) ss := by
+  have hbound := h.declTyVarsBound
+  rw [hss] at hbound
+  refine Statements.AllDeclTys.of_stmtCollect (fe := fun _ => []) (ft := LMonoTy.freeVars)
+    (Q := fun a => a ∈ proc.header.typeArgs) ?_ ss hbound
+  intro ty hty τ hτ
+  subst hτ
+  exact hty
 
 /-- A free type variable of a formal's type (an input or an output type) of a well-typed
     procedure is one of the procedure's type parameters. -/

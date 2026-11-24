@@ -2361,6 +2361,67 @@ info: "ok"
   | .ok _ => "ok"
   | .error e => s!"{Std.format e}")
 
+/-! ## Type variables in locals must be solved or be type parameters -/
+
+/-- `entry` declares `y` at the written type variable `b`, which is not a type parameter, and
+    nothing solves it. -/
+private def unboundLocalAst : Core.Program :=
+  cfgProgram []
+    [("entry", { cmds := [.cmd (.init "y" (.forAll [] (.ftvar "b")) .nondet .empty)],
+                 transfer := .finish .empty })]
+
+/--
+info: "error: Procedure 'P': local 'y' is declared at type variable 'b',
+which is not a type parameter of the procedure"
+-/
+#guard_msgs (whitespace := lax) in
+#eval errorTail (Std.format (Core.typeCheck .default unboundLocalAst)).pretty
+
+/-- `x` is declared at the written `b`, and a later block solves it to `int`. -/
+private def solvedLocalAst : Core.Program :=
+  cfgProgram [("y", .int)]
+    [("entry", { cmds := [.cmd (.init "x" (.forAll [] (.ftvar "b")) .nondet .empty)],
+                 transfer := .goto "n" }),
+     ("n", { cmds := [.cmd (.set "y" (.det xVar) .empty)], transfer := .finish .empty })]
+
+/-- info: "ok" -/
+#guard_msgs in
+#eval match Core.typeCheck .quiet solvedLocalAst with
+  | .ok _ => "ok"
+  | .error e => s!"{e.message}"
+
+/-- The polymorphic `P<a>` declares a local at its own type parameter. -/
+private def polymorphicLocalAst : Core.Program :=
+  { decls := [.proc
+      { header := { name := "P", typeArgs := ["a"], inputs := [], outputs := [] },
+        spec := { preconditions := [], postconditions := [] },
+        body := .cfg { entry := "entry", blocks :=
+          [("entry", { cmds := [.cmd (.init "y" (.forAll [] (.ftvar "a")) .nondet .empty)],
+                       transfer := .finish .empty })] } } .empty] }
+
+/-- info: "ok" -/
+#guard_msgs in
+#eval match Core.typeCheck .quiet polymorphicLocalAst with
+  | .ok _ => "ok"
+  | .error e => s!"{e.message}"
+
+/-- `q<a>()` called with the written type argument `b`, which is neither a type parameter of `P`
+    nor determined by the call's arguments. The checker recomputes a call's type arguments from
+    its arguments, so the written `b` is not kept and the stored argument is a generated
+    variable. -/
+private def writtenCallTyArgAst : Core.Program :=
+  withCallee "q" ["a"] [] []
+    (cfgProgram []
+      [("entry", { cmds := [.call "q" (some [.forAll [] (.ftvar "b")]) [] .empty],
+                   transfer := .finish .empty })])
+
+/--
+info: "error: Procedure 'P': the call to 'q' does not determine one of its type
+parameters"
+-/
+#guard_msgs (whitespace := lax) in
+#eval errorTail (Std.format (Core.typeCheck .default writtenCallTyArgAst)).pretty
+
 end Strata.CFGTypeCheck
 
 end

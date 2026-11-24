@@ -10,9 +10,9 @@ public import Strata.Languages.Core.StatementSemantics
 
 /-! ## Typing of small-step configurations
 
-`ConfigWellTyped` types the configurations of Core's small-step semantics, and `CalleesStructured`
-and `CalleesTyVarsScoped` are the conditions on the program's procedures that the progress results
-use. -/
+`ConfigWellTyped` types the configurations of Core's small-step semantics, `CalleesStructured` is
+the condition on the program's procedures that the progress results assume, and
+`CalleesTyVarsScoped` is one that a well-typed program satisfies. -/
 
 namespace Core
 namespace TypeSpec
@@ -110,7 +110,8 @@ inductive ConfigWellTyped (P : Program) (F : Expression.Factory) (S : Subst) :
 /-- No undeclared type variables: every type variable in a structured procedure body's local
     declarations and call type arguments is a type parameter of the procedure. A body with
     `var y : 'b := *`, where `'b` is not a type parameter, is excluded: no value has type `'b`,
-    so its run blocks at the declaration. -/
+    so its run blocks at the declaration. A well-typed program satisfies it
+    (`ProgramWellTyped.calleesTyVarsScoped`). -/
 @[expose] def CalleesTyVarsScoped (P : Program) : Prop :=
   ∀ n p ss, Program.Procedure.find? P n = some p → p.body = .structured ss →
     Statements.AllDeclTys (fun ty => ∀ τ, ty = .forAll [] τ →

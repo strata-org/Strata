@@ -271,6 +271,7 @@ theorem ProcWellTyped.of_find? {P : Program} {C : LContext CoreLParams}
       oldNamesFresh := h.oldNamesFresh
       typeArgsNodup := h.typeArgsNodup
       noUndeclaredVars := h.noUndeclaredVars
+      declTyVarsBound := h.declTyVarsBound
       signatureWellKinded := h.signatureWellKinded
       modRights := h.modRights
       preconditionsTyped := fun c hc => (h.preconditionsTyped c hc).of_find? hin

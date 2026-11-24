@@ -540,6 +540,35 @@ theorem Procedure.renameTypeArgs_values (proc : Procedure) (ren : List (String �
       simp only [List.map_cons, ListMap.values, ih]
   exact ⟨hmap _, hmap _⟩
 
+/-- When the expression collector returns nothing, a procedure body collects exactly what its
+    commands collect. -/
+theorem Procedure.bodyCollect_noExprs_eq_cmds {β : Type} (ft : LMonoTy → List β)
+    (body : Procedure.Body) :
+    bodyCollect (fun _ => []) ft body = (bodyCmds body).flatMap (cmdCollect (fun _ => []) ft) := by
+  match body with
+  | .structured ss =>
+    simp only [bodyCollect, bodyCmds, stmtsCollect_noExprs_eq_cmds ft ss]
+  | .cfg c =>
+    have hblk : ∀ x : String × Imperative.DetBlock String Command Expression,
+        x.2.md.exprs.flatMap (fun _ => ([] : List β)) ++
+          x.2.cmds.flatMap (cmdCollect (fun _ => []) ft) ++
+          (match x.2.transfer with
+            | .condGoto _ _ _ _ => ([] : List β)
+            | .finish _ => []) = x.2.cmds.flatMap (cmdCollect (fun _ => []) ft) := by
+      intro x
+      rw [flatMap_const_nil]
+      cases x.2.transfer <;> simp only [List.nil_append, List.append_nil]
+    have hsum : ∀ bs : List (String × Imperative.DetBlock String Command Expression),
+        bs.flatMap (fun x => x.2.cmds.flatMap (cmdCollect (fun _ => []) ft)) =
+          (bs.flatMap fun x => x.2.cmds).flatMap (cmdCollect (fun _ => []) ft) := by
+      intro bs
+      rw [List.flatMap_assoc]
+    simp only [bodyCollect, bodyCmds]
+    rw [← hsum]
+    congr 1
+    funext x
+    exact hblk x
+
 /-- Instantiating a procedure with a structured body, whose declarations are all at monotypes,
     at monotype arguments, one per type parameter, gives a procedure with a structured body. -/
 theorem Procedure.instantiateTypes_structured {proc : Procedure} {tys : List Expression.Ty}

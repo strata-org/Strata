@@ -321,6 +321,13 @@ def bodyCollect (body : Procedure.Body) : List β :=
         | .condGoto g _ _ _ => fe g
         | .finish _ => []
 
+/-- The commands of a procedure body, in order: those of its statements, or of the blocks of its
+    control flow graph. -/
+def bodyCmds (body : Procedure.Body) : List Command :=
+  match body with
+  | .structured ss => stmtsCmds ss
+  | .cfg c => c.blocks.flatMap fun (_, blk) => blk.cmds
+
 /-- What `fe` and `ft` collect from a procedure's conditions and body. -/
 def procCollect (proc : Procedure) : List β :=
   proc.spec.preconditions.values.flatMap (fun chk => fe chk.expr) ++

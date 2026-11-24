@@ -37,8 +37,9 @@ its type.
 
 Key results:
 * `CalleesStructured`: every procedure of the program has a structured body.
-* `CalleesTyVarsScoped`: no undeclared type variables. Every type variable in a structured
-  body's local declarations and call type arguments is a type parameter of its procedure.
+* `ProgramWellTyped.calleesTyVarsScoped`: no undeclared type variables. Every type variable in a
+  structured body's local declarations and call type arguments is a type parameter of its
+  procedure; the typing relation of a procedure requires this.
 * `CallDoesNotFinish`: a call is next to run, its entry succeeds, and its callee body has no
   complete run.
 * `callExit_check_holds`: the values a well-typed call returns pass the call's check against the
@@ -52,8 +53,6 @@ Key results:
   scopes. The procedures may have type parameters: a call runs an instance of its callee at
   ground type arguments, and `reachable_configs_progress_forever` starts a procedure at any
   ground instance.
-
-These results hold for programs with no undeclared type variables (`CalleesTyVarsScoped`).
 -/
 
 namespace Core
@@ -216,8 +215,7 @@ private theorem call_proc_wellTyped {C0 : LContext CoreLParams} {ts0 : TypeScope
     (hP : ProgramWellTyped C0 ts0 P) (hfind : Program.Procedure.find? P n = some proc)
     (hπ : ∀ q, Program.Procedure.find? P n = some q → π n = some q) :
     π n = some proc ∧ ∃ C1, ProcWellTyped P C1 ts0 proc := by
-  obtain ⟨md0, hmem, -⟩ := Program.Procedure.find?_mem_decls P _ _ hfind
-  exact ⟨hπ proc hfind, hP.procWellTyped hmem⟩
+  exact ⟨hπ proc hfind, hP.procWellTyped_of_find? hfind⟩
 
 /-- The callee of a call, found in a procedure table that contains the procedures of a well-typed
     program, is an instance of the named procedure that keeps the names of its formals. -/
@@ -298,12 +296,22 @@ private theorem structured_run_slot {π : String → Option Procedure} {p : Proc
   rw [hfac] at hvty
   exact ⟨v, ty, hv, hpcty, hvty⟩
 
+/-- A well-typed program has no undeclared type variables: in every procedure with a structured
+    body, each type variable in a local declaration's type, or in a type argument of a call, is a
+    type parameter of the procedure. The typing relation of a procedure requires this of the
+    declarations and call type arguments of its body. -/
+theorem ProgramWellTyped.calleesTyVarsScoped {C0 : LContext CoreLParams} {ts0 : TypeScopes}
+    {P : Program} (h : ProgramWellTyped C0 ts0 P) : CalleesTyVarsScoped P := by
+  intro n p ss hfind hbody
+  obtain ⟨C, hproc⟩ := h.procWellTyped_of_find? hfind
+  exact hproc.declTysScoped hbody
+
 /-- The body of a callee, with a substitution that sends each type parameter of its procedure to
     a ground type applied, is ground: its declarations are at monotypes whose type variables are
     type parameters. -/
-private theorem body_ground {P : Program}
+private theorem body_ground {C0 : LContext CoreLParams} {ts0 : TypeScopes} {P : Program}
     {C C' : LContext CoreLParams} {ts ts' : TypeScopes} {n : String} {proc : Procedure}
-    {ss : List Statement} {S1 : Subst} (hscoped : CalleesTyVarsScoped P)
+    {ss : List Statement} {S1 : Subst} (hP : ProgramWellTyped C0 ts0 P)
     (hfind : Program.Procedure.find? P n = some proc) (hbody : proc.body = .structured ss)
     (hss : StatementsWellTyped P C ts [] ss C' ts')
     (hS1 : ∀ a ∈ proc.header.typeArgs, (LMonoTy.subst S1 (.ftvar a)).IsGround) :
@@ -311,7 +319,7 @@ private theorem body_ground {P : Program}
   have hscopedTys : Statements.AllDeclTys (fun ty => ∃ τ, ty = .forAll [] τ ∧
       ∀ a ∈ LMonoTy.freeVars τ, a ∈ proc.header.typeArgs) ss := by
     refine Statements.AllDeclTys.and_imp (fun ty hscope hm => ?_) ss
-      (hscoped n proc ss hfind hbody) (StatementsWellTyped.allDeclTys_mono hss)
+      (hP.calleesTyVarsScoped n proc ss hfind hbody) (StatementsWellTyped.allDeclTys_mono hss)
     obtain ⟨τ, rfl⟩ := hm
     exact ⟨τ, rfl, hscope τ rfl⟩
   exact Statements.ground_mapStmtsTys hS1 ss hscopedTys
@@ -840,7 +848,6 @@ private theorem call_callee_reachable {C0 : LContext CoreLParams} {ts0 : TypeSco
     (htyArgs : tyArgs = tyArgs0.map (·.map (mapLTyTys (LMonoTy.subst S))))
     (hargs : callArgs = callArgs0.map (CallArg.mapInput (mapExprTys (LMonoTy.subst S))))
     (hπ : ∀ q, Program.Procedure.find? P n = some q → π n = some q) (hstruct : CalleesStructured P)
-    (hscoped : CalleesTyVarsScoped P)
     (hground : ∀ tys, tyArgs = some tys → ∀ ty ∈ tys, LTy.GroundMono ty)
     (hcallee : Calls.typeInstantiatedCallee π n tyArgs = some p)
     (hentry : CallEntry ρ.factory ρ.store p callArgs σAO)
@@ -930,7 +937,7 @@ private theorem call_callee_reachable {C0 : LContext CoreLParams} {ts0 : TypeSco
       exact hparams a ha
     exact ⟨mapStmtsTys (LMonoTy.subst S1) ss, C1, S1, procBodyScopes ts0 proc, hbodyp ss hbody,
       reachable_configs_wellTyped_of_typed S1 hss rfl
-        (body_ground hscoped hfind hbody hss hS1ground) hstoreR hfreshR⟩
+        (body_ground hP hfind hbody hss hS1ground) hstoreR hfreshR⟩
 
 /-- One step of progress. A well-typed configuration, in a program whose procedure table contains
     the program's procedures and whose procedures have structured bodies, is finished, is exiting,
@@ -1043,7 +1050,6 @@ private theorem callRunsForever_of_wellTyped {C0 : LContext CoreLParams} {ts0 : 
     (hP : ProgramWellTyped C0 ts0 P) (ht0 : ∀ x, ts0.find? x = none)
     (hπ : ∀ (n : String) p, Program.Procedure.find? P n = some p → π n = some p)
     (hstruct : CalleesStructured P)
-    (hscoped : CalleesTyVarsScoped P)
     (hty : ConfigWellTyped P F S L cfg C' ts' tsf) (hcall : CallDoesNotFinish π cfg) :
     CallRunsForever π cfg := by
   refine CallRunsForever.coinduct π
@@ -1061,7 +1067,7 @@ private theorem callRunsForever_of_wellTyped {C0 : LContext CoreLParams} {ts0 : 
       | cmd =>
         rename_i hcmd
         obtain ⟨ss, C1, S1, tsr, hbody, hreach⟩ := call_callee_reachable hP ht0 hcmd htyArgs
-          hargs (hπ n) hstruct hscoped hgr hcallee hentry hstore
+          hargs (hπ n) hstruct hgr hcallee hentry hstore
         refine .inl ⟨n, tyArgs', callArgs', md, ρ, p, σAO, ss, hcallee, hentry, hbody, ?_, rfl⟩
         intro evs cfg' hstar
         rcases hreach evs cfg' hstar with rfl | hty'
@@ -1095,17 +1101,15 @@ private theorem callRunsForever_of_wellTyped {C0 : LContext CoreLParams} {ts0 : 
     * The procedure table contains the program's procedures.
     * The program's procedures have structured bodies (`CalleesStructured`), since a
       control-flow-graph body carries no typing.
-    * The program has no undeclared type variables (`CalleesTyVarsScoped`): every type variable
-      in a body's local declarations and call type arguments is a type parameter of its
-      procedure. Otherwise progress fails: a body that declares a local at another type
-      variable blocks at that declaration. -/
+    A well-typed program also guarantees that every type variable in a body's local declarations
+    and call type arguments is a type parameter of its procedure
+    (`ProgramWellTyped.calleesTyVarsScoped`). -/
 theorem coreStep_progress_forever {C0 : LContext CoreLParams} {ts0 : TypeScopes} {P : Program}
     {π : String → Option Procedure} {F : Expression.Factory} {S : Subst} {L : List String}
     {cfg : CoreConfig} {C' : LContext CoreLParams} {ts' tsf : TypeScopes}
     (hP : ProgramWellTyped C0 ts0 P) (ht0 : ∀ x, ts0.find? x = none)
     (hπ : ∀ (n : String) p, Program.Procedure.find? P n = some p → π n = some p)
     (hstruct : CalleesStructured P)
-    (hscoped : CalleesTyVarsScoped P)
     (hty : ConfigWellTyped P F S L cfg C' ts' tsf) :
     (∃ ρ, cfg = .terminal ρ) ∨ (∃ l ρ, cfg = .exiting l ρ) ∨
       (∃ evs cfg', CoreStepE π cfg evs cfg') ∨ CallRunsForever π cfg := by
@@ -1114,7 +1118,7 @@ theorem coreStep_progress_forever {C0 : LContext CoreLParams} {ts0 : TypeScopes}
   · exact .inr (.inl hexit)
   · exact .inr (.inr (.inl hstep))
   · exact .inr (.inr (.inr
-      (callRunsForever_of_wellTyped hP ht0 hπ hstruct hscoped hty hcall)))
+      (callRunsForever_of_wellTyped hP ht0 hπ hstruct hty hcall)))
 
 /-- The start of a structured procedure body, a block labeled `""` around the body, steps. -/
 private theorem start_steps {π : String → Option Procedure} {ss : List Statement}
@@ -1160,9 +1164,9 @@ private theorem reachable_progress {π : String → Option Procedure} {ss : List
     replaced by `tys`. Every configuration reached is terminal, steps, or runs next a call whose
     callee runs on without finishing. As `coreStep_progress_forever` does, and for the reasons
     given there, it assumes empty ambient scopes, a procedure table that contains the
-    program's procedures, structured bodies, and no undeclared type variables
-    (`CalleesTyVarsScoped`). It also assumes that the type arguments are ground, since no value
-    has a type with a type variable.
+    program's procedures, and structured bodies.
+    It also assumes that the type arguments are ground, since no value has a type with a type
+    variable.
     A procedure without type parameters is its own instance at `tys = []`. -/
 theorem reachable_configs_progress_forever {C0 : LContext CoreLParams} {ts0 : TypeScopes}
     {P : Program} {proc : Procedure} {md : MetaData Expression} {ss : List Statement}
@@ -1172,7 +1176,7 @@ theorem reachable_configs_progress_forever {C0 : LContext CoreLParams} {ts0 : Ty
     (hmem : Decl.proc proc md ∈ P.decls)
     (hbody : proc.body = .structured ss)
     (hπ : ∀ (n : String) p, Program.Procedure.find? P n = some p → π n = some p)
-    (hstruct : CalleesStructured P) (hscoped : CalleesTyVarsScoped P)
+    (hstruct : CalleesStructured P)
     (htys : ∀ ty ∈ tys, LTy.GroundMono ty) (hinst : proc.instantiateTypes tys = some inst)
     (hbodyI : inst.body = .structured ssI)
     (hρ : StoreHasTyping ρ.factory ρ.store (procBodyScopes ts0 inst).find?)
@@ -1212,10 +1216,10 @@ theorem reachable_configs_progress_forever {C0 : LContext CoreLParams} {ts0 : Ty
   | structured _ C2 ts2 hss =>
     have hground : Statements.Ground ssI := by
       rw [hmap]
-      exact body_ground hscoped hfindP hbody hss hS1ground
+      exact body_ground hP hfindP hbody hss hS1ground
     have hreach := reachable_configs_wellTyped_of_typed (π := π) S1 hss hmap hground hρR hfreshR
     exact reachable_progress hreach
-      (fun _ hty => coreStep_progress_forever hP ht0 hπ hstruct hscoped hty)
+      (fun _ hty => coreStep_progress_forever hP ht0 hπ hstruct hty)
       (fun _ _ hty => hty.not_exiting_nil)
 
 end -- public section
