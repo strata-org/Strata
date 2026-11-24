@@ -114,11 +114,10 @@ theorem frame_factory (params : InitEnvWFParams)
     (hR : ∀ ρ ρ', ρ.factory = ρ'.factory → R ρ → R ρ')
     (h : Triple π params Pre ss Post (factory := factory)) :
     Triple π params (fun ρ => Pre ρ ∧ R ρ) ss (fun ρ => Post ρ ∧ R ρ) (factory := factory) := by
-  intro ρ₀ ρ' tr hpre hinit hrun
-  obtain ⟨hvalid, hpost⟩ := h ρ₀ ρ' tr hpre.1 hinit hrun
-  have hfac : ρ₀.factory = ρ'.factory := by
-    rcases hrun with hrun | ⟨_, hrun⟩ <;> exact Imperative.starE_preserves_factory hrun
-  exact ⟨hvalid, fun hreach => ⟨hpost hreach, hR ρ₀ ρ' hfac hpre.2⟩⟩
+  intro ρ₀ hpre hinit
+  obtain ⟨hprefix, hpost⟩ := h ρ₀ hpre.1 hinit
+  refine ⟨hprefix, fun ρ' tr hrun hreach => ⟨hpost ρ' tr hrun hreach, hR ρ₀ ρ' ?_ hpre.2⟩⟩
+  rcases hrun with hrun | ⟨_, hrun⟩ <;> exact Imperative.starE_preserves_factory hrun
 
 /-! ## Rules for a single command -/
 
