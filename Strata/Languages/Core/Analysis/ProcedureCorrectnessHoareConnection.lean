@@ -135,12 +135,11 @@ theorem assertsValid_of_contractTriple {params : InitEnvWFParams} {entryProcName
   have hblock : (Core.Logic.EventLang.coreBlock p.findProcByString?).traceStar
       ((Core.Logic.EventLang.coreBlock p.findProcByString?).stmtCfg [Stmt.block "" ss #[]] ρ₀)
       trace (.seq cfg []) := by
-    have h0 : ReflTransTrace (StepStmtE Expression (EvalCommandE p.findProcByString?))
-        (.stmts [Stmt.block "" ss #[]] ρ₀) trace (.seq cfg []) := by
-      simpa using ReflTransTrace.step _ [] _ _ _
-        (.step_stmts_cons : StepStmtE Expression (EvalCommandE p.findProcByString?) _ _ _)
-        (seq_inner_starE (EvalCommandE p.findProcByString?) (ss := []) hrun)
-    exact h0
+    show ReflTransTrace (StepStmtE Expression (EvalCommandE p.findProcByString?))
+      (.stmts [Stmt.block "" ss #[]] ρ₀) trace (.seq cfg [])
+    simpa using ReflTransTrace.step _ [] _ _ _
+      (.step_stmts_cons : StepStmtE Expression (EvalCommandE p.findProcByString?) _ _ _)
+      (seq_inner_starE (EvalCommandE p.findProcByString?) (ss := []) hrun)
   exact Trace.AssertionValid.of_assertionsValid _ a
     (((triple_of_contractTriple h hproc hbody hinits) ρ₀ hentry.contractPre
       (hentry.1.structuredBodyWF ss _ hbody)).1 _ trace hblock)

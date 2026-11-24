@@ -1072,21 +1072,6 @@ in `StmtProps` proves it sound. -/
 
 end
 
-mutual
-/-- Every loop in `s`, at any nesting depth, has a body whose `exit`s are caught by blocks of
-    the body (`Block.exitsCoveredByBlocks []`): no iteration leaves its loop by an `exit`. -/
-@[expose] def Stmt.loopExitsLocal : Stmt P CmdT → Prop
-  | .loop _ _ _ body _ => Block.exitsCoveredByBlocks [] body ∧ Block.loopExitsLocal body
-  | .block _ ss _ => Block.loopExitsLocal ss
-  | .ite _ tss ess _ => Block.loopExitsLocal tss ∧ Block.loopExitsLocal ess
-  | .cmd _ | .exit _ _ | .typeDecl _ _ => True
-
-/-- Every loop in `ss`, at any nesting depth, has a body whose `exit`s are caught by blocks of
-    the body (`Stmt.loopExitsLocal`). -/
-@[expose] def Block.loopExitsLocal : List (Stmt P CmdT) → Prop
-  | [] => True
-  | s :: ss => Stmt.loopExitsLocal s ∧ Block.loopExitsLocal ss
-end
 ---------------------------------------------------------------------
 
 

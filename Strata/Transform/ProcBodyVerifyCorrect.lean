@@ -10,9 +10,11 @@ public import Strata.Transform.CoreSpecificationProps
 public import Strata.Languages.Core.Analysis.ProcedureCorrectnessProps
 import Std.Tactic.BVDecide.Normalize.Prop
 import Strata.Languages.Core.ProcedureWF
+import Strata.Languages.Core.InstWellFormedSemanticsEval
 import Strata.Languages.Core.IdentifiersProps
 import Strata.Languages.Core.StatementSemanticsProps
 import Strata.DL.Imperative.Logic.TraceInterpProps
+import Strata.DL.Imperative.Logic.TraceRelationsProps
 import all Strata.Util.ListMap
 
 public section
@@ -234,6 +236,12 @@ private theorem prefixInitEnv_noninit_list (stmts : List Statement)
     have hrest := ih (fun s' hs' => h s' (List.mem_cons_of_mem s hs'))
     simp [prefixInitEnv, hs, hrest]
 
+/-- The assumed preconditions, as Core statements. -/
+private theorem assumes_eq (cs : ListMap CoreLabel Procedure.Check) :
+    ((Check.assumes cs).map Stmt.cmd : List Statement) =
+      cs.toList.map fun (label, check) => Statement.assume label check.expr check.md := by
+  simp only [Check.assumes, List.map_map]; rfl
+
 /-- PrefixStepsOK for a list of assume statements, given preconditions hold. -/
 private theorem PrefixStepsOK_assumes
     (π : String → Option Procedure)
@@ -242,7 +250,8 @@ private theorem PrefixStepsOK_assumes
     (h_preconds : ∀ (label : CoreLabel) (check : Procedure.Check),
       (label, check) ∈ preconds.toList →
       Expression.eval ρ.factory ρ.store check.expr = some (HasBool.ttVal ρ.factory)) :
-    PrefixStepsOK π (requiresToAssumes preconds) ρ := by
+    PrefixStepsOK π ((Check.assumes preconds).map Stmt.cmd : List Statement) ρ := by
+  rw [assumes_eq]
   suffices h : ∀ (items : List (CoreLabel × Procedure.Check)),
       (∀ (label : CoreLabel) (check : Procedure.Check),
         (label, check) ∈ items → Expression.eval ρ.factory ρ.store check.expr = some
@@ -490,7 +499,7 @@ theorem procToVerifyStmt_structure
       proc.body = .structured ss opq ∧
       verifyStmt = Stmt.block s!"verify_{proc.header.name.name}"
         (prefixStmts ++ [Stmt.block s!"body_{proc.header.name.name}" ss #[]] ++
-          ensuresToAsserts proc.spec.postconditions) #[] ∧
+          (Check.asserts proc.spec.postconditions).map Stmt.cmd) #[] ∧
       (∀ s ∈ prefixStmts, ∃ c, s = Stmt.cmd c) ∧
       (∀ params ρ₀, Core.Specification.ProcEnvWF params proc ρ₀ →
         ∃ ρ_init tP,
@@ -511,7 +520,7 @@ theorem procToVerifyStmt_structure
   let oldInoutInits := proc.header.getInoutParams.toList.map fun (id, ty) =>
     Statement.init (CoreIdent.mkOld id.name) (Lambda.LTy.forAll [] ty)
       (.det (LExpr.fvar (ExprSourceLoc.synthesized "transform") id none)) #[]
-  let assumes := requiresToAssumes proc.spec.preconditions
+  let assumes : List Statement := (Check.assumes proc.spec.preconditions).map Stmt.cmd
   let prefixStmts := inputInits ++ outputOnlyInits ++ oldInoutInits ++ assumes
   rw [h_body_eq]
   refine ⟨prefixStmts, ss, _, rfl, ?_, ?_, ?_⟩
@@ -531,7 +540,7 @@ theorem procToVerifyStmt_structure
       simp only [oldInoutInits, List.mem_map] at hs
       obtain ⟨⟨id, ty⟩, _, rfl⟩ := hs; exact ⟨_, rfl⟩
     · -- assumes
-      simp only [assumes, requiresToAssumes, List.mem_map] at hs
+      simp only [assumes, assumes_eq, List.mem_map] at hs
       obtain ⟨⟨label, check⟩, _, rfl⟩ := hs; exact ⟨_, rfl⟩
   · intro _ ρ₀ h_wf
     -- Derive the typed-store witnesses directly from `ProcEnvWF`.
@@ -558,7 +567,7 @@ theorem procToVerifyStmt_structure
     have h_assumes_id : prefixInitEnv assumes ρ₀ = ρ₀ := by
       apply prefixInitEnv_noninit_list
       intro s hs
-      simp only [assumes, requiresToAssumes, List.mem_map] at hs
+      simp only [assumes, assumes_eq, List.mem_map] at hs
       obtain ⟨⟨l, c⟩, _, rfl⟩ := hs; simp [stmtInitVar]
     refine ⟨PrefixStepsOK_assumes π proc.spec.preconditions ρ₀
       h_wf.preconditionsHold, ?_⟩
@@ -654,36 +663,38 @@ theorem procToVerifyStmt_structure
 
 /-! ## Correctness on event traces -/
 
-/-- Running the postcondition asserts emits the non-free postconditions as
-    assertion events observed in the current environment. -/
-private theorem ensuresToAsserts_runE
+/-- Running the postcondition checks emits the non-free postconditions as assertion events
+    observed in the current environment, with a true assumption inserted for each free one. -/
+private theorem postconditionChecks_runE
     (π : String → Option Procedure)
     (ρ : Env Expression) :
-    ∀ (cs : ListMap CoreLabel Procedure.Check),
-      CoreStepStarE π (.stmts (ensuresToAsserts cs) ρ)
-        (defaultAssertEvents ρ.factory ρ.store cs) (.stmts [] ρ)
-  | [] => by
-    simp only [ensuresToAsserts, defaultAssertEvents, Imperative.Calls.defaultAssertEvents,
-      ListMap.toList, List.filterMap_nil]
-    exact .refl _
+    ∀ (cs : ListMap CoreLabel Procedure.Check), ∃ t,
+      CoreStepStarE π (.stmts ((Check.asserts cs).map Stmt.cmd : List Statement) ρ) t
+        (.stmts [] ρ) ∧
+      Trace.InsertsTrueAssumes (fun _ => True) (defaultAssertEvents ρ.factory ρ.store cs) t
+  | [] => ⟨[], .refl _, by
+    simp only [defaultAssertEvents, Imperative.Calls.defaultAssertEvents, ListMap.toList,
+      List.filterMap_nil]
+    exact .nil⟩
   | (label, check) :: rest => by
-    have ih := ensuresToAsserts_runE π ρ rest
-    cases hattr : check.attr with
+    obtain ⟨t, hrun, hins⟩ := postconditionChecks_runE π ρ rest
+    -- The command a check becomes runs in one step and emits one event.
+    have hcmd : ∀ (c : Cmd Expression) e, EvalCmdE Expression ρ.factory ρ.store c ρ.store [e] →
+        CoreStepStarE π (.stmts (Stmt.cmd (CmdExt.cmd c) ::
+          ((Check.asserts rest).map Stmt.cmd : List Statement)) ρ) (e :: t)
+          (.stmts [] ρ) := by
+      intro c e hc
+      have hstep : CoreStepStarE π (.stmt (Stmt.cmd (CmdExt.cmd c)) ρ) [e] (.terminal ρ) := by
+        have h1 : CoreStepE π (.stmt (.cmd (.cmd c)) ρ) [e]
+            (.terminal { ρ with store := ρ.store }) := .step_cmd (.cmd_sem hc)
+        simpa using ReflTransTrace.step _ _ _ _ _ h1 (ReflTransTrace.refl _)
+      simpa using ReflTransTrace.trans _ (Imperative.stmts_cons_stepE _ _ _ ρ ρ hstep) hrun
+    obtain ⟨expr, attr, md⟩ := check
+    cases attr with
     | Free =>
-      simpa [ensuresToAsserts, defaultAssertEvents, Imperative.Calls.defaultAssertEvents,
-        ListMap.toList, hattr] using ih
-    | Default =>
-      have hassert : CoreStepStarE π (.stmt (Statement.assert label check.expr check.md) ρ)
-          [Event.assert ⟨ρ.factory, ρ.store, label, check.expr, check.md⟩] (.terminal ρ) := by
-        have hstep : CoreStepE π (.stmt (.cmd (.cmd (.assert label check.expr check.md))) ρ)
-            [Event.assert ⟨ρ.factory, ρ.store, label, check.expr, check.md⟩]
-            (.terminal { ρ with store := ρ.store }) :=
-          .step_cmd (.cmd_sem .eval_assert)
-        simpa using ReflTransTrace.step _ _ _ _ _ hstep (ReflTransTrace.refl _)
-      have := ReflTransTrace.trans _
-        (Imperative.stmts_cons_stepE _ _ _ ρ ρ hassert) ih
-      simpa [ensuresToAsserts, defaultAssertEvents, Imperative.Calls.defaultAssertEvents,
-        ListMap.toList, hattr] using this
+      exact ⟨_, hcmd _ _ .eval_assume, .assume trivial
+        ((Core.coreEvaluator_WellFormedSemanticEvalVal ρ.factory).eval_tt ρ.store) hins⟩
+    | Default => exact ⟨_, hcmd _ _ .eval_assert, .keep hins⟩
 
 /-- If every event trace of the verification statement produced by
     `procToVerifyStmt` is assertion-valid under `I`, then the procedure is
@@ -719,7 +730,7 @@ theorem procBodyVerify_procedureCorrectOnTraces
     procToVerifyStmt_structure proc p st st' verifyStmt h_transform π h_wf_proc
   let vL := s!"verify_{proc.header.name.name}"
   let bL := s!"body_{proc.header.name.name}"
-  let posts := ensuresToAsserts proc.spec.postconditions
+  let posts : List Statement := (Check.asserts proc.spec.postconditions).map Stmt.cmd
   -- The verification statement reaches the start of the body, and every
   -- assumption it emits on the way holds.
   have h_start : ∀ ρ₀, Specification.ProcEnvWF params proc ρ₀ → ∃ (ρ_i : Env Expression) (tP : Trace Expression),
@@ -809,6 +820,9 @@ theorem procBodyVerify_procedureCorrectOnTraces
           (h_wf_proc.bodyExitsCovered ss' _ hb') ρ₀ lbl ρ_inner)
     subst hρ'
     obtain ⟨ρ_i, tP, hs, hheld⟩ := h_start ρ₀ hwf
+    obtain ⟨tPost, hpost, hins⟩ := postconditionChecks_runE π
+      { store := projectStore ρ₀.store ρ_inner.store, factory := ρ_inner.factory }
+      proc'.spec.postconditions
     have hfull := ReflTransTrace.trans _ hs
       (ReflTransTrace.trans _
         (Imperative.block_inner_starE (Imperative.seq_inner_starE _
@@ -818,10 +832,14 @@ theorem procBodyVerify_procedureCorrectOnTraces
             (adminRunE .step_block_done)))
           (ReflTransTrace.trans _
             (Imperative.block_inner_starE (adminRunE .step_seq_done))
-            (Imperative.block_inner_starE (ensuresToAsserts_runE π _
-              proc'.spec.postconditions)))))
+            (Imperative.block_inner_starE hpost))))
     simp only [List.nil_append] at hfull
-    have hv := h_correct ρ_i _ _ trivial hfull
-    exact Trace.AssertionsValid.suffix _ tP _ hheld hv
+    -- The free postconditions emit assumptions of `true`, which hold in every world.
+    have hv := Trace.InsertsTrueAssumes.assertionsValid_reflect
+      (fun c _ he w => h_assume c he w)
+      ((Trace.InsertsTrueAssumes.refl (tP ++ tr)).append hins) (by
+        simpa [List.append_assoc] using h_correct ρ_i _ _ trivial hfull)
+    exact Trace.AssertionsValid.suffix _ tP _ hheld
+      (by simpa [List.append_assoc, Specification.postconditionEvents] using hv)
 
 end ProcBodyVerifyCorrect

@@ -734,10 +734,9 @@ satisfiability follows the same existential trace pattern.
 
 {docstring Imperative.Specification.AssertSatisfiableOnTraces}
 
-The event Hoare triple validates every completed trace and gates its
-postcondition on joint satisfiability of that trace's assumptions.  Trace
-validity above quantifies over every finite prefix, so the two notions are
-separate unless an additional progress or trace-extension result relates them.
+With the trivial postcondition, the event Hoare triple is `AllAssertsValidOnTracesWhen` over
+the entries its precondition and gate admit
+(`Strata.Logic.Hoare.TripleWith.true_iff_allAssertsValidOnTracesWhen`).
 
 ### Soundness and Completeness of Analysis
 

@@ -8,6 +8,7 @@ module
 public import Strata.DL.Imperative.Store
 import all Strata.DL.Imperative.Store
 import all Strata.Util.ListUtilsProps
+public import Strata.DL.Util.StringGenProps
 
 ---------------------------------------------------------------------
 

@@ -68,7 +68,8 @@ theorem annotates_of {Γ : VarTyping Expression} {occs : List (Expression.Ident 
     types of its parameters, the premise `htyp` of `wpLoopFree_runsOverapproximate`. -/
 theorem inc_wellTyped :
     Statements.WellTyped (fun x => Tys.get? inc.paramTys x) (inc.contractWrapped incBody) := by
-  simp only [inc, incBody, Procedure.contractWrapped, List.map, Statements.WellTyped,
+  simp only [inc, incBody, Procedure.contractWrapped, Check.assumes, Check.asserts, ListMap.toList,
+    List.map, Statements.WellTyped,
     Block.WellTyped, Block.ExprsTyped, Block.fvarTypesWellAnnotated, Stmt.fvarTypesWellAnnotated,
     HasPassiveCmds.assume, HasPassiveCmds.assert, List.cons_append, List.nil_append]
   refine ⟨⟨⟨⟨⟩, ⟨_, by decide, typed rfl (by decide) rfl⟩, ⟨⟩, ⟨⟩⟩,

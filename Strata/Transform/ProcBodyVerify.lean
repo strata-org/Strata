@@ -22,7 +22,8 @@ The transformation:
    translator turns `old(x)` into the variable `old x`)
 3. Converts preconditions to `assume` statements
 4. Wraps the body in a labeled block
-5. Converts postconditions to `assert` statements
+5. Converts postconditions to `assert` statements; a free postcondition becomes
+   `assume true` (`Imperative.Check.asserts`)
 
 Example:
 ```
@@ -52,18 +53,6 @@ namespace Core.ProcBodyVerify
 
 open Core Imperative Transform
 
-/-- Convert preconditions to assume statements -/
-@[expose] def requiresToAssumes (preconditions : ListMap CoreLabel Procedure.Check) : List Statement :=
-  preconditions.toList.map fun (label, check) =>
-    Statement.assume label check.expr check.md
-
-/-- Convert postconditions to assert statements -/
-@[expose] def ensuresToAsserts (postconditions : ListMap CoreLabel Procedure.Check) : List Statement :=
-  postconditions.toList.filterMap fun (label, check) =>
-    match check.attr with
-    | .Free => none
-    | .Default => some (Statement.assert label check.expr check.md)
-
 /-- An unconstrained declaration of each input parameter (in-out ones included)
     and each output-only parameter. -/
 @[expose] def paramInits (header : Procedure.Header) : List Statement :=
@@ -84,7 +73,7 @@ open Core Imperative Transform
   let verifyLabel := s!"verify_{procName}"
 
   -- Convert preconditions to assumes
-  let assumes := requiresToAssumes proc.spec.preconditions
+  let assumes := (Check.assumes proc.spec.preconditions).map (Stmt.cmd (P := Expression))
 
   -- ProcBodyVerify expects a structured body: the prefix (inits + assumes) and
   -- suffix (postcondition asserts) are statement-level constructs that embed
@@ -94,7 +83,7 @@ open Core Imperative Transform
   let bodyBlock := Stmt.block bodyLabel bodyStmts #[]
 
   -- Convert postconditions to asserts
-  let asserts := ensuresToAsserts proc.spec.postconditions
+  let asserts := (Check.asserts proc.spec.postconditions).map (Stmt.cmd (P := Expression))
 
   -- Combine all parts
   let allStmts := paramInits proc.header ++ oldInits proc.header ++

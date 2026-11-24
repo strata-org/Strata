@@ -225,3 +225,21 @@ build or read a copy's name. -/
 end
 
 end Core.NameMangling
+
+/-! ## Sanitizing a name for a generated one
+
+`Core.FreshPlainName.sanitize` replaces each character of `Core.NameMangling.monoDelim` (`#`) by
+`_`, so a name generated from a label goes through `sanitize`: a `#` the user wrote is renamed
+away in the generated name rather than rejected. -/
+
+namespace Core.FreshPlainName
+
+public section
+
+/-- `n` with each character of `NameMangling.monoDelim` replaced by `_`. -/
+@[expose] def sanitize (n : String) : String :=
+  n.map fun c => if c ∈ NameMangling.monoDelim.toList then '_' else c
+
+end
+
+end Core.FreshPlainName

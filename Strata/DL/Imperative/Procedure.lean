@@ -299,25 +299,33 @@ instance [HasFvars P] [HasVarsImp P C] [ProcedureHeader P Hdr] :
   modifiedVars p := ProcedureHeader.outputParams p.header
   readVars := Procedure.getVars
 
-/-- The statement list that checks `body` against the contract of `p`: an `assume` of each
-    precondition, then `body`, then an `assert` of each postcondition. A free postcondition is
-    not checked: it becomes `assume true`, its label and expression kept in the metadata, with
-    the message `FreePostCondition`. -/
-@[expose] def Procedure.contractWrapped [HasBool P] [HasPassiveCmds P C] (p : Procedure P C Hdr)
-    (body : List (Stmt P C)) : List (Stmt P C) :=
-  let pre := p.spec.preconditions.map fun (label, check) =>
-    Stmt.cmd (HasPassiveCmds.assume label check.expr check.md)
-  let post := p.spec.postconditions.map fun (label, check) =>
+/-- An `assume` of each clause of `checks`, free or not. -/
+@[expose] def Check.assumes {P : PureExpr} {C : Type} [HasPassiveCmds P C]
+    (checks : ListMap String (Check P)) : List C :=
+  checks.toList.map fun (label, check) => HasPassiveCmds.assume label check.expr check.md
+
+/-- An `assert` of each clause of `checks`. A free clause is not checked: it becomes
+    `assume true`, its label and expression kept in the metadata, with the message
+    `FreePostCondition`. -/
+@[expose] def Check.asserts {P : PureExpr} {C : Type} [HasBool P] [HasPassiveCmds P C]
+    (checks : ListMap String (Check P)) : List C :=
+  checks.toList.map fun (label, check) =>
     match check.attr with
     | .Free =>
       -- TODO: Perhaps introduce an "opaque" expression construct that hides the expression from
       -- the evaluator, allowing us to retain the postcondition body instead of replacing it
       -- with "true".
-      Stmt.cmd (HasPassiveCmds.assume label HasBool.tt
+      HasPassiveCmds.assume label HasBool.tt
         ((MetaData.pushElem (MetaData.pushElem #[] (.label label) (.expr check.expr))
-          (.label label) (.msg "FreePostCondition"))))
-    | _ => Stmt.cmd (HasPassiveCmds.assert label check.expr check.md)
-  pre ++ body ++ post
+          (.label label) (.msg "FreePostCondition")))
+    | .Default => HasPassiveCmds.assert label check.expr check.md
+
+/-- The statement list that checks `body` against the contract of `p`: an `assume` of each
+    precondition, then `body`, then an `assert` of each postcondition (`Check.asserts`). -/
+@[expose] def Procedure.contractWrapped [HasBool P] [HasPassiveCmds P C] (p : Procedure P C Hdr)
+    (body : List (Stmt P C)) : List (Stmt P C) :=
+  (Check.assumes p.spec.preconditions).map Stmt.cmd ++ body ++
+    (Check.asserts p.spec.postconditions).map Stmt.cmd
 
 end
 

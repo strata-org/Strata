@@ -16,6 +16,8 @@ import Strata.DL.SMT
 import Strata.DL.Lambda
 import Strata.DL.Imperative
 import Strata.DL.Str
+import Strata.DL.Util.StringGenProps
+import Strata.Languages.Core.NameManglingProps
 
 /- Utilities -/
 import Strata.Util.NameProofs
@@ -65,7 +67,6 @@ import Strata.Languages.Core.NameSetsProps
 import Strata.Transform.CoreTransformProps
 import Strata.Transform.DetToKleeneCorrect
 import Strata.Transform.FunctionInlining
-import Strata.Transform.FreshPlainNameSanitizeProps
 import Strata.Transform.FunctionInliningProps
 import Strata.Transform.UnrollBoundedQuantifiersProps
 import Strata.Transform.LoopInitHoist

@@ -30,7 +30,8 @@ public section
 theorem contractWrapped_emptySpec (p : Procedure) (body : Statements)
     (hpre : p.spec.preconditions = []) (hpost : p.spec.postconditions = []) :
     p.contractWrapped body = body := by
-  simp [Imperative.Procedure.contractWrapped, hpre, hpost]
+  simp [Imperative.Procedure.contractWrapped, Imperative.Check.assumes, Imperative.Check.asserts,
+    ListMap.toList, hpre, hpost]
 
 /-- **What `checkLoopFree` checks.**  A loop-free list `ss` that passes `checkLoopFree p` reads
     only variables of `p.entryScope`, is well scoped from `p.entryScope` with its assigned

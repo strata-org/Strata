@@ -98,15 +98,16 @@ def bracketCfgSpec (cfg : Imperative.DetCFG Core.Expression Command)
       | none => blocks }
 
 /-- The `assume`s of a procedure's preconditions (checked or free), as
-    `ProcBodyVerify` makes them. -/
+    `ProcBodyVerify` makes them (`Imperative.Check.assumes`). -/
 def requiresAssumes (spec : Procedure.Spec) : List Command :=
-  Statements.commands (ProcBodyVerify.requiresToAssumes spec.preconditions)
+  Imperative.Check.assumes spec.preconditions
 
 /-- An `assert` of each checked `ensures`, under its own label, as
-    `ProcBodyVerify` makes them. A free `ensures` is not checked, and not
-    assumed either: the body does not establish it. -/
+    `ProcBodyVerify` makes them (`Imperative.Check.asserts`). A free `ensures` is
+    not checked, and not assumed either: the body does not establish it. It is left
+    out rather than turned into `assume true`, so the VCs do not change. -/
 def ensuresCmds (spec : Procedure.Spec) : List Command :=
-  Statements.commands (ProcBodyVerify.ensuresToAsserts spec.postconditions)
+  Imperative.Check.asserts (spec.postconditions.toList.filter (·.2.attr = .Default))
 
 /-- An unconstrained, typed declaration of each input and output parameter
     (`ProcBodyVerify.paramInits`). The type is what passification gives every

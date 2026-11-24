@@ -8,7 +8,7 @@ module
 public import Strata.Languages.Core.NameMangling
 import all Strata.Languages.Core.NameMangling
 
-/-! # Properties of copy-name mangling
+/-! # Properties of name mangling
 
 - `escName_inj`, `decName_escName`: escaping a name is injective, and decoding undoes it.
 - `mangleTyArgs_inj`: mangling a nonempty list of types is injective.
@@ -17,6 +17,9 @@ import all Strata.Languages.Core.NameMangling
   instantiation; `copyName_ne_of_mem`: no avoided name is a copy's name.
 - `demangleFuncName_copyName`, `demangleFuncName_of_not_prefix`: a copy's name reads back as
   its base and instantiation, and a name off the prefix is not read as a copy.
+- `Core.FreshPlainName.sanitize_noHash`: the result of `sanitize` has no `#`. The base of a name
+  generated through it is therefore `#`-free; that the emitted name, the base with a freshness
+  suffix, has no `#` is checked by tests, not proved here.
 -/
 
 namespace Core.NameMangling
@@ -590,3 +593,19 @@ theorem copyName_ne_of_mem {N : List String} {n f : String} {ts : List Lambda.LM
 end
 
 end Core.NameMangling
+
+namespace Core.FreshPlainName
+
+public section
+
+/-- **`sanitize` leaves no `#`.** -/
+theorem sanitize_noHash (n : String) : '#' ∉ (sanitize n).toList := by
+  have hd : NameMangling.monoDelim.toList = ['#'] := by decide
+  simp only [sanitize, hd, List.mem_singleton, String.toList_map, List.mem_map, not_exists,
+    not_and]
+  intro c _ h
+  by_cases hc : c = '#' <;> simp_all
+
+end
+
+end Core.FreshPlainName

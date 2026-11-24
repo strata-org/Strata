@@ -774,7 +774,8 @@ private def withOpaqueBodyChecks (program : Core.Program) (entry : Core.Procedur
       body := match q.body with
         | .structured ss _ =>
           .structured (.block s!"body_{Core.CoreIdent.toPretty q.header.name}" ss #[] ::
-            Core.ProcBodyVerify.ensuresToAsserts q.spec.postconditions) false
+            (Imperative.Check.asserts (q.spec.postconditions.toList.filter
+              (·.2.attr = .Default))).map Imperative.Stmt.cmd) false
         | .cfg g _ => .cfg g false
         | .abstract => .abstract } #[]
   -- Each check runs in its own parameterless procedure, so that inlining it into `main` gives

@@ -66,9 +66,11 @@ Key theorem families:
   `append`) and carries assumption satisfaction forward under
   `ConditionInterp.TrueStutterHolds` (`assumptionsHold`).  So is its composition with
   `Trace.MayDropEvents`, a `List.Sublist` (`Trace.mayDropEvents_insertsTrueAssumes_*`;
-  `drop_left` drops a prefix of the source).  `Trace.PreservesLastEvent` composes on the
-  left (`append_left`), and a relation preserving the last event followed by extra events
-  reflects last assertions (`Trace.PreservesLastEvent.reflectsLastAssertion`).
+  `drop_left` drops a prefix of the source).  Under the same hypothesis,
+  `Trace.InsertsTrueAssumes` reflects assertion validity (`assertionsValid_reflect`).
+  `Trace.PreservesLastEvent` composes on the left (`append_left`), and a relation preserving
+  the last event followed by extra events reflects last assertions
+  (`Trace.PreservesLastEvent.reflectsLastAssertion`).
 * **`Trace.InsertsAsserts`** and **`Trace.InsertsCheckedAssumes`** hold under a larger set of
   allowed factories (`mono_allowed`), and, under an interpretation for which conditions with the
   same value hold alike (and, for the second, true conditions hold), reflect assertion validity
@@ -963,6 +965,40 @@ theorem Trace.InsertsTrueAssumes.assumptionsHold {I : ConditionInterp P}
     · cases hc
       exact htrue a hf he w
     · exact ih hA c hc
+
+/-- Assertion validity reflects from `t'`, which is `t` with true assumptions inserted, to `t`
+    (with `A` before `t` and `A'` before `t'`), when the assumptions `A` give `A'` and every
+    operationally true condition under an allowed factory holds in every world. -/
+private theorem Trace.InsertsTrueAssumes.assertionsValidFromP {I : ConditionInterp P}
+    {sel : EventArg P → Prop} (htrue : I.TrueStutterHolds allowed) {t t' : Trace P}
+    (h : Trace.InsertsTrueAssumes allowed t t') :
+    ∀ {A A' : Trace P}, (∀ w, Trace.AssumptionsHold P I w A → Trace.AssumptionsHold P I w A') →
+      Trace.AssertionsValidFromP P I sel A' t' → Trace.AssertionsValidFromP P I sel A t := by
+  induction h with
+  | nil => intro _ _ _ _; trivial
+  | @keep e _ _ _ ih =>
+    intro A A' hA hv
+    cases e with
+    | assert c => exact ⟨fun hk w hw => hv.1 hk w (hA w hw), ih hA hv.2⟩
+    | assume c =>
+      refine ih (fun w hw => ?_) hv
+      rw [Trace.AssumptionsHold_append_assume] at hw ⊢
+      exact ⟨hA w hw.1, hw.2⟩
+    | cover _ => exact ih hA hv
+  | @assume a _ _ hf he _ ih =>
+    intro A A' hA hv
+    refine ih (fun w hw => ?_) hv
+    rw [Trace.AssumptionsHold_append_assume]
+    exact ⟨hA w hw, htrue a hf he w⟩
+
+/-- Assertion validity reflects from a trace with true assumptions inserted to the trace
+    without them, when every operationally true condition under an allowed factory holds in
+    every world. -/
+theorem Trace.InsertsTrueAssumes.assertionsValid_reflect {I : ConditionInterp P}
+    (htrue : I.TrueStutterHolds allowed) {t t' : Trace P}
+    (h : Trace.InsertsTrueAssumes allowed t t') (hv : Trace.AssertionsValid P I t') :
+    Trace.AssertionsValid P I t :=
+  h.assertionsValidFromP htrue (fun _ hw => hw) hv
 
 /-- Inserting true assumptions under some allowed factories inserts them under any larger set of
     allowed factories. -/

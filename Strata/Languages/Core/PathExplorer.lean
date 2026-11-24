@@ -1167,8 +1167,9 @@ private def wrapCFG (g : Core.DetCFG) (pre post : List Command) : Core.DetCFG :=
 /-- Set up a procedure: choose a symbol prefix no name of the procedure starts with; bind every
     input and output to a fresh symbol of its declared type; bind `old x` to `x`'s entry symbol
     for in-out parameters. Then run, for a structured body, `precondition assumes ++ body ++
-    checked-postcondition asserts`, for a CFG body, the CFG with an entry block assuming
-    the preconditions and an exit block asserting the checked postconditions (`wrapCFG`). An
+    postcondition asserts`, for a CFG body, the CFG with an entry block assuming the
+    preconditions and an exit block asserting the postconditions (`wrapCFG`). A free
+    postcondition is not checked: it becomes `assume true` (`Imperative.Check.asserts`). An
     abstract procedure has no body to check against its contract, so its result is empty.
 
     Assumes what the pipeline establishes before VC generation (`symExecRequires`): no calls,
@@ -1202,12 +1203,8 @@ def exploreProc (cfg : ExploreCfg) (maxSteps runFuel : Nat) (F : Lambda.Factory 
       | some v => σ.update (CoreIdent.mkOld x.name) v
       | none => σ
     else σ) σ
-  let pre := p.spec.preconditions.toList.map fun (label, check) =>
-    Imperative.Cmd.assume label check.expr check.md
-  let post := p.spec.postconditions.toList.filterMap fun (label, check) =>
-    match check.attr with
-    | .Free => none
-    | _ => some (Imperative.Cmd.assert label check.expr check.md)
+  let pre : List (Imperative.Cmd Expression) := Imperative.Check.assumes p.spec.preconditions
+  let post : List (Imperative.Cmd Expression) := Imperative.Check.asserts p.spec.postconditions
   let env : IEnv Expression := { store := σ, factory := F }
   -- The declared types of the formals and their `old` names (`PathState.types`).
   let types : Std.TreeMap CoreIdent LMonoTy identCmp := formals.foldl (fun t (x, ty) =>
