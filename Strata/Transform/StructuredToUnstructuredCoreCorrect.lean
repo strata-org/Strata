@@ -222,45 +222,30 @@ theorem evalInterp_stableUnder :
         (P := Expression)) :=
   Imperative.BigStep.evalInterp_stableUnder
 
-/-- Assertion validity for a successfully lowered Core CFG reflects to its
-structured source when condition truth is stable under structured-lowering
-event matching. `evalInterp_stableUnder` supplies this for `evalInterp`. -/
+/-- `Core.stmtsToCFG` preserves assertion validity, from the lowered CFG at `base` to its
+structured source at `base` with the generated-label prefixes reserved, under the lowering's
+shape conditions, when condition truth is stable under structured-lowering event matching.
+`evalInterp_stableUnder` supplies this for `evalInterp`. -/
 theorem assertValid (base : InitEnvWFParams)
-    {ss : Statements} {out : CFG String (DetBlock String Command Expression)}
-    (htransform : Core.stmtsToCFG ss = some out)
-    (hpre :
-      Statements.noCalls ss = Bool.true
-      ∧ Block.noNondetGuards ss = Bool.true
-      ∧ Block.uniqueInits (C := Command) ss
-      ∧ Block.loopBodyNoInits (C := Command) ss = Bool.true
-      ∧ Block.loopHasNoInvariants ss = Bool.true
-      ∧ Block.noMeasureLoops ss = Bool.true
-      ∧ Block.exitsCoveredByBlocks (CmdT := Command) [] ss
-      ∧ Block.userLabelsShapeNodup (C := Command) ss)
     {I : ConditionInterp Expression}
     (hstable : I.StableUnder
-      (EventArg.WithWF (P := Expression) (EventArg.ExtendsEnv (fun _ => True))))
-    {aid : AssertId Expression}
-    (hvalid : AssertValidOnTracesWhen (EventLang.coreCFG π) I
-      (Core.Logic.CFGInitEnvWF base out) out aid) :
-    AssertValidOnTracesWhen (EventLang.coreBlock π) I
-      (Core.Logic.BlockInitEnvWF (base.extend prefixesReserved) ss) ss aid :=
-  overapproximatesTracesUptoWhen_assertValid I _ _
-    (EventLang.coreBlock π) (EventLang.coreCFG π)
-    Core.stmtsToCFG
-    (fun block =>
-      Statements.noCalls block = Bool.true
-      ∧ Block.noNondetGuards block = Bool.true
-      ∧ Block.uniqueInits (C := Command) block
-      ∧ Block.loopBodyNoInits (C := Command) block = Bool.true
-      ∧ Block.loopHasNoInvariants block = Bool.true
-      ∧ Block.noMeasureLoops block = Bool.true
-      ∧ Block.exitsCoveredByBlocks (CmdT := Command) [] block
-      ∧ Block.userLabelsShapeNodup (C := Command) block)
-    (base.extend prefixesReserved) (base)
+      (EventArg.WithWF (P := Expression) (EventArg.ExtendsEnv (fun _ => True)))) :
+    AssertValidityPreservedWhen I (EventLang.coreBlock π) (EventLang.coreCFG π)
+      Core.stmtsToCFG
+      (fun block =>
+        Statements.noCalls block = Bool.true
+        ∧ Block.noNondetGuards block = Bool.true
+        ∧ Block.uniqueInits (C := Command) block
+        ∧ Block.loopBodyNoInits (C := Command) block = Bool.true
+        ∧ Block.loopHasNoInvariants block = Bool.true
+        ∧ Block.noMeasureLoops block = Bool.true
+        ∧ Block.exitsCoveredByBlocks (CmdT := Command) [] block
+        ∧ Block.userLabelsShapeNodup (C := Command) block)
+      (base.extend prefixesReserved) base :=
+  overapproximatesTraces2UptoWhen_assertValidityPreservedWhen I
     (fun _ _ htrace aid =>
       Trace.WithWF.assertionValidFrom_reflect hstable htrace aid)
-    (overapproximatesTraces π base) htransform hpre hvalid
+    (overapproximatesTraces π base)
 
 /-- **A Hoare triple transported back from the lowered CFG.**  For a call-free structured
     Core statement list `ss` that `Core.stmtsToCFG` lowers to the CFG `out`, under the
@@ -398,11 +383,9 @@ theorem structuredToUnstructuredPipelinePhase_over
       ∧ ∀ (base : InitEnvWFParams) {I : ConditionInterp Expression},
         I.StableUnder
           (EventArg.WithWF (P := Expression) (EventArg.ExtendsEnv (fun _ => True))) →
-      ∀ {aid : AssertId Expression},
-        AssertValidOnTracesWhen (EventLang.coreCFG π) I
-          (Core.Logic.CFGInitEnvWF base cfg) cfg aid →
-        AssertValidOnTracesWhen (EventLang.coreBlock π) I
-          (Core.Logic.BlockInitEnvWF (base.extend prefixesReserved) ss) ss aid := by
+        AssertValidityPreservedWhen I (EventLang.coreBlock π) (EventLang.coreCFG π)
+          (fun (st : Statements) => if st = ss then some cfg else none) (fun _ => True)
+          (base.extend prefixesReserved) base := by
   have htransform :
       (structuredToUnstructured program).run s = (.ok (changed, out), s') := by
     rw [← structuredToUnstructuredPipelinePhase_ok program s]
@@ -420,8 +403,8 @@ theorem structuredToUnstructuredPipelinePhase_over
             (And.intro (ProgramFact.noLoopMeasures_of_program hnoLoopMeasuresProgram hq hb)
               (loweringShape_of_checks hexits hlabels)))))
   refine ⟨_, hcfg, hmem, ?_⟩
-  intro base I hstable aid hvalid
-  exact assertValid π base hcfg ⟨hnc, hpre⟩ hstable hvalid
+  exact fun base _ hstable => assertValidityPreservedWhen_single _ fun _ aid hvalid =>
+    assertValid π base hstable _ _ aid hcfg ⟨hnc, hpre⟩ hvalid
 
 end Core.StructuredToUnstructured
 

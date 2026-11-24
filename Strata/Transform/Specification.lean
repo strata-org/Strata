@@ -34,9 +34,9 @@ structural rules live in `Strata.DL.Imperative.Logic.HoareTemplate`.
 
 There are two complementary ways to describe correctness of a transformation:
 
-1. **`Sound`** directly preserves `AssertValidOnTracesWhen` for each assertion
-   identifier between two `EventLang` values under a shared
-   `ConditionInterp`.
+1. **`AssertValidityPreservedWhen`** directly preserves `AssertValidOnTracesWhen` for each
+   assertion identifier between two `EventLang` values under a shared
+   `ConditionInterp`, for source statements satisfying a precondition.
 
 2. **Operational overapproximation** simulates source behavior in the target.
    `OverapproximatesTraces` relates every finite trace prefix and every
@@ -151,14 +151,17 @@ postconditions). -/
     (params₁ : L₁.InitEnvWFParamsTy) (params₂ : L₂.InitEnvWFParamsTy) : Prop :=
   OverapproximatesTracesWhen Rtrace L₁ L₂ T (fun _ => True) params₁ params₂
 
-/-- A transformation is *sound* when it preserves validity of each
-assertion identifier. Source and target may use different event languages but
-share one condition interpretation. -/
-@[expose] def Sound (I : ConditionInterp P)
+/-- A transformation `T` preserves assertion validity under the statement precondition `pre`
+when, for each source statement satisfying `pre` that `T` maps to a target statement, each
+assertion identifier valid on the target is valid on the source, each from every entry
+environment its language's gate admits. Source and target may use different event languages
+but share one condition interpretation. -/
+@[expose] def AssertValidityPreservedWhen (I : ConditionInterp P)
     (L₁ L₂ : EventLang P (Event P)) (T : L₁.StmtT → Option L₂.StmtT)
+    (pre : L₁.StmtT → Prop)
     (params₁ : L₁.InitEnvWFParamsTy) (params₂ : L₂.InitEnvWFParamsTy) : Prop :=
   ∀ (s : L₁.StmtT) (s' : L₂.StmtT) (a : AssertId P),
-    T s = some s' →
+    T s = some s' → pre s →
     AssertValidOnTracesWhen L₂ I (L₂.initEnvWF params₂ s') s' a →
     AssertValidOnTracesWhen L₁ I (L₁.initEnvWF params₁ s) s a
 

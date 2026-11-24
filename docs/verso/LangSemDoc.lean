@@ -770,10 +770,12 @@ Transformations must not change what the verifier concludes. The definitions in
 `Strata/Transform/Specification.lean` can relate different source and target
 languages.
 
-The analysis-specific {name Imperative.Specification.Transform.Sound}`Sound`
+The analysis-specific
+{name Imperative.Specification.Transform.AssertValidityPreservedWhen}`AssertValidityPreservedWhen`
 predicate relates two `EventLang` values under one condition interpretation. It
-states that validity of each target assertion on reachable traces implies the
-corresponding source validity, so a verified output certifies the input.
+states that, for source statements meeting a precondition, validity of each
+target assertion on reachable traces implies the corresponding source validity,
+so a verified output certifies the input.
 
 The operational definitions are more general across analyses and support
 horizontal and vertical composition. They are the primary specifications for

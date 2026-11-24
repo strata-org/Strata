@@ -19,8 +19,8 @@ instantiates it — see `Strata.Languages.Core.Logic.Hoare` — to obtain usable
 A self-contained partial-correctness Hoare logic, depending only on the Imperative dialect
 itself (`Stmt`, `Cmd`, their event-trace small-step semantics, and the
 `Strata.Logic.EventLang` bundle). It does not mention the transformation-soundness
-framework (`Sound`, or the `OverapproximatesTraces` family); the event-trace transport
-bridge lives on its side, in `Strata.Transform.SpecHoareConnection`.
+framework (`AssertValidityPreservedWhen`, or the `OverapproximatesTraces` family); the
+event-trace transport bridge lives on its side, in `Strata.Transform.SpecHoareConnection`.
 
 `Strata.Logic.Hoare.TripleWith` is language-agnostic — stated over an arbitrary
 `Strata.Logic.EventLang P (Event P)` and condition interpreter, which is what lets a

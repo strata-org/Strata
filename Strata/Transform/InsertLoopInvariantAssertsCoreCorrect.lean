@@ -103,13 +103,13 @@ theorem overapproximatesTraces_coreProgram (base : InitEnvWFParams)
 
 /-- **The Core pass transports assertion validity back to each procedure body.**  When
     `Core.insertLoopInvariantAsserts p` succeeds with `p'` from a state whose generator state is
-    well formed, a call-free structured body `ss` of a procedure of `p` has, at its position in
-    `p'`, a body `ss'` such that, for an interpretation `I` under which conditions with the same
-    value hold alike and every condition that evaluates to `true` holds, under factories
-    satisfying `WellFormedSemanticEval`, the validity on `ss'` of its inserted invariant
-    assertions and of the assertion `aid`, from every environment satisfying
-    `BlockInitEnvWF base ss'`, gives the validity of `aid` on `ss` from every environment
-    satisfying `BlockInitEnvWF` of `ss` at `base` with `prefixesReserved` reserved. -/
+    well formed, a structured body `ss` of a procedure of `p` has, at its position in `p'`, a
+    body `ss'` such that, for an interpretation `I` under which conditions with the same value
+    hold alike and every condition that evaluates to `true` holds, under factories satisfying
+    `WellFormedSemanticEval`, and given the validity on `ss'` of its inserted invariant
+    assertions from every environment satisfying `BlockInitEnvWF base ss'`, sending `ss` to
+    `ss'` preserves assertion validity when `ss` is call-free, from `BlockInitEnvWF` at `base`
+    on `ss'` to `BlockInitEnvWF` at `base` with `prefixesReserved` reserved on `ss`. -/
 theorem assertValid_coreProgram (base : InitEnvWFParams)
     (hprefixes : ∀ p ∈ base.prefixIdents,
       ¬ p.toList.isPrefixOf measurePrefix.toList ∧ ¬ measurePrefix.toList.isPrefixOf p.toList)
@@ -117,8 +117,7 @@ theorem assertValid_coreProgram (base : InitEnvWFParams)
     {σ σ' : Transform.CoreTransformState} (hgen : σ.genState.WF)
     (h : insertLoopInvariantAsserts p σ = (.ok (c, p'), σ'))
     {i : Nat} {proc : Procedure} {md : Imperative.MetaData Expression} {ss : Statements}
-    (hproc : p.decls[i]? = some (.proc proc md)) (hbody : proc.body = .structured ss)
-    (hnc : Statements.noCalls ss = Bool.true) :
+    (hproc : p.decls[i]? = some (.proc proc md)) (hbody : proc.body = .structured ss) :
     ∃ ss', p'.decls[i]? = some (.proc { proc with body := .structured ss' } md) ∧
       ∀ {I : ConditionInterp Expression},
         I.StableUnder (EventArg.SameValue (WellFormedSemanticEval (P := Expression))) →
@@ -126,13 +125,13 @@ theorem assertValid_coreProgram (base : InitEnvWFParams)
         (∀ ρ₀ cfg trace, BlockInitEnvWF base ss' ρ₀ →
           (EventLang.coreBlock π).traceStar ((EventLang.coreBlock π).stmtCfg ss' ρ₀) trace cfg →
           Trace.AssertionsValidFromP Expression I InvCheck [] trace) →
-      ∀ {aid : AssertId Expression},
-        AssertValidOnTracesWhen (EventLang.coreBlock π) I (BlockInitEnvWF base ss') ss' aid →
-        AssertValidOnTracesWhen (EventLang.coreBlock π) I
-          (BlockInitEnvWF (base.extend prefixesReserved) ss) ss aid :=
+        AssertValidityPreservedWhen I (EventLang.coreBlock π) (EventLang.coreBlock π)
+          (fun (s : Statements) => if s = ss then some ss' else none)
+          (fun s => Statements.noCalls s = Bool.true) (base.extend prefixesReserved) base :=
   have ⟨ss', hd, hrel⟩ := insertLoopInvariantAsserts_body_blockRel hgen h hproc hbody
-  ⟨ss', hd, fun {_} hstable htrue hchecks {_} hvalid =>
-    assertValid_of_blockRel π base hprefixes hrel hnc hstable htrue hchecks hvalid⟩
+  ⟨ss', hd, fun {_} hstable htrue hchecks =>
+    assertValidityPreservedWhen_single _ fun hnc _ hvalid =>
+      assertValid_of_blockRel π base hprefixes hrel hnc hstable htrue hchecks hvalid⟩
 
 /-- **The Core pass transports Hoare triples back to each procedure body.**  When
     `Core.insertLoopInvariantAsserts p` succeeds with `p'` from a state whose generator state is

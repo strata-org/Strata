@@ -290,37 +290,26 @@ theorem evalInterp_stableUnder :
       (EventArg.WithWF (P := Expression) (EventArg.ExtendsEnv NondetElimTrace.NdExtra)) :=
   Imperative.BigStep.evalInterp_stableUnder
 
-/-- Nondeterminism elimination reflects validity of an assertion from the
-transformed Core block to the source block when generated bindings do not change
-condition truth. -/
+/-- Nondeterminism elimination preserves assertion validity on call-free Core blocks, from the
+transformed block at `base` to the source block at `base` with the generated prefixes
+reserved, when generated bindings do not change condition truth. -/
 theorem assertValid (base : InitEnvWFParams)
-    {ss : Statements}
-    -- Syntactic assumptions on the source block.
-    (hnoCalls : Statements.noCalls ss = Bool.true)
     -- The pass must preserve the caller's inherited name reservations.
     (hprefixes : prefixesDisjoint base.prefixIdents
       Imperative.NondetElim.isGeneratedName)
     {I : ConditionInterp Expression}
     -- Generated bindings must not change the truth of captured conditions.
     (hstable : I.StableUnder
-      (EventArg.WithWF (P := Expression) (EventArg.ExtendsEnv NondetElimTrace.NdExtra)))
-    {aid : AssertId Expression}
-    -- Validity assumption on the transformed block.
-    (hvalid : AssertValidOnTracesWhen (EventLang.coreBlock π) I
-      (Core.Logic.BlockInitEnvWF base (Imperative.Block.nondetElim ss))
-      (Imperative.Block.nondetElim ss) aid) :
-    AssertValidOnTracesWhen (EventLang.coreBlock π) I
-      (Core.Logic.BlockInitEnvWF (base.extend
-    Imperative.NondetElim.prefixesReserved) ss) ss aid :=
-  overapproximatesTracesUptoWhen_assertValid I _ _
-    (EventLang.coreBlock π) (EventLang.coreBlock π)
-    (fun block => some (Imperative.Block.nondetElim block))
-    (fun block => Statements.noCalls block = Bool.true)
-    (base.extend
-    Imperative.NondetElim.prefixesReserved) (base)
+      (EventArg.WithWF (P := Expression) (EventArg.ExtendsEnv NondetElimTrace.NdExtra))) :
+    AssertValidityPreservedWhen I (EventLang.coreBlock π) (EventLang.coreBlock π)
+      (fun block => some (Imperative.Block.nondetElim block))
+      -- Syntactic assumption on the source block.
+      (fun block => Statements.noCalls block = Bool.true)
+      (base.extend Imperative.NondetElim.prefixesReserved) base :=
+  overapproximatesTraces2UptoWhen_assertValidityPreservedWhen I
     (fun _ _ htrace aid =>
       Trace.WithWF.assertionValidFrom_reflect hstable htrace aid)
-    (overapproximatesTraces π base hprefixes) rfl hnoCalls hvalid
+    (overapproximatesTraces π base hprefixes)
 
 /-- **A Hoare triple transported back through nondeterminism elimination.**  For a call-free
     Core statement list `ss` and a precondition admitting only entry environments over `F`: a
@@ -365,20 +354,17 @@ theorem nondetElimPipelinePhase_over
       ∀ {I : ConditionInterp Expression},
         I.StableUnder (EventArg.WithWF (P := Expression)
           (EventArg.ExtendsEnv NondetElimTrace.NdExtra)) →
-      ∀ {aid : AssertId Expression},
-        AssertValidOnTracesWhen (EventLang.coreBlock π) I
-          (Core.Logic.BlockInitEnvWF base (Imperative.Block.nondetElim ss))
-          (Imperative.Block.nondetElim ss) aid →
-        AssertValidOnTracesWhen (EventLang.coreBlock π) I
-          (Core.Logic.BlockInitEnvWF (base.extend
-    Imperative.NondetElim.prefixesReserved) ss) ss aid := by
+        AssertValidityPreservedWhen I (EventLang.coreBlock π) (EventLang.coreBlock π)
+          (fun (st : Statements) =>
+            if st = ss then some (Imperative.Block.nondetElim ss) else none)
+          (fun _ => True) (base.extend Imperative.NondetElim.prefixesReserved) base := by
   have htransform : (nondetElim program).run s = (.ok (changed, out), s') := by
     rw [← nondetElimPipelinePhase_ok program s]
     exact hrun
   refine ⟨nondetElim_proc_mem htransform hq hb, ?_⟩
-  intro base hprefixes I hstable aid hvalid
-  exact assertValid π base (ProgramFact.noCalls_of_program hnoCallsProgram hq hb)
-    hprefixes hstable hvalid
+  exact fun base hprefixes _ hstable => assertValidityPreservedWhen_single _ fun _ aid hvalid =>
+    assertValid π base hprefixes hstable _ _ aid rfl
+      (ProgramFact.noCalls_of_program hnoCallsProgram hq hb) hvalid
 
 end Core.NondetElim
 
