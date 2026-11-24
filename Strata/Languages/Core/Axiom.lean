@@ -86,6 +86,11 @@ def Lemma.forallOver (binders : List (CoreIdent × LMonoTy)) (e : LExpr CoreLPar
 def Lemma.eraseTypes (l : Lemma) : Lemma :=
   { l with e := l.e.eraseTypes }
 
+/-- Erase every annotation of a lemma: expression types, and type parameters become
+    placeholders (count and order kept). -/
+def Lemma.eraseAnnots (l : Lemma) : Lemma :=
+  { l.eraseTypes with typeArgs := l.typeArgs.map fun _ => "" }
+
 instance : ToFormat Lemma where
   format l :=
     let targs := if l.typeArgs.isEmpty then f!"" else f!" <{Std.Format.joinSep (l.typeArgs.map format) ", "}>"

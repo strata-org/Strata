@@ -204,6 +204,19 @@ theorem LExpr.applyTypeSubst_fvar_none {T : LExprParams} (S : Subst) (m : T.Meta
   rw [LExpr.applyTypeSubst_eq_replaceUserProvidedType]
   simp only [LExpr.replaceUserProvidedType, Option.map_none]
 
+/-- Applying an absorbing substitution after an absorbed one is the same as applying the
+    absorbing one alone. -/
+theorem LExpr.applyTypeSubst_absorbs {T : LExprParams} (S Sin : Subst)
+    (h : Subst.absorbs S Sin) (e : LExpr T.mono) :
+    LExpr.applyTypeSubst (LExpr.applyTypeSubst e Sin) S = LExpr.applyTypeSubst e S := by
+  rw [LExpr.applyTypeSubst_eq_replaceUserProvidedType,
+    LExpr.applyTypeSubst_eq_replaceUserProvidedType,
+    LExpr.applyTypeSubst_eq_replaceUserProvidedType]
+  have hcomp : (LMonoTy.subst S ∘ LMonoTy.subst Sin) = LMonoTy.subst S :=
+    funext (fun t => LMonoTy.subst_absorbs S Sin t h)
+  induction e <;>
+    simp_all [LExpr.replaceUserProvidedType, Option.map_map]
+
 /-- When `opTypeSubst` succeeds, `computeTypeSubst` agrees with it. -/
 theorem LFunc.computeTypeSubst_of_opTypeSubst {T : LExprParams}
     {fn : LFunc T} {callee : LExpr T.mono} {args : List (LExpr T.mono)} {s : Subst}
@@ -302,7 +315,8 @@ theorem name_nodup {T} (f : Factory T) : List.Nodup (f.toArray |>.toList |>.map 
     have hdj : nameMap[l[j].name.name]? = some j := toArrayDefined ⟨j, hj⟩
     grind
 
-private theorem mem_pushIfNew {T} {f : Factory T} {g h : LFunc T}
+/-- A function in `f.pushIfNew h` is either already in `f` or is `h` itself. -/
+public theorem mem_pushIfNew {T} {f : Factory T} {g h : LFunc T}
     (p : g ∈ (f.pushIfNew h).toArray) : g ∈ f.toArray ∨ g = h := by
   revert p
   simp [pushIfNew, push]
@@ -596,6 +610,13 @@ theorem mem_iff_getElem?_isSome {T : LExprParams} (F : Factory T) (nm : String) 
   · intro hsome
     obtain ⟨fn, hfn⟩ := Option.isSome_iff_exists.mp hsome
     exact getElem?_some_implies_mem hfn
+
+/-- A name `F` holds is found by `F[n]?`, as `F[n]`. -/
+public theorem getElem?_of_mem {T : LExprParams} {F : Factory T} {n : String} (h : n ∈ F) :
+    F[n]? = some (F[n]'h) := by
+  have hm : n ∈ F.nameMap := h
+  simp +instances only [instGetElem?, get?, get]
+  split <;> grind
 
 end Factory
 

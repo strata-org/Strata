@@ -357,3 +357,30 @@ procedure main() entry
 //                               ^^^^^^^^^^^^^ error: assertion does not hold
 };
 #end
+
+/-! A call that throws assigns none of its results, also when a result is a global. -/
+
+#eval testLaurelExecution { skipVerification := true, skipCoreInterpreter := true, skipLaurelInterpreter := true, skipCortexInterpreter := false } <|
+#strata
+program Laurel;
+composite Exn { var code: int }
+var g: int := 1
+
+procedure f() returns (r: int)
+  throws (e: Exn)
+  opaque
+{
+    r := 8;
+    var ex: Exn := new Exn;
+    throw ex
+};
+
+procedure main() entry
+  opaque
+  modifies *
+{
+    try { g := f() } catch err { assert g == 1 };
+    try { g := f() } catch err { assert g == 8 }
+//                               ^^^^^^^^^^^^^ error: assertion does not hold
+};
+#end

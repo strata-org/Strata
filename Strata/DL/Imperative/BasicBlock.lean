@@ -80,6 +80,11 @@ inductive NondetTransferCmd (Label : Type) (P : PureExpr) where
 def NondetTransferCmd.targets : NondetTransferCmd Label P → List Label
 | .goto ls _ => ls
 
+/-- The metadata of a transfer. -/
+def DetTransferCmd.md : DetTransferCmd Label P → MetaData P
+  | .condGoto _ _ _ md => md
+  | .finish md => md
+
 /-- Strip metadata from a deterministic transfer command. -/
 def DetTransferCmd.stripMetaData : DetTransferCmd Label P → DetTransferCmd Label P
   | .condGoto p lt lf _ => .condGoto p lt lf .empty
@@ -91,19 +96,35 @@ def NondetTransferCmd.stripMetaData : NondetTransferCmd Label P → NondetTransf
 
 /-- A basic block consists of a list of body commands, and a transfer
 command that indicates where to go next. It can be deterministic or
-non-deterministic depending on the type of transfer command. -/
-structure BasicBlock (TransferCmd Cmd : Type) where
+non-deterministic depending on the type of transfer command.
+
+A block also carries metadata `md` describing the block as a whole (as
+opposed to the metadata on its commands or its transfer), such as annotations
+written on the block in the source. Entries may hold expressions, e.g. loop
+invariants attached to a loop-header block. It defaults to empty, and the
+operational semantics ignores it. -/
+structure BasicBlock (TransferCmd Cmd : Type) (P : PureExpr) where
   /-- The straight-line body commands, executed in order. -/
   cmds : List Cmd
   /-- The transfer command run after the body, selecting the successor block(s)
   (or halting). -/
   transfer : TransferCmd
-  deriving DecidableEq
+  /-- Metadata about the block as a whole. -/
+  md : MetaData P := .empty
+
+instance [DecidableEq TransferCmd] [DecidableEq Cmd] [DecidableEq P.Ident] [DecidableEq P.Expr] :
+    DecidableEq (BasicBlock TransferCmd Cmd P) := fun a b =>
+  match a, b with
+  | ⟨c₁, t₁, m₁⟩, ⟨c₂, t₂, m₂⟩ =>
+    if h : c₁ = c₂ ∧ t₁ = t₂ ∧ m₁ = m₂ then
+      isTrue (by obtain ⟨rfl, rfl, rfl⟩ := h; rfl)
+    else
+      isFalse (by intro e; cases e; exact h ⟨rfl, rfl, rfl⟩)
 
 /-- A deterministic basic block is a basic block parameterized by deterministic
 commands. -/
 @[expose] def DetBlock (Label Cmd : Type) (P : PureExpr) :=
-  BasicBlock (DetTransferCmd Label P) Cmd
+  BasicBlock (DetTransferCmd Label P) Cmd P
 
 /-- A list of labeled deterministic basic blocks. -/
 abbrev DetBlocks (Label Cmd : Type) (P : PureExpr) :=
@@ -118,12 +139,12 @@ def detCmdBlock [HasBool P] (c : Cmd) (k : Label) :
 -- `BasicBlock`; provide the `DecidableEq` instance explicitly.
 instance [DecidableEq Cmd] [DecidableEq P.Expr] [DecidableEq P.Ident] [DecidableEq Label] :
     DecidableEq (DetBlock Label Cmd P) :=
-  inferInstanceAs (DecidableEq (BasicBlock (DetTransferCmd Label P) Cmd))
+  inferInstanceAs (DecidableEq (BasicBlock (DetTransferCmd Label P) Cmd P))
 
 /-- A non-deterministic basic block is a basic block parameterized by
 non-deterministic commands. -/
 @[expose] def NondetBlock (Label Cmd : Type) (P : PureExpr) :=
-  BasicBlock (NondetTransferCmd Label P) Cmd
+  BasicBlock (NondetTransferCmd Label P) Cmd P
 
 /-- A control flow graph is a list of blocks paired with a label indicating
 where execution should start. -/
@@ -173,10 +194,11 @@ def formatNondetTransferCmd (P : PureExpr) (c : NondetTransferCmd Label P)
   match c with
   | .goto ls md => f!"{md}goto {ls}"
 
-def formatBasicBlock (b : BasicBlock TransferCmd TCmd)
-  [ToFormat TransferCmd] [ToFormat TCmd] : Format :=
+def formatBasicBlock (b : BasicBlock TransferCmd TCmd P)
+  [ToFormat TransferCmd] [ToFormat TCmd] [ToFormat P.Ident] [ToFormat P.Expr] : Format :=
   let joined := Format.join (b.cmds.map (fun c => f!"  {c}{Format.line}"))
-  f!"{joined}  {b.transfer}"
+  let mdFmt := if b.md.isEmpty then f!"" else f!"  {b.md}{Format.line}"
+  f!"{mdFmt}{joined}  {b.transfer}"
 
 def formatCFG (cfg : CFG Label Blk)
   [ToFormat Label] [ToFormat Blk] : Format :=
@@ -196,8 +218,8 @@ instance [ToFormat Label] [ToFormat P.Ident] [ToFormat P.Expr] [ToFormat P.Ty]
     : ToFormat (NondetTransferCmd Label P) where
   format c := formatNondetTransferCmd P c
 
-instance [ToFormat TransferCmd] [ToFormat TCmd]
-    : ToFormat (BasicBlock TransferCmd TCmd) where
+instance [ToFormat TransferCmd] [ToFormat TCmd] [ToFormat P.Ident] [ToFormat P.Expr]
+    : ToFormat (BasicBlock TransferCmd TCmd P) where
   format b := formatBasicBlock b
 
 instance [ToFormat P.Expr] [ToFormat P.Ident] [ToFormat P.Ty] [ToFormat Label] [ToFormat TCmd]

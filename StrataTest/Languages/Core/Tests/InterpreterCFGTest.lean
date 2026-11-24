@@ -43,7 +43,7 @@ block, and the driver dispatches it through the procedure table `π`.  `π` reso
 procedure, so the run halts at the call with `unsupportedCalleeNotFound`. -/
 private def callCfg : CFG String (DetBlock String Command Expression) :=
   { entry := "b0",
-    blocks := [("b0", ⟨[CmdExt.call "callee" none [] md], .finish md⟩)] }
+    blocks := [("b0", ⟨[CmdExt.call "callee" none [] md], .finish md, .empty⟩)] }
 
 /-- The start environment: store `store0` at `Core.Factory`. -/
 private def env0 : IEnv Expression := { store := .ofStore store0, factory := Core.Factory }
@@ -60,9 +60,9 @@ event of `b1`, and halts at `.terminal` with `x = 2`. -/
 private def cfg : CFG String (DetBlock String Command Expression) :=
   { entry := "b0",
     blocks :=
-      [("b0", ⟨[setX 2], .condGoto (.eq default xVar (int 2)) "b1" "b2" md⟩),
-       ("b1", ⟨[coverX "reached"], .finish md⟩),
-       ("b2", ⟨[], .finish md⟩)] }
+      [("b0", ⟨[setX 2], .condGoto (.eq default xVar (int 2)) "b1" "b2" md, .empty⟩),
+       ("b1", ⟨[coverX "reached"], .finish md, .empty⟩),
+       ("b2", ⟨[], .finish md, .empty⟩)] }
 
 /-- Final store of a faithful-legacy CFG run that ends in a `.terminal` config; `none` for
     every other outcome, including an assert halt. -/

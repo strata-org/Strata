@@ -221,7 +221,7 @@ theorem overapproximatesTraces (base : InitEnvWFParams)
     exact ⟨ρ'', trace', by
       rw [htgt]
       exact Imperative.embedConfig_stepStarE π hrunb, hout, htr⟩
-  · obtain ⟨hsem, hstore, hdefs, hdefinedReserved, hfresh, hlab, hdu, hfactory,
+  · obtain ⟨hsem, hstore, hdefs, hdefinedReserved, hfresh, hlab, hdu, hfactory, hrfactory,
         htypes, -, hmeas⟩ :=
       blockInitEnvWF_projectBase hwf hproj
     have hkindNone : ∀ name, Imperative.NondetElim.isGeneratedName name →
@@ -258,7 +258,7 @@ theorem overapproximatesTraces (base : InitEnvWFParams)
         subst ident
         exact Option.isNone_iff_eq_none.mp (hkindNone name hname)) htypes
     refine Core.Logic.BlockInitEnvWF.ofBaseEmbed hsem hstore ?_ ?_ ?_
-      (by rw [Imperative.Block.nondetElim_labels]; exact hlab) ?_ ?_ hinits.2
+      (by rw [Imperative.Block.nondetElim_labels]; exact hlab) ?_ ?_ ?_ hinits.2
       hbaseOut.fvarTypesOk (by rw [Imperative.Block.nondetElim_measures]; exact hmeas)
     · intro ident hident
       exact Option.isNone_iff_eq_none.mpr (hinits.1 ident hident)
@@ -278,6 +278,8 @@ theorem overapproximatesTraces (base : InitEnvWFParams)
         hkindFalse (fun _ h => h) hdu hnogen
     · intro name hname
       exact hfactory name hname
+    · intro f hf
+      exact hrfactory f hf
 
 /-! ## Assertion-validity reflection -/
 

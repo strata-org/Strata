@@ -9,6 +9,7 @@ public import Strata.DL.Imperative.PureExpr
 public import Strata.DL.Imperative.PureExprProps
 public import Strata.DL.Imperative.HasVars
 public import Strata.DL.Imperative.MetaData
+public import Strata.DL.Imperative.MetaDataProps
 
 public import Strata.DL.Imperative.CmdEval
 public import Strata.DL.Imperative.CmdProps

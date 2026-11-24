@@ -192,6 +192,18 @@ theorem defaultAssertEvents_label_metadata (fac : P.Factory) (σ : SemanticStore
     obtain ⟨l, c⟩ := hd
     by_cases h : c.attr = .Default <;> simp [h, ih]
 
+/-- Saving `old` copies of some variables leaves every slot that is not named like such a copy
+    unchanged. -/
+theorem withOldSnapshots_eq [HasOldIdent P] {snap : List P.Ident} {σ : SemanticStore P}
+    {z : P.Ident} (h : ∀ g ∈ snap, HasOldIdent.mkOld g ≠ z) :
+    withOldSnapshots snap σ z = σ z := by
+  unfold withOldSnapshots
+  have hnone : snap.find? (fun g => HasOldIdent.mkOld g == z) = none := by
+    rw [List.find?_eq_none]
+    intro g hg hb
+    exact h g hg (beq_iff_eq.mp hb)
+  rw [hnone]
+
 end
 
 end Calls

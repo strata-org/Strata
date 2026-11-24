@@ -69,7 +69,7 @@ private def bId : Expression.Ident := ⟨"b", ()⟩
 
 /-- The callee's CFG body: one block `e` that finishes. -/
 def wCfg : DetCFG Expression Command :=
-  { entry := "e", blocks := [("e", ⟨[], .finish md⟩)] }
+  { entry := "e", blocks := [("e", ⟨[], .finish md, .empty⟩)] }
 
 /-- The callee: no formals, no spec clauses, CFG body `wCfg`. -/
 def wProc : Procedure :=
@@ -124,8 +124,8 @@ private theorem ttE_engEval (σ : SemanticStore Expression) :
 def gC : DetCFG Expression Command :=
   { entry := "b0",
     blocks := [("b0", ⟨[.cmd (.init bId HasBool.boolTy .nondet md), .call "w" none [] md],
-        .condGoto ttE "b1" "b2" md⟩),
-      ("b1", ⟨[], .finish md⟩), ("b2", ⟨[], .finish md⟩)] }
+        .condGoto ttE "b1" "b2" md, .empty⟩),
+      ("b1", ⟨[], .finish md, .empty⟩), ("b2", ⟨[], .finish md, .empty⟩)] }
 
 /-- The start configuration: at block `b0` of `gC`, in `env0`. -/
 def cfgStart : ICFGConfig String Command Expression := .atBlock gC "b0" env0

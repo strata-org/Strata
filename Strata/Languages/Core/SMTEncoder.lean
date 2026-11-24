@@ -130,6 +130,73 @@ deriving Repr, Inhabited
 
 def SMT.Context.default : SMT.Context := {}
 
+/-- Sort names that cvc5 or z3 already define. A `declare-sort` or `declare-datatype` of one
+    of them is not a fresh sort: z3 rejects it, and cvc5 can silently keep its own sort, with
+    that sort's equality and cardinality (cvc5's `Array`, `Nullable`, `Set` and `Tuple` do
+    this), so the solver could prove facts that do not hold for Strata's uninterpreted sort.
+    `Scripts/scan_solver_sort_names.sh` checks this list against the solver binaries; re-run
+    it whenever cvc5 or z3 is upgraded. -/
+def solverBuiltinSortNames : Std.HashSet String := .ofList
+  ["Array", "Bag", "BitVec", "Bool", "FiniteField", "Float128", "Float16", "Float32",
+   "Float64", "FloatingPoint", "Int", "List", "Nullable", "Real", "RegEx", "RegLan",
+   "Relation", "RoundingMode", "Seq", "Set", "String", "StringSequence", "Table", "Tuple",
+   "Unicode", "UnitTuple", "bv",
+   -- Symbols cvc5 rejects as a sort name.
+   "abs", "as", "let", "match", "par", "select", "store"]
+
+/-- Prefix that `smtSortName` adds to a sort name. -/
+@[expose] def smtSortPrefix : String := "$__Strata_"
+
+/-- The SMT-LIB name of the Core sort, datatype or datatype type parameter `id`: `id`
+    with `smtSortPrefix` when the solvers already define a sort of that name or when `id`
+    itself starts with `smtSortPrefix`, and `id` otherwise. Prefixing the names that
+    already carry the prefix keeps the mapping injective: a user type named
+    `$__Strata_Set` becomes `$__Strata_$__Strata_Set`, not Core's `Set`. -/
+def smtSortName (id : String) : String :=
+  if solverBuiltinSortNames.contains id || id.startsWith smtSortPrefix then smtSortPrefix ++ id
+  else id
+
+/-- The Core name of the SMT-LIB sort name `name`; the inverse of `smtSortName`. -/
+def coreSortName (name : String) : String :=
+  if name.startsWith smtSortPrefix then (name.drop smtSortPrefix.length).toString else name
+
+/-- The run of consecutive copies of `p` that starts `cs`: how many, and what follows. -/
+private def prefixRun (p : List Char) : Nat → List Char → Nat × List Char
+  | 0, cs => (0, cs)
+  | fuel + 1, cs =>
+    if !p.isEmpty && p.isPrefixOf cs then
+      let (k, rest) := prefixRun p fuel (cs.drop p.length)
+      (k + 1, rest)
+    else (0, cs)
+
+private def coreSortNamesInAux (p : List Char) : Nat → Option Char → List Char → List Char
+  | 0, _, cs => cs
+  | fuel + 1, prev, cs =>
+    -- `smtSortName` adds the prefix at the start of a name, so only a prefix there counts:
+    -- at the start of the string, or after a delimiter of the solvers' value syntax.
+    let atNameStart := prev.all (· ∈ ['(', ' ', '|', '@'])
+    if atNameStart && !p.isEmpty && p.isPrefixOf cs then
+      let (k, rest) := prefixRun p (cs.length + 1) cs
+      (List.replicate (k - 1) p).flatten ++ coreSortNamesInAux p fuel (some '_') rest
+    else
+      match cs with
+      | [] => []
+      | c :: cs' => c :: coreSortNamesInAux p fuel (some c) cs'
+
+/-- `s` with every SMT-LIB sort name in it mapped back by `coreSortName`. A solver names its
+    abstract values after their sort (cvc5's `@($__Strata_Set Int)_0`, z3's
+    `$__Strata_Set!val!0`); this shows them under the Core name (`@(Set Int)_0`). As
+    `coreSortName` does for one name, it drops one `smtSortPrefix` from each run of
+    consecutive prefixes that starts a name. -/
+def coreSortNamesIn (s : String) : String :=
+  String.ofList (coreSortNamesInAux smtSortPrefix.toList (s.length + 1) none s.toList)
+
+/-- A model value name with the sort names in it mapped back by `coreSortNamesIn`, if it is
+    an abstract value the solver made up (cvc5's `@(…)_n`, z3's `…!val!n`); any other
+    name, such as a user's, as it is. -/
+def coreValueName (id : String) : String :=
+  if id.startsWith "@" || (id.splitOn "!val!").length > 1 then coreSortNamesIn id else id
+
 def SMT.Context.addSort (ctx : SMT.Context) (sort : Strata.DL.SMT.Sort) : SMT.Context :=
   { ctx with sorts := ctx.sorts.insert sort }
 
@@ -177,7 +244,7 @@ def SMT.Context.preDeclaredNames (ctx : SMT.Context) : Std.HashSet String :=
   let dtNames := ctx.datatypes.factory.toList.foldl (init := sortNames) fun acc block =>
     block.foldl (init := acc) fun acc d =>
       if ctx.seenDatatypes.contains d.name then
-        let acc := acc.insert d.name
+        let acc := acc.insert (smtSortName d.name)
         -- Include constructor and selector names emitted by declareDatatype
         d.constrs.foldl (init := acc) fun acc c =>
           let acc := acc.insert c.name.name
@@ -224,13 +291,13 @@ def lMonoTyToTermType (useArrayTheory : Bool := false) (ty : LMonoTy) : TermType
     if useArrayTheory then
       .constr "Array" [lMonoTyToTermType useArrayTheory elem, .bool]
     else
-      .constr "Set" [lMonoTyToTermType useArrayTheory elem]
+      .constr (smtSortName "Set") [lMonoTyToTermType useArrayTheory elem]
   | .tcons name args =>
     if name == "Map" && useArrayTheory then
       .constr "Array" (args.map $ lMonoTyToTermType useArrayTheory)
     else
-      .constr name (args.map $ lMonoTyToTermType useArrayTheory)
-  | .ftvar tv => .constr tv []
+      .constr (smtSortName name) (args.map $ lMonoTyToTermType useArrayTheory)
+  | .ftvar tv => .constr (smtSortName tv) []
 
 /-- Convert a datatype's constructors to typed SMT constructors: the one place that names
     constructors and selectors and lowers field types, for every solver interface. -/
@@ -271,9 +338,12 @@ def SMT.Context.emitDatatypes (ctx : SMT.Context) : Strata.SMT.SolverEncodingM U
     | [] => pure ()
     | [d] =>
       let constructors := datatypeConstructorsToSMT d ctx.useArrayTheory
-      Strata.SMT.Solver.declareDatatype d.name d.typeArgs constructors
+      Strata.SMT.Solver.declareDatatype (smtSortName d.name) (d.typeArgs.map smtSortName)
+        constructors
     | _ =>
-      let dts := usedBlock.map fun d => (d.name, d.typeArgs, datatypeConstructorsToSMT d ctx.useArrayTheory)
+      let dts := usedBlock.map fun d =>
+        (smtSortName d.name, d.typeArgs.map smtSortName,
+          datatypeConstructorsToSMT d ctx.useArrayTheory)
       Strata.SMT.Solver.declareDatatypes dts
 
 /-- Emit a context's sort declarations, then its datatype declarations (whose
@@ -326,7 +396,7 @@ partial def SMT.Context.addType (id: String) (args: List LMonoTy) (ctx: SMT.Cont
         ) ctx
       ) ctx
   | none =>
-    ctx.addSort { name := id, arity := args.length }
+    ctx.addSort { name := smtSortName id, arity := args.length }
 
 mutual
 def LMonoTy.toSMTType (ty : LMonoTy) (ctx : SMT.Context) :
@@ -344,6 +414,7 @@ def LMonoTy.toSMTType (ty : LMonoTy) (ctx : SMT.Context) :
     let ctx := if ctx.useArrayTheory then ctx
                else SMT.Context.addType id args ctx
     let (args', ctx) ← LMonoTys.toSMTType args ctx
+    -- `id` is `Array` (the theory's own sort) or `Map`, which no solver defines.
     .ok ((.constr id args'), ctx)
   | .tcons "Set" [elem] =>
     -- Under array theory the sort is native, so it needs no `declare-sort` (and gains
@@ -355,11 +426,11 @@ def LMonoTy.toSMTType (ty : LMonoTy) (ctx : SMT.Context) :
     else
       let ctx := SMT.Context.addType "Set" [elem] ctx
       let (elem', ctx) ← LMonoTy.toSMTType elem ctx
-      .ok (.constr "Set" [elem'], ctx)
+      .ok (.constr (smtSortName "Set") [elem'], ctx)
   | .tcons id args =>
     let ctx := SMT.Context.addType id args ctx
     let (args', ctx) ← LMonoTys.toSMTType args ctx
-    .ok ((.constr id args'), ctx)
+    .ok ((.constr (smtSortName id) args'), ctx)
   | .ftvar tyv =>
     -- If the encoder sees a type variable, that's a bug — either
     -- MonomorphizeFunctions failed to reach this reference, or something
@@ -599,9 +670,10 @@ def toSMTOp (factory : @Lambda.Factory CoreLParams) (fn : CoreIdent) (fnty : LMo
     | .error _ => ctx
   let (smt_outty, ctx) ← LMonoTy.toSMTType outty ctx
 
-  -- Demangle so a specialized datatype op (e.g. `$__mono#Cons#int`) matches its
-  -- `datatypeFuns` key and the solver sees the native constructor/selector name.
-  let baseFn := Core.NameMangling.demangledBaseName fn.name
+  -- A monomorphized copy is encoded as the function its factory entry's mark records
+  -- (`FuncAttr.monoCopyOf`), not one read off its name. A copy that lost its mark is encoded
+  -- as an uninterpreted function: weaker, never unsound.
+  let baseFn := ((factory[fn.name]?).bind (Strata.DL.Util.FuncAttr.findMonoCopyOf ·.attr)).getD fn.name
   match ctx.datatypeFuns.get? baseFn with
   | some (kind, c) =>
     let adtApp := fun (args : List Term) (retty : TermType) =>
@@ -620,8 +692,8 @@ def toSMTOp (factory : @Lambda.Factory CoreLParams) (fn : CoreIdent) (fnty : LMo
     match factory[fn.name]? with
     | none => .error f!"Cannot find function {fn} in Strata Core's Factory!"
     | some func =>
-      -- Demangle so built-in dispatch keys on the base name (see above).
-      let baseName := Core.NameMangling.demangledBaseName func.name.name
+      -- Built-in dispatch keys on the function a copy specializes (see above).
+      let baseName := baseFn
       match corePredefinedOpToSMTOp (CoreOp.ofString baseName) ctx with
       | some (op, retty, ctx) => .ok (op, retty, ctx, pending)
       | none => do
@@ -681,16 +753,17 @@ def toSMTOp (factory : @Lambda.Factory CoreLParams) (fn : CoreIdent) (fnty : LMo
 
 /-- Does `tr` denote a *structured* Core trigger list (a `Triggers.empty` /
     `Triggers.addGroup` spine, or `LExpr.noTrigger`)? If not, the trigger is a bare
-    pattern term supplied directly and forms a single `:pattern` group. -/
+    pattern term supplied directly and forms a single `:pattern` group. The trigger operators
+    are matched by name: `MonomorphizeFunctions` never copies them (`isTriggerMetaOp`). -/
 def isCoreTriggerListExpr (tr : LExpr CoreLParams.mono) : Bool :=
   match tr with
   | .bvar _ _ => true  -- LExpr.noTrigger
   | .op _ opId _ =>
-    match CoreOp.ofString (Core.NameMangling.demangledBaseName opId.name) with
+    match CoreOp.ofString opId.name with
     | .trigger .EmptyTriggers | .trigger .EmptyGroup => true
     | _ => false
   | .app _ (.app _ (.op _ opId _) _) _ =>
-    match CoreOp.ofString (Core.NameMangling.demangledBaseName opId.name) with
+    match CoreOp.ofString opId.name with
     | .trigger .AddGroup => true
     | _ => false
   | _ => false
@@ -932,7 +1005,7 @@ def encodeTriggerGroup (factory : @Lambda.Factory CoreLParams) (bvs : BoundVars)
     -- `TriggerGroup.empty`: end of the group spine.
     .ok (acc, ctx, pending)
   | .app _ (.app _ (.op _ opId _) t) rest =>
-    match CoreOp.ofString (Core.NameMangling.demangledBaseName opId.name) with
+    match CoreOp.ofString opId.name with
     | .trigger .AddTrigger =>
       let (tt, ctx, pending) ← toSMTTerm factory bvs t ctx pending
       encodeTriggerGroup factory bvs rest (tt :: acc) ctx pending
@@ -960,7 +1033,7 @@ def encodeTriggerGroups (factory : @Lambda.Factory CoreLParams) (bvs : BoundVars
     -- `Triggers.empty`: end of the group-list spine.
     .ok (acc, ctx, pending)
   | .app _ (.app _ (.op _ opId _) g) rest =>
-    match CoreOp.ofString (Core.NameMangling.demangledBaseName opId.name) with
+    match CoreOp.ofString opId.name with
     | .trigger .AddGroup =>
       let (group, ctx, pending) ← encodeTriggerGroup factory bvs g [] ctx pending
       encodeTriggerGroups factory bvs rest (group :: acc) ctx pending
@@ -1191,11 +1264,29 @@ def smtTermIsReal : Strata.SMT.Term → Bool
   | .prim (.real _) => true
   | _               => false
 
+/-- The rational a model term spells, if it is one: `(/ p q)` over numeric literals `p`
+    and `q ≠ 0` (how a solver prints a non-integral real), or `(- r)` over such a
+    rational. -/
+def smtTermRational? : Strata.SMT.Term → Option Rat
+  | .app (.core (.uf uf)) [p, q] _ =>
+    if uf.id != "/" then none else do
+      let q ← literal q
+      if q == 0 then none else return (← literal p) / q
+  | .app (.core (.uf uf)) [r] _ => if uf.id == "-" then (smtTermRational? r).map (- ·) else none
+  | _ => none
+where
+  /-- The value of a numeric literal. -/
+  literal : Strata.SMT.Term → Option Rat
+    | .prim (.int i) => some i
+    | .prim (.real d) => some d.toRat
+    | _ => none
+
 /--
 Convert an `SMT.Term` back to a Core `LExpr` (best-effort, partial inverse of `toSMTTerm`).
 
 Handles:
 - Primitives: bool, int, real, bitvec, string
+- Rationals `(/ p q)` (`smtTermRational?`), as real literals
 - UF applications (free variables, constructors, uninterpreted functions)
 - Datatype constructors/selectors/testers
 
@@ -1222,14 +1313,18 @@ def smtTermToLExpr (t : Strata.SMT.Term)
     if constructorNames.contains v.id then
       .op smtModelLoc v.id none
     else
-      .fvar smtModelLoc v.id none
+      .fvar smtModelLoc (coreValueName v.id) none
   | .app (.core (.uf uf)) args _retTy =>
+    match smtTermRational? t with
+    | some r => .rationalConst smtModelLoc r
+    | none =>
     -- Constructor names use `.op` so the formatter can distinguish them
     -- from plain variables (e.g., `Nil` constructor must not be .fvar).
     --
-    -- The model parser represents unary `-` as a UF application, but Core has
-    -- no `-` production.  Map it to `int.neg`/`real.neg` so models print
-    -- re-parseable syntax.
+    -- The model parser folds `(- <literal>)` into a negative literal, so a
+    -- unary `-` reaches here only over a non-literal argument. Core has no `-`
+    -- production, so map it to `Int.Neg`/`Real.Neg` to keep models
+    -- re-parseable; such a term is not a value (see `smtTermIsValue`).
     let fnExpr : LExpr CoreLParams.mono :=
       match uf.id, args with
       | "-", [arg] => .op smtModelLoc (if smtTermIsReal arg then "Real.Neg" else "Int.Neg") none
@@ -1237,7 +1332,8 @@ def smtTermToLExpr (t : Strata.SMT.Term)
         if constructorNames.contains uf.id then
           .op smtModelLoc uf.id none
         else
-          .fvar smtModelLoc uf.id none
+          -- An abstract value arrives as a zero-argument UF named after its sort.
+          .fvar smtModelLoc (coreValueName uf.id) none
     args.foldl (fun acc arg => .app smtModelLoc acc (smtTermToLExpr arg constructorNames)) fnExpr
   | .app (.datatype_op _kind name) args _retTy =>
     let fnExpr : LExpr CoreLParams.mono := .op smtModelLoc name none
@@ -1262,6 +1358,38 @@ Extract the set of datatype constructor names from an `SMT.Context`.
 def SMT.Context.getConstructorNames (ctx : SMT.Context) : Std.HashSet String :=
   ctx.datatypeFuns.fold (init := {}) fun acc name (kind, _) =>
     if kind == .constructor then acc.insert name else acc
+
+/--
+Decide whether an `SMT.Term` from a solver model is a *recognized value* — a
+term whose lift to `LExpr` (via `smtTermToLExpr`) lands on an interpretable
+value rather than one of that lift's lossy catch-alls.
+
+`true` exactly when the term is either
+- a primitive value (`.prim`: bool/int/real/bitvec/string), or
+- a rational (`smtTermRational?`), or
+- a datatype constructor application: `.app (.core (.uf {id})) args` with
+  `id ∈ constructorNames` and every argument itself a value.
+
+Everything else is `false`: a real (uninterpreted-function) value, an
+uninterpreted-sort element, an array value, a `.some`/`.none` option wrapper, a
+`.quant`, a `.var` (even a zero-arg constructor arrives as `.var`; the model
+parser used here does not emit `.var`, so this is conservatively non-value), and
+any UF application whose head is not a known constructor or whose arguments are
+not all values.
+
+This is the value discriminator the VC check uses to decide which model
+bindings may enter the evaluation environment; it mirrors, term-for-term, where
+`smtTermToLExpr` produces something the evaluator cannot soundly consume. -/
+def smtTermIsValue (t : Strata.SMT.Term)
+    (constructorNames : Std.HashSet String := {}) : Bool :=
+  match t with
+  | .prim _ => true
+  | t@(.app (.core (.uf uf)) args _retTy) =>
+    (smtTermRational? t).isSome || constructorNames.contains uf.id &&
+      args.attach.all (fun ⟨a, _⟩ => smtTermIsValue a constructorNames)
+  | _ => false
+termination_by sizeOf t
+decreasing_by all_goals (first | omega | term_by_mem)
 
 /--
 Convert a model map from `SMT.Term` values to `LExpr` values,
@@ -1296,10 +1424,13 @@ then *snapshots* the obligation: it reads the obligation's complete
 goal never enters the shared state.
 
 The state holds the full, unpruned `assumptions`, so entries stay shared
-across obligations that prune different irrelevant axioms. An entry's term,
-any encoding error, and its definition dependencies are attributed to that
-entry, so `snapshotObligation` selects only the entries an obligation keeps:
-a pruned entry's term is never asserted, its error is never surfaced, and its
+across obligations that prune different irrelevant axioms or leave out
+different unread definitions. An entry's term, any encoding error, and its
+definition dependencies are attributed to that entry, so `snapshotObligation`
+selects only the entries an obligation keeps, an assumption or distinctness
+fact by its label (`prunedLabels`) and a variable definition by its variable's
+name (`unreadDefs`), two separate sets: a pruned
+entry's term is never asserted or defined, its error is never surfaced, and its
 definitions are never drained — for these three mechanisms the result matches
 a from-scratch encoding of the pruned obligation.
 
@@ -1450,7 +1581,8 @@ def EncodeResult.declaredCtx (r : EncodeResult) (removeDatatypes : Bool) :
   let fieldTypes := fun d => match ctx.datatypes.getType d with
     | some dt => dt.fieldTypeRefs.filter seen.contains
     | none => []
-  match Strata.Worklist.reachable (seen.toList.filter used.contains)
+  -- `used` holds SMT-LIB sort names; `seen` holds Core datatype names.
+  match Strata.Worklist.reachable (seen.toList.filter (used.contains <| smtSortName ·))
       fieldTypes seen.size with
   | some kept => return { ctx with seenDatatypes := kept }
   | none => return ctx
@@ -1465,20 +1597,23 @@ structure EncodeResult.Assembly where
   /-- Seed queue from the kept entries and varDefs (goal's queue not yet folded in). -/
   keptSeed : SMT.PendingFnQueue
 
-/-- Assemble the entries `keep` selects, forcing their deferred results (a
-    kept entry's encoding error surfaces here; a dropped entry's never does).
-    Emission order: newest frame first, in-frame program order. -/
-def EncodeResult.Assembly.ofFramesKept (keep : String → Bool)
+/-- Assemble the entries kept: an assumption or distinctness fact when
+    `keepLabel` holds of its label, a variable definition when `keepDef` holds of
+    its variable's name. Their deferred results are forced (a kept entry's
+    encoding error surfaces here; a dropped entry's never does). Emission order:
+    newest frame first, in-frame program order. -/
+def EncodeResult.Assembly.ofFramesKept (keepLabel keepDef : String → Bool)
     (frames : List (Imperative.PathConditions.PathConditionFrame
       SMTCheckpoint SMTEncodedPathCondition Expression)) :
     Except Format EncodeResult.Assembly := do
   let keptDistincts ← (frames.flatMap fun f =>
     f.output.distinctsRev.reverse.filterMap fun e =>
-      if keep e.label then some e.result else none).mapM id
+      if keepLabel e.label then some e.result else none).mapM id
   let keptAssumptions ← (frames.flatMap fun f =>
     f.output.assumptionsRev.reverse.filterMap fun e =>
-      if keep e.label then some e.result else none).mapM id
-  let varDefsWithPending := frames.flatMap fun f => f.output.varDefsRev.reverse
+      if keepLabel e.label then some e.result else none).mapM id
+  let varDefsWithPending := frames.flatMap fun f =>
+    f.output.varDefsRev.reverse.filter fun d => keepDef d.1.name
   -- Seed the drain from only the definitions the kept terms depend on;
   -- `processPendingFnDefs` rediscovers the transitive closure.
   let seedQueues : List SMT.PendingFnQueue :=
@@ -1508,9 +1643,11 @@ def EncodeResult.Assembly.finish (factory : @Lambda.Factory CoreLParams)
         goal := goalTerm, ctx, stats }
 
 /-- Build one obligation's `EncodeResult` from `st` without writing back:
-    encode the goal against `st.current`, assemble the kept entries, finish. -/
+    encode the goal against `st.current`, assemble the entries kept (those whose
+    label is not in `prunedLabels`, the definitions whose variable is not in
+    `unreadDefs`), finish. -/
 def snapshotObligation (factory : @Lambda.Factory CoreLParams) (st : SMTEncodeState)
-    (goal : Expression.Expr) (prunedLabels : List String) :
+    (goal : Expression.Expr) (prunedLabels : List String) (unreadDefs : Std.HashSet String) :
     Except Format EncodeResult := do
   -- Obligation-specific fork: encode the goal against a fresh queue, capturing
   -- the goal's own definition dependencies.
@@ -1519,18 +1656,20 @@ def snapshotObligation (factory : @Lambda.Factory CoreLParams) (st : SMTEncodeSt
   -- Emission-time pruning: O(1) membership.
   let pruned : Std.HashSet String :=
     prunedLabels.foldl (fun acc l => acc.insert l) ∅
-  let asm ← EncodeResult.Assembly.ofFramesKept (fun l => !pruned.contains l) st.frames
+  let asm ← EncodeResult.Assembly.ofFramesKept (fun l => !pruned.contains l)
+    (fun x => !unreadDefs.contains x) st.frames
   asm.finish factory goalTerm goalPending ctx
 
 /-- Advance the fold over the obligation's `assumptions` (encoding only what
     the state has not already encoded), then `snapshotObligation` for its goal.
     Returns the result and the advanced state. -/
 def encodeObligationToSMT (factory : @Lambda.Factory CoreLParams) (st : SMTEncodeState)
-    (ob : Imperative.ProofObligation Expression) (prunedLabels : List String := []) :
+    (ob : Imperative.ProofObligation Expression) (prunedLabels : List String := [])
+    (unreadDefs : Std.HashSet String := {}) :
     Except Format (EncodeResult × SMTEncodeState) := do
   -- `assumptions` lists its PathConditions newest first; the fold runs oldest first.
   let st ← ((smtEncodingFold factory).advance ob.assumptions.reverse).exec st
-  let r ← snapshotObligation factory st ob.obligation prunedLabels
+  let r ← snapshotObligation factory st ob.obligation prunedLabels unreadDefs
   .ok (r, st)
 
 /-! ## Pointer-memoized snapshot assembly
@@ -1547,17 +1686,18 @@ def EncodeResult.Assembly.ofFrames
     (frames : List (Imperative.PathConditions.PathConditionFrame
       SMTCheckpoint SMTEncodedPathCondition Expression)) :
     Except Format EncodeResult.Assembly :=
-  EncodeResult.Assembly.ofFramesKept (fun _ => true) frames
+  EncodeResult.Assembly.ofFramesKept (fun _ => true) (fun _ => true) frames
 
 /-- `encodeObligationToSMT` with the assembly memoized by the frame list's
-    pointer address. Pruned obligations delegate to `encodeObligationToSMT`,
+    pointer address. Pruned or sliced obligations delegate to `encodeObligationToSMT`,
     which is also available for callers without a cache to thread. -/
 def encodeObligationToSMTCached (factory : @Lambda.Factory CoreLParams) (st : SMTEncodeState)
     (ob : Imperative.ProofObligation Expression) (prunedLabels : List String)
+    (unreadDefs : Std.HashSet String)
     (cache : Strata.PtrCache.PtrCache1 EncodeResult.Assembly.ofFrames) :
     Except Format (EncodeResult × SMTEncodeState ×
       Strata.PtrCache.PtrCache1 EncodeResult.Assembly.ofFrames) := do
-  if prunedLabels.isEmpty then
+  if prunedLabels.isEmpty && unreadDefs.isEmpty then
     let st ← ((smtEncodingFold factory).advance ob.assumptions.reverse).exec st
     -- Encode the goal before assembling the entries: if both fail, the
     -- goal's error is reported.
@@ -1571,7 +1711,7 @@ def encodeObligationToSMTCached (factory : @Lambda.Factory CoreLParams) (st : SM
     let r ← asm.finish factory goalTerm goalPending ctx
     .ok (r, st, cache)
   else
-    let (r, st) ← encodeObligationToSMT factory st ob prunedLabels
+    let (r, st) ← encodeObligationToSMT factory st ob prunedLabels unreadDefs
     .ok (r, st, cache)
 
 end -- public section

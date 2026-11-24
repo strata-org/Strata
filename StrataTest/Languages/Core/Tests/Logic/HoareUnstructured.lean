@@ -821,6 +821,7 @@ private theorem false_ens_initEnvWF (model : Lambda.Interp Core.Factory) :
   definedVarsNotReserved := by intro n _ name _ p hp; simp [testParams] at hp
   reservedFresh := by intro n _ name _ p hp; simp [testParams] at hp
   factoryDeclared := by intro nm _; rfl
+  runtimeFactoryDeclared := by intro f _; rfl
   initTypesInhabited := by
     intro ty hty
     have hlist : Imperative.DetCFG.initTypes falseEnsCFG = [intLTy] := by native_decide
@@ -1470,6 +1471,7 @@ theorem copy_call_triple :
             simp at hn
           reservedFresh := by intro n _ name _ p hp; simp [testParams] at hp
           factoryDeclared := by intro nm _; rfl
+          runtimeFactoryDeclared := by intro f _; rfl
           initTypesInhabited := by
             intro ty hty
             rw [show Imperative.DetCFG.initTypes copyCFG = [] from by native_decide] at hty

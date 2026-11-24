@@ -603,7 +603,7 @@ procedure runMe()
 };
 procedure caller() opaque {
   runMe()
-//^^^^^^^ error: entry procedure 'runMe' cannot be called here: it uses file-scope globals, which it initializes as locals rather than accepting as the hidden parameters this call would pass
+//^^^^^^^ error: entry procedure 'runMe' cannot be called
 };
 #end
 
@@ -621,7 +621,18 @@ procedure runMe()
 procedure caller() opaque {
   g := 1;
   runMe()
+//^^^^^^^ error: entry procedure 'runMe' cannot be called
 };
+#end
+
+#guard_msgs in
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+composite Box { var v: int }
+procedure a() entry opaque modifies * { var b: Box := new Box; b#v := 1 };
+procedure b() entry opaque modifies * { a(); assert false };
+//                                      ^^^ error: entry procedure 'a' cannot be called
 #end
 
 #guard_msgs in
@@ -1609,7 +1620,7 @@ procedure runMe()
 };
 procedure caller() opaque {
   runMe()
-//^^^^^^^ error: entry procedure 'runMe' cannot be called here: it uses file-scope globals, which it initializes as locals rather than accepting as the hidden parameters this call would pass
+//^^^^^^^ error: entry procedure 'runMe' cannot be called
 };
 #end
 

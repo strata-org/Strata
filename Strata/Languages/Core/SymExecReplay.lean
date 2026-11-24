@@ -44,11 +44,15 @@ open Imperative Lambda
 @[expose] public section
 
 /-- The model's value for a symbol, else its type's default; `none` if `sym` is not a
-    type-annotated free variable or the type has no default. -/
+    type-annotated free variable or the type has no default. A join symbol
+    (`isJoinValueName`), which names a merged value, gets no default: its value is fixed by its
+    definition, so a model without it cannot decide a guard that mentions it, and replay then
+    cannot validate the model. -/
 def modelValue (F : Lambda.Factory CoreLParams) (model : CoreIdent → Option Expression.Expr)
     (sym : Expression.Expr) : Option Expression.Expr :=
   match sym with
-  | .fvar _ x (some ty) => (model x).orElse fun _ => defaultValueIn F ty
+  | .fvar _ x (some ty) =>
+    (model x).orElse fun _ => if isJoinValueName x.name then none else defaultValueIn F ty
   | _ => none
 
 /-- The oracle of the run that a record of choices (`ms`, oldest first) stands for: each
@@ -80,7 +84,13 @@ def guardUnder (F : Lambda.Factory CoreLParams) (model : CoreIdent → Option Ex
     `F`), through the statements or the CFG the run executed. The oracle is the one of the run
     the model picks (`oracleFor`). `none` if a symbol has neither a model value nor a default,
     or a merge guard on the path does not evaluate to a Boolean under the model
-    (`guardUnder`). The check is identified by its label and metadata. -/
+    (`guardUnder`). The check is identified by its label and metadata.
+
+    A merge guard can mention a join symbol (`isJoinValueName`), the name of a value merged at
+    an earlier join, and `model` must give it: a model without it gets `none`. A solver's model
+    gives every join symbol a value, but the verifier's output program declares join symbols by
+    `init`s, whose values it does not ask the solver for (`Core.SMT.isReportedName`), so a caller
+    replaying a solver's model must ask for them as well. -/
 def replayObl (F : Lambda.Factory CoreLParams) (r : Result) (o : Obl)
     (model : CoreIdent → Option Expression.Expr) (fuel : Nat := 10000) :
     Option (CEValidationVerdict StopReason) := do

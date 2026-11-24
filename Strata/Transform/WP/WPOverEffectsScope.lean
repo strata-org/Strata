@@ -284,7 +284,7 @@ private theorem init_det_x (hκ : κ ≠ .top) {ty : P.Ty} {e : P.Expr} {md : Me
     (havS : ∀ z ∈ S, ∀ b j, z = freshName b j → s.avoid.contains z = true)
     (hS : Stmt.WellScoped Lc S (.cmd (.cmd (.init x ty (.det e) md)))) :
     ArmScope S (Block.freeVars [.cmd (.cmd (.init x ty (.det e) md))]) s s' r := by
-  simp only [wpStmt, Bool.not_true, Bool.false_eq_true, ↓reduceIte, pure_bind] at h
+  simp only [wpStmt, keepInit, Bool.not_true, Bool.false_eq_true, ↓reduceIte, pure_bind] at h
   peel h ⟨⟨we, rd⟩, s1, h1⟩ ⟨n, s2, h2⟩ _ ⟨xd, s4, h4⟩ _ ⟨_, s5, h5⟩ ⟨_, s6, h6⟩ rfl
   obtain ⟨⟨-, -, -, -, hrd⟩, -, hs1, hcur1⟩ := wRen_run h1
   have hw1 : WFSt s1 := (wRen_walk h1).wf hwf nofun
@@ -344,7 +344,7 @@ private theorem init_nondet_x {ty : P.Ty} {md : MetaData P} {S : List P.Ident}
     (hx : ∀ b j, x = freshName b j → s.avoid.contains x = true)
     (havS : ∀ z ∈ S, ∀ b j, z = freshName b j → s.avoid.contains z = true) (hxS : x ∉ S) :
     ArmScope S (Block.freeVars [.cmd (.cmd (.init x ty .nondet md))]) s s' r := by
-  simp only [wpStmt, Bool.not_true, Bool.false_eq_true, ↓reduceIte] at h
+  simp only [wpStmt, keepInit, pure_bind, Bool.not_true, Bool.false_eq_true, ↓reduceIte] at h
   peel h ⟨n, s2, h2⟩ _ ⟨_, s5, h5⟩ rfl
   obtain ⟨⟨s1, h1⟩, -, -, -, hs⟩ := wDecl_spec h2
   have hl5 : s5.live = s2.live.erase n := by cases h5; rfl
@@ -586,7 +586,8 @@ theorem init_decl_cur (hκ : κ ≠ .top) {z : P.Ident} {t : PStmt P} {a : WRes 
   obtain ⟨ty, e, md, rfl⟩ : ∃ ty e md, t = .cmd (.cmd (.init z ty e md)) := by
     unfold Stmt.topInits at hz
     split at hz <;> simp_all
-  cases e <;> simp only [wpStmt, Bool.not_true, Bool.false_eq_true, ↓reduceIte, pure_bind] at h
+  cases e <;>
+    simp only [wpStmt, keepInit, Bool.not_true, Bool.false_eq_true, ↓reduceIte, pure_bind] at h
   · peel h ⟨⟨we, rd⟩, s1, h1⟩ ⟨n', s2, h2⟩ _
     obtain ⟨⟨s3, h3⟩, -⟩ := wDecl_spec h2
     obtain rfl := wName_eq_cur ((wRen_run h1).2.2.2 z n hc) h3

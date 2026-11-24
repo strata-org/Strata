@@ -77,5 +77,40 @@ Result: ❌ fail
 #guard_msgs in
 #eval Strata.Core.verify mapPgm
 
+---------------------------------------------------------------------
+-- Extensionality depends on the SMT encoding. Two maps equal at every key are
+-- equal under the array encoding, but not provably so under the default encoding,
+-- whose `Map` axioms speak only about `select`. The tests run quietly, so they pin
+-- the verdicts and not the models the solver chooses.
+private def mapExtPgm :=
+#strata
+program Core;
+
+procedure MapExt(m : Map int int, n : Map int int)
+{
+  assume [same_values]: (forall k : int :: m[k] == n[k]);
+  assert [ext]: m == n;
+};
+#end
+
+/--
+info:
+Obligation: ext
+Property: assert
+Result: ❓ unknown
+-/
+#guard_msgs in
+#eval Strata.Core.verify mapExtPgm (options := .quiet)
+
+/--
+info:
+Obligation: ext
+Property: assert
+Result: ✅ pass
+-/
+#guard_msgs in
+#eval Strata.Core.verify mapExtPgm
+  (options := { Core.VerifyOptions.quiet with useArrayTheory := true })
+
 end
 ---------------------------------------------------------------------

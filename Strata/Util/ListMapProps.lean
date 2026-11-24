@@ -44,6 +44,12 @@ theorem ListMap.keys_eq_map_fst (m : ListMap α β) : m.keys = m.map Prod.fst :=
   | nil => rfl
   | cons p t ih => cases p; simp [ListMap.keys, ih]
 
+/-- The key of an entry of a map is a key of the map. -/
+theorem ListMap.mem_keys_of_mem_toList {m : ListMap α β} {x : α} {t : β}
+    (h : (x, t) ∈ m.toList) : x ∈ m.keys := by
+  rw [ListMap.keys_eq_map_fst]
+  exact List.mem_map.2 ⟨(x, t), h, rfl⟩
+
 /-- Mapping over the values of a map keeps its keys. -/
 theorem ListMap.keys_map_values {γ : Type _} (m : ListMap α β) (g : α × β → γ) :
     @ListMap.keys α γ (List.map (fun x => (x.fst, g x)) m) = m.keys := by
@@ -56,6 +62,20 @@ theorem ListMap.values_eq_map_snd (m : ListMap α β) : m.values = m.map Prod.sn
   induction m with
   | nil => rfl
   | cons p t ih => cases p; simp [ListMap.values, ih]
+
+/-- The key and the value at a position of a map are the two parts of its entry there. -/
+theorem ListMap.keys_values_getElem?_of_toList {m : ListMap α β} {i : Nat} {x : α} {t : β}
+    (h : m.toList[i]? = some (x, t)) : m.keys[i]? = some x ∧ m.values[i]? = some t := by
+  rw [ListMap.keys_eq_map_fst, ListMap.values_eq_map_snd]
+  show (List.map Prod.fst m.toList)[i]? = some x ∧ (List.map Prod.snd m.toList)[i]? = some t
+  simp only [List.getElem?_map, h, Option.map_some, and_self]
+
+/-- Mapping `g` over the values of a map maps it over its list of values. -/
+theorem ListMap.values_map_snd {γ : Type _} (m : ListMap α β) (g : β → γ) :
+    ListMap.values (List.map (fun p => (p.1, g p.2)) m) = m.values.map g := by
+  induction m with
+  | nil => rfl
+  | cons p t ih => simp only [List.map_cons, ListMap.values, ih]
 
 
 /-- Every value in a map has a key. -/

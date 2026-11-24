@@ -10,6 +10,7 @@ import Strata.Languages.Core.Logic.HoareTotal
 import Strata.Languages.Core.Logic.HoareUnstructured
 import Strata.Languages.Core.Analysis.ProcedureCorrectnessProps
 import Strata.DL.Imperative.StoreProps
+import Strata.DL.Imperative.MetaDataProps
 
 open Imperative
 open StrataDDM (Program)
@@ -328,7 +329,8 @@ private theorem copyCfgProc_mapTys (n : String) (T : Lambda.LMonoTy)
     (copyCfgProc n T).mapTys f [] = copyCfgProc n (f T) := by
   simp [Core.Procedure.mapTys, copyCfgProc, copyCfg, copyHeader, copySpec,
     Core.DetCFG.mapCmdsGuards, Core.mapCmdTys, Core.mapCmdWith, Lambda.mapExprTys,
-    Lambda.LExpr.replaceUserProvidedType, Imperative.ExprOrNondet.map]
+    Lambda.LExpr.replaceUserProvidedType, Imperative.ExprOrNondet.map,
+    Imperative.MetaData.mapExprs_empty]
 
 /-- Mapping the types of `relayProc n extra T callee tyArgs` maps `extra`, `T` and
     `tyArgs`. -/
@@ -1208,6 +1210,7 @@ private theorem copyCfg_gate {n : String} {T : Lambda.LMonoTy} {fac : Core.Expre
     cases hk
   reservedFresh := by intro _ _ _ _ p hp; simp [testParams] at hp
   factoryDeclared := fun _ _ => rfl
+  runtimeFactoryDeclared := fun _ _ => rfl
   initTypesInhabited := fun ty hty => by
     rw [show Imperative.DetCFG.initTypes (copyCfg n T) = [] from rfl] at hty
     cases hty

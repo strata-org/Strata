@@ -23,8 +23,8 @@ import Strata.DL.Imperative.InterpreterConfigProps
 
 Lemmas about the definitions of `InterpreterCall.lean`:
 * reduction lemmas for `stepCmd` and `runCallInterp` (`stepCmd_cmd`, `runCallInterp_eq`);
-* path feasibility (`pathFeasible_of_subset`, `pathFeasible_cons`) and genuineness as a trace
-  property (`genuine_iff`);
+* path feasibility (`pathFeasible_of_subset`, `pathFeasible_cons`, its decision procedure
+  `pathFeasibleB_iff`) and genuineness as a trace property (`genuine_iff`);
 * the executable call helpers against the reference store relations
   (`readVarList_of_readValues`, `readValues_of_readVarList`, `readVarList_defined`,
   `bindPositional_of_updateStates`, `updateStates_bindPositional`,
@@ -57,7 +57,15 @@ variable [HasBool P] [DecidableEq P.Expr] [InterpLang P] [HasFvar P]
     (fuel : Nat) (env : IEnv P) (base : Cmd P) :
     stepCmd (m := m) π depth fuel env (.cmd base)
       = (stepBaseCmdStore fuel env.factory env.store base >>=
-          fun store => pure (.terminal { env with store := store })) := by rw [stepCmd]
+          fun store => pure (.terminal { env with store := store })) := by rw [stepCmd, stepCmdWith]; rfl
+
+omit [DecidableEq P.Ident] [HasOldIdent P] [HasBool P] [DecidableEq P.Expr] [HasFvar P]
+    [ProcedureHeader P Hdr] in
+/-- A `CmdExt` command is never an extension command: its view is a base command or a call. -/
+theorem CmdExt.view_ne_ext {m : Type → Type} (c : CmdExt P)
+    (run : Nat → IEnv P → m (IConfig P (CmdExt P))) :
+    CmdExt.view (Hdr := Hdr) (m := m) c ≠ CmdView.ext run := by
+  cases c <;> simp [CmdExt.view]
 
 /-- The call-aware driver `runCallInterp` is `runInterp` over the stepper `stepCmd π d`. -/
 @[simp] theorem runCallInterp_eq {m : Type → Type} [Monad m] [InterpEffects P m]
@@ -84,6 +92,15 @@ omit [DecidableEq P.Expr] in
 theorem pathFeasible_of_subset {fuel : Nat} {evs evs' : List (IEvent P)}
     (hsub : evs' ⊆ evs) (h : PathFeasible fuel evs) : PathFeasible fuel evs' :=
   fun _ => h _ ∘ @hsub _
+
+omit [DecidableEq P.Expr] in
+/-- `PathFeasibleB` decides `PathFeasible`: it accepts `evs` exactly when every `.assume` event
+    of `evs` evaluates under the bounded evaluator to `tt` up to metadata. -/
+theorem pathFeasibleB_iff {fuel : Nat} {evs : List (IEvent P)} :
+    PathFeasibleB fuel evs = true ↔ PathFeasible fuel evs := by
+  simp only [PathFeasibleB, PathFeasible, List.all_eq_true]
+  exact ⟨fun h a ha => beq_iff_eq.1 (h _ ha), fun h ev hev => by
+    cases ev <;> simp only [beq_iff_eq] <;> first | exact h _ hev | rfl⟩
 
 omit [DecidableEq P.Expr] in
 /-- `e :: evs` is path-feasible (every `.assume` event evaluates under the bounded evaluator to

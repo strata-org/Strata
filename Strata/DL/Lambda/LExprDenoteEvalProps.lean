@@ -14,6 +14,7 @@ import all Strata.DL.Lambda.Denote.LExprAnnotated
 import all Strata.DL.Lambda.LExprWF
 import Strata.DL.Lambda.LExprWFProps
 import Strata.DL.Lambda.LExprTProps
+import Strata.DL.Lambda.LTyProps
 import Strata.DL.Lambda.OperationalSemanticsProps
 
 /-!
@@ -37,8 +38,8 @@ definitions it uses.
 - `LExpr.denoteEval_of_hasTypeA` — a well-typed expression evaluates
 - `LExpr.denoteEval_of_isValue` — a well-typed value (`isValue`) denotes one semantic
   value in every store
-- `LExpr.denoteEval_ite_iff`, `LExpr.denoteEval_app_op_bool_iff`, `LExpr.denoteEval_app2_op`
-  — conditionals and operator applications
+- `LExpr.denoteEval_ite_iff`, `LExpr.denoteEval_app_op_bool_iff`, `LExpr.denoteEval_app2_op`,
+  `LExpr.denoteEval_app2_op_int_inv` — conditionals and operator applications
 - `LExpr.denoteEval_const`, `LExpr.denoteEval_eq_true`, `LExpr.denoteEval_eq_false` —
   literals and equality
 - `LExpr.denoteEval_replaceMetadata1`, `LExpr.denoteEvalResult_replaceMetadata1`,
@@ -266,6 +267,62 @@ theorem LSort.toMonoTy_isGround (s : LSort) : s.toMonoTy.IsGround := by
 theorem LMonoTy.IsGround.substTyVars_eq {τ : LMonoTy} (h : τ.IsGround) (ρ ρ' : TyVarVal) :
     τ.substTyVars ρ = τ.substTyVars ρ' := by
   rw [← h, LSort.toMonoTy_substTyVars, LSort.toMonoTy_substTyVars]
+
+/-- A type constructor applied to ground types is ground. -/
+private theorem LMonoTy.IsGround.tcons {name : String} {args : List LMonoTy}
+    (h : ∀ a ∈ args, a.IsGround) : (LMonoTy.tcons name args).IsGround := by
+  have hmap : ∀ as : List LMonoTy, (∀ a ∈ as, a.IsGround) →
+      LSort.toMonoTy.map (LMonoTy.substTyVars.map refTyVarVal as) = as := by
+    intro as
+    induction as with
+    | nil => intro _; rfl
+    | cons a rest ih =>
+      intro hg
+      simp only [LMonoTy.substTyVars.map, LSort.toMonoTy.map, List.cons.injEq]
+      exact ⟨hg a List.mem_cons_self,
+        ih (fun b hb => hg b (List.mem_cons_of_mem _ hb))⟩
+  simp only [LMonoTy.IsGround, LMonoTy.substTyVars, LSort.toMonoTy, LMonoTy.tcons.injEq,
+    true_and]
+  exact hmap args h
+
+/-- Substituting for the free type variables of a type, ground types for all of them, gives a
+    ground type. -/
+theorem LMonoTy.subst_isGround {S : Subst} {ty : LMonoTy}
+    (h : ∀ a ∈ LMonoTy.freeVars ty, (LMonoTy.subst S (.ftvar a)).IsGround) :
+    (LMonoTy.subst S ty).IsGround := by
+  induction ty with
+  | ftvar x => exact h x (by simp only [LMonoTy.freeVars, List.mem_singleton])
+  | bitvec n =>
+    rw [LMonoTy.subst_bitvec]
+    rfl
+  | tcons name args ih =>
+    rw [LMonoTy.subst_tcons, LMonoTys.subst_eq_map]
+    apply LMonoTy.IsGround.tcons
+    intro a ha
+    obtain ⟨b, hb, rfl⟩ := List.mem_map.1 ha
+    refine ih b hb (fun v hv => h v ?_)
+    exact LMonoTys.freeVars_mem_subset hb hv
+
+/-- A type whose free type variables are sent by `σ` and then by `S` to ground types is ground
+    after `σ` and then `S` are applied. -/
+theorem LMonoTy.subst_subst_isGround {S σ : Subst} {ty : LMonoTy}
+    (h : ∀ a ∈ LMonoTy.freeVars ty,
+      (LMonoTy.subst S (LMonoTy.subst σ (.ftvar a))).IsGround) :
+    (LMonoTy.subst S (LMonoTy.subst σ ty)).IsGround := by
+  induction ty with
+  | ftvar x => exact h x (by simp only [LMonoTy.freeVars, List.mem_singleton])
+  | bitvec n =>
+    rw [LMonoTy.subst_bitvec, LMonoTy.subst_bitvec]
+    rfl
+  | tcons name args ih =>
+    rw [LMonoTy.subst_tcons, LMonoTys.subst_eq_map, LMonoTy.subst_tcons,
+      LMonoTys.subst_eq_map]
+    apply LMonoTy.IsGround.tcons
+    intro a ha
+    obtain ⟨b, hb, rfl⟩ := List.mem_map.1 ha
+    obtain ⟨c, hc, rfl⟩ := List.mem_map.1 hb
+    refine ih c hc (fun v hv => h v ?_)
+    exact LMonoTys.freeVars_mem_subset hc hv
 
 /-! ### Characterization -/
 
@@ -1620,6 +1677,24 @@ theorem LExpr.denoteEval_app2_op_int {M : ModeledFactory T} {σ : ValStore T}
         (M.model.opInterp o.name (LSort.mkArrow (c.substTyVars M.tyVarVal) [.int, .int])
           : Int → Int → SortDenote M.model.tcInterp (c.substTyVars M.tyVarVal)) a b⟩ :=
   LExpr.denoteEval_app2_op_val (a := .int) (b := .int) rfl rfl hc hx hy
+
+/-- **Inversion of a binary integer operator.**  An operator annotated `int → int → c` applied to
+    two arguments evaluates only when both arguments evaluate to integers. -/
+theorem LExpr.denoteEval_app2_op_int_inv
+    {M : ModeledFactory T} {σ : ValStore T} {m m' m'' : T.Metadata} {o : Identifier T.IDMeta}
+    {x y : LExpr T.mono} {c : LMonoTy} {v : SemValue}
+    (h : (LExpr.app m (.app m' (.op m'' o (some (LMonoTy.arrow .int (LMonoTy.arrow .int c)))) x)
+        y).denoteEval M σ = some v) :
+    ∃ a b, x.denoteEval M σ = some (SemValue.ofInt M.model.tcInterp a) ∧
+      y.denoteEval M σ = some (SemValue.ofInt M.model.tcInterp b) := by
+  obtain ⟨hd, τ, ht, -, -⟩ := LExpr.denoteEval_eq_some_iff.mp h
+  obtain ⟨ay, hf, hy⟩ := HasTypeA.app_inv ht
+  obtain ⟨ax, hop, hx⟩ := HasTypeA.app_inv hf
+  cases HasTypeA.op_inv hop
+  exact ⟨_, _, LExpr.denoteEval_eq_ofInt_iff.mpr
+      ⟨hd.mono fun z ty hz => ⟨ty, by simp [LExpr.freeVars, hz]⟩, hx, rfl⟩,
+    LExpr.denoteEval_eq_ofInt_iff.mpr
+      ⟨hd.mono fun z ty hz => ⟨ty, by simp [LExpr.freeVars, hz]⟩, hy, rfl⟩⟩
 
 /-- A well-typed value (`isValue`) at a ground type `τ` evaluates, in every store, to one
 semantic value of the model's interpretation whose sort is `τ`. -/

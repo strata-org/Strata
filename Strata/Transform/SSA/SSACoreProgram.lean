@@ -29,28 +29,30 @@ public section
 /-- **The SSA phase of a guarded statement list** `lay` of the procedure `p`: `ssaEntry` with the
     parameter types of `p`, its parameters (`Procedure.entryParams`) and the aliases `old x` of
     its in-out parameters (`Procedure.oldAliases`), the fresh names avoiding every identifier of
-    `lay` and of the parameters of `p` and every name of `G`. -/
-@[expose] def ssaLoopFree (G : IdSet Expression) (p : Procedure) (lay : Statements) :
-    Except String (Ren Expression × SOut Expression) :=
-  ssaEntry G p.paramTys p.entryParams p.oldAliases lay
+    `lay` and of the parameters of `p` and every name of `G`, operator applications on constants
+    evaluated under the factory `fac`. -/
+@[expose] def ssaLoopFree (fac : Lambda.Factory CoreLParams) (G : IdSet Expression)
+    (p : Procedure) (lay : Statements) : Except String (Ren Expression × SOut Expression) :=
+  ssaEntry fac G p.paramTys p.entryParams p.oldAliases lay
 
-/-- The SSA phase of one procedure of a guarded program: an obligation procedure of the same name
-    without parameters. -/
-@[expose] def ssaProc (G : IdSet Expression) (q : Procedure) : Except String Decl := do
+/-- The SSA phase of one procedure of a guarded program under the factory `fac`: an obligation
+    procedure of the same name without parameters. -/
+@[expose] def ssaProc (fac : Lambda.Factory CoreLParams) (G : IdSet Expression) (q : Procedure) :
+    Except String Decl := do
   match q.body with
   | .cfg _ => throw s!"SSA: procedure '{q.header.name.name}' has a CFG body"
   | .structured lay =>
-    let (_, so) ← ssaLoopFree G q lay
+    let (_, so) ← ssaLoopFree fac G q lay
     pure (Decl.obligationProc q.header.name so.out)
 
-/-- **The SSA phase of a program**: every procedure through `ssaProc`, its fresh names avoiding
-    the names of `reserved` and those the program declares (one hash set built once); every
-    other declaration kept, in order. -/
-@[expose] def ssaProgram (reserved : List Expression.Ident) (mid : Program) :
-    Except String Program := do
+/-- **The SSA phase of a program** under the factory `fac`: every procedure through `ssaProc`,
+    its fresh names avoiding the names of `reserved` and those the program declares (one hash set
+    built once); every other declaration kept, in order. -/
+@[expose] def ssaProgram (fac : Lambda.Factory CoreLParams) (reserved : List Expression.Ident)
+    (mid : Program) : Except String Program := do
   let G := IdSet.ofList (avoidOf [] (reserved ++ declNames mid))
   let decls ← mid.decls.mapM fun d => match d with
-    | .proc q _ => ssaProc G q
+    | .proc q _ => ssaProc fac G q
     | d => pure d
   pure { decls := decls }
 
@@ -63,13 +65,15 @@ open Strata
 public section
 
 /-- **The SSA phase of a program** (`Core.WP.ssaProgram`): each guarded procedure becomes an
-    obligation procedure of the same name; the names it introduces avoid the names of the
-    factory's functions and those the program declares. -/
+    obligation procedure of the same name; operator applications on constants are evaluated
+    under the factory of the WP pipeline on the program (`Core.wpFactory`), and the names the
+    phase introduces avoid the names of the factory's functions and those the program
+    declares. -/
 def ssaProgramOf (program : Program)
     (moreFns : Lambda.Factory CoreLParams := Lambda.Factory.default) : Except Message Program := do
-  let factory ← Core.Factory.addFactory moreFns
+  let factory ← wpFactory moreFns program
   let reserved := factory.toArray.toList.map (·.name)
-  match WP.ssaProgram reserved program with
+  match WP.ssaProgram factory reserved program with
   | .ok p => return p
   | .error e => throw (Message.fromString e)
 

@@ -78,6 +78,13 @@ def hexVal (c : Char) : Nat :=
 def isHexDigit (c : Char) : Bool :=
   ('0' ≤ c && c ≤ '9') || ('A' ≤ c && c ≤ 'F')
 
+/-- The value of a hexadecimal digit, either case, or `none` for any other character. -/
+def hexDigitValue? (c : Char) : Option Nat :=
+  if '0' ≤ c && c ≤ '9' then some (c.toNat - '0'.toNat)
+  else if 'a' ≤ c && c ≤ 'f' then some (c.toNat - 'a'.toNat + 10)
+  else if 'A' ≤ c && c ≤ 'F' then some (c.toNat - 'A'.toNat + 10)
+  else none
+
 /-- The `w` hex digits naming `n`, most significant first. Fixed width, so a
     reader knows where the digits end without a terminator. -/
 def hexDigits : Nat → Nat → List Char

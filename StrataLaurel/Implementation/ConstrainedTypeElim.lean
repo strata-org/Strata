@@ -132,7 +132,7 @@ def mkConstraintProc (ptMap : ConstrainedTypeMap) (ct : ConstrainedType) : Proce
         { val := .Call none (mkId Operation.AndThen.procName) [parentCall, ct.constraint] [], source := src }
       else ct.constraint
     | _ => ct.constraint
-  { name := mkId s!"{ct.name.text}$constraint"
+  { name := { mkId s!"{ct.name.text}$constraint" with source := ct.name.source }
     inputs := [{ name := ct.valueName, type := baseType }]
     outputs := [{ name := mkId resultOutputName, type := { val := .TBool, source := src } }]
     body := .Transparent { val := .Block [
@@ -357,7 +357,7 @@ private def mkWitnessProc (cx : CteCtx) (ct : ConstrainedType) : Procedure :=
       (⟨.Assume ·, src⟩)
   let assert : StmtExprMd :=
     ⟨.Assert (constraintCallFor cx (.UserDefined ct.name) witnessId (src := src)).get! none, src⟩
-  { name := mkId s!"$witness_{ct.name.text}"
+  { name := { mkId s!"$witness_{ct.name.text}" with source := ct.name.source }
     inputs := []
     outputs := []
     body := .Opaque [] (some ⟨.Block ([witnessInit] ++ assumeBase ++ [assert]) none [] none, src⟩) []
@@ -445,7 +445,7 @@ private def mkHeapFieldConstraintProc (cx : CteCtx) (f : HeapField) : Option Pro
   let refName : Identifier := mkId "$r"
   let fieldRead : StmtExprMd := ⟨.Var (.Field ⟨.Var (.Local refName), src⟩ f.name), src⟩
   (constraintCallForExpr cx f.type.val fieldRead (src := src) (only := some false)).map fun constraint =>
-    { name := mkId s!"$fieldConstraint_{f.name.text.replace "." "$"}"
+    { name := { mkId s!"$fieldConstraint_{f.name.text.replace "." "$"}" with source := src }
       inputs := [{ name := refName, type := ⟨.TInt, src⟩ }]
       outputs := []
       body := .Opaque [{ condition := constraint }] none []

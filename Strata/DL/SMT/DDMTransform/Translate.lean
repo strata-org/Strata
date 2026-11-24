@@ -377,6 +377,14 @@ Convert an `SMTResponseDDM.Term` (parsed from solver output) into a
 - Spec constants (numerals, decimals, strings, hex/binary literals)
 - Qualified identifiers (symbols like `true`, `false`, constructor names)
 - Function applications (constructor applications, `(as Nil (List Int))`)
+- A negative number printed as `(- <literal>)`, folded into the literal, also when the
+  literal is the value of a `let`-bound symbol (`(let ((a 5)) (- a))` is `-5`)
+- `(let ((x v) …) body)`, translated as `body` where each use of `x` reads the
+  translation of `v` (`useSymbol`). Each `v` is translated once, and every use of `x`
+  shares that translation, so the cost is linear in the size of the term even when
+  bindings are used several times. The bindings are parallel, as in SMT-LIB: a `v`
+  reads the names bound outside the `let`, never its siblings.
+- `(! t attrs)`, translated as `t`
 
 Note that the returned SMT.Term might not have the right type information, as
 the type information does not exist in the Term itself. It is the caller's
@@ -385,36 +393,46 @@ ignore these.
 -/
 partial def translateFromDDMTermToUntyped (t : Strata.SMTResponseDDM.Term StrataDDM.SourceRange)
     (declaredNames : Std.HashSet String := {})
-    : Except String Strata.SMT.Term := do
-  match t with
-  | .spec_constant_term _ sc =>
-    -- Exhaustive match over all SpecConstant variants; Lean will flag any missing case.
-    match sc with
-    | .sc_numeral _ n     => return .prim (.int n)
-    | .sc_numeral_neg _ n => return .prim (.int (-(n : Int)))
-    | .sc_decimal _ d     => return .prim (.real d)
-    | .sc_decimal_neg _ d => return .prim (.real { d with mantissa := -d.mantissa })
-    | .sc_str _ s         => return .prim (.string s)
-  | .qual_identifier _ qi =>
-    match resolveQI qi with
-    | some ("true", _, _)  => return .prim (.bool true)
-    | some ("false", _, _) => return .prim (.bool false)
-    | some (name, _, idxs) =>
-      if name.startsWith "bv" then
-        if let some value := (name.drop 2).toNat? then
-          if let #[.ind_numeral _ width] := idxs then
-            return .prim (.bitvec (BitVec.ofNat width value))
-      return mkUFApp name []
-    | none              => throw s!"translateFromDDMTermUnsafe: don't know how to convert {repr t}"
-  | .qual_identifier_args _ qi args =>
-    match resolveQI qi with
-    | some (name, _, _) =>
-      let argTerms ← args.val.toList.mapM (translateFromDDMTermToUntyped · declaredNames)
-      return mkUFApp name argTerms
-    | none => throw s!"translateFromDDMTermToUntyped: don't know how to convert {repr t}"
-  | _ => throw s!"translateFromDDMTermToUntyped: don't know how to convert {repr t}"
+    : Except String Strata.SMT.Term :=
+  go {} t
 
 where
+  /-- Translate `t` where `env` maps each `let`-bound symbol in scope to the
+      translation of its value. -/
+  go (env : Std.HashMap String Strata.SMT.Term)
+      (t : Strata.SMTResponseDDM.Term StrataDDM.SourceRange) : Except String Strata.SMT.Term := do
+    match t with
+    | .spec_constant_term _ sc =>
+      -- Exhaustive match over all SpecConstant variants; Lean will flag any missing case.
+      match sc with
+      | .sc_numeral _ n     => return .prim (.int n)
+      | .sc_numeral_neg _ n => return .prim (.int (-(n : Int)))
+      | .sc_decimal _ d     => return .prim (.real d)
+      | .sc_decimal_neg _ d => return .prim (.real { d with mantissa := -d.mantissa })
+      | .sc_str _ s         => return .prim (.string s)
+    | .qual_identifier _ qi =>
+      match resolveQI qi with
+      | some ("true", _, _)  => return .prim (.bool true)
+      | some ("false", _, _) => return .prim (.bool false)
+      | some (name, _, idxs) =>
+        if name.startsWith "bv" then
+          if let some value := (name.drop 2).toNat? then
+            if let #[.ind_numeral _ width] := idxs then
+              return .prim (.bitvec (BitVec.ofNat width value))
+        return useSymbol env name []
+      | none => throw s!"translateFromDDMTermUnsafe: don't know how to convert {repr t}"
+    | .qual_identifier_args _ qi args =>
+      match resolveQI qi with
+      | some (name, _, _) => return useSymbol env name (← args.val.toList.mapM (go env))
+      | none => throw s!"translateFromDDMTermToUntyped: don't know how to convert {repr t}"
+    | .let_smt _ vbps body =>
+      let binds ← vbps.val.toList.mapM fun
+        | .val_binding _ sym v => do
+          return (Strata.SMT.Symbol.ofSolverSymbol declaredNames (symbolToString sym),
+            ← go env v)
+      go (binds.foldr (fun (x, b) m => m.insert x b) env) body
+    | .bang _ inner _ => go env inner
+    | _ => throw s!"translateFromDDMTermToUntyped: don't know how to convert {repr t}"
   /-- Extract the name string, optional sort, and indices from a QualIdentifier. -/
   resolveQI (qi : Strata.SMTResponseDDM.QualIdentifier StrataDDM.SourceRange)
       : Option (String × Option (Strata.SMTResponseDDM.SMTSort StrataDDM.SourceRange) ×
@@ -428,6 +446,33 @@ where
       match iden with
       | .iden_simple _ sym => some (symbolToString sym, some sort, #[])
       | .iden_indexed _ sym idxs => some (symbolToString sym, some sort, idxs.val)
+  /-- The use of the symbol `name` applied to the translated arguments `args`, where
+      `env` maps the `let`-bound symbols in scope to their translations (the first
+      binding of a symbol in a `let` wins). A nullary use `x` of a bound symbol is its
+      bound term. An applied use `(x a₁ … aₙ)`, as in cvc5's
+      `(let ((_let_1 (as Cons (List Int)))) (_let_1 1 …))`, is the bound term applied to
+      the `aᵢ`: when the bound term is the application `(f b₁ … bₘ)` (a constructor or
+      function name is the nullary one), the result is `(f b₁ … bₘ a₁ … aₙ)`. Any other
+      use is an application of the symbol (`mkUFApp`). Solvers print a negative number
+      as an application of the interpreted unary `-` to a literal, so `-` over a literal
+      folds into the negative literal (`negLit?`), also when the literal is the value of
+      a `let`-bound symbol; a `-` over anything else stays an application. Outside every
+      `let`, `-` is recognized by its spelling `name`; inside one, by its solver-symbol
+      reading (`Symbol.ofSolverSymbol`), the reading `let`-bound symbols are matched by. -/
+  useSymbol (env : Std.HashMap String Strata.SMT.Term) (name : String)
+      (args : List Strata.SMT.Term) : Strata.SMT.Term :=
+    let id := Strata.SMT.Symbol.ofSolverSymbol declaredNames name
+    match env[id]?, args with
+    | some b, [] => b
+    | some (.app op bargs bty), _ => .app op (bargs ++ args) bty
+    | _, _ => (negLit? (if env.isEmpty then name else id) args).getD (mkUFApp name args)
+  /-- The negative literal `-c` when `name` is the unary `-` and `args` is the single
+      integer or real literal `c`; `none` otherwise. -/
+  negLit? (name : String) (args : List Strata.SMT.Term) : Option Strata.SMT.Term :=
+    match name, args with
+    | "-", [.prim (.int n)] => some (.prim (.int (-n)))
+    | "-", [.prim (.real d)] => some (.prim (.real { d with mantissa := -d.mantissa }))
+    | _, _ => none
   /-- Extract the raw string from a Symbol. -/
   symbolToString (sym : Strata.SMTResponseDDM.Symbol StrataDDM.SourceRange) : String :=
     formatArg (.op (Strata.SMTResponseDDM.Symbol.toAst sym))

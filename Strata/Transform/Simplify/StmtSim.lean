@@ -190,7 +190,7 @@ def CtxSound.ofValues {ctx : Ctx} {M : ModeledFactory CoreLParams} {σ : ValStor
     (hok : ctx.FactoriesOK) (hV : ValuesSound ctx M σ)
     (hN : ∀ x r, Map.find? ctx.values x = some r → x ∈ N ∧ r.NamesIn (fun y : CoreIdent => y ∈ N))
     (hfac : Factory.WF ctx.foldFactory tf)
-    (hstep : Factory.StepWF ctx.foldFactory (storeTyMap σ N))
+    (hstep : Factory.StepWFOn ctx.foldFactory (storeTyMap σ N))
     (hfic : Factory.InterpConsistent M.model.tcInterp M.model.opInterp ctx.foldFactory)
     (hcic : ConstrInterpConsistent M.model.tcInterp M.model.opInterp ctx.foldFactory) :
     CtxSound ctx tf M.model.tcInterp M.model.opInterp
@@ -281,7 +281,7 @@ theorem simplifyExpr_eval {ctx : Ctx} {M : ModeledFactory CoreLParams}
     (hAV : ∀ x r, Map.find? ctx.values x = some r → A x ∧ r.NamesIn A)
     (hfac : Factory.WF ctx.foldFactory tf)
     (hstep : ∀ N : List CoreIdent, (∀ y ∈ N, A y) →
-      Factory.StepWF ctx.foldFactory (storeTyMap σ N))
+      Factory.StepWFOn ctx.foldFactory (storeTyMap σ N))
     (hfic : Factory.InterpConsistent M.model.tcInterp M.model.opInterp ctx.foldFactory)
     (hcic : ConstrInterpConsistent M.model.tcInterp M.model.opInterp ctx.foldFactory)
     {e : Expression.Expr} (he : ExprGood ctx.foldFactory M σ A e) :

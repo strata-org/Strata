@@ -192,22 +192,22 @@ private def printModesProvedAfterCheck (p : Core.Program) (hp : checkedFacts.hol
       | .error e => IO.println s!"error: {e}"
 
 /--
-info: symbolic pc: not proved
-wp pc: not proved
+info: symbolic pc: refuted
+wp pc: refuted
 -/
 #guard_msgs in
 #eval printModesProvedAfterCheck functionAst functionAst_facts
 
 /--
-info: symbolic pc: not proved
-wp pc: not proved
+info: symbolic pc: refuted
+wp pc: refuted
 -/
 #guard_msgs in
 #eval printModesProvedAfterCheck constAst constAst_facts
 
 /--
-info: symbolic pr: not proved
-wp pr: not proved
+info: symbolic pr: refuted
+wp pr: refuted
 -/
 #guard_msgs in
 #eval printModesProvedAfterCheck assignAst assignAst_facts
@@ -252,5 +252,23 @@ info: Except.ok "phase #18 `commonSubexprElim` requires `noInits` but preceding 
 /-- info: Except.ok "accepted" -/
 #guard_msgs in
 #eval validation ((Core.corePipelinePhases Core.VerifyOptions.quiet).map Core.phaseName)
+
+/-! The rewrite loop reduces the redexes of procedure bodies only, so it does not establish
+`noBetaRedexes`, which the back end requires: the default order of `--vcgen wp`, which ends with
+`betaReduce`, is accepted, and the same order without its final `betaReduce` is rejected. -/
+
+/-- The phase names of the `--vcgen wp` order. -/
+private def wpOrder : List String :=
+  (Core.corePipelinePhases { Core.VerifyOptions.quiet with vcgen := .wp }).map Core.phaseName
+
+/-- info: Except.ok "accepted" -/
+#guard_msgs in
+#eval validation wpOrder
+
+/--
+info: Except.ok "phase #17 `the verification back end` requires `noBetaRedexes` but preceding phases only guarantee `noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noPrecondsFromFuncs, hasObligationForm, noProcedureContracts, noPolymorphicProcedures, noPolymorphicFunctions, typeAnnotated, exitsCovered, armsHaveObligations`"
+-/
+#guard_msgs in
+#eval validation (wpOrder.dropLast)
 
 end Strata.WPGlobalNameTest

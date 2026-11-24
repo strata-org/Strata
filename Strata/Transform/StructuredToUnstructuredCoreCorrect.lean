@@ -145,7 +145,7 @@ theorem overapproximatesTraces (base : InitEnvWFParams) :
   · show Core.Logic.CFGInitEnvWF base out ρ₀
     subst hout_eq
     haveI : Nonempty Expression.Factory := ⟨ρ₀.factory⟩
-    obtain ⟨hsem, hstore, hdefs, hdnr, hfresh, -, hdu, hfactory, htypes, -⟩ :=
+    obtain ⟨hsem, hstore, hdefs, hdnr, hfresh, -, hdu, hfactory, hrfactory, htypes, -⟩ :=
       blockInitEnvWF_projectBase hwf hproj
     have hduLive :=
       Imperative.StructuredToUnstructuredWF.Block.cfgLive_defUseWellFormed
@@ -158,7 +158,8 @@ theorem overapproximatesTraces (base : InitEnvWFParams) :
         definedVarsNotReserved := ?_
         reservedFresh := ?_
         initTypesInhabited := ?_
-        factoryDeclared := ?_ }
+        factoryDeclared := ?_
+        runtimeFactoryDeclared := hrfactory }
     · intro n hn hnot
       rw [Imperative.embedCFG_definedVars] at hnot
       simp only [List.mem_append] at hn

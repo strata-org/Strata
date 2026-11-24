@@ -186,6 +186,9 @@ structure CapturedFrame where
   /-- Declarations this frame's entries caused, in entry order:
       on-the-fly `declare-fun`s, `varDecl` handles, drained definitions. -/
   declText : String
+  /-- The byte range `[start, stop)` of each variable definition's `define-fun` command in
+      `declText`, with the variable's name, in order. -/
+  defSpans : Array (String × Nat × Nat) := #[]
   /-- The frame's `(assert …)` lines, rendered from the same encoder state. -/
   assertText : String
   /-- Encoder state at frame open; restored when the frame is dropped, so
@@ -382,6 +385,8 @@ structure CaptureResult where
   sstate : SolverState
   dctx : SMT.Context
   declText : String
+  /-- The byte range of each variable definition's `define-fun` in `declText`, with its name. -/
+  defSpans : Array (String × Nat × Nat)
   assertText : String
   /-- Names newly registered in the encoder state, minus the managed seeds. -/
   discovered : List String
@@ -407,20 +412,16 @@ private def emitDrainedDefs (dctx dctx' : SMT.Context) :
   for f in (dctx'.ifs.toArray).toList.drop oldIfs do
     let _ ← Encoder.encodeFunctionDef f
 
-/-- The declarations pass of one frame delta: the UF registrations between
-    the fold checkpoints `ctxBefore`/`ctxAfter`, the `varDecl`/`varDef`
-    handles (raw, pre-seeded names), and the newly drained factory-function
-    definitions. Returns the advanced drain context and the managed names
-    declared. -/
-private def declarationsPass (factory : @Lambda.Factory CoreLParams)
-    (dctx : SMT.Context) (ctxBefore ctxAfter : SMT.Context)
-    (items : DeltaItems) : EncoderM (SMT.Context × List String) := do
+/-- The declarations of one frame delta that precede its variable definitions: the UF
+    registrations between the fold checkpoints `ctxBefore`/`ctxAfter` and the `varDecl`
+    handles (raw, pre-seeded names). Returns the managed names declared. -/
+private def declarationsHead (ctxBefore ctxAfter : SMT.Context) (items : DeltaItems) :
+    EncoderM (List String) := do
   -- Managed names of *this* delta: their declarations come from the varDecl
   -- entries below, not from the context-UF pass.
   let deltaManaged : Std.HashSet String :=
     (items.varDecls.map (·.name) ++ items.varDefs.map (·.1.name)).foldl
       (·.insert ·) (∅ : Std.HashSet String)
-  let mut dctx := dctx
   let mut managed : List String := []
   -- UF registrations this delta introduced.
   for uf in (ctxAfter.ufs.toArray).toList.drop (ctxBefore.ufs.toArray).size do
@@ -431,21 +432,73 @@ private def declarationsPass (factory : @Lambda.Factory CoreLParams)
     Solver.declareFun d.name [] d.ty
     modify (Encoder.seedManagedName · { id := d.name, args := [], out := d.ty })
     managed := d.name :: managed
-  -- Variable definitions: drain body deps, define-fun, raw name, pre-seeded.
-  for (d, pending) in items.varDefs do
-    let dctx' ← drainPending factory dctx pending
-    emitDrainedDefs dctx dctx'
-    dctx := dctx'
-    let bodyEnc ← Encoder.encodeTerm d.body
-    Solver.defineFunTerm d.name [] d.ty bodyEnc
-    modify (Encoder.seedManagedName · { id := d.name, args := [], out := d.ty })
-    managed := d.name :: managed
-  -- Assumption/distinct definition deps.
+  return managed
+
+/-- What a variable definition's `define-fun` needs first: the definitions its body depends
+    on, drained and emitted, and the encoded body. Returns the advanced drain context and the
+    body. -/
+private def definitionPrefix (factory : @Lambda.Factory CoreLParams) (dctx : SMT.Context)
+    (d : VarDefinition) (pending : SMT.PendingFnQueue) : EncoderM (SMT.Context × Term) := do
+  let dctx' ← drainPending factory dctx pending
+  emitDrainedDefs dctx dctx'
+  return (dctx', ← Encoder.encodeTerm d.body)
+
+/-- A variable definition's `define-fun`, under its raw name, pre-seeded. -/
+private def definitionCommand (d : VarDefinition) (bodyEnc : Term) : EncoderM Unit := do
+  Solver.defineFunTerm d.name [] d.ty bodyEnc
+  modify (Encoder.seedManagedName · { id := d.name, args := [], out := d.ty })
+
+/-- The definitions a frame delta's distinctness facts and assumptions depend on, drained and
+    emitted. Returns the advanced drain context. -/
+private def assumptionDeps (factory : @Lambda.Factory CoreLParams) (dctx : SMT.Context)
+    (items : DeltaItems) : EncoderM SMT.Context := do
+  let mut dctx := dctx
   for (_, _, pending) in items.distincts ++ items.assumptions do
     let dctx' ← drainPending factory dctx pending
     emitDrainedDefs dctx dctx'
     dctx := dctx'
-  return (dctx, managed)
+  return dctx
+
+/-- Run `act` against an in-memory writer from the states `estate` and `sstate`: its result,
+    the advanced encoder state, the text it wrote, and the advanced solver state. -/
+private def recordSegment {α : Type} (act : EncoderM α) (estate : EncoderState)
+    (sstate : SolverState) : IO (α × EncoderState × String × SolverState) := do
+  let ((a, estate), text, sstate) ← encodingOrIO
+    (← (recordEncodingToString (act.run estate) sstate).run)
+  return (a, estate, text, sstate)
+
+/-- The declarations pass of one frame delta: `declarationsHead`; then, per variable
+    definition, `definitionPrefix` and its `definitionCommand`; then `assumptionDeps`. Each
+    `define-fun` is recorded on its own, so its byte range in the text is known. Returns the
+    text, those ranges with the variables' names, the advanced drain context, the managed names
+    declared, and the advanced states. -/
+private def declarationsPass (factory : @Lambda.Factory CoreLParams)
+    (estate : EncoderState) (sstate : SolverState)
+    (dctx : SMT.Context) (ctxBefore ctxAfter : SMT.Context) (items : DeltaItems) :
+    IO (String × Array (String × Nat × Nat) × SMT.Context × List String × EncoderState ×
+      SolverState) := do
+  let (managed, estate, text, sstate) ←
+    recordSegment (declarationsHead ctxBefore ctxAfter items) estate sstate
+  let mut text := text
+  let mut spans : Array (String × Nat × Nat) := #[]
+  let mut managed := managed
+  let mut dctx := dctx
+  let mut estate := estate
+  let mut sstate := sstate
+  for (d, pending) in items.varDefs do
+    let ((dctx', bodyEnc), estate', pre, sstate') ←
+      recordSegment (definitionPrefix factory dctx d pending) estate sstate
+    let ((), estate', cmd, sstate') ← recordSegment (definitionCommand d bodyEnc) estate' sstate'
+    text := text ++ pre
+    spans := spans.push (d.name, text.utf8ByteSize, text.utf8ByteSize + cmd.utf8ByteSize)
+    text := text ++ cmd
+    managed := d.name :: managed
+    dctx := dctx'
+    estate := estate'
+    sstate := sstate'
+  let (dctx', estate', deps, sstate') ←
+    recordSegment (assumptionDeps factory dctx items) estate sstate
+  return (text ++ deps, spans, dctx', managed, estate', sstate')
 
 /-- The assertions pass of one frame delta: assert each distinct and
     assumption term. -/
@@ -461,9 +514,8 @@ def captureDelta (factory : @Lambda.Factory CoreLParams)
     (dctx : SMT.Context) (ctxBefore ctxAfter : SMT.Context)
     (items : DeltaItems) : IO CaptureResult := do
   let oldFunctions := estate.functions
-  let (((dctx, managed), estate), declText, sstate) ← encodingOrIO
-    (← (recordEncodingToString
-      ((declarationsPass factory dctx ctxBefore ctxAfter items).run estate) sstate).run)
+  let (declText, defSpans, dctx, managed, estate, sstate) ←
+    declarationsPass factory estate sstate dctx ctxBefore ctxAfter items
   let ((_, estate), assertText, sstate) ← encodingOrIO
     (← (recordEncodingToString ((assertionsPass items).run estate) sstate).run)
   -- Everything newly registered that we did not seed ourselves was declared
@@ -476,6 +528,7 @@ def captureDelta (factory : @Lambda.Factory CoreLParams)
     sstate := sstate
     dctx := dctx
     declText := declText
+    defSpans := defSpans
     assertText := assertText
     discovered := discovered
     managed := managed }
@@ -502,6 +555,7 @@ private def EmitterState.record (es : EmitterState) (r : CaptureResult)
   let fresh : CapturedFrame :=
     { entries := entries
       declText := r.declText
+      defSpans := r.defSpans
       assertText := r.assertText
       estateBefore := es.estate
       dctxBefore := es.dctx
@@ -509,10 +563,12 @@ private def EmitterState.record (es : EmitterState) (r : CaptureResult)
   let newFrames : List CapturedFrame :=
     match extend, es.frames with
     | true, top :: rest =>
+      let offset := top.declText.utf8ByteSize
       let grown : CapturedFrame :=
         { top with
           entries := entries
           declText := top.declText ++ r.declText
+          defSpans := top.defSpans ++ r.defSpans.map fun (n, b, e) => (n, b + offset, e + offset)
           assertText := top.assertText ++ r.assertText }
       grown :: rest
     | _, frames => fresh :: frames
@@ -593,6 +649,23 @@ def EmitterState.sync (factory : @Lambda.Factory CoreLParams) (es : EmitterState
 def EmitterState.declPieces (es : EmitterState) : List String :=
   es.frames.foldl (fun acc f => f.declText :: acc) []
 
+/-- A frame's captured declarations without the `define-fun` commands of the variables named
+    in `sliced`: `declText` cut around their byte ranges. -/
+def CapturedFrame.declPiecesWithout (f : CapturedFrame) (sliced : Std.HashSet String) :
+    List String :=
+  if !f.defSpans.any (sliced.contains ·.1) then [f.declText] else
+    let (pieces, pos) := f.defSpans.foldl (init := ([], 0)) fun (pieces, pos) (n, b, e) =>
+      if !sliced.contains n then (pieces, pos)
+      else if b == pos then (pieces, e)
+      else (String.Pos.Raw.extract f.declText ⟨pos⟩ ⟨b⟩ :: pieces, e)
+    (String.Pos.Raw.extract f.declText ⟨pos⟩ ⟨f.declText.utf8ByteSize⟩ :: pieces).reverse
+
+/-- `EmitterState.declPieces` without the `define-fun` commands of the variables named in
+    `sliced`. -/
+def EmitterState.declPiecesWithout (es : EmitterState) (sliced : Std.HashSet String) :
+    List String :=
+  es.frames.foldl (fun acc f => f.declPiecesWithout sliced ++ acc) []
+
 /-- The captured per-frame assertion blocks, oldest frame first. See
     `EmitterState.declPieces`. -/
 def EmitterState.assertPieces (es : EmitterState) : List String :=
@@ -628,7 +701,8 @@ def emitPrerendered (pieces : List String) : SolverM Unit := do
   for p in pieces do
     stream.putStr p
 
-/-- Assemble one obligation's `.smt2` file. Callers must check `usableFor`
+/-- Assemble one obligation's `.smt2` file, without the `define-fun` commands of the variables
+    named in `sliced`, which no emitted term mentions. Callers must check `usableFor`
     first. A captured assertion can only mention symbols declared in the
     header or during capture, so the tail's declarations coming last is
     sound. No `factory` is needed: `ctx` arrives already drained. -/
@@ -636,8 +710,9 @@ def EmitterState.emitObligation
     (es : EmitterState) (ctx : SMT.Context) (goalTerm : Term)
     (md : Imperative.MetaData Core.Expression) (label : String)
     (managedNames definedNames : Std.HashSet String)
-    (satisfiabilityCheck validityCheck : Bool) : EmitterEncodingM CapturedFile := do
-  let declPieces := es.declPieces
+    (satisfiabilityCheck validityCheck : Bool)
+    (sliced : Std.HashSet String := {}) : EmitterEncodingM CapturedFile := do
+  let declPieces := if sliced.isEmpty then es.declPieces else es.declPiecesWithout sliced
   let assertPieces := es.assertPieces
   -- Prologue: this obligation's sorts and datatypes. They are name-neutral,
   -- so rendering outside the captured lineage is sound.
@@ -660,10 +735,22 @@ def EmitterState.emitObligation
       ++ assertPieces ++ [tailText]
   return { pieces, ids, estate := forkEstate }
 
+/-- `ctx` with the sorts and datatypes the drained definitions of the captured frames use. The
+    file of an obligation that leaves out some variable definitions still holds the
+    definitions captured while draining their dependencies, which may mention sorts and
+    datatypes the obligation's own context never registered. -/
+def EmitterState.withCapturedSorts (es : EmitterState) (ctx : SMT.Context) : SMT.Context :=
+  { ctx with
+    sorts := es.dctx.sorts.toArray.foldl (·.insert ·) ctx.sorts
+    seenDatatypes := es.dctx.seenDatatypes.fold (·.insert ·) ctx.seenDatatypes }
+
 /-- `sync` with the fold's advanced frames, then `emitObligation` if the
     obligation is not `pruned` and `usableFor` holds. Returns `none`
     otherwise; the caller then encodes the obligation itself. `sync` runs
-    either way, so `es.frames` stays in step for later obligations. -/
+    either way, so `es.frames` stays in step for later obligations. The
+    variable definitions named in `sliced` are left out of the file
+    (`emitObligation`); `definedNames` must contain their names, so that the
+    counterexample's `get-value` does not ask for them. -/
 def EmitterState.syncAndEmit (es : EmitterState)
     (factory : @Lambda.Factory CoreLParams)
     (foldFrames : List FoldFrame)
@@ -671,12 +758,14 @@ def EmitterState.syncAndEmit (es : EmitterState)
     (ctx : SMT.Context) (goalTerm : Term)
     (md : Imperative.MetaData Core.Expression) (label : String)
     (managedNames definedNames : Std.HashSet String)
-    (satisfiabilityCheck validityCheck : Bool) :
+    (satisfiabilityCheck validityCheck : Bool)
+    (sliced : Std.HashSet String := {}) :
     IO (EmitterState × Option CapturedFile) := do
   let es ← es.sync factory foldFrames currentCtx
+  let ctx := if sliced.isEmpty then ctx else es.withCapturedSorts ctx
   if !pruned && es.usableFor ctx then
     match ← (es.emitObligation ctx goalTerm md label managedNames definedNames
-        satisfiabilityCheck validityCheck).run with
+        satisfiabilityCheck validityCheck sliced).run with
     | .ok cf => return (es, some cf)
     | .error _ =>
       -- Re-run through the normal per-obligation encoder. Its discharge result

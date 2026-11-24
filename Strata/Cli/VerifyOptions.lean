@@ -60,7 +60,9 @@ def verifyOptionsFlags : List Flag := [
     help := "Solver timeout in seconds (default: 10).",
     takesArg := .arg "seconds" },
   { name := "vc-directory",
-    help := "Store VCs in SMT-Lib format in <dir>.",
+    help := "Store VCs in SMT-Lib format in <dir>. Runs may share <dir>: each verdict is \
+      the answer to its own run's query, and a file both runs name holds the last writer's. \
+      Hidden .strata-<hex>.smt2 files left by an interrupted run are safe to delete.",
     takesArg := .arg "dir" },
   { name := "no-solve",
     help := "Generate SMT-Lib files but do not invoke the solver." },
@@ -79,6 +81,13 @@ def verifyOptionsFlags : List Flag := [
     help := "Exit after the first verification error." },
   { name := "use-array-theory",
     help := "Use SMT-LIB Array theory instead of axiomatized maps." },
+  { name := "cvc5-full-saturate-quant",
+    help := "With cvc5, fall back to enumerative quantifier instantiation (--full-saturate-quant) on every query. A satisfiability check (--check-level full) of a satisfiable property may then run until the time limit; --cvc5-retry-full-saturate-quant applies the fallback to the validity check only." },
+  { name := "cvc5-retry-full-saturate-quant",
+    help := "With cvc5, retry a query cvc5 reports unknown (incomplete) with --full-saturate-quant, keeping only a proof. Ignored under --incremental, which has no retry." },
+  { name := "cvc5-retry-timeout",
+    help := "Time limit in seconds of the cvc5 retry (0: the query's own limit, or 10 when the query has none). It bounds only the retry; the probe that first asks cvc5 why it answered unknown reruns the query under the query's own limit.",
+    takesArg := .arg "seconds" },
   { name := "remove-irrelevant-axioms",
     help := "Prune irrelevant axioms: 'off', 'aggressive', 'precise', \
       or 'directed'.",
@@ -98,10 +107,11 @@ def verifyOptionsFlags : List Flag := [
     takesArg := .arg "N|none" },
   { name := "vcgen",
     help := "(experimental) Verification-condition generation: 'symbolic' (default, the legacy "
-      ++ "symbolic evaluator), 'wp' (the WP phase, the SSA phase and dead-definition "
-      ++ "elimination), or 'symexec[:MODE]' (symbolic execution by the path explorer, in place "
-      ++ "of the legacy evaluator). MODE says when to merge the two branches of an if where they "
-      ++ "meet: 'merged' (the default: merge at every join), 'per-path' (no merging, up to "
+      ++ "symbolic evaluator), 'wp' (the WP phase, the SSA phase, guard forwarding, the "
+      ++ "inlining of single-use definitions and dead-definition elimination), or "
+      ++ "'symexec[:MODE]' (symbolic execution by the path explorer, in place of the legacy "
+      ++ "evaluator). MODE says when to merge the two branches of an if where they meet: "
+      ++ "'merged' (the default: merge at every join), 'per-path' (no merging, up to "
       ++ "10,000 paths), or 'merge-above:N' (merge whenever more than N paths would exist; a "
       ++ "join whose branches cannot be merged keeps them apart, so N is not a hard bound). "
       ++ "In every mode, if a procedure cannot be fully explored (for example more than 10,000 "
@@ -216,6 +226,15 @@ def parseVCGenFlag (value : Option String) (base : VerifyOptions) :
     | none => .error s!"Invalid vcgen: '{v}'. Must be 'symbolic', 'wp' or \
       'symexec[:per-path|merged|merge-above:N]'."
 
+/-- The value of `--cvc5-retry-timeout`: `base` when the flag is absent, else its value in
+    seconds, or an error message when that value is not a natural number. -/
+def parseCvc5RetryTimeout (value : Option String) (base : Nat) : Except String Nat :=
+  match value with
+  | none => .ok base
+  | some s => match s.toNat? with
+    | some n => .ok n
+    | none => .error s!"Invalid cvc5 retry timeout: '{s}'"
+
 /-- Build a VerifyOptions from parsed CLI flags, starting from a base config.
     Fields not present in the flags keep their base values.
     Note: boolean flags can only enable a setting; a `true` in the base
@@ -233,6 +252,10 @@ def parseVerifyOptions (pflags : ParsedFlags)
     | .some s => match s.toNat? with
       | .some n => pure n
       | .none => exitFailure s!"Invalid solver timeout: '{s}'"
+  let cvc5RetryTimeout ← match parseCvc5RetryTimeout (pflags.getString "cvc5-retry-timeout")
+      base.cvc5RetryTimeout with
+    | .ok n => pure n
+    | .error msg => exitFailure msg
   let noSolve := pflags.getBool "no-solve"
   let removeIrrelevantAxioms ← match pflags.getString "remove-irrelevant-axioms" with
     | .none => pure base.removeIrrelevantAxioms
@@ -361,6 +384,10 @@ def parseVerifyOptions (pflags : ParsedFlags)
     checkMode, checkLevel,
     stopOnFirstError := pflags.getBool "stop-on-first-error" || base.stopOnFirstError,
     useArrayTheory := pflags.getBool "use-array-theory" || base.useArrayTheory,
+    cvc5FullSaturateQuant := pflags.getBool "cvc5-full-saturate-quant" || base.cvc5FullSaturateQuant,
+    cvc5RetryFullSaturateQuant :=
+      pflags.getBool "cvc5-retry-full-saturate-quant" || base.cvc5RetryFullSaturateQuant,
+    cvc5RetryTimeout,
     removeIrrelevantAxioms,
     removeIrrelevantDatatypes :=
       pflags.getBool "remove-irrelevant-datatypes"

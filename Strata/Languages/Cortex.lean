@@ -11,5 +11,6 @@ public import Strata.Languages.Cortex.Module
 public import Strata.Languages.Cortex.ToCore
 public import Strata.Languages.Cortex.Pipeline
 public import Strata.Languages.Cortex.Interpreter
+public import Strata.Languages.Cortex.DirectInterpreter
 public import Strata.Languages.Cortex.Wire
 public import Strata.Languages.Cortex.JavaPrelude

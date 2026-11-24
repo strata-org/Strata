@@ -153,12 +153,11 @@ def observe (prog : UnorderedProgram) (fuel : Nat := 10000) : String :=
   "\n".intercalate <| (prog.procedures.filter Interp.isEntry).map fun p =>
     match Interp.runEntry prog fuel p with
     | .error _ => s!"{p.name}: stopped"
-    | .ok (final, trace) =>
+    | .ok { final, trace, .. } =>
       let failed := (Interp.failures trace).map fun (md, summary) => s!"{summary} fails{offset md};"
       let ending := match final with
         | .terminal ρ => "returns " ++ ", ".intercalate (p.outputs.map fun (x, _) =>
-            s!"{x.name} = {(ρ.store x).map (toString ∘ Std.format) |>.getD "?"}")
-        | .raised _ _ md => s!"raises{offset md}"
+            s!"{x.name} = {(ρ.store.get x).map (toString ∘ Std.format) |>.getD "?"}")
         | _ => "did not finish"
       " ".intercalate (s!"{p.name}:" :: failed ++ [ending])
 

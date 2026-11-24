@@ -35,13 +35,13 @@ private def sameLabelProgram : Program :=
 #strata
 program Core;
 function f (x : int) : int;
-procedure P0() { assume [h]: f(0) == 0; assert [same]: f(0) == 0; };
+procedure P0() { assume [h]: f(0) == 0; assert [same]: 0 == f(0); };
 procedure P1() { assume [h]: f(1) == 1; assert [same]: f(1) == 0; };
-procedure P2() { assume [h]: f(2) == 2; assert [same]: f(2) == 2; };
+procedure P2() { assume [h]: f(2) == 2; assert [same]: 2 == f(2); };
 procedure P3() { assume [h]: f(3) == 3; assert [same]: f(3) == 0; };
-procedure P4() { assume [h]: f(4) == 4; assert [same]: f(4) == 4; };
+procedure P4() { assume [h]: f(4) == 4; assert [same]: 4 == f(4); };
 procedure P5() { assume [h]: f(5) == 5; assert [same]: f(5) == 0; };
-procedure P6() { assume [h]: f(6) == 6; assert [same]: f(6) == 6; };
+procedure P6() { assume [h]: f(6) == 6; assert [same]: 6 == f(6); };
 procedure P7() { assume [h]: f(7) == 7; assert [same]: f(7) == 0; };
 #end
 
@@ -94,5 +94,52 @@ private def warnThenDischarge : Core.MkDischargeFn :=
     let runSolver := (metrics.filter fun l =>
       (l.splitOn "\"phase\":\"vcDischarge.runSolver\"").length > 1).size
     IO.println s!"messages={msgs.size} tagged={tagged} runSolverMetrics={runSolver}"
+
+/-! ### Concurrent runs sharing a directory each get their own verdicts
+
+Two programs whose obligations carry the same labels, so both runs name their query files
+`same_0.smt2` to `same_3.smt2`: every obligation of the first holds and every one of the second
+fails. They are verified at the same time, several times over, into one `vcDirectory`. A run
+that solved the other's query would report a verdict of the other program. -/
+
+/-- Four obligations labeled `same` that hold. -/
+private def sameLabelPasses : Program :=
+#strata
+program Core;
+function g (x : int) : int;
+procedure Q0() { assume [h]: g(0) == 0; assert [same]: g(0) == 0; };
+procedure Q1() { assume [h]: g(1) == 1; assert [same]: g(1) == 1; };
+procedure Q2() { assume [h]: g(2) == 2; assert [same]: g(2) == 2; };
+procedure Q3() { assume [h]: g(3) == 3; assert [same]: g(3) == 3; };
+#end
+
+/-- Four obligations labeled `same` that fail. -/
+private def sameLabelFails : Program :=
+#strata
+program Core;
+function g (x : int) : int;
+procedure Q0() { assume [h]: g(0) == 0; assert [same]: g(0) == 1; };
+procedure Q1() { assume [h]: g(1) == 1; assert [same]: g(1) == 2; };
+procedure Q2() { assume [h]: g(2) == 2; assert [same]: g(2) == 3; };
+procedure Q3() { assume [h]: g(3) == 3; assert [same]: g(3) == 4; };
+#end
+
+/-- info: passing run: 32 of 32 passed; failing run: 32 of 32 failed; leftover hidden files: 0 -/
+#guard_msgs in
+#eval show IO Unit from do
+  IO.FS.withTempDir fun dir => do
+    let options := { Core.VerifyOptions.quiet with vcDirectory := some dir }
+    let mut passed := 0
+    let mut failed := 0
+    for _ in [0:8] do
+      let a ← IO.asTask (Core.verify sameLabelPasses (options := options))
+      let b ← IO.asTask (Core.verify sameLabelFails (options := options))
+      let ra ← IO.ofExcept a.get
+      let rb ← IO.ofExcept b.get
+      passed := passed + (ra.filter (·.isSuccess)).size
+      failed := failed + (rb.filter (·.isFailure)).size
+    let hidden := (← dir.readDir).filter (·.fileName.startsWith ".")
+    IO.println s!"passing run: {passed} of 32 passed; failing run: {failed} of 32 failed; \
+      leftover hidden files: {hidden.size}"
 
 end Strata

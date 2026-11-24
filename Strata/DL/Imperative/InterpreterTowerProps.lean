@@ -18,10 +18,14 @@ Properties of the monadic interpreter's sequence towers (`IConfig.seqs`) and of 
 * `StepStmtE.wrapSeqs`: a reference step lifts through `k` empty-tail sequence contexts;
 * `IConfig.abs_unseqs`, `IConfig.unseqs_unseqs`, `IConfig.levelCmd?_unseqs`: the expansion stands
   for the same semantic configuration, is idempotent and keeps the level command;
+* `IConfig.abs_norm`, `IConfig.done_norm`: forgetting the interpreter's bookkeeping
+  (`IConfig.norm`) keeps the semantic configuration and whether the interpreter stops there;
 * `stepInterp_wrapSeqs`: an interpreter step from a configuration under `k` contexts `.seq · []` is
   the inner step, wrapped;
 * `stepInterp_unseqs`: an interpreter step from a configuration and from its expansion reach
-  configurations with the same expansion, with the same effects. -/
+  configurations with the same expansion, with the same effects;
+* `IConfig.focus_norm`, `IConfig.activeDepth_norm`: the statement in focus and the active depth
+  do not depend on the interpreter's bookkeeping. -/
 
 namespace Imperative
 
@@ -142,9 +146,43 @@ private theorem IConfig.wrapSeqs_add (c : IConfig P CmdT) (j k : Nat) :
     c.seqNil.unseqs = .seq c.unseqs [] := by
   cases c <;> rfl
 
+/-- `n` more tower levels stand for `n` more sequence contexts with no remaining statements. -/
+private theorem IConfig.abs_iterate_seqNil [DecidableEq P.Ident] (F : P.Factory)
+    (c : IConfig P CmdT) :
+    ∀ n, (Nat.repeat IConfig.seqNil n c).abs F = (c.abs F).wrapSeqs n
+  | 0 => rfl
+  | n + 1 => by
+    rw [Nat.repeat, IConfig.abs_seqNil, IConfig.abs_iterate_seqNil F c n]
+    rfl
+
+/-- Forgetting the interpreter's bookkeeping (`IConfig.norm`) keeps the semantic configuration a
+    configuration stands for. -/
+@[simp] theorem IConfig.abs_norm [DecidableEq P.Ident] (F : P.Factory) (c : IConfig P CmdT) :
+    c.norm.abs F = c.abs F := by
+  induction c with
+  | seq i ss ih => cases ss <;> simp [IConfig.norm, IConfig.abs, ih]
+  | seqs i k ih => simp [IConfig.norm, IConfig.abs, IConfig.abs_iterate_seqNil, ih]
+  | block l fr i ih => simp [IConfig.norm, IConfig.abs, ih]
+  | _ => rfl
+
 /-- One more empty-tail sequence context always gives a sequence tower. -/
 theorem IConfig.seqNil_eq_seqs (c : IConfig P CmdT) : ∃ i k, c.seqNil = .seqs i k := by
   cases c <;> exact ⟨_, _, rfl⟩
+
+/-- The monadic interpreter never stops at a configuration under one more empty-tail sequence
+    context. -/
+private theorem IConfig.not_done_seqNil (c : IConfig P CmdT) : ¬ c.seqNil.Done := by
+  cases c <;> nofun
+
+/-- Forgetting the interpreter's bookkeeping (`IConfig.norm`) does not change whether the monadic
+    interpreter stops at a configuration (`IConfig.Done`). -/
+theorem IConfig.done_norm (c : IConfig P CmdT) : c.norm.Done ↔ c.Done := by
+  cases c with
+  | seq i ss => cases ss with
+    | nil => exact iff_of_false (IConfig.not_done_seqNil _) nofun
+    | cons => rfl
+  | seqs i k => exact iff_of_false (IConfig.not_done_seqNil _) nofun
+  | _ => rfl
 
 /-- A configuration and its expansion are terminal together. -/
 theorem IConfig.unseqs_eq_terminal (c : IConfig P CmdT) (e : IEnv P) :
@@ -264,3 +302,59 @@ theorem stepInterp_unseqs (stepCmd : StepCmdM P CmdT m) (fuel : Nat) :
           rw [Functor.map_map]; exact congrArg (· <$> _) (funext hmerge)
       _ = (·.wrapSeqs (k + 1)) <$> ((·.unseqs) <$> stepInterp stepCmd fuel i.unseqs) := by rw [ih]
       _ = _ := by rw [Functor.map_map]; simp
+
+end Step
+
+/-! ## Observers of the active path ignore the interpreter's bookkeeping -/
+
+section ActivePath
+
+variable [InterpLang P]
+
+/-- `seqNil` adds one level above the focus. -/
+theorem IConfig.focus_seqNil (c : IConfig P CmdT) :
+    IConfig.focus c.seqNil = (IConfig.focus c).map fun (s, env, d) => (s, env, d + 1) := by
+  cases c <;> simp [IConfig.seqNil, IConfig.focus, Option.map_map, Function.comp_def, Nat.add_assoc]
+
+/-- `n` more tower levels add `n` levels above the focus. -/
+theorem IConfig.focus_repeat_seqNil (X : IConfig P CmdT) (n : Nat) :
+    IConfig.focus (Nat.repeat IConfig.seqNil n X) =
+      (IConfig.focus X).map fun (s, env, d) => (s, env, d + n) := by
+  induction n with
+  | zero => simp [Nat.repeat]
+  | succ n ih =>
+    simp [Nat.repeat, IConfig.focus_seqNil, ih, Option.map_map, Function.comp_def, Nat.add_assoc]
+
+/-- The focus of a configuration is the focus of that configuration with the interpreter's
+    bookkeeping forgotten. -/
+theorem IConfig.focus_norm (c : IConfig P CmdT) : IConfig.focus c.norm = IConfig.focus c := by
+  induction c with
+  | seq i ss ih => cases ss <;> simp [IConfig.norm, IConfig.focus_seqNil, IConfig.focus, ih]
+  | seqs i k ih =>
+    simp [IConfig.norm, IConfig.focus_repeat_seqNil, ih, IConfig.focus, Nat.add_assoc]
+  | block l fr i ih => simp [IConfig.norm, IConfig.focus, ih]
+  | _ => rfl
+
+/-- One more tower level adds one to the active depth. -/
+theorem IConfig.activeDepth_seqNil (c : IConfig P CmdT) :
+    IConfig.activeDepth c.seqNil = IConfig.activeDepth c + 1 := by
+  cases c <;> rfl
+
+/-- `n` more tower levels add `n` to the active depth. -/
+theorem IConfig.activeDepth_repeat_seqNil (X : IConfig P CmdT) (n : Nat) :
+    IConfig.activeDepth (Nat.repeat IConfig.seqNil n X) = IConfig.activeDepth X + n := by
+  induction n with
+  | zero => rfl
+  | succ n ih => exact (IConfig.activeDepth_seqNil _).trans (congrArg (· + 1) ih)
+
+/-- The active depth of a configuration does not depend on the interpreter's bookkeeping. -/
+theorem IConfig.activeDepth_norm (c : IConfig P CmdT) :
+    IConfig.activeDepth c.norm = IConfig.activeDepth c := by
+  induction c with
+  | seq i ss ih =>
+    cases ss <;> simp [IConfig.norm, IConfig.activeDepth_seqNil, IConfig.activeDepth, ih]
+  | seqs i k ih => rw [IConfig.norm, IConfig.activeDepth_repeat_seqNil, ih]; rfl
+  | block l fr i ih => simp [IConfig.norm, IConfig.activeDepth, ih]
+  | _ => rfl
+
+end ActivePath

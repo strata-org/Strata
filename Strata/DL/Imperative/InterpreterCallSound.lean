@@ -949,9 +949,11 @@ private theorem call_cmd_arm_call [InterpLangBool P] (obs : InterpObs P m)
           (.stmt (.cmd (CmdExt.call n tyArgs args md)) (env.abs F)) (revs.map (REvent.abs F))
           (cfg'.abs F)
           ∧ obs.trace st' = revs.reverse ++ obs.trace st ∧ cfg'.Denoting F := by
+  rw [stepCmd, stepCmdWith] at hrun
+  simp only [CmdExt.view, ne_eq, List.forM_eq_forM, ite_not] at hrun
   repeat' (first
     | split at hrun
-    | simp only [stepCmd, ne_eq, List.forM_eq_forM, ite_not, InterpObs.run_bind,
+    | simp only [InterpObs.run_bind,
         InterpObs.run_pure, InterpObs.run_throw, Prod.mk.injEq, Except.ok.injEq, reduceCtorEq,
         false_and] at hrun)
   obtain ⟨rfl, rfl⟩ := hrun
@@ -1011,8 +1013,8 @@ theorem call_cmd_arm [InterpLangBool P] (obs : InterpObs P m)
           (.stmt (.cmd cmd) (env.abs F)) (revs.map (REvent.abs F)) (cfg'.abs F)
           ∧ obs.trace st' = revs.reverse ++ obs.trace st ∧ cfg'.Denoting F := fun
   | k, d, .cmd _ => call_cmd_arm_base obs π hEval k d _
-  | 0, _, .call .. => by simp [stepCmd]
-  | _ + 1, 0, .call .. => by simp [stepCmd]
+  | 0, _, .call .. => by unfold stepCmd stepCmdWith; simp [CmdExt.view]
+  | _ + 1, 0, .call .. => by unfold stepCmd stepCmdWith; simp [CmdExt.view]
   | k + 1, d + 1, .call .. =>
     call_cmd_arm_call obs π hprocs hEval k d (fun _ => call_cmd_arm obs π hprocs hEval k d) _ _ _ _
 
@@ -1883,22 +1885,26 @@ private theorem call_cmd_errArm [InterpLangBool P] (obs : InterpObs P m)
     intro _ c _ cfgr _ _ _ h _ _ _ _
     cases c
     · exact obs_stepCmd_base_err (F := F) obs π hemitStep hchooseErr h
-    · simp only [stepCmd, obs.run_throw, Prod.mk.injEq] at h
+    · rw [stepCmd, stepCmdWith] at h
+      simp only [CmdExt.view, obs.run_throw, Prod.mk.injEq] at h
       exact ⟨[], .clean (.refl _), by rw [← h.2]; rfl⟩
   | succ k ih =>
   intro d c env cfgr st st' r h hf hd hrf hi
   cases c
   · exact obs_stepCmd_base_err (F := F) obs π hemitStep hchooseErr h
   cases d
-  · simp only [stepCmd, obs.run_throw, Prod.mk.injEq] at h
+  · rw [stepCmd, stepCmdWith] at h
+    simp only [CmdExt.view, obs.run_throw, Prod.mk.injEq] at h
     exact ⟨[], .clean (.refl _), by rw [← h.2]; rfl⟩
   rename_i n tyArgs args md d
   have ih := ih d
   have A := fun k => call_cmd_arm obs π hprocs hEval (F := F) k d
+  rw [stepCmd, stepCmdWith] at h
+  simp only [CmdExt.view] at h
   repeat' first
     | rw [obs_run_throw_bind] at h
     | split at h
-    | simp only [stepCmd, obs.run_bind, obs.run_pure, obs.run_throw] at h
+    | simp only [obs.run_bind, obs.run_pure, obs.run_throw] at h
   all_goals cases h
   all_goals try exact ⟨[], .clean (.refl _), rfl⟩
   all_goals

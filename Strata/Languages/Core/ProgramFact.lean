@@ -189,6 +189,10 @@ inductive ProgramFact where
       the other one: a run through the dropped arm would be replayed by running the other
       arm's definitions, which need not agree with it. -/
   | armsHaveObligations
+  /-- No CFG body has a cycle reachable from its entry (`Program.noCFGCycles`).
+      Established by CFG loop elimination, which cuts each loop at its header.
+      Structured loops are a separate matter (`noLoops`). -/
+  | noCFGCycles
   deriving DecidableEq, Repr
 
 /-! ### Adding a fact
@@ -365,6 +369,7 @@ def ProgramFact.name : ProgramFact → String
   | .treeForm => "treeForm"
   | .exitsCovered => "exitsCovered"
   | .armsHaveObligations => "armsHaveObligations"
+  | .noCFGCycles => "noCFGCycles"
 
 /-- All known facts, in the order that defines canonical form. Verified
     complete by `ProgramFact.all_complete` and duplicate-free by
@@ -378,7 +383,8 @@ def ProgramFact.name : ProgramFact → String
    .noLoopMeasures, .uniqueInits, .loopBodyNoInits, .staticSingleAssignment,
    .noBetaRedexes, .noPrecondsFromFuncs, .noNondetGuards, .hasObligationForm,
    .noProcedureContracts, .noPolymorphicProcedures, .noPolymorphicFunctions,
-   .typeAnnotated, .noInits, .treeForm, .exitsCovered, .armsHaveObligations]
+   .typeAnnotated, .noInits, .treeForm, .exitsCovered, .armsHaveObligations,
+   .noCFGCycles]
 
 /-- `ProgramFact` is a fact vocabulary: a closed enumeration with names, which
     is all the language-neutral pipeline machinery needs of it. Completeness and
@@ -437,6 +443,7 @@ than the `Prop` being bent into the shape of a `Bool`. -/
   | .treeForm => some (Program.allStatements Statements.treeForm)
   | .exitsCovered => some (Program.allStatements (Imperative.Block.checkExitsCoveredByBlocks []))
   | .armsHaveObligations => some (Program.allStatements Imperative.Block.armsHaveChecks)
+  | .noCFGCycles => some Program.noCFGCycles
 
 /-- What a fact asserts about a program: the `Prop` that a phase claiming
     the fact will have to prove of its output. -/
@@ -473,6 +480,7 @@ than the `Prop` being bent into the shape of a `Bool`. -/
     fun p => Program.allStatements (Imperative.Block.checkExitsCoveredByBlocks []) p = true
   | .armsHaveObligations =>
     fun p => Program.allStatements Imperative.Block.armsHaveChecks p = true
+  | .noCFGCycles => fun p => Program.noCFGCycles p = true
 
 end -- public section
 

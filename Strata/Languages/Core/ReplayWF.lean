@@ -10,6 +10,7 @@ public import Strata.Languages.Core.ConfigWF
 import all Strata.DL.Imperative.Interpreter
 import all Strata.DL.Imperative.InterpreterCFG
 import all Strata.DL.Imperative.InterpreterCall
+import Strata.DL.Imperative.InterpreterCallProps
 import all Strata.DL.Imperative.InterpreterReplay
 import all Strata.Languages.Core.InterpreterReplay
 import all Strata.Languages.Core.Interpreter
@@ -319,8 +320,9 @@ private theorem replayStepCmd_closed (π : String → Option Procedure) :
     · rename_i ih
       exact ih (by simpa using hs.update _ (hvs _ (.head _))) fun v hv => hvs v (.tail _ hv)
     · exact hs
-  unfold replayStepCmd
-  fun_induction Calls.stepCmd <;> rename_i ih <;> (try dsimp +zetaDelta only) <;> repeat' first
+  unfold replayStepCmd Calls.stepCmd
+  fun_induction Calls.stepCmdWith <;> rename_i ih <;> (try dsimp +zetaDelta only) <;> repeat' first
+    | exact absurd ‹Calls.CmdExt.view _ = Calls.CmdView.ext _› (Calls.CmdExt.view_ne_ext _ _)
     | with_reducible exact .bind (stepBaseCmdStore_closed _ _ h _) fun _ h => .pure ⟨_, rfl, rfl, h⟩
     | split
     | refine .bind (runCallee_closed (fun _ => (ih · · · |>.mono fun _ ⟨_, e, _, h⟩ => e ▸ h)) _ _ _ _

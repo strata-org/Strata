@@ -7,447 +7,106 @@ module
 
 public import Strata.Languages.Cortex.Heap
 public import Strata.Languages.Cortex.Module
+public import Strata.Languages.Cortex.TypeCheck
+public import Strata.Languages.Cortex.Pipeline
+public import Strata.Languages.Cortex.LowerDispatch
+public import Strata.Languages.Cortex.LowerExceptions
+public import Strata.Languages.Cortex.LowerComposites
+public import Strata.Languages.Cortex.FieldCasts
+public import Strata.Languages.Cortex.LowerHeapExec
+public import Strata.Languages.Cortex.LowerGlobals
+public import Strata.Languages.Cortex.LowerCTE
 public import Strata.Languages.Core.Factory
 public import Strata.Languages.Core.Program
-import all Strata.DL.Lambda.FactoryProps
+public import Strata.Languages.Core.Interpreter
+public import Strata.Languages.Core.StatementSemantics
+public import Strata.DL.Imperative.InterpreterCall
 
 namespace Cortex.Interp
 
-open Imperative hiding Trace Event EventArg
 open Lambda
+open Imperative (Cmd InterpLang InterpEffects IStore IEnv ICFGConfig IEvent REvent REventArg
+  stepBaseCmdStore HasBool HasFvar HasOldIdent CallArg CmdDefs ProcedureHeader)
+open Imperative.Calls (CmdView stepCmdWith)
 
 public section
 
 abbrev LFactory := Lambda.Factory Core.CoreLParams
 
-abbrev Store := Core.Expression.Ident → Option Expr
-
-@[expose] def Store.empty : Store := fun _ => none
-
-@[expose] def Store.update (σ : Store) (x : Core.Expression.Ident) (v : Expr) : Store :=
-  fun y => if y = x then some v else σ y
-
-structure EventArg where
-  factory : LFactory
-  store : Store
-  label : String
-  expr : Expr
-  metadata : MD
-
-inductive Event where
-  | assert : EventArg → Event
-  | assume : EventArg → Event
-  | cover : EventArg → Event
-
-abbrev Trace := List Event
-
-@[expose] def emittedEvents : Cmd Core.Expression → LFactory → Store → Trace
-  | .assert label expr metadata, f, σ => [.assert { factory := f, store := σ, label, expr, metadata }]
-  | .assume label expr metadata, f, σ => [.assume { factory := f, store := σ, label, expr, metadata }]
-  | .cover label expr metadata, f, σ => [.cover { factory := f, store := σ, label, expr, metadata }]
-  | _, _, _ => []
+abbrev CortexExpression : Imperative.PureExpr := Core.Expression
 
 @[expose] def exprFuel : Nat := 1000
 
-/-- The longest array the interpreter allocates. A `newArray` of a greater length stops the run:
-all the elements are allocated in one step, so the fuel does not bound their number. -/
-@[expose] def maxArrayLength : Nat := 65536
+@[expose] def isRefTy (prog : UnorderedProgram) (ty : Core.Expression.Ty) : Bool :=
+  match (ty : LTy) with
+  | .forAll [] (.tcons n []) => n.startsWith "$Any" || (prog.findComposite? n).isSome
+  | _ => false
 
-@[expose] def evalPure (f : LFactory) (σ : Store) (e : Expr) : Option Expr :=
-  match LExpr.eval exprFuel f σ e with
-  | (v, .value true) => some v
-  | _ => none
+abbrev Store := IStore CortexExpression
+abbrev Env := IEnv CortexExpression
+abbrev Event := IEvent CortexExpression
+abbrev EventArg := REventArg CortexExpression LFactory
+abbrev Trace := List Event
+abbrev Config := ICFGConfig Label IRCmd CortexExpression
+
+@[expose] def Store.empty : Store := IStore.ofStore fun _ => none
+
+structure Hdr where
+  name : String
+  inputs : List Core.Expression.Ident
+  outputs : List Core.Expression.Ident
+  deriving DecidableEq, Inhabited
+
+instance : ProcedureHeader CortexExpression Hdr where
+  name h := ⟨h.name, ()⟩
+  inputParams h := h.inputs
+  outputParams h := h.outputs
+
+abbrev IProcedure := Imperative.Procedure CortexExpression IRCmd Hdr
+
+instance : CmdDefs CortexExpression IRCmd where
+  defs
+    | .cmd (.init x _ _ _) => [x]
+    | _ => []
 
 inductive StopReason where
-  | fuelExhausted
-  | noChoice
-  | missingBlock (label : Label)
-  | expressionDidNotEvaluate
-  | expressionWasNotBoolean
-  | unknownProcedure (name : ProcName)
+  | engine (reason : Imperative.StopReason)
+  | lowering (msg : String)
+  | typeError (msg : String)
+  | notLowered (what : String)
+  | exceptionsUnsupported
+  | inoutArgumentMismatch (name : ProcName)
   | procedureWithoutBody (name : ProcName)
-  | unknownComposite (name : TypeName)
-  | unknownField (field : FieldRef)
-  | notAReference
-  | danglingReference
-  | missingObjectField (field : FieldRef)
-  | illTypedValue
-  | notAValue
-  | undefinedVariable
-  | variableAlreadyDefined
-  | variableNotDefined
-  | arityMismatch
-  | aliasedResults
-  | exceptionWithoutType
-  | calleeDidNotTerminate (name : ProcName)
   | invalidDatatypes (msg : String)
-  | notAnArray
-  | negativeArrayLength (len : Int)
-  | arrayLengthOverLimit (len : Int) (limit : Nat)
-  | indexOutOfRange (index : Int) (length : Nat)
-  | elementTypeMismatch (elemTy : Core.Expression.Ty) (array : LMonoTy)
-  | elementNotAReference (array : LMonoTy)
-  /-- `r`, located at `md` (`StopReason.locate`). -/
   | at (md : MD) (r : StopReason)
   deriving Repr, Inhabited
 
-/-- `r`, located at `md` unless it is already located at a command with a source range: an error in a callee
-keeps the callee's command. -/
 @[expose] def StopReason.locate (md : MD) : StopReason → StopReason
   | r@(.at m inner) => if (Imperative.getFileRange m).isSome then r else .at md inner
   | r => .at md r
 
-class Effects (m : Type → Type) where
-  emit : Trace → m Unit
-  choose : LFactory → Core.Expression.Ty → m Expr
+variable {m : Type → Type} [Monad m] [InterpEffects CortexExpression m]
+  [MonadExcept Imperative.StopReason m] [MonadExceptOf StopReason m]
 
-@[expose] def isValue (f : LFactory) (v : Expr) : Bool :=
-  LExpr.isValue f v
+@[expose] def stop {α : Type} (r : Imperative.StopReason) : m α := throw r
 
-@[expose] def isRefExpr (e : Expr) : Bool :=
-  match e with
-  | .const _ (.intConst _) => true
-  | _ => false
-
-/-- Whether the values of type `ty` are references: an `$Any` type, a composite or an array
-type. -/
-@[expose] def isRefTy (prog : UnorderedProgram) (ty : Core.Expression.Ty) : Bool :=
-  match (ty : LTy) with
-  | .forAll [] (.tcons n []) => n.startsWith "$Any" || (prog.findComposite? n).isSome
-  | .forAll [] t => (arrayElem? t).isSome
-  | _ => false
-
-/-- The type of the objects that a variable of type `ty` refers to, when `ty` is a composite
-or an array type. -/
-@[expose] def objectTy? (prog : UnorderedProgram) (ty : Core.Expression.Ty) : Option LMonoTy :=
-  match (ty : LTy) with
-  | .forAll [] (.tcons n []) => if (prog.findComposite? n).isSome then some (.tcons n []) else none
-  | .forAll [] t => if (arrayElem? t).isSome then some t else none
-  | _ => none
-
-@[expose] def coreHasType (f : LFactory) (v : Expr) (ty : Core.Expression.Ty) : Bool :=
-  isValue f v &&
-    match LTy.toMonoType? (ty : LTy), LExpr.typeCheck [] v with
-    | some a, some b => a == b
-    | _, _ => false
-
-@[expose] def hasType (prog : UnorderedProgram) (f : LFactory) (v : Expr) (ty : Core.Expression.Ty) : Bool :=
-  coreHasType f v ty || (isRefTy prog ty && isRefExpr v && isValue f v) ||
-    (isValue f v &&
-      match _h : Factory.callOfLFunc f v true, (ty : LTy) with
-      | some (_, args, fn), .forAll [] (.tcons n []) =>
-        fn.isConstr && fn.typeArgs.isEmpty && fn.output == .tcons n [] &&
-          args.length == fn.inputs.length &&
-          ((args.attach.zip fn.inputs.values).all fun (⟨a, _ha⟩, aty) =>
-            hasType prog f a (.forAll [] aty))
-      | _, _ => false)
-termination_by v.sizeOf
-decreasing_by exact Factory.callOfLFunc_smaller (T := Core.CoreLParams.mono) _h a _ha
-
-@[expose] def typeOf? (f : LFactory) (v : Expr) : Option Core.Expression.Ty :=
-  if isValue f v then
-    match LExpr.typeCheck [] v with
-    | some t => if LTy.toMonoType? (LTy.forAll [] t) == some t then some (LTy.forAll [] t) else none
-    | none => none
-  else none
-
-structure IEnv where
-  store : Store
-  heap : Heap
-  factory : LFactory
-  next : Nat
-  tys : Core.Expression.Ident → Option Core.Expression.Ty := fun _ => none
-
-inductive IConfig where
-  | atBlock : Body → Label → IEnv → IConfig
-  | inBlock : Body → Label → List IRCmd → DetTransferCmd Label Core.Expression → IEnv → IConfig
-  | terminal : IEnv → IConfig
-  | raised : IEnv → Expr → MD → IConfig
-
-@[expose] def IRCmd.md : IRCmd → MD
-  | .cmd (.init _ _ _ md) | .cmd (.set _ _ md) | .cmd (.assert _ _ md) | .cmd (.assume _ _ md)
-  | .cmd (.cover _ _ md) => md
-  | .cast _ _ _ _ md | .new _ _ md | .readField _ _ _ md | .writeField _ _ _ md | .instanceOf _ _ _ md
-  | .call _ _ _ md | .virtualCall _ _ _ _ md | .throw _ md => md
-  | .newArray _ _ _ md | .readElem _ _ _ _ md | .writeElem _ _ _ _ md | .arrayLength _ _ md
-  | .instanceOfComponent _ _ _ md => md
-
-structure CmdResult where
-  store : Store
-  heap : Heap
-  next : Nat
-  outcome : Outcome
-
-variable {m : Type → Type} [Monad m] [Effects m] [MonadExcept StopReason m]
-
-@[expose] def evalExpr (f : LFactory) (σ : Store) (e : Expr) : m Expr :=
-  match evalPure f σ e with
+@[expose] def evalExpr (fuel : Nat) (f : LFactory) (σ : Store) (e : Expr) : m Expr :=
+  match InterpLang.boundedEval (P := CortexExpression) fuel f σ.get e with
   | some v => pure v
-  | none => throw .expressionDidNotEvaluate
+  | none => stop .expressionDidNotEvaluate
 
-@[expose] def initVar (σ : Store) (x : Core.Expression.Ident) (v : Expr) : m (Store) :=
-  if (σ x).isNone then pure (σ.update x v) else throw .variableAlreadyDefined
+@[expose] def setVar (σ : Store) (x : Core.Expression.Ident) (v : Expr) : m Store :=
+  if (σ.get x).isSome then pure (σ.update x v)
+  else stop .programSetTargetUndefined
 
-@[expose] def setVar (σ : Store) (x : Core.Expression.Ident) (v : Expr) : m (Store) :=
-  if (σ x).isSome then pure (σ.update x v) else throw .variableNotDefined
+@[expose] def chooseTyped (f : LFactory) (σ : Store) (ty : Core.Expression.Ty) : m Expr :=
+  InterpEffects.choose (P := CortexExpression) f σ.get ty
 
-@[expose] def chooseTyped (prog : UnorderedProgram) (f : LFactory) (ty : Core.Expression.Ty) : m Expr := do
-  let v ← Effects.choose f ty
-  if hasType prog f v ty then pure v else throw .illTypedValue
-
-@[expose] def storedTyOk (prog : UnorderedProgram) (f : LFactory) (σ : Store) (x : Core.Expression.Ident) (v : Expr) : Bool :=
-  match σ x with
-  | some prev =>
-    match typeOf? f prev with
-    | some ty => hasType prog f v ty
-    | none => false
-  | none => false
-
-@[expose] def evalBaseCmd (prog : UnorderedProgram) (f : LFactory) (σ : Store) (tys : Core.Expression.Ident → Option Core.Expression.Ty) :
-    Cmd Core.Expression → m (Store)
-  | .init x ty (.det e) _ => do
-    let v ← evalExpr f σ e
-    if hasType prog f v ty then initVar σ x v else throw .illTypedValue
-  | .init x ty .nondet _ => do
-    let v ← chooseTyped prog f ty
-    initVar σ x v
-  | .set x (.det e) _ => do
-    let v ← evalExpr f σ e
-    if storedTyOk prog f σ x v then setVar σ x v else throw .illTypedValue
-  | .set x .nondet _ => do
-    match (tys x).orElse fun _ => (σ x).bind (typeOf? f) with
-    | some ty =>
-      let v ← chooseTyped prog f ty
-      if storedTyOk prog f σ x v then setVar σ x v else throw .illTypedValue
-    | none => throw .illTypedValue
-  | c@(.assert ..) | c@(.assume ..) | c@(.cover ..) => do
-    Effects.emit (emittedEvents c f σ)
-    pure σ
-
-@[expose] def deref (h : Heap) (v : Expr) : m (Nat × Obj) :=
-  match getRef? v with
-  | none => throw .notAReference
-  | some a =>
-    match h a with
-    | some o => pure (a, o)
-    | none => throw .danglingReference
-
-/-- The monomorphic type that `ty` is. -/
-@[expose] def monoTy (ty : Core.Expression.Ty) : m LMonoTy :=
-  match LTy.toMonoType? (ty : LTy) with
-  | some t => pure t
-  | none => throw .illTypedValue
-
-/-- The elements of the array that `v` refers to, with the object and its address. The run
-stops when the object is not an array, or when its type is not a subtype of `Array elemTy`. -/
-@[expose] def derefArray (prog : UnorderedProgram) (h : Heap) (v : Expr) (elemTy : Option Core.Expression.Ty) :
-    m (Nat × Obj × Array Expr) := do
-  let (a, o) ← deref h v
-  match o.elems with
-  | some elts =>
-    match elemTy with
-    | some t =>
-      if prog.isSubtypeTy o.type (arrayTy (← monoTy t)) then pure (a, o, elts)
-      else throw (.elementTypeMismatch t o.type)
-    | none => pure (a, o, elts)
-  | none => throw .notAnArray
-
-/-- The `int` that `v` is, as an array index or length. -/
-@[expose] def intValue (v : Expr) : m Int :=
-  match v with
-  | .const _ (.intConst k) => pure k
-  | _ => throw .illTypedValue
-
-/-- The fields of an object of type `ty`: those of every composite that `ty` is a subtype of. -/
-@[expose] def objectFieldRefs (prog : UnorderedProgram) (ty : LMonoTy) : List FieldRef :=
-  prog.composites.flatMap fun c =>
-    if prog.isSubtypeTy ty (tcon c.name) then c.fields.map fun fd => ⟨c.name, fd.name⟩ else []
-
-@[expose] def chooseFields (prog : UnorderedProgram) (f : LFactory) :
-    List FieldRef → m (List (FieldRef × Expr))
-  | [] => pure []
-  | r :: rs => do
-    match prog.findField? r with
-    | some d =>
-      let v ← chooseTyped prog f d.ty
-      let vs ← chooseFields prog f rs
-      pure ((r, v) :: vs)
-    | none => throw (.unknownField r)
-
-@[expose] def freshObject (prog : UnorderedProgram) (f : LFactory) (ty : LMonoTy) : m (Obj) := do
-  let vals ← chooseFields prog f (objectFieldRefs prog ty)
-  pure { type := ty
-         fields := fun r =>
-           if prog.isSubtypeTy ty (tcon r.owner) && (prog.findField? r).isSome then vals.lookup r else none }
-
-@[expose] def evalArgs (f : LFactory) (σ : Store) : List Expr → m (List Expr)
-  | [] => pure []
-  | e :: es => do
-    if (HasFvars.getFvars (P := Core.Expression) e).all (fun x => (σ x).isSome) then
-      let v ← evalExpr f σ e
-      let vs ← evalArgs f σ es
-      pure (v :: vs)
-    else throw .undefinedVariable
-
-@[expose] def readValues (f : LFactory) (σ : Store) : List Core.Expression.Ident → m (List Expr)
-  | [] => pure []
-  | x :: xs =>
-    match σ x with
-    | some v =>
-      if isValue f v then do
-        let vs ← readValues f σ xs
-        pure (v :: vs)
-      else throw .notAValue
-    | none => throw .variableNotDefined
-
-@[expose] def initStates (σ : Store) : List Core.Expression.Ident → List Expr → m (Store)
-  | [], [] => pure σ
-  | x :: xs, v :: vs => do
-    let σ' ← initVar σ x v
-    initStates σ' xs vs
-  | _, _ => throw .arityMismatch
-
-@[expose] def updateStates (σ : Store) : List Core.Expression.Ident → List Expr → m (Store)
-  | [], [] => pure σ
-  | x :: xs, v :: vs => do
-    let σ' ← setVar σ x v
-    updateStates σ' xs vs
-  | _, _ => throw .arityMismatch
-
-@[expose] def chooseValues (prog : UnorderedProgram) (f : LFactory) : List Core.Expression.Ty → m (List Expr)
-  | [] => pure []
-  | ty :: tys => do
-    let v ← chooseTyped prog f ty
-    let vs ← chooseValues prog f tys
-    pure (v :: vs)
-
-@[expose] def callFrame (prog : UnorderedProgram) (f : LFactory) (σ : Store) (p : Procedure)
-    (args : List Expr) : m (Store) := do
-  let gnames := prog.globals.map Prod.fst
-  let gvals ← readValues f σ gnames
-  let σG ← initStates Store.empty gnames gvals
-  let ins ← evalArgs f σ args
-  let σI ← initStates σG (p.inputs.map Prod.fst) ins
-  let fresh := p.outputs.filter fun (x, _) => !p.inputs.any (·.1 == x)
-  let outs ← chooseValues prog f (fresh.map Prod.snd)
-  initStates σI (fresh.map Prod.fst) outs
-
-@[expose] def globalsBack (prog : UnorderedProgram) (f : LFactory) (σ σEnd : Store) :
-    m (Store) := do
-  let gnames := prog.globals.map Prod.fst
-  let gvals ← readValues f σEnd gnames
-  updateStates σ gnames gvals
-
-@[expose] def paramTys (p : Procedure) (x : Core.Expression.Ident) : Option Core.Expression.Ty :=
-  (p.inputs ++ p.outputs).lookup x
-
-/-- `x`, whose error is located at `md` (`StopReason.locate`). -/
-@[expose] def locatedAt {α : Type} (md : MD) (x : m α) : m α :=
-  tryCatch x fun e => throw (e.locate md)
-
-@[expose] def stepWith (prog : UnorderedProgram) (evalCmd : IEnv → IRCmd → m CmdResult) :
-    IConfig → m (IConfig)
-  | .atBlock b t ρ =>
-    match List.lookup t b.cfg.blocks with
-    | some blk => pure (.inBlock b t blk.cmds blk.transfer ρ)
-    | none => throw (.missingBlock t)
-  | .inBlock b t (c :: cs) tr ρ => locatedAt (IRCmd.md c) do
-    let r ← evalCmd ρ c
-    let tys := match c with
-      | .cmd (.init x ty _ _) => fun y => if y = x then some ty else ρ.tys y
-      | _ => ρ.tys
-    let ρ' : IEnv := { ρ with store := r.store, heap := r.heap, next := r.next, tys }
-    match r.outcome with
-    | .normal => pure (.inBlock b t cs tr ρ')
-    | .exn v =>
-      match dynType r.heap v with
-      | none => throw .exceptionWithoutType
-      | some ty =>
-        match b.handlerFor? prog t ty with
-        | some hd => pure (.atBlock b hd.target { ρ' with store := r.store.update hd.binder v })
-        | none => pure (.raised ρ' v (IRCmd.md c))
-  | .inBlock b _ [] (.condGoto e lt lf md) ρ => locatedAt md do
-    match evalPure ρ.factory ρ.store e with
-    | some v =>
-      if Core.eraseLocs v = HasBool.tt (P := Core.Expression) then pure (.atBlock b lt ρ)
-      else if Core.eraseLocs v = HasBool.ff (P := Core.Expression) then pure (.atBlock b lf ρ)
-      else throw .expressionWasNotBoolean
-    | none => throw .expressionDidNotEvaluate
-  | .inBlock _ _ [] (.finish _) ρ => pure (.terminal ρ)
-  | .terminal ρ => pure (.terminal ρ)
-  | .raised ρ v md => pure (.raised ρ v md)
-
-/-- The check of precondition `pre` at a call at `callMd`: located at the call,
-with the precondition's property summary. -/
-@[expose] def preconditionMd (callMd : MD) (pre : Precondition) : MD :=
-  match pre.md.getPropertySummary with
-  | some s => callMd.pushElem Imperative.MetaData.propertySummary (.msg s)
-  | none => callMd
-
-/-- Give each output of composite type a fresh object, allocated as `new`
-allocates it, and each output of array type a fresh array without elements.
-The other outputs keep their values. -/
-@[expose] def freshOutputs (prog : UnorderedProgram) (ρ : IEnv) :
-    List (Core.Expression.Ident × Core.Expression.Ty) → m IEnv
-  | [] => pure ρ
-  | (x, ty) :: rest =>
-    match objectTy? prog ty with
-    | some t => do
-      let o ← freshObject prog ρ.factory t
-      let o := if (arrayElem? t).isSome then { o with elems := some #[] } else o
-      let σ' ← setVar ρ.store x (mkRef ρ.next)
-      freshOutputs prog { ρ with store := σ', heap := ρ.heap.update ρ.next o, next := ρ.next + 1 } rest
-    | none => freshOutputs prog ρ rest
-
-/-- Call procedure `n`. The callee starts in the frame that `callFrame` builds,
-in which every output holds a value from `Effects.choose`. Its preconditions
-are checked in that frame, each located at the call.
-
-A procedure without a body returns from that frame at once, with one change:
-each output of composite type that is not also an input gets a fresh object, so
-the caller can read and write the fields of the result, and each such output of
-array type gets a fresh array of length 0. Every other output
-keeps its value: the chosen one, or the argument for an output that is also an
-input, which is how a lowered global passes through the call. That includes an
-output of an `$Any` type, which names no composite to allocate.
-The objects that exist before the call and the globals are left as they are.
-This is one of the behaviours such a procedure can have, not all of them: a
-real callee could return other values, write the heap or throw, so what the
-caller computes from the results can differ from a run against the real
-callee. -/
-@[expose] def callProc (prog : UnorderedProgram) (runBody : IConfig → m (IConfig)) (ρ : IEnv)
-    (lhs : List Core.Expression.Ident) (n : ProcName) (args : List Expr) (callMd : MD) : m CmdResult := do
-  match prog.findProcedure? n with
-  | none => throw (.unknownProcedure n)
-  | some p =>
-    let σ₀ ← callFrame prog ρ.factory ρ.store p args
-    for pre in p.requires do
-      Effects.emit (emittedEvents (.assert s!"requires_{p.name}" pre.cond (preconditionMd callMd pre)) ρ.factory σ₀)
-    let ρ₀ : IEnv :=
-      { store := σ₀, heap := ρ.heap, factory := ρ.factory, next := ρ.next, tys := paramTys p }
-    let final ← match p.body with
-      | some body => runBody (.atBlock body body.cfg.entry ρ₀)
-      | none => do
-        let ρ₁ ← freshOutputs prog ρ₀ (p.outputs.filter fun (x, _) => !p.inputs.any (·.1 == x))
-        pure (.terminal ρ₁)
-    match final with
-    | .terminal ρE =>
-      if lhs.Nodup then
-        let outs ← readValues ρ.factory ρE.store (p.outputs.map Prod.fst)
-        let σL ← updateStates ρ.store lhs outs
-        let σ' ← globalsBack prog ρ.factory σL ρE.store
-        pure ⟨σ', ρE.heap, ρE.next, .normal⟩
-      else throw .aliasedResults
-    | .raised ρE v _ =>
-      unless lhs.Nodup do throw .aliasedResults
-      let σ' ← globalsBack prog ρ.factory ρ.store ρE.store
-      let inouts := (lhs.zip (p.outputs.map Prod.fst)).filter fun (_, o) => p.inputs.any (·.1 == o)
-      let vals ← readValues ρ.factory ρE.store (inouts.map Prod.snd)
-      let σ' ← updateStates σ' (inouts.map Prod.fst) vals
-      pure ⟨σ', ρE.heap, ρE.next, .exn v⟩
-    | _ => throw (.calleeDidNotTerminate n)
+@[expose] def stepBase (fuel : Nat) (f : LFactory) (σ : Store) (c : Cmd Core.Expression) : m Store :=
+  stepBaseCmdStore (P := CortexExpression) fuel f σ c
 
 def datatypeDefault (prog : UnorderedProgram) (n : String) : Option Expr :=
+  if n == LowerComposites.compositeTy then (LowerHeapExec.defaultOf prog (.forAll [] (.tcons n []))).toOption else
   prog.datatypes.find? (·.name == n) >>= fun d =>
     if d.typeArgs.isEmpty then
       (d.constrs.find? (·.args.isEmpty)).map fun c => (constrFunc (T := Core.CoreLParams) c d).opExpr
@@ -463,147 +122,154 @@ def defaultValue (prog : UnorderedProgram) (_f : LFactory) (ty : Core.Expression
   | t@(.forAll [] (.tcons n [])) =>
     if isRefTy prog t then some (.const Core.valueLoc (.intConst (-1)) : Core.Expression.Expr)
     else datatypeDefault prog n
-  | t => if isRefTy prog t then some (.const Core.valueLoc (.intConst (-1)) : Core.Expression.Expr) else none
+  | _ => none
 
-mutual
+@[expose] def extCmd (fuel : Nat) (f : LFactory) (σ : Store) : IRCmd → m Store
+  | .cast x _ e _ _ => do
+    setVar σ x (← evalExpr fuel f σ e)
+  | .new .. => throwThe StopReason (.notLowered "new")
+  | .readField .. => throwThe StopReason (.notLowered "readField")
+  | .writeField .. => throwThe StopReason (.notLowered "writeField")
+  | .instanceOf .. => throwThe StopReason (.notLowered "instanceOf")
+  | .newArray .. => throwThe StopReason (.notLowered "newArray")
+  | .readElem .. => throwThe StopReason (.notLowered "readElem")
+  | .writeElem .. => throwThe StopReason (.notLowered "writeElem")
+  | .arrayLength .. => throwThe StopReason (.notLowered "arrayLength")
+  | .instanceOfComponent .. => throwThe StopReason (.notLowered "instanceOfComponent")
+  | _ => pure σ
 
-@[expose] def evalCmd (prog : UnorderedProgram) : Nat → IEnv → IRCmd → m CmdResult
-  | _, ρ, .cmd c => do
-    let σ' ← evalBaseCmd prog ρ.factory ρ.store ρ.tys c
-    pure ⟨σ', ρ.heap, ρ.next, .normal⟩
-  | _, ρ, .cast x t e mode md => do
-    let v ← evalExpr ρ.factory ρ.store e
-    let σ' ← setVar ρ.store x v
-    match pred prog.constrained t (mkFvar x.name) (checkedOnly := mode == .check) with
+@[expose] def callArgs (p : Procedure) (lhs : List Core.Expression.Ident)
+    (args : List Expr) : Option (List (CallArg CortexExpression)) :=
+  let ins := p.inputs.map Prod.fst
+  let outs := p.outputs.map Prod.fst
+  if ins.length != args.length || outs.length != lhs.length then none
+  else merge (ins.zip args) (outs.zip lhs)
+where
+  merge : List (Core.Expression.Ident × Expr) → List (Core.Expression.Ident × Core.Expression.Ident) →
+      Option (List (CallArg CortexExpression))
+    | [], os => some (os.map fun (_, x) => .outArg x)
+    | (n, a) :: is, os =>
+      match os.findIdx? (·.1 == n) with
+      | some j =>
+        match os.drop j, a with
+        | (_, x) :: after, .fvar _ y _ =>
+          if x == y then
+            (merge is after).map fun rest =>
+              ((os.take j).map fun (_, z) => CallArg.outArg (P := CortexExpression) z) ++
+                [CallArg.inoutArg (P := CortexExpression) x] ++ rest
+          else none
+        | _, _ => none
+      | none => (merge is os).map (CallArg.inArg (P := CortexExpression) a :: ·)
+
+@[expose] def view (prog : UnorderedProgram) : IRCmd → CmdView CortexExpression IRCmd Hdr m
+  | .cmd c => .base c
+  | .call lhs n args md =>
+    match prog.findProcedure? n with
+    | none => .call n (args.map (CallArg.inArg (P := CortexExpression)) ++
+        lhs.map (CallArg.outArg (P := CortexExpression))) md some
     | some p =>
-      let c : Cmd Core.Expression := match mode with
-        | .check => .assert s!"constraint_{t}" p md
-        | .assume => .assume s!"constraint_{t}" p md
-      Effects.emit (emittedEvents c ρ.factory σ')
-    | none => pure ()
-    pure ⟨σ', ρ.heap, ρ.next, .normal⟩
-  | _, ρ, .new x ty _ => do
-    if (prog.findComposite? ty).isSome then
-      let o ← freshObject prog ρ.factory (tcon ty)
-      let σ' ← setVar ρ.store x (mkRef ρ.next)
-      pure ⟨σ', ρ.heap.update ρ.next o, ρ.next + 1, .normal⟩
-    else throw (.unknownComposite ty)
-  | _, ρ, .readField x obj r _ => do
-    let v ← evalExpr ρ.factory ρ.store obj
-    let (_, o) ← deref ρ.heap v
-    match o.fields r with
-    | some w =>
-      let σ' ← setVar ρ.store x w
-      pure ⟨σ', ρ.heap, ρ.next, .normal⟩
-    | none => throw (.missingObjectField r)
-  | _, ρ, .writeField obj r rhs _ => do
-    let v ← evalExpr ρ.factory ρ.store obj
-    let (a, o) ← deref ρ.heap v
-    if (o.fields r).isSome then
-      let w ← evalExpr ρ.factory ρ.store rhs
-      match prog.findField? r with
-      | some d =>
-        if hasType prog ρ.factory w d.ty then
-          pure ⟨ρ.store, ρ.heap.update a (o.setField r w), ρ.next, .normal⟩
-        else throw .illTypedValue
-      | none => throw (.unknownField r)
-    else throw (.missingObjectField r)
-  | _, ρ, .instanceOf x obj ty _ => do
-    let t ← monoTy ty
-    let v ← evalExpr ρ.factory ρ.store obj
-    let (_, o) ← deref ρ.heap v
-    let σ' ← setVar ρ.store x (if prog.isSubtypeTy o.type t then HasBool.tt (P := Core.Expression) else HasBool.ff (P := Core.Expression))
-    pure ⟨σ', ρ.heap, ρ.next, .normal⟩
-  | _, ρ, .newArray x ety len _ => do
-    let et ← monoTy ety
-    let k ← intValue (← evalExpr ρ.factory ρ.store len)
-    if k < 0 then throw (.negativeArrayLength k) else
-    if k > maxArrayLength then throw (.arrayLengthOverLimit k maxArrayLength) else
-    -- Every element starts at the default of the element type's values, whatever the choice
-    -- oracle is.
-    match defaultValue prog ρ.factory (mono (valueTy prog.constrained et)) 0 with
-    | none => throw .noChoice
-    | some d =>
-      let o ← freshObject prog ρ.factory (arrayTy et)
-      let σ' ← setVar ρ.store x (mkRef ρ.next)
-      pure ⟨σ', ρ.heap.update ρ.next { o with elems := some (Array.replicate k.toNat d) }, ρ.next + 1, .normal⟩
-  | _, ρ, .readElem x arr i ty _ => do
-    let (_, _, elts) ← derefArray prog ρ.heap (← evalExpr ρ.factory ρ.store arr) (some ty)
-    let k ← intValue (← evalExpr ρ.factory ρ.store i)
-    match (if 0 ≤ k then elts[k.toNat]? else none) with
-    | some w =>
-      let σ' ← setVar ρ.store x w
-      pure ⟨σ', ρ.heap, ρ.next, .normal⟩
-    | none => throw (.indexOutOfRange k elts.size)
-  | _, ρ, .writeElem arr i rhs ty _ => do
-    let (a, o, elts) ← derefArray prog ρ.heap (← evalExpr ρ.factory ρ.store arr) (some ty)
-    let k ← intValue (← evalExpr ρ.factory ρ.store i)
-    if 0 ≤ k && k.toNat < elts.size then
-      let w ← evalExpr ρ.factory ρ.store rhs
-      if hasType prog ρ.factory w (mono (valueTy prog.constrained (← monoTy ty))) then
-        pure ⟨ρ.store, ρ.heap.update a { o with elems := some (elts.setIfInBounds k.toNat w) }, ρ.next, .normal⟩
-      else throw .illTypedValue
-    else throw (.indexOutOfRange k elts.size)
-  | _, ρ, .arrayLength x arr _ => do
-    let (_, _, elts) ← derefArray prog ρ.heap (← evalExpr ρ.factory ρ.store arr) none
-    let σ' ← setVar ρ.store x (intLit elts.size)
-    pure ⟨σ', ρ.heap, ρ.next, .normal⟩
-  | _, ρ, .instanceOfComponent x obj arr _ => do
-    let (_, a, _) ← derefArray prog ρ.heap (← evalExpr ρ.factory ρ.store arr) none
-    match arrayElem? a.type with
-    | none => throw .notAnArray
-    | some et =>
-      if isRefTy prog (mono et) then
-        let (_, o) ← deref ρ.heap (← evalExpr ρ.factory ρ.store obj)
-        let σ' ← setVar ρ.store x (if prog.isSubtypeTy o.type et then HasBool.tt (P := Core.Expression) else HasBool.ff (P := Core.Expression))
-        pure ⟨σ', ρ.heap, ρ.next, .normal⟩
-      else throw (.elementNotAReference a.type)
-  | _, ρ, .throw e _ => do
-    let v ← evalExpr ρ.factory ρ.store e
-    pure ⟨ρ.store, ρ.heap, ρ.next, .exn v⟩
-  | 0, _, .call _ _ _ _ | 0, _, .virtualCall _ _ _ _ _ => throw .fuelExhausted
-  | fuel + 1, ρ, .call lhs n args md => callProc prog (run prog fuel) ρ lhs n args md
-  | fuel + 1, ρ, .virtualCall lhs owner meth args md => do
-    let recv ← match args with
-      | r :: _ => evalExpr ρ.factory ρ.store r
-      | [] => throw .arityMismatch
-    let (_, o) ← deref ρ.heap recv
-    callProc prog (run prog fuel) ρ lhs (prog.dispatch owner meth o.type) args md
+      match callArgs p lhs args with
+      | some cas => .call n cas md some
+      | none => .ext fun _ _ => throwThe StopReason (.inoutArgumentMismatch n)
+  | .virtualCall .. => .ext fun _ _ => throwThe StopReason (.notLowered "virtualCall")
+  | .throw _ _ => .ext fun _ _ => throwThe StopReason .exceptionsUnsupported
+  | c => .ext fun fuel env => do
+    let σ ← extCmd fuel env.factory env.store c
+    pure (.terminal { env with store := σ })
 
-@[expose] def run (prog : UnorderedProgram) : Nat → IConfig → m (IConfig)
-  | _, .terminal ρ => pure (.terminal ρ)
-  | _, .raised ρ v md => pure (.raised ρ v md)
-  | 0, _ => throw .fuelExhausted
-  | fuel + 1, c => do
-    let c' ← stepWith prog (fun ρ cmd => evalCmd prog fuel ρ cmd) c
-    run prog fuel c'
+@[expose] def stubBody (tyProg prog : UnorderedProgram) (p : Procedure) : Except String Body := do
+  let declared := ((tyProg.findProcedure? p.name).map (·.outputs)).getD p.outputs
+  let cmds ← (p.outputs.filter fun (x, _) => !p.inputs.any (·.1 == x)).flatMapM fun (x, ty) =>
+    match ((declared.lookup x).getD ty : LTy) with
+    | .forAll [] t =>
+      match arrayElem? t, t with
+      | some e, _ => LowerHeapExec.lowerCmd (LowerHeapExec.info prog) (.newArray x (mono e) (intLit 0) .empty)
+      | none, .tcons n [] =>
+        if (prog.findComposite? n).isSome then LowerHeapExec.lowerCmd (LowerHeapExec.info prog) (.new x n .empty)
+        else pure (stubChoice x ty)
+      | none, _ => pure (stubChoice x ty)
+    | _ => pure (stubChoice x ty)
+  return { cfg := { entry := "$stub", blocks := [("$stub", { cmds, transfer := .finish .empty })] },
+           handlers := [] }
+where
+  stubChoice (x : Core.Expression.Ident) (ty : Core.Expression.Ty) : List IRCmd :=
+    let tmp : Core.Expression.Ident := ⟨s!"$stub${x.name}", ()⟩
+    [.cmd (.init tmp ty .nondet .empty), .cmd (.set x (.det (mkFvar tmp.name)) .empty)]
 
-end
+@[expose] def withStubBodies (tyProg prog : UnorderedProgram) : Except String UnorderedProgram := do
+  return { prog with procedures := ← prog.procedures.mapM fun p => do
+      if p.body.isSome then pure p else pure { p with body := some (← stubBody tyProg prog p) } }
 
-abbrev HostM :=
-  ReaderT (LFactory → Core.Expression.Ty → Nat → Option Expr) (StateT (Trace × Nat) (Except StopReason))
+@[expose] def calleeTable (prog : UnorderedProgram) (n : String) : Option IProcedure :=
+  (prog.findProcedure? n).map fun p =>
+    let body := (p.body.getD { cfg := { entry := "$none", blocks := [] }, handlers := [] }).cfg
+    { header := { name := p.name, inputs := p.inputs.map Prod.fst,
+                  outputs := p.outputs.map Prod.fst }
+      spec := { preconditions := ListMap.ofList (p.requires.zipIdx.map fun (pre, i) =>
+                  (s!"requires_{i}", ({ expr := pre.cond, md := pre.md } : Imperative.Check CortexExpression)))
+                postconditions := ListMap.ofList [] }
+      body := .cfg body }
 
-instance : Effects HostM where
-  emit es := modify fun (t, n) => (t ++ es, n)
-  choose f ty := do
+@[expose] def locatedAt {α : Type} (md : MD) (x : m α) : m α :=
+  tryCatchThe StopReason x fun e => throwThe StopReason (e.locate md)
+
+@[expose] def stepper (prog : UnorderedProgram) :
+    Imperative.StepCmdM CortexExpression IRCmd m :=
+  fun fuel env c =>
+    locatedAt (IRCmd.md c) (stepCmdWith (view prog) (fun c x => locatedAt (IRCmd.md c) x)
+      (calleeTable prog) Imperative.defaultMaxCallDepth fuel env c)
+
+@[expose] def runCFG (step : Imperative.StepCmdStoreM CortexExpression IRCmd m) :
+    Nat → Config → m Config
+  | fuel, cfgc =>
+    match cfgc with
+    | .terminal _ => pure cfgc
+    | _ =>
+      match fuel with
+      | 0 => throw .replayFuelExhausted
+      | fuel + 1 => do
+        let next ← match cfgc with
+          | .inBlock _ _ [] (.condGoto _ _ _ md) _ =>
+            locatedAt md (Imperative.stepInterpCFG step (fuel + 1) cfgc)
+          | _ => Imperative.stepInterpCFG step (fuel + 1) cfgc
+        runCFG step fuel next
+
+abbrev Oracle := LFactory → Core.Expression.Ty → Nat → Option Expr
+
+structure HostState where
+  trace : Array Event := #[]
+  choices : Nat := 0
+
+abbrev HostM := ReaderT Oracle (ExceptT StopReason (StateM HostState))
+
+instance : MonadExceptOf Imperative.StopReason HostM where
+  throw r := throwThe StopReason (.engine r)
+  tryCatch x h := tryCatchThe StopReason x fun e =>
+    match e with
+    | .engine r => h r
+    | e => throwThe StopReason e
+
+instance : InterpEffects CortexExpression HostM where
+  choose rf _ ty := do
     let oracle ← read
-    let (t, n) ← get
-    set (t, n + 1)
-    match oracle f ty n with
-    | some v => pure v
-    | none => throw .noChoice
+    let n ← modifyGetThe HostState fun st => (st.choices, { st with choices := st.choices + 1 })
+    match oracle rf ty n with
+    | some v =>
+      let ops := InterpLang.ops (P := CortexExpression)
+      if ops.isValue rf v && ops.hasType rf v ty then pure v
+      else throwThe Imperative.StopReason .illTypedValue
+    | none => throwThe Imperative.StopReason .oracleExhausted
+  emit ev := modifyThe HostState fun st => { st with trace := st.trace.push ev }
 
-@[expose] def runHost (prog : UnorderedProgram) (fuel : Nat) (oracle : LFactory → Core.Expression.Ty → Nat → Option Expr)
-    (c : IConfig) : Except StopReason (IConfig × Trace) :=
-  match ((run prog fuel c : HostM IConfig).run oracle).run ([], 0) with
-  | .ok (c', (t, _)) => .ok (c', t)
-  | .error e => .error e
+structure RunResult where
+  final : Config
+  trace : Trace
 
-def programFactory (prog : UnorderedProgram) : Except Strata.Message LFactory :=
-  prog.datatypes.foldlM (init := Core.Factory) fun F d => do
+def programFactory (prog : UnorderedProgram) : Except Strata.Message LFactory := do
+  let F ← prog.datatypes.foldlM (init := Core.Factory) fun F d => do
     let bf ← Lambda.genBlockFactory (T := Core.CoreLParams) [d]
     Lambda.Factory.addFactory F bf
-
+  Lambda.Factory.addFactory F (Lambda.Factory.ofArray prog.functions.toArray)
 
 def isEntry (p : Procedure) : Bool :=
   match p.md.findElem Imperative.MetaData.interpretEntry with
@@ -612,31 +278,52 @@ def isEntry (p : Procedure) : Bool :=
 
 /-- Start `p` as the program's entry: its frame has no caller to take the globals from, so
 the globals are defined by running `globalInit` first, in a block in front of the body. -/
-def startProc (prog : UnorderedProgram) (f : LFactory) (fuel : Nat) (p : Procedure) : HostM IConfig := do
+def startProc (prog : UnorderedProgram) (f : LFactory) (fuel : Nat) (p : Procedure) : HostM Config := do
   match p.body with
-  | none => throw (.procedureWithoutBody p.name)
+  | none => throwThe StopReason (.procedureWithoutBody p.name)
   | some body =>
-    let outs ← chooseValues prog f (p.outputs.map Prod.snd)
-    let σ₀ ← initStates Store.empty (p.outputs.map Prod.fst) outs
+    let outs ← (p.outputs.map Prod.snd).mapM (chooseTyped f Store.empty)
+    let σ₀ := Store.empty.bindPositional (p.outputs.map Prod.fst) outs
     let entry := freshLabel "$globalsEntry" (body.cfg.blocks.map (·.1))
     let initBlock : Cortex.LBlock := { cmds := prog.globalInit.map .cmd, transfer := .goto body.cfg.entry }
     let body := if prog.globalInit.isEmpty then body else
       { body with cfg := { entry := entry, blocks := (entry, initBlock) :: body.cfg.blocks } }
-    run prog fuel (.atBlock body body.cfg.entry
-      { store := σ₀, heap := fun _ => none, factory := f, next := 0, tys := paramTys p })
+    runCFG (stepper prog).toStore fuel
+      (.atBlock body.cfg body.cfg.entry { store := σ₀, factory := f })
 
-def runEntry (prog : UnorderedProgram) (fuel : Nat) (p : Procedure) :
-    Except StopReason (IConfig × Trace) :=
+def lower (prog : UnorderedProgram) : Except String UnorderedProgram := do
+  let typed ← match ← runPasses (sharedPasses true ++ interpreterPasses) (.unordered prog) with
+    | .unordered p => pure p
+    | .ordered _ => throw "the shared passes gave an ordered program"
+  let prog ← (LowerCTE.runWith true typed).mapError (s!"LowerCTE: {·}")
+  let prog ← (withStubBodies typed prog).mapError (s!"stub bodies: {·}")
+  return LowerHeapExec.eraseArrays prog
+
+def prepare (prog : UnorderedProgram) : Except StopReason UnorderedProgram := do
+  let prog ← (lower prog).mapError StopReason.lowering
+  (TypeCheck.run prog).mapError StopReason.typeError
+
+def runPrepared (prog : UnorderedProgram) (fuel : Nat) (name : ProcName) : Except StopReason RunResult := do
+  let some p := prog.findProcedure? name | throw (.procedureWithoutBody name)
+  if p.body.isNone then throw (.procedureWithoutBody p.name)
   match programFactory prog with
   | .error e => .error (.invalidDatatypes e.message)
-  | .ok f =>
-    match ((startProc prog f fuel p).run (defaultValue prog)).run ([], 0) with
-    | .ok (c, (t, _)) => .ok (c, t)
-    | .error e => .error e
+  | .ok lf =>
+    let oracle : Oracle := match TypeCheck.context prog with
+      | .ok C => fun lf ty n => (defaultValue prog lf ty n).map fun v =>
+          (TypeCheck.annotate prog C [] v (LTy.toMonoType? (ty : LTy))).toOption.getD v
+      | .error _ => defaultValue prog
+    match (((startProc prog lf fuel p).run oracle).run).run {} with
+    | (.ok c, st) => .ok { final := c, trace := st.trace.toList }
+    | (.error e, _) => .error e
+
+def runEntry (prog : UnorderedProgram) (fuel : Nat) (p : Procedure) : Except StopReason RunResult := do
+  if p.body.isNone then throw (.procedureWithoutBody p.name)
+  runPrepared (← prepare prog) fuel p.name
 
 def evalsTo (a : EventArg) (b : Bool) : Bool :=
-  match evalPure a.factory a.store a.expr with
-  | some v => decide (Core.eraseLocs v = if b then HasBool.tt (P := Core.Expression) else HasBool.ff (P := Core.Expression))
+  match InterpLang.boundedEval (P := CortexExpression) exprFuel a.factory a.store a.expr with
+  | some v => InterpLang.boolLit? (P := CortexExpression) v == some b
   | none => false
 
 def unevaluated : Trace → Nat

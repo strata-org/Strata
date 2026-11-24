@@ -101,7 +101,8 @@ def Core.seqTotalizePipelinePhase : Core.PipelinePhase :=
                          .staticSingleAssignment, .noBetaRedexes, .noPrecondsFromFuncs,
                          .noNondetGuards, .hasObligationForm, .noProcedureContracts,
                          .noPolymorphicProcedures, .noPolymorphicFunctions, .typeAnnotated,
-                         .noInits, .treeForm, .exitsCovered, .armsHaveObligations])
+                         .noInits, .treeForm, .exitsCovered, .armsHaveObligations,
+                         .noCFGCycles])
     Core.SeqTotalize.totalizeProgram
 
 end -- public section

@@ -9,6 +9,7 @@ public import Strata.Languages.Core.AbstractionMarkers
 public import Strata.Languages.Core.Interpreter
 public import Strata.Languages.Core.Procedure
 public import Strata.Languages.Core.ProgramFact
+public import Strata.Languages.Core.JoinValueNames
 
 /-! # Symbolic execution on the monadic interpreter
 
@@ -45,18 +46,16 @@ structure ExploreCfg where
   /-- Fuel for `LExpr.eval` (the simplification fuel, independent of the run fuel); by default
       the default of `Lambda.EvalConfig.fuel`. -/
   simpFuel : Nat := ({ factory := Lambda.Factory.default } : Lambda.EvalConfig CoreLParams).fuel
-  /-- The symbol prefix: a name is a symbol iff it starts with it. -/
+  /-- The symbol prefix: a name that starts with it is a symbol the run created for an input or
+      a havoc; no program name starts with it (`exploreProc`, `choosePrefix_fresh`). -/
   pre : String := defaultSymPrefix
+  /-- The prefix of the symbols that name merged values at joins (`nameJoinValues`); no program
+      name starts with it either, and neither it nor `pre` starts with the other. -/
+  joinPre : String := defaultJoinPrefix
   /-- A bound on the paths of a run: once more than this many paths exist (finished, or still
       to be explored), the explorer explores no further and the paths left are `overPathLimit`
       (`explore`). `none` sets no bound. -/
   maxPaths : Option Nat := none
-  /-- When set, a path ends at an `assert` whose condition evaluates to literal `false` (after
-      recording it), and at an `assume` that contradicts the path condition (literal `false`,
-      or the negation of a condition already assumed, `pcRefutes`); see `failedCheckStatus`.
-      Off by default: a path continues past a failed assert, so the checks after it still get
-      their own verdicts. -/
-  endOnFailedChecks : Bool := false
 
 /-- Whether `x` is a symbol: its name starts with `pre`. Decided from the name alone, since the
     evaluator does not see the path state; `exploreProc` chooses `pre` so that no name the
@@ -72,15 +71,17 @@ def mkSym (pre : String) (k : Nat) (ty : LMonoTy) (name : String := "") : Expres
   .fvar symExecLoc
     ⟨if name.isEmpty then pre ++ toString k else pre ++ name ++ "_" ++ toString k, ()⟩ (some ty)
 
-/-- The shortest extension of `defaultSymPrefix` by underscores that no name in `names` starts
-    with. The fuel, one more than the longest name's length, suffices: a name starts only with
-    prefixes no longer than itself. -/
-def choosePrefix (names : List String) : String :=
+/-- The shortest extension of `base` (by default `defaultSymPrefix`) by underscores that no name
+    in `names` starts with. The fuel, one more than the longest name's length, suffices: a name
+    starts only with prefixes no longer than itself. -/
+-- TODO: prove that `choosePrefix names base` starts with `base`, which recognising join symbols
+-- by name (`isJoinValueName`: `joinDefSym?`, `Core.pruneUnusedDefinitions`) relies on.
+def choosePrefix (names : List String) (base : String := defaultSymPrefix) : String :=
   let maxLen := names.foldl (fun m n => max m n.length) 0
   let rec go : Nat → String → String
     | 0, p => p
     | n + 1, p => if names.any (·.startsWith p) then go n (p ++ "_") else p
-  go (maxLen + 1) defaultSymPrefix
+  go (maxLen + 1) base
 
 /-! ## The symbolic evaluator -/
 
@@ -90,10 +91,11 @@ def choosePrefix (names : List String) : String :=
     not bind. -/
 def symEval (cfg : ExploreCfg) (F : Lambda.Factory CoreLParams) (σ : RStore Expression)
     (e : Expression.Expr) : Option Expression.Expr :=
-  -- Checked on the input, not the result: stored values mention only symbols (every stored
-  -- value is built from `symEval` results, fresh symbols and merge `if`s), so the result
-  -- mentions a program variable only if `e` mentions one the store does not bind.  This keeps
-  -- the check proportional to `e` rather than to the (growing) stored terms.
+  -- Checked on the input, not the result: stored values mention only symbols and join symbols
+  -- (every stored value is built from `symEval` results, fresh symbols, merge `if`s and join
+  -- symbols), so the result mentions a program variable only if `e` mentions one the store does
+  -- not bind. This keeps the check proportional to `e` rather than to the (growing) stored
+  -- terms.
   if (LExpr.freeVars e).all (fun p => isSymName cfg.pre p.1 || (σ p.1).isSome) then
     some (LExpr.eval cfg.simpFuel F σ e).1
   else none
@@ -165,6 +167,14 @@ structure PathState where
   choices : List Choice := []
   /-- Whether the path went through a merge. -/
   merged : Bool := false
+  /-- The declared type of each variable the path declared (a formal, or an `init`), as the
+      path explorer records them (`ProcBodyShape.declares`); a join names a merged value with a
+      symbol of its variable's type (`nameJoinValues`). An entry stays after its variable goes
+      out of scope; a later declaration of the name replaces it.
+      TODO: prove that in every path state the explorer reaches, each variable the store binds
+      has its declared type here, and that both branches of a join agree on it, so naming
+      never skips a value for want of a type (`Result.joinValuesUnnamed` is 0). -/
+  types : Std.TreeMap CoreIdent LMonoTy identCmp := {}
 
 /-- One outcome of a path. -/
 inductive Out (α : Type) where
@@ -211,9 +221,8 @@ def pcExprs (pc : List (String × Expression.Expr)) : List Expression.Expr := pc
     keep. Literal `true` under a label that is not an abstraction marker
     (`Core.isAbstractionMarker`), and `c` already present under the same label, are not added
     (both up to source locations); `c` present under another label is added again under this
-    one. A contradicting condition (literal `false`, or the negation of one already assumed)
-    does not end the path: later checks are still recorded, under a path condition that implies
-    `false` (an assert holds, a cover fails). -/
+    one. Literal `false` is added too; the path explorer then ends the path as infeasible after
+    the step (`infeasibleStatus`, `PathExplorer.lean`). -/
 def assumeCond (label : String) (c : Expression.Expr) : ForkM Unit := fun _ st =>
   if (LExpr.isTrue _ c && !isAbstractionMarker label) ||
       st.pc.any (fun (l, d) => l == label && d.beqIgnoringMetadata c) then [(.ok (), st)]

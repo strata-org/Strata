@@ -32,8 +32,9 @@ check establishes `ConstrArgWF` for every field), and `checkMutualBlockInhab_sou
 inhabitance check establishes `TySymInhab` for every datatype).
 
 `LContext.addMutualBlock_ok_eq` gives the context that adding a block
-produces. The remaining facts are about the names, argument lists and types of
-the functions a block generates.
+produces, and `LContext.addMutualBlock_functions_toList` its function list
+(the existing functions followed by the generated ones). The remaining facts are
+about the names, argument lists and types of the functions a block generates.
 
 ## Properties of the factories generated from datatype declarations
 
@@ -321,6 +322,22 @@ theorem LContext.addMutualBlock_ok_eq {T : LExprParams} [DecidableEq T.IDMeta]
     (fun _ _ => by loop_body_yields) hloop d hd
   elim_err hdOk
   assumption
+
+/-- Successfully adding a mutual block to a context appends the functions
+    `genBlockFactory` generates for the block to the factory. -/
+theorem LContext.addMutualBlock_functions_toList {T : LExprParams}
+    [DecidableEq T.IDMeta] [Inhabited T.IDMeta] [Inhabited T.Metadata]
+    [ToFormat T.IDMeta] {C C' : LContext T} {block : MutualDatatype T.IDMeta}
+    (h : C.addMutualBlock block = .ok C') :
+    ∃ fgen, genBlockFactory block = .ok fgen ∧
+      C'.functions.toArray.toList =
+        C.functions.toArray.toList ++ fgen.toArray.toList := by
+  obtain ⟨-, ds, fgen, fs, ks, -, hfgen, hfs, -, rfl⟩ :=
+    LContext.addMutualBlock_ok_eq C C' block h
+  simp only [Factory.addFactory, Factory.tryAddAll] at hfs
+  rw [← Array.foldlM_toList] at hfs
+  exact ⟨fgen, hfgen,
+    Factory.toList_toArray_foldlM_tryPush _ C.functions fs hfs⟩
 
 /-- Successfully adding a mutual block to a context means no datatype of the block is named
     like a known type, and the block was added to the context's datatype store. -/

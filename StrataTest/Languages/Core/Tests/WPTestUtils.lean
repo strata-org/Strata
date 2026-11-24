@@ -33,9 +33,32 @@ open _root_.Core Imperative Imperative.BigStep Imperative.WP
 def modes : List (String × Core.VerifyOptions) :=
   [("symbolic", Core.VerifyOptions.quiet), ("wp", { Core.VerifyOptions.quiet with vcgen := .wp })]
 
-/-- The line `pre label: proved` or `pre label: not proved` for the obligation result `r`. -/
+/-- `unknown` when the solver answered unknown to both checks, `error` when the pipeline or the
+    solver failed (an SMT encoding error, a solver crash or a timeout), and `other` otherwise. -/
+def errorUnknownOrOther (r : Core.VCResult) : String :=
+  if r.isUnknown then "unknown"
+  else if r.isImplementationError || r.isTimeout then "error"
+  else "other"
+
+/-- The verdict of the obligation result `r`. A cover is `covered` when the solver finds it
+    satisfiable and `uncovered` when it finds it unsatisfiable. Any other obligation is `proved`
+    when the solver proves it, and `refuted` when the validity check is `sat`, that is when the
+    solver found a counterexample (a model of the query, which may be spurious when the query
+    over-approximates the program; only `proved` is certified). Otherwise the verdict is
+    `errorUnknownOrOther`, whose `other` makes a new kind of outcome show in a test instead of
+    reading as one of the named ones. -/
+def verdict (r : Core.VCResult) : String :=
+  if r.obligation.property == .cover then
+    if r.outcome matches .ok { satisfiabilityProperty := .sat _, .. } then "covered"
+    else if r.outcome matches .ok { satisfiabilityProperty := .unsat, .. } then "uncovered"
+    else errorUnknownOrOther r
+  else if r.isSuccess then "proved"
+  else if r.outcome matches .ok { validityProperty := .sat _, .. } then "refuted"
+  else errorUnknownOrOther r
+
+/-- The line `pre label: v` for the obligation result `r`, `v` being its `verdict`. -/
 def provedLine (pre : String) (r : Core.VCResult) : String :=
-  s!"{pre}{r.obligation.label}: {if r.isSuccess then "proved" else "not proved"}"
+  s!"{pre}{r.obligation.label}: {verdict r}"
 
 /-- Prints `provedLine pre r` for each obligation result `r` of `pgm`, verified with `opts` and,
     when given, `pipeline`. -/
@@ -51,14 +74,12 @@ def printModesProved (pgm : StrataDDM.SourcedProgram) : IO Unit := do
   for (mode, opts) in modes do printProved pgm opts (pre := s!"{mode} ")
 
 /-- Prints, for each of the two `modes`, one line `mode: ` followed by `label verdict` for
-    every obligation of `pgm`, comma-separated, the verdict being `proved`, `failed` or
-    `unknown`; sorted by label when `sorted` holds, in the verifier's order otherwise. -/
+    every obligation of `pgm`, comma-separated, the verdict being its `verdict`; sorted by label when `sorted` holds, in the verifier's order otherwise. -/
 def printModesVerdicts (pgm : StrataDDM.SourcedProgram) (sorted : Bool := false) : IO Unit := do
   for (mode, opts) in modes do
     let rs ← Core.verify pgm (options := opts)
     let vs := rs.toList.map fun r =>
-      let v := if r.isSuccess then "proved" else if r.isFailure then "failed" else "unknown"
-      s!"{r.obligation.label} {v}"
+      s!"{r.obligation.label} {verdict r}"
     IO.println s!"{mode}: {", ".intercalate (if sorted then vs.mergeSort (· ≤ ·) else vs)}"
 
 /-! ## Checks on the outputs of the phases -/

@@ -1158,7 +1158,7 @@ theorem resolve_fvarAnnots_agree [ToString T.IDMeta] [DecidableEq T.IDMeta] [Has
       ∃ ty, Env.context.resolveTypes.types.find? x = some (.forAll [] ty) ∧
         ann = LMonoTy.subst S ty := by
   intro x ann h_mem
-  obtain ⟨sch, h_sch⟩ := resolve_fvar_declared C Env Env' e et h h_envwf h_fwf S h_mem
+  obtain ⟨sch, h_sch⟩ := resolve_fvar_declared C Env Env' e et h S h_mem
   obtain ⟨ty, rfl⟩ := MonoScope.find?_forAll h_mono h_sch
   exact ⟨Env.context.resolveTy ty, TContext.resolveTypes_find? h_sch,
     resolve_fvarAnnot_eq C Env Env' e et h h_envwf h_fwf S h_abs h_sch
@@ -1393,6 +1393,116 @@ private theorem resolve_getConsts_known [ToString T.IDMeta]
     Proofs.getConsts_applySubstT] at hc
   exact resolveAux_getConsts_known C Env0 Env' e et_aux h_res h_envwf0 h_ne0
     h_fwf c hc
+
+/-- `resolveAux` keeps the constants of its input. -/
+theorem resolveAux_getConsts_eq [DecidableEq T.IDMeta]
+    [Hashable T.IDMeta] [HasGen T.IDMeta] [ToString T.IDMeta] [Std.ToFormat (LFunc T)]
+    [Std.ToFormat T.Metadata]
+    (C : LContext T) (Env Env' : TEnv T.IDMeta) (e : LExpr T.mono)
+    (et : LExprT T.mono)
+    (h_res : resolveAux C Env e = .ok (et, Env')) :
+    LExpr.getConsts et = LExpr.getConsts e := by
+  revert Env' et
+  refine LExpr.resolveAux.induct C
+    (fun Env e => ∀ (Env' : TEnv T.IDMeta) (et : LExprT T.mono),
+      resolveAux C Env e = .ok (et, Env') → LExpr.getConsts et = LExpr.getConsts e)
+    ?const ?opNone ?opSome ?bvar ?fvar ?app ?abs ?quant ?eq ?ite Env e
+  case const =>
+    intro Env m c Env' et h
+    obtain ⟨_, _, rfl, -⟩ := LExpr.resolveAux_const_shape C Env Env' m c et h
+    rfl
+  case opNone =>
+    intro Env m o oty hnone Env' et h
+    simp only [resolveAux, hnone, bind, Except.bind, reduceCtorEq] at h
+  case opSome =>
+    intro Env m o oty func hsome Env' et h
+    obtain ⟨_, _, _, _, _, _, _, h_et, _⟩ := LExpr.resolveAux_op_shape C Env Env' m o oty et h
+    subst h_et
+    rfl
+  case bvar =>
+    intro Env m i Env' et h
+    simp only [resolveAux, reduceCtorEq] at h
+  case fvar =>
+    intro Env m x fty Env' et h
+    obtain ⟨_, _, h_et⟩ := LExpr.resolveAux_fvar_shape C Env Env' m x fty et h
+    subst h_et
+    rfl
+  case app =>
+    intro Env m e1 e2 ih1 ih2 Env' et h
+    simp only [resolveAux, bind, Except.bind] at h
+    elim_err h with p1 h1
+    obtain ⟨e1t, Env1⟩ := p1
+    elim_err h with p2 h2
+    obtain ⟨e2t, Env2⟩ := p2
+    elim_err h with p3 h3
+    obtain ⟨fresh, EnvG⟩ := p3
+    elim_err h with S hS
+    simp only [Except.ok.injEq, Prod.mk.injEq] at h
+    obtain ⟨rfl, -⟩ := h
+    simp only [LExpr.getConsts, ih1 Env1 e1t h1, ih2 Env1 Env2 e2t h2]
+  case abs =>
+    intro Env m name bty e ih Env' et h
+    simp only [resolveAux, bind, Except.bind] at h
+    elim_err h with p1 h1
+    obtain ⟨xv, xty, Env1⟩ := p1
+    elim_err h with p2 h2
+    obtain ⟨bodyT, Env2⟩ := p2
+    simp only [Except.ok.injEq, Prod.mk.injEq] at h
+    obtain ⟨rfl, -⟩ := h
+    simp only [LExpr.getConsts, Proofs.getConsts_varCloseT, ih xv xty Env1 Env2 bodyT h2,
+      getConsts_varOpen]
+  case quant =>
+    intro Env m qk name bty triggers e ihe iht Env' et h
+    simp only [resolveAux, bind, Except.bind] at h
+    elim_err h with p1 h1
+    obtain ⟨xv, xty, Env1⟩ := p1
+    elim_err h with p2 h2
+    obtain ⟨bodyT, Env2⟩ := p2
+    elim_err h with p3 h3
+    obtain ⟨trT, Env3⟩ := p3
+    elim_err h with S hS
+    simp only [Except.ok.injEq, Prod.mk.injEq] at h
+    obtain ⟨rfl, -⟩ := h
+    simp only [LExpr.getConsts, Proofs.getConsts_varCloseT, ihe xv xty Env1 Env2 bodyT h2,
+      iht xv xty Env2 Env3 trT h3, getConsts_varOpen]
+  case eq =>
+    intro Env m e1 e2 ih1 ih2 Env' et h
+    simp only [resolveAux, bind, Except.bind] at h
+    elim_err h with p1 h1
+    obtain ⟨e1t, Env1⟩ := p1
+    elim_err h with p2 h2
+    obtain ⟨e2t, Env2⟩ := p2
+    elim_err h with S hS
+    simp only [Except.ok.injEq, Prod.mk.injEq] at h
+    obtain ⟨rfl, -⟩ := h
+    simp only [LExpr.getConsts, ih1 Env1 e1t h1, ih2 Env1 Env2 e2t h2]
+  case ite =>
+    intro Env m c th el ihc iht ihe Env' et h
+    simp only [resolveAux, bind, Except.bind] at h
+    elim_err h with p1 h1
+    obtain ⟨ct, Env1⟩ := p1
+    elim_err h with p2 h2
+    obtain ⟨tht, Env2⟩ := p2
+    elim_err h with p3 h3
+    obtain ⟨elt, Env3⟩ := p3
+    elim_err h with S hS
+    simp only [Except.ok.injEq, Prod.mk.injEq] at h
+    obtain ⟨rfl, -⟩ := h
+    simp only [LExpr.getConsts, ihc Env1 ct h1, iht Env1 Env2 tht h2, ihe Env2 Env3 elt h3]
+
+/-- `LExpr.resolve` keeps the constants of its input, under any type substitution. -/
+theorem resolve_getConsts_eq [ToString T.IDMeta]
+    [DecidableEq T.IDMeta] [Hashable T.IDMeta]
+    [HasGen T.IDMeta] [Std.ToFormat (LFunc T)] [Std.ToFormat T.Metadata]
+    (C : LContext T) (Env Env' : TEnv T.IDMeta) (e : LExpr T.mono)
+    (et : LExprT T.mono)
+    (h : LExpr.resolve C Env e = .ok (et, Env')) (S : Subst) :
+    LExpr.getConsts (LExpr.unresolved (LExpr.applySubstT et S)) = LExpr.getConsts e := by
+  obtain ⟨Env0, et_aux, h_res, h_et, -, -, -, -⟩ :=
+    resolve_resolveAux_init e et C Env Env' h
+  rw [Proofs.getConsts_unresolved, ← h_et, Proofs.getConsts_applySubstT,
+    Proofs.getConsts_applySubstT]
+  exact resolveAux_getConsts_eq C Env0 Env' e et_aux h_res
 
 /-! ### The free variables of the resolver's output in the typing context -/
 

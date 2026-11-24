@@ -135,11 +135,13 @@ structure UnorderedProgram where
   globalInit : List (Cmd Core.Expression) := []
   datatypes : List (Lambda.LDatatype Unit) := []
   opaqueTypes : List TypeConstructor := []
+  functions : List (Lambda.LFunc Core.CoreLParams) := []
   procedures : List Procedure
 
 inductive OrderedDecl where
   | datatypes (ds : List (Lambda.LDatatype Unit))
   | opaqueType (tc : TypeConstructor)
+  | function (f : Lambda.LFunc Core.CoreLParams)
   | procedure (p : Procedure)
 
 structure OrderedProgram where
@@ -216,6 +218,14 @@ where
 @[expose] def IRCmd.isVirtualCall : IRCmd → Bool
   | .virtualCall .. => true
   | _ => false
+
+@[expose] def IRCmd.md : IRCmd → MD
+  | .cmd (.init _ _ _ md) | .cmd (.set _ _ md) | .cmd (.assert _ _ md) | .cmd (.assume _ _ md)
+  | .cmd (.cover _ _ md) => md
+  | .cast _ _ _ _ md | .new _ _ md | .readField _ _ _ md | .writeField _ _ _ md | .instanceOf _ _ _ md
+  | .call _ _ _ md | .virtualCall _ _ _ _ md | .throw _ md => md
+  | .newArray _ _ _ md | .readElem _ _ _ _ md | .writeElem _ _ _ _ md | .arrayLength _ _ md
+  | .instanceOfComponent _ _ _ md => md
 
 @[expose] def UnorderedProgram.hasVirtualCall (p : UnorderedProgram) : Bool :=
   p.procedures.any fun pr => match pr.body with

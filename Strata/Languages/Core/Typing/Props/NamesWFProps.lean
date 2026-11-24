@@ -76,11 +76,7 @@ theorem addMutualBlock_mem_functions {C C' : LContext CoreLParams}
     {block : List (LDatatype Unit)} (h : C.addMutualBlock block = .ok C') (n : String)
     (hn : n ∈ C.functions ∨ n ∈ MutualDatatype.generatedFuncNames block) :
     n ∈ C'.functions := by
-  obtain ⟨-, ds, fgen, fs, ks, -, hfgen, hfs, -, rfl⟩ :=
-    LContext.addMutualBlock_ok_eq C C' block h
-  simp only [Factory.addFactory, Factory.tryAddAll] at hfs
-  rw [← Array.foldlM_toList] at hfs
-  have hlist := Factory.toList_toArray_foldlM_tryPush _ C.functions fs hfs
+  obtain ⟨fgen, hfgen, hlist⟩ := LContext.addMutualBlock_functions_toList h
   rw [Factory.mem_iff_mem_names]
   rcases hn with hold | hnew
   · rw [Factory.mem_iff_mem_names] at hold
@@ -352,6 +348,103 @@ theorem ProgramNamesWF.of_programHasType {C : LContext CoreLParams} {Γ : TConte
     {P : Program} (h : ProgramHasType C Γ P) : ProgramNamesWF C P := by
   obtain ⟨hnodup, hidents, C', Γ', hds⟩ := h
   exact ⟨hnodup, hidents, DeclsNamesWF.of_declsHasType (fun _ hn => hn) hds⟩
+
+/-! ### Names under smaller function scopes and programs -/
+
+/-- Function names stay valid under a smaller function scope. -/
+theorem FuncNamesWF.mono {fns fns' : String → Prop} (hsub : ∀ n, fns n → fns' n)
+    {f : Function} (h : FuncNamesWF fns' f) : FuncNamesWF fns f :=
+  fun x hx hn => h x hx (hsub _ hn)
+
+mutual
+
+/-- Statement names stay valid under a smaller function scope and a program declaring only
+    names the original declares. -/
+private theorem StatementNamesWF.mono {P P' : Program} {fns fns' : String → Prop}
+    (hP : ∀ n ∈ P'.getNames, n ∈ P.getNames) (hsub : ∀ n, fns n → fns' n) :
+    (s : Statement) → StatementNamesWF P fns' s → StatementNamesWF P' fns s
+  | .cmd (.cmd c), h => by
+    cases c with
+    | init _ _ _ _ => exact fun hn => h (hsub _ hn)
+    | set _ _ _ => exact h
+    | assert _ _ _ => exact h
+    | assume _ _ _ => exact h
+    | cover _ _ _ => exact h
+  | .cmd (.call _ _ _ _), h => h
+  | .block _ b _, h => StatementsNamesWF.mono hP hsub b h
+  | .ite _ t e _, h => ⟨StatementsNamesWF.mono hP hsub t h.1, StatementsNamesWF.mono hP hsub e h.2⟩
+  | .loop _ _ _ b _, h => StatementsNamesWF.mono hP hsub b h
+  | .exit _ _, h => h
+  | .typeDecl _ _, h => fun n hn => h n (hP n hn)
+
+/-- Statement-list names stay valid under a smaller function scope and a program declaring only
+    names the original declares. -/
+private theorem StatementsNamesWF.mono {P P' : Program} {fns fns' : String → Prop}
+    (hP : ∀ n ∈ P'.getNames, n ∈ P.getNames) (hsub : ∀ n, fns n → fns' n) :
+    (ss : List Statement) → StatementsNamesWF P fns' ss → StatementsNamesWF P' fns ss
+  | [], h => h
+  | s :: ss, h => ⟨StatementNamesWF.mono hP hsub s h.1, StatementsNamesWF.mono hP hsub ss h.2⟩
+
+end
+
+/-- Procedure names stay valid under a smaller function scope and a program declaring only names
+    the original declares. -/
+theorem ProcNamesWF.mono {P P' : Program} {fns fns' : String → Prop}
+    (hP : ∀ n ∈ P'.getNames, n ∈ P.getNames) (hsub : ∀ n, fns n → fns' n) {p : Procedure}
+    (h : ProcNamesWF P fns' p) : ProcNamesWF P' fns p := by
+  obtain ⟨hformals, hbody⟩ := h
+  refine ⟨fun x hx hn => hformals x hx (hsub _ hn), ?_⟩
+  cases hb : p.body with
+  | structured ss =>
+    rw [hb] at hbody
+    exact StatementsNamesWF.mono hP hsub ss hbody
+  | cfg _ => trivial
+
+/-! ### Names under type-annotation maps -/
+
+mutual
+
+/-- Mapping the type annotations of a statement keeps its names valid. -/
+theorem StatementNamesWF.mapStmtTys {P : Program} {fns : String → Prop}
+    (f : LMonoTy → LMonoTy) :
+    (s : Statement) → StatementNamesWF P fns s → StatementNamesWF P fns (mapStmtTys f s)
+  | .cmd (.cmd c), h => by
+    rw [mapStmtTys_cmd]
+    cases c <;> exact h
+  | .cmd (.call _ _ _ _), _ => by
+    rw [mapStmtTys_cmd]
+    trivial
+  | .block _ b _, h => by
+    rw [mapStmtTys_block]
+    exact StatementsNamesWF.mapStmtsTys f b h
+  | .ite _ t e _, h => by
+    rw [mapStmtTys_ite]
+    exact ⟨StatementsNamesWF.mapStmtsTys f t h.1,
+      StatementsNamesWF.mapStmtsTys f e h.2⟩
+  | .loop _ _ _ b _, h => by
+    rw [mapStmtTys_loop]
+    exact StatementsNamesWF.mapStmtsTys f b h
+  | .exit _ _, h => by
+    rw [mapStmtTys_exit]
+    exact h
+  | .typeDecl _ _, h => by
+    rw [mapStmtTys_typeDecl]
+    exact h
+
+/-- Mapping the type annotations of a statement list keeps its names valid. -/
+theorem StatementsNamesWF.mapStmtsTys {P : Program} {fns : String → Prop}
+    (f : LMonoTy → LMonoTy) :
+    (ss : List Statement) → StatementsNamesWF P fns ss →
+      StatementsNamesWF P fns (mapStmtsTys f ss)
+  | [], h => by
+    rw [mapStmtsTys_nil]
+    exact h
+  | s :: ss, h => by
+    rw [mapStmtsTys_cons]
+    exact ⟨StatementNamesWF.mapStmtTys f s h.1,
+      StatementsNamesWF.mapStmtsTys f ss h.2⟩
+
+end
 
 end -- public section
 

@@ -88,15 +88,22 @@ private def reduceBlock (ss : List Statement) : List Statement :=
   termination_by Imperative.Block.sizeOf ss
 end
 
-/-- Beta-reduce all expressions in a deterministic basic block: its commands
-    and its transfer guard. -/
+/-- **Beta reduction of a statement list**: every expression of every statement, nested ones
+    included, with its directly applied abstractions contracted, as the phase rewrites a
+    structured procedure body. -/
+def betaReduceBlock (ss : List Statement) : List Statement :=
+  reduceBlock ss
+
+/-- Beta-reduce all expressions in a deterministic basic block: its commands,
+    its transfer guard and its metadata. -/
 private def reduceDetBlock (blk : Imperative.DetBlock String Command Expression) :
     Imperative.DetBlock String Command Expression :=
   { cmds := blk.cmds.map (Command.mapExpr reduceExpr)
     transfer :=
       match blk.transfer with
       | .condGoto p lt lf md => .condGoto (reduceExpr p) lt lf md
-      | .finish md => .finish md }
+      | .finish md => .finish md
+    md := blk.md.mapExprs reduceExpr }
 
 /-- Beta-reduce all lambda redexes in every expression of the program. -/
 def betaReduceProgram (p : Program) : Program :=
@@ -138,7 +145,7 @@ def Core.betaReducePipelinePhase : Core.PipelinePhase :=
                          .hasObligationForm, .noProcedureContracts,
                          .noPolymorphicProcedures,
                          .noPolymorphicFunctions, .typeAnnotated, .noInits, .treeForm,
-                         .exitsCovered, .armsHaveObligations])
+                         .exitsCovered, .armsHaveObligations, .noCFGCycles])
     fun prog => do
       return (true, Core.BetaReduce.betaReduceProgram prog)
 

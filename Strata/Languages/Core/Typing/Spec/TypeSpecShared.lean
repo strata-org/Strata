@@ -14,8 +14,10 @@ public import Strata.Util.HMaps
 
 /-! ## Definitions shared by the typing relation and the typing rules of `ProgramTypeSpec`
 
-Variable scopes (with `TypeScopes.addInits`, `addCFGInits` and `monoType?`), the conditions
-on expression annotations, and the condition on factory extensions. -/
+Variable scopes (with `TypeScopes.addInits`, `addCFGInits`, `monoType?` and `ScopeExtends`) and
+the procedure scopes built from `oldInoutSig`. Also the variable typing
+`TypeScopes.instVarTyping`, the conditions on expression annotations, and the condition on
+factory extensions. -/
 
 public section
 
@@ -57,6 +59,16 @@ def TypeScopes.addCFGInits (vt : TypeScopes) (g : DetCFG) : TypeScopes :=
       | .cmd (.init x ty _ _) => vt.addInit x ty
       | _ => vt
 
+/-- The variable typing given by the scopes `ts` after applying the type substitution `S` to
+    every declared type. A procedure body is typed in scopes `ts`; a run of its instance at `S`
+    runs the body with `S` applied, so its stores conform to `ts.instVarTyping S`. -/
+@[expose] def TypeScopes.instVarTyping (S : Subst) (ts : TypeScopes) : VarTyping Expression :=
+  fun x => (ts.find? x).map (mapLTyTys (LMonoTy.subst S))
+
+/-- Every declaration of `ts` is also a declaration of `ts'`, at the same type. -/
+@[expose] def ScopeExtends (ts ts' : TypeScopes) : Prop :=
+  ∀ x ty, ts.find? x = some ty → ts'.find? x = some ty
+
 /-- The monotype `vt` declares for the variable `x`. -/
 def TypeScopes.monoType? (vt : TypeScopes) (x : Expression.Ident) :
     Option Lambda.LMonoTy :=
@@ -83,11 +95,14 @@ structure ScopesAnnotAgree (C : LContext CoreLParams) (ts : TypeScopes) (e : Exp
 def procInputScopes (ts : TypeScopes) (proc : Procedure) : TypeScopes :=
   ts.push (formalsScope proc.header.inputs)
 
+/-- The `old` copies of in-out parameters, as a signature. -/
+def oldInoutSig (G : List (CoreIdent × LMonoTy)) : @LMonoTySignature Unit :=
+  G.map (fun q => (CoreIdent.mkOld q.1.name, q.2))
+
 /-- The variable scopes `ts` with one new scope binding the inputs, outputs and `old` in-outs. -/
 def procBodyScopes (ts : TypeScopes) (proc : Procedure) : TypeScopes :=
-  let oldSig : @LMonoTySignature Unit :=
-    proc.header.getInoutParams.map (fun (id, ty) => (CoreIdent.mkOld id.name, ty))
-  ts.push (formalsScope (oldSig ++ proc.header.outputs ++ proc.header.inputs))
+  ts.push (formalsScope
+    (oldInoutSig proc.header.getInoutParams.toList ++ proc.header.outputs ++ proc.header.inputs))
 
 /-- The variable scopes `ts` with one new scope binding each formal to its declared monotype. -/
 def funcScopes (ts : TypeScopes) (func : Function) : TypeScopes :=

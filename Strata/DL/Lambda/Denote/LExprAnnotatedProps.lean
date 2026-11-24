@@ -36,17 +36,20 @@ open Strata.Util (HMap HMaps)
 public section
 
 /-- Rewriting annotations by `φ` maps an annotated typing's context and type by `φ`, when `φ`
-    preserves arrows, `bool`, and literal types. -/
+    preserves arrows and `bool`, and fixes the type of every constant of the expression. -/
 theorem LExpr.HasTypeA_replaceUserProvidedType_map {T : LExprParams}
     (φ : LMonoTy → LMonoTy)
     (hφ_arrow : ∀ a b, φ (.arrow a b) = .arrow (φ a) (φ b))
     (hφ_bool : φ .bool = .bool)
-    (hφ_const : ∀ c : LConst, φ c.ty = c.ty)
     (Δ : List LMonoTy) (e : LExpr T.mono) (τ : LMonoTy)
+    (hφ_const : ∀ c ∈ LExpr.getConsts e, φ c.ty = c.ty)
     (h : LExpr.HasTypeA Δ e τ) :
     LExpr.HasTypeA (Δ.map φ) (LExpr.replaceUserProvidedType e φ) (φ τ) := by
   induction h with
-  | const hw => rw [hφ_const]; exact .const hw
+  | const hw =>
+    have hc : φ _ = _ := hφ_const _ (List.mem_singleton_self _)
+    rw [hc]
+    exact .const hw
   | op => exact .op
   | fvar => exact .fvar
   | bvar hlk =>
@@ -54,19 +57,31 @@ theorem LExpr.HasTypeA_replaceUserProvidedType_map {T : LExprParams}
     rw [List.getElem?_map, hlk]; rfl
   | abs _ ih =>
     rw [hφ_arrow]
-    exact .abs ih
+    exact .abs (ih hφ_const)
   | quant _ _ ih_tr ih_b =>
-    rw [hφ_bool] at ih_b ⊢
-    exact .quant ih_tr ih_b
-  | app _ _ ih_fn ih_arg =>
-    rw [hφ_arrow] at ih_fn
-    exact .app ih_fn ih_arg
-  | ite _ _ _ ih_c ih_t ih_e =>
-    rw [hφ_bool] at ih_c
-    exact .ite ih_c ih_t ih_e
-  | eq _ _ ih1 ih2 =>
+    have htr := ih_tr fun c hc => hφ_const c (List.mem_append_left _ hc)
+    have hb := ih_b fun c hc => hφ_const c (List.mem_append_right _ hc)
+    rw [hφ_bool] at hb
     rw [hφ_bool]
-    exact .eq ih1 ih2
+    exact .quant htr hb
+  | app _ _ ih_fn ih_arg =>
+    have hf := ih_fn fun c hc => hφ_const c (List.mem_append_left _ hc)
+    have ha := ih_arg fun c hc => hφ_const c (List.mem_append_right _ hc)
+    rw [hφ_arrow] at hf
+    exact .app hf ha
+  | ite _ _ _ ih_c ih_t ih_e =>
+    have hcc := ih_c fun c hc =>
+      hφ_const c (List.mem_append_left _ (List.mem_append_left _ hc))
+    have htt := ih_t fun c hc =>
+      hφ_const c (List.mem_append_left _ (List.mem_append_right _ hc))
+    have hee := ih_e fun c hc => hφ_const c (List.mem_append_right _ hc)
+    rw [hφ_bool] at hcc
+    exact .ite hcc htt hee
+  | eq _ _ ih1 ih2 =>
+    have h1 := ih1 fun c hc => hφ_const c (List.mem_append_left _ hc)
+    have h2 := ih2 fun c hc => hφ_const c (List.mem_append_right _ hc)
+    rw [hφ_bool]
+    exact .eq h1 h2
 
 /-! ## `OpsConsistentR` from operator annotations -/
 
@@ -536,6 +551,46 @@ theorem HasType_of_HasTypeA_of_annots {T : LExprParams}
     LExpr.HasType C Γ e (.forAll [] τ) :=
   HasType_of_HasTypeA_of_annots_aux hsigwf hsig e.sizeOf e τ Γ (Nat.le_refl _)
     hA ⟨hop, hdecl, hctx, hconst, hbind⟩ hfresh
+
+/-- Every free-variable occurrence in a well-typed annotated expression carries an annotation. -/
+theorem LExpr.HasTypeA.freeVars_annotated {T : LExprParams} {Δ : List LMonoTy}
+    {e : LExpr T.mono} {τ : LMonoTy} (h : LExpr.HasTypeA Δ e τ) :
+    ∀ x ty, (x, ty) ∈ LExpr.freeVars e → ty.isSome = true := by
+  induction h with
+  | const => intro x ty hx; simp only [LExpr.freeVars, List.not_mem_nil] at hx
+  | op => intro x ty hx; simp only [LExpr.freeVars, List.not_mem_nil] at hx
+  | fvar =>
+    intro x ty hx
+    simp only [LExpr.freeVars, List.mem_singleton, Prod.mk.injEq] at hx
+    obtain ⟨-, rfl⟩ := hx
+    rfl
+  | bvar => intro x ty hx; simp only [LExpr.freeVars, List.not_mem_nil] at hx
+  | abs _ ih => exact ih
+  | quant _ _ ihtr ihbody =>
+    intro x ty hx
+    simp only [LExpr.freeVars, List.mem_append] at hx
+    rcases hx with hx | hx
+    · exact ihtr x ty hx
+    · exact ihbody x ty hx
+  | app _ _ ihfn iharg =>
+    intro x ty hx
+    simp only [LExpr.freeVars, List.mem_append] at hx
+    rcases hx with hx | hx
+    · exact ihfn x ty hx
+    · exact iharg x ty hx
+  | ite _ _ _ ihc iht ihe =>
+    intro x ty hx
+    simp only [LExpr.freeVars, List.mem_append] at hx
+    rcases hx with (hx | hx) | hx
+    · exact ihc x ty hx
+    · exact iht x ty hx
+    · exact ihe x ty hx
+  | eq _ _ ih1 ih2 =>
+    intro x ty hx
+    simp only [LExpr.freeVars, List.mem_append] at hx
+    rcases hx with hx | hx
+    · exact ih1 x ty hx
+    · exact ih2 x ty hx
 
 end -- public section
 

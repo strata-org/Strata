@@ -15,7 +15,7 @@ import Strata.Util.Tactics
 import Strata.Languages.Core.AbstractCalls
 import Strata.Transform.FoldConnectives
 import Strata.Util.Name
-import Strata.Languages.Core.CheckLabels
+import Strata.Languages.Core.NameSets
 
 /-! # Termination Checking for Recursive Functions
 
@@ -489,7 +489,8 @@ def termCheckPipelinePhase : PipelinePhase :=
     (preserves := factSet![.noCFGBodies, .noCalls, .noLoops, .noLoopInvariants,
                          .noLoopMeasures, .staticSingleAssignment,
                          .noPrecondsFromFuncs, .noNondetGuards, .noProcedureContracts,
-                         .noPolymorphicFunctions, .typeAnnotated, .noInits, .exitsCovered])
+                         .noPolymorphicFunctions, .typeAnnotated, .noInits, .exitsCovered,
+                         .noCFGCycles])
     fun prog => do
       TermCheck.termCheck prog
 

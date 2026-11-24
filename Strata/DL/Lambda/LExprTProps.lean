@@ -49,8 +49,6 @@ Two free-variable families live here:
   strips type annotations).
 * `getVars_varCloseT_subset` — closing binder `xv` drops `xv` from the free vars
   and adds nothing new.
-* `resolve_getVars_mem_knownVars` — every output free var of `resolve` is a
-  known var of the input context.
 * `resolve_knownVars_subset` — every known var of `resolve`'s output context was
   already a known var of the input context, so any "every known var satisfies
   `P`" invariant transports across successive `resolve` calls.  (`resolve` also
@@ -184,7 +182,7 @@ private theorem find?_some_mem_knownVars {IDMeta : Type} [DecidableEq IDMeta] [H
 omit [ToString T.IDMeta] [Std.ToFormat T.IDMeta] [HasGen T.IDMeta] [Std.ToFormat (LFunc T)] [Std.ToFormat T.Metadata] in
 /-- `knownVars` membership transports across context equivalence (it reads the
     context only through `knownVars = types.keys`, which `Equiv` preserves). -/
-private theorem mem_knownVars_of_Equiv {Γ Γ' : TContext T.IDMeta} (h : Γ.Equiv Γ')
+theorem mem_knownVars_of_Equiv {Γ Γ' : TContext T.IDMeta} (h : Γ.Equiv Γ')
     {id : T.Identifier} (hid : id ∈ TContext.knownVars Γ) :
     id ∈ TContext.knownVars Γ' := by
   simp only [TContext.knownVars] at hid ⊢
@@ -253,105 +251,6 @@ theorem typeBoundVar_knownVars_reverse
     simp only [TEnv.addInNewestContext, TEnv.updateContext, TEnv.context, TContext.knownVars] at hv ⊢
     rw [show Env_mid.genEnv.context.types = Env.genEnv.context.types from congrArg TContext.types h_mid_ctx] at hv
     exact mem_keys_addInNewest_single_reverse _ _ _ v hv
-
-omit [ToString T.IDMeta] [Std.ToFormat (LFunc T)] [Std.ToFormat T.Metadata] in
-/-- Every output free variable of `resolveAux` is a known variable of the input
-    context.  Freshness-free (see the section note). -/
-theorem resolveAux_getVars_mem_knownVars (e) (et) (C) (Env Env' : TEnv T.IDMeta)
-    (h : resolveAux C Env e = .ok (et, Env'))
-    (h_envwf : TEnvWF Env) (h_ne : Env.context.types ≠ [])
-    (h_fwf : FactorySigWF C.functions) :
-    ∀ id ∈ LExpr.getVars et, id ∈ TContext.knownVars Env.context := by
-  apply resolveAux_ind
-    (P := fun _e et _C Env _Env' => ∀ id ∈ LExpr.getVars et, id ∈ TContext.knownVars Env.context)
-    (e := e) (et := et) (C := C) (Env := Env) (Env' := Env')
-    (h_res := h) (h_envwf := h_envwf) (h_ne := h_ne) (h_fwf := h_fwf)
-  case h_const =>
-    intro m c et C Env Env' h_res _ _ _ id hid
-    simp only [resolveAux, Bind.bind, Except.bind] at h_res
-    split at h_res
-    · simp at h_res
-    · rename_i r _; obtain ⟨ty, Env_r⟩ := r
-      simp only [Except.ok.injEq, Prod.mk.injEq] at h_res
-      obtain ⟨h_et, _⟩ := h_res; subst h_et
-      exact absurd hid (by simp [LExpr.getVars])
-  case h_op =>
-    intro m o oty et C Env Env' h_res _ _ _ id
-    simp only [resolveAux, Bind.bind, Except.bind] at h_res
-    revert h_res; repeat' split
-    all_goals (
-      intro h_res
-      simp only [Except.ok.injEq, Prod.mk.injEq, reduceCtorEq] at h_res
-      try (obtain ⟨h_et, _⟩ := h_res; subst h_et; intro hid;
-           simp only [LExpr.getVars, List.not_mem_nil] at hid))
-  case h_fvar =>
-    intro m x fty et C Env Env' h_res _ _ _ id hid
-    simp only [resolveAux, Bind.bind, Except.bind] at h_res
-    split at h_res
-    · simp at h_res
-    · rename_i r _; obtain ⟨ty, Env_r⟩ := r
-      rename_i h_infer
-      simp only [Except.ok.injEq, Prod.mk.injEq] at h_res
-      obtain ⟨h_et, _⟩ := h_res; subst h_et
-      simp only [LExpr.getVars, List.mem_singleton] at hid
-      rw [hid]
-      exact inferFVar_mem_knownVars C Env x fty ty Env_r h_infer
-  case h_app =>
-    intro m e1 e2 et C Env Env' e1t Env1 e2t Env2 fresh_name Env_gen substInfo
-      _ _ _ _ _ h_et _ _ _ _ _ _ _ _ _ _ h_ctx1 _ _ h_ih1 h_ih2
-    subst h_et
-    intro id hid
-    simp only [LExpr.getVars, List.mem_append] at hid
-    rcases hid with h1 | h2
-    · exact h_ih1 id h1
-    · exact mem_knownVars_of_Equiv h_ctx1 (h_ih2 id h2)
-  case h_abs =>
-    intro m name bty body et C Env Env' xv xty Env1 et_body Env2
-      _ h_tbv _ h_et _ _ _ _ _ _ _ h_ih
-    subst h_et
-    intro id hid
-    simp only [LExpr.getVars] at hid
-    obtain ⟨hid_body, hid_ne⟩ := getVars_varCloseT_subset 0 xv et_body id hid
-    have hid_known := h_ih id hid_body
-    rcases typeBoundVar_knownVars_reverse C Env bty xv xty Env1 h_tbv id hid_known with h_eq | h_ok
-    · exact absurd h_eq hid_ne
-    · exact h_ok
-  case h_quant =>
-    intro m qk name bty triggers body et C Env Env' xv xty Env1 et_body Env2 et_tr Env3 substInfo
-      _ h_tbv _ _ _ h_et _ _ _ _ _ _ _ _ _ h_ctx2 h_ih_body h_ih_tr
-    subst h_et
-    intro id hid
-    simp only [LExpr.getVars, List.mem_append] at hid
-    rcases hid with h_tr | h_body
-    · obtain ⟨hid_tr, hid_ne⟩ := getVars_varCloseT_subset 0 xv et_tr id h_tr
-      have hid_known := mem_knownVars_of_Equiv h_ctx2 (h_ih_tr id hid_tr)
-      rcases typeBoundVar_knownVars_reverse C Env bty xv xty Env1 h_tbv id hid_known with h_eq | h_ok
-      · exact absurd h_eq hid_ne
-      · exact h_ok
-    · obtain ⟨hid_body, hid_ne⟩ := getVars_varCloseT_subset 0 xv et_body id h_body
-      have hid_known := h_ih_body id hid_body
-      rcases typeBoundVar_knownVars_reverse C Env bty xv xty Env1 h_tbv id hid_known with h_eq | h_ok
-      · exact absurd h_eq hid_ne
-      · exact h_ok
-  case h_eq =>
-    intro m e1 e2 et C Env Env' e1t Env1 e2t Env2 substInfo
-      _ _ _ _ h_et _ _ _ _ _ _ _ h_ctx1 _ _ h_ih1 h_ih2
-    subst h_et
-    intro id hid
-    simp only [LExpr.getVars, List.mem_append] at hid
-    rcases hid with h1 | h2
-    · exact h_ih1 id h1
-    · exact mem_knownVars_of_Equiv h_ctx1 (h_ih2 id h2)
-  case h_ite =>
-    intro m c th el et C Env Env' ct Env1 tht Env2 elt Env3 substInfo
-      _ _ _ _ _ h_et _ _ _ _ _ _ _ h_ctx1 _ h_ctx2 _ _ h_ihc h_iht h_ihe
-    subst h_et
-    intro id hid
-    simp only [LExpr.getVars, List.mem_append] at hid
-    rcases hid with (hc | ht) | he
-    · exact h_ihc id hc
-    · exact mem_knownVars_of_Equiv h_ctx1 (h_iht id ht)
-    · exact mem_knownVars_of_Equiv h_ctx2 (h_ihe id he)
 
 /-- `getVars` is invariant under `replaceMetadata` (only metadata changes). -/
 theorem getVars_replaceMetadata {Tt : LExprParamsT} {NewMeta : Type}
@@ -523,31 +422,6 @@ theorem freeVars_unresolved_applySubstT (et : LExprT T.mono) (S : Subst) :
     simp only [LExpr.replaceMetadata, LExpr.unresolved]
     split <;> split <;> simp_all [LExpr.freeVars]
   | _ => simp_all [LExpr.replaceMetadata, LExpr.unresolved, LExpr.freeVars]
-
-omit [ToString T.IDMeta] [Std.ToFormat (LFunc T)] [Std.ToFormat T.Metadata] in
-/-- `resolve`-wrapper version of `resolveAux_getVars_mem_knownVars`: whenever the
-    input env already has a non-empty scope, every output fvar is a known var of
-    the input context. -/
-theorem resolve_getVars_mem_knownVars (C) (Env Env' : TEnv T.IDMeta) (e) (et)
-    (h : LExpr.resolve C Env e = .ok (et, Env'))
-    (h_envwf : TEnvWF Env) (h_ne : Env.context.types ≠ [])
-    (h_fwf : FactorySigWF C.functions) :
-    ∀ id ∈ LExpr.getVars et, id ∈ TContext.knownVars Env.context := by
-  intro id hid
-  have h_isEmpty : Env.context.types.isEmpty = false := by
-    cases hEq : Env.context.types with
-    | nil => exact absurd hEq h_ne
-    | cons _ _ => rfl
-  unfold LExpr.resolve at h
-  simp only [h_isEmpty, ite_false, Bool.false_eq_true, Bind.bind, Except.bind] at h
-  split at h
-  · simp at h
-  · rename_i r h_aux; obtain ⟨et_aux, Env_aux⟩ := r
-    simp only [Except.ok.injEq, Prod.mk.injEq] at h
-    obtain ⟨h_et, _⟩ := h
-    subst h_et
-    rw [getVars_applySubstT] at hid
-    exact resolveAux_getVars_mem_knownVars e et_aux C Env Env_aux h_aux h_envwf h_ne h_fwf id hid
 
 omit [ToString T.IDMeta] [Std.ToFormat (LFunc T)] [Std.ToFormat T.Metadata] in
 /-- Every known variable of `resolve`'s output context was already a known

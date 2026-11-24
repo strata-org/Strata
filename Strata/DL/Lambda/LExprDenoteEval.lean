@@ -121,6 +121,10 @@ variable and denotes the same sort under every type-variable valuation
 (`LMonoTy.IsGround.substTyVars_eq`). -/
 abbrev LMonoTy.IsGround (τ : LMonoTy) : Prop := (τ.substTyVars refTyVarVal).toMonoTy = τ
 
+/-- A type scheme with no bound variables whose body is a ground monotype. -/
+@[expose] def LTy.GroundMono (ty : LTy) : Prop :=
+  ∃ τ, ty = .forAll [] τ ∧ τ.IsGround
+
 /-- Every free variable of `e` is bound in `σ` to a value produced under `tc`. -/
 @[expose] def ValStore.Defines [DecidableEq T.IDMeta] (σ : ValStore T)
     (tc : TyConstrInterp) (e : LExpr T.mono) : Prop :=

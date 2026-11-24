@@ -21,13 +21,14 @@ A Core expression is *typed* at a type scheme `ty` (`Core.Expression.Typed`) whe
 ground monomorphic type `τ`, every free-variable occurrence of the expression carries a ground
 type annotation, and the expression, with its own annotations, has type `τ`.  The judgment reads
 nothing but the expression, so the phases that rewrite right-hand sides keep it through local
-laws (`Core.typedLaws`, the `Imperative.WP.TypedLaws` of Core expressions).
+laws (`Core.typedLaws`, the `Imperative.WP.TypedLaws` of Core expressions, and
+`Core.typedOpLaws`, its `Imperative.WP.TypedOpLaws` under every factory of functions).
 A typed expression evaluates, in a store holding at each annotated free-variable
 occurrence a value of the annotated type, to a value of its type (`Core.eval_of_typed`).
 
 Key definitions: `Core.Expression.Typed`.
 
-Key theorems: `Core.typedLaws`, `Core.eval_of_typed`. -/
+Key theorems: `Core.typedLaws`, `Core.typedOpLaws`, `Core.eval_of_typed`. -/
 
 namespace Core
 
@@ -48,11 +49,13 @@ private theorem mem_typedFvars {e : Expression.Expr} {x : Expression.Ident} {τ 
     (x, LTy.forAll [] τ) ∈ HasFvars.getTypedFvars (P := Expression) e :=
   List.mem_filterMap.2 ⟨(x, some τ), h, rfl⟩
 
-/-- **The typing laws of Core expressions**: the `TypedLaws` of `Core.Expression.Typed`. -/
-theorem typedLaws :
-    TypedLaws (P := Expression) Expression.Typed where
-  ite {c t f ty} := by
-    change Expression.Typed (.ite _ c t f) ty ↔ _
+/-- A conditional is typed at `ty` exactly when its condition is typed at `bool` and its arms
+    at `ty`, whatever the conditional's source location. -/
+private theorem typed_ite_iff (m : ExpressionMetadata) {c t f : Expression.Expr}
+    {ty : Expression.Ty} :
+    Expression.Typed (.ite m c t f) ty ↔
+      Expression.Typed c (HasBool.boolTy (P := Expression)) ∧ Expression.Typed t ty ∧
+        Expression.Typed f ty := by
     constructor
     · rintro ⟨τ, hτ, hg, ha, hT⟩
       obtain ⟨hc, ht, hf⟩ := HasTypeA.ite_inv hT
@@ -66,6 +69,14 @@ theorem typedLaws :
       refine ⟨τ, hτ, hg, fun x τ? hx => ?_, .ite hc ht hf⟩
       simp only [LExpr.freeVars, List.mem_append] at hx
       exact hx.elim (·.elim (hac x τ?) (hat x τ?)) (haf x τ?)
+
+/-- **The typing laws of Core expressions**: the `TypedLaws` of `Core.Expression.Typed`. -/
+theorem typedLaws :
+    TypedLaws (P := Expression) Expression.Typed where
+  ite := typed_ite_iff valueLoc
+  iteView {e c t f ty} hv := by
+    cases e <;> cases hv
+    exact typed_ite_iff _
   substFn {e ty} g he hg := by
     obtain ⟨τ, hτ, hgr, ha, hT⟩ := he
     have himg : ∀ x τx r, (x, some τx) ∈ LExpr.freeVars e → g x = some r →
@@ -110,6 +121,39 @@ theorem typedLaws :
     simp only [HasFvar.mkVar, HasFvar.mkTypedFvar, LTy.toMonoType?, LExpr.freeVars,
       List.mem_singleton, Prod.mk.injEq] at hz
     exact ⟨τx, hz.2, hg⟩
+
+/-- The constant `constFold` gives an expression has the expression's type. -/
+private theorem constFold_ty : ∀ {e : Expression.Expr} {c : LConst} {τ : LMonoTy},
+    constFold e = some c → e.HasTypeA [] τ → c.ty = τ
+  | e, _, τ, h, hT => by
+    cases e <;> simp only [constFold, constFoldEq, constFoldApp] at h
+    all_goals (repeat' split at h) <;> try cases h
+    all_goals cases hT
+    all_goals first
+      | rfl
+      | (rename_i hf; subst_vars; cases hf; rfl)
+      | (obtain ⟨_, -, rfl⟩ := Option.map_eq_some_iff.1 h; rfl)
+
+/-- **`true` is a Boolean Core expression** (`Core.Expression.Typed` at the Boolean type). -/
+theorem Expression.Typed_tt : Expression.Typed (HasBool.tt (P := Expression)) HasBool.boolTy :=
+  ⟨.bool, rfl, by decide, fun _ _ h => by simp [LExpr.freeVars, HasBool.tt, Core.true] at h,
+    .const rfl⟩
+
+/-- **The typing laws of Core expressions under a factory** `fac`: the `TypedOpLaws` of
+    `Core.Expression.Typed` with `fac` as operator data. -/
+theorem typedOpLaws (fac : Lambda.Factory CoreLParams) :
+    TypedOpLaws (P := Expression) Expression.Typed fac where
+  toTypedLaws := typedLaws
+  evalOp {e r ty} h he := by
+    obtain ⟨c, hc, rfl⟩ := Option.map_eq_some_iff.1 h
+    obtain ⟨τ, hτ, hgr, -, hT⟩ := he
+    have hty : c.ty = τ := by
+      simp only [opFold] at hc
+      split at hc <;> try cases hc
+      · exact constFold_ty ‹_› hT
+      · exact Option.some.inj
+          ((concreteFold_typeCheck hc).symm.trans (LExpr.HasTypeA_to_typeCheck hT))
+    exact ⟨τ, hτ, hgr, fun _ _ hx => by simp [LExpr.freeVars] at hx, hty ▸ .const (opFold_wt hc)⟩
 
 /-- **A typed expression evaluates.**  A Core expression typed at `ty` evaluates, in a store
     binding the variable of each annotated free-variable occurrence to a value of the annotated

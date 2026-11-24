@@ -8,11 +8,13 @@ module
 public meta import Lean.Elab.Command
 public meta import Strata.Java.Gen
 public meta import Strata.Util.IonDeserializer
+public meta import StrataTest.Util.TestDir
 -- Non-meta as well: the deserializer tests below bind readers as top-level
 -- `partial def`s, which recursive types require.
 public import Strata.Util.IonDeserializer
 
 open Strata.Java
+open Strata.TestUtil
 
 namespace Strata.Java.Test
 
@@ -195,19 +197,17 @@ elab "#testPackage" : command => do
 
 -- Test 8: writeJavaFiles writes to correct directory
 elab "#testWriteFiles" : command => do
-  let dir : System.FilePath := "/tmp/strata-java-test-write"
-  if ← dir.pathExists then IO.FS.removeDirAll dir
-  let content := "package com.test;\npublic record Test() {}\n"
-  let files : GeneratedFiles := { files := #[("Test.java", content)] }
-  writeJavaFiles dir "com.test" files
-  let path := dir / "com" / "test" / "Test.java"
-  if !(← path.pathExists) then
-    Lean.logError "Expected file not found"
-  else
-    let written ← IO.FS.readFile path
-    if written != content then
-      Lean.logError s!"Written content mismatch: got {written}"
-  IO.FS.removeDirAll dir
+  withTestDir fun dir => do
+    let content := "package com.test;\npublic record Test() {}\n"
+    let files : GeneratedFiles := { files := #[("Test.java", content)] }
+    writeJavaFiles dir "com.test" files
+    let path := dir / "com" / "test" / "Test.java"
+    if !(← path.pathExists) then
+      Lean.logError "Expected file not found"
+    else
+      let written ← IO.FS.readFile path
+      if written != content then
+        Lean.logError s!"Written content mismatch: got {written}"
 
 #testWriteFiles
 
@@ -223,33 +223,29 @@ elab "#testCompile" : command => do
     Lean.logWarning s!"Test skipped: ion-java jar not found at {jarPath}"
     return
 
-  let dir : System.FilePath := "/tmp/strata-java-test-compile"
-  if ← dir.pathExists then IO.FS.removeDirAll dir
+  withTestDir fun dir => do
+    let shapeFiles := getIonSerializer% Shape "com.test"
+    let lineFiles := getIonSerializer% Line "com.test"
 
-  let shapeFiles := getIonSerializer% Shape "com.test"
-  let lineFiles := getIonSerializer% Line "com.test"
+    let mut allFiles : Std.HashMap String String := {}
+    for (name, content) in shapeFiles.files do allFiles := allFiles.insert name content
+    for (name, content) in lineFiles.files do allFiles := allFiles.insert name content
 
-  let mut allFiles : Std.HashMap String String := {}
-  for (name, content) in shapeFiles.files do allFiles := allFiles.insert name content
-  for (name, content) in lineFiles.files do allFiles := allFiles.insert name content
+    let pkgDir := dir / "com" / "test"
+    IO.FS.createDirAll pkgDir
+    let mut filePaths : Array String := #[]
+    for (name, content) in allFiles do
+      let path := pkgDir / name
+      IO.FS.writeFile path content
+      filePaths := filePaths.push path.toString
 
-  let pkgDir := dir / "com" / "test"
-  IO.FS.createDirAll pkgDir
-  let mut filePaths : Array String := #[]
-  for (name, content) in allFiles do
-    let path := pkgDir / name
-    IO.FS.writeFile path content
-    filePaths := filePaths.push path.toString
+    let result ← IO.Process.output {
+      cmd := "javac"
+      args := #["-cp", s!"{jarPath}:{dir}"] ++ filePaths
+    }
 
-  let result ← IO.Process.output {
-    cmd := "javac"
-    args := #["-cp", s!"{jarPath}:{dir}"] ++ filePaths
-  }
-
-  if result.exitCode != 0 then
-    Lean.throwError s!"javac failed:\n{result.stderr}"
-
-  IO.FS.removeDirAll dir
+    if result.exitCode != 0 then
+      Lean.throwError s!"javac failed:\n{result.stderr}"
 
 #testCompile
 
@@ -265,70 +261,64 @@ elab "#testRoundtrip" : command => do
     Lean.logWarning s!"Roundtrip test skipped: ion-java jar not found at {jarPath}"
     return
 
-  let dir : System.FilePath := "/tmp/strata-java-roundtrip"
-  if ← dir.pathExists then IO.FS.removeDirAll dir
+  withTestDir fun dir => do
+    let pointFiles := getIonSerializer% Point "com.test"
+    let pkgDir := dir / "com" / "test"
+    IO.FS.createDirAll pkgDir
+    for (name, content) in pointFiles.files do
+      IO.FS.writeFile (pkgDir / name) content
 
-  let pointFiles := getIonSerializer% Point "com.test"
-  let pkgDir := dir / "com" / "test"
-  IO.FS.createDirAll pkgDir
-  for (name, content) in pointFiles.files do
-    IO.FS.writeFile (pkgDir / name) content
+    let driverContent := "
+  import com.test.*;
+  import com.amazon.ion.*;
+  import com.amazon.ion.system.*;
+  import java.io.*;
 
-  let driverContent := "
-import com.test.*;
-import com.amazon.ion.*;
-import com.amazon.ion.system.*;
-import java.io.*;
+  public class RoundtripTest {
+      public static void main(String[] args) throws Exception {
+          var ionSystem = IonSystemBuilder.standard().build();
+          var point = new Point(42, 7);
+          var ionValue = point.toIon(ionSystem);
 
-public class RoundtripTest {
-    public static void main(String[] args) throws Exception {
-        var ionSystem = IonSystemBuilder.standard().build();
-        var point = new Point(42, 7);
-        var ionValue = point.toIon(ionSystem);
+          try (var out = new FileOutputStream(args[0])) {
+              var writer = IonBinaryWriterBuilder.standard().build(out);
+              ionValue.writeTo(writer);
+              writer.close();
+          }
+      }
+  }
+  "
+    IO.FS.writeFile (dir / "RoundtripTest.java") driverContent
 
-        try (var out = new FileOutputStream(args[0])) {
-            var writer = IonBinaryWriterBuilder.standard().build(out);
-            ionValue.writeTo(writer);
-            writer.close();
-        }
+    let mut javaPaths : Array String := #[(dir / "RoundtripTest.java").toString]
+    for (name, _) in pointFiles.files do
+      javaPaths := javaPaths.push (pkgDir / name).toString
+
+    let compileResult ← IO.Process.output {
+      cmd := "javac"
+      args := #["-cp", s!"{jarPath}:{dir}"] ++ javaPaths
     }
-}
-"
-  IO.FS.writeFile (dir / "RoundtripTest.java") driverContent
+    if compileResult.exitCode != 0 then
+      Lean.logError s!"Roundtrip compile failed:\n{compileResult.stderr}"
+      return
 
-  let mut javaPaths : Array String := #[(dir / "RoundtripTest.java").toString]
-  for (name, _) in pointFiles.files do
-    javaPaths := javaPaths.push (pkgDir / name).toString
+    let ionFile := dir / "point.ion"
+    let runResult ← IO.Process.output {
+      cmd := "java"
+      args := #["-cp", s!"{jarPath}:{dir}", "RoundtripTest", ionFile.toString]
+    }
+    if runResult.exitCode != 0 then
+      Lean.logError s!"Roundtrip run failed:\n{runResult.stderr}"
+      return
 
-  let compileResult ← IO.Process.output {
-    cmd := "javac"
-    args := #["-cp", s!"{jarPath}:{dir}"] ++ javaPaths
-  }
-  if compileResult.exitCode != 0 then
-    Lean.logError s!"Roundtrip compile failed:\n{compileResult.stderr}"
-    IO.FS.removeDirAll dir
-    return
-
-  let ionFile := dir / "point.ion"
-  let runResult ← IO.Process.output {
-    cmd := "java"
-    args := #["-cp", s!"{jarPath}:{dir}", "RoundtripTest", ionFile.toString]
-  }
-  if runResult.exitCode != 0 then
-    Lean.logError s!"Roundtrip run failed:\n{runResult.stderr}"
-    IO.FS.removeDirAll dir
-    return
-
-  let ionBytes ← IO.FS.readBinFile ionFile
-  let deserializePoint : ByteArray → Except Std.Format Point := getIonDeserializer% Point
-  match deserializePoint ionBytes with
-  | .ok point =>
-    if point.x != 42 || point.y != 7 then
-      Lean.logError s!"Roundtrip mismatch: expected (42, 7), got ({point.x}, {point.y})"
-  | .error e =>
-    Lean.logError s!"Roundtrip deserialization failed: {e}"
-
-  IO.FS.removeDirAll dir
+    let ionBytes ← IO.FS.readBinFile ionFile
+    let deserializePoint : ByteArray → Except Std.Format Point := getIonDeserializer% Point
+    match deserializePoint ionBytes with
+    | .ok point =>
+      if point.x != 42 || point.y != 7 then
+        Lean.logError s!"Roundtrip mismatch: expected (42, 7), got ({point.x}, {point.y})"
+    | .error e =>
+      Lean.logError s!"Roundtrip deserialization failed: {e}"
 
 #testRoundtrip
 
@@ -380,26 +370,22 @@ elab "#testCompileNested" : command => do
     Lean.logWarning s!"Test skipped: ion-java jar not found at {jarPath}"
     return
 
-  let dir : System.FilePath := "/tmp/strata-java-test-nested"
-  if ← dir.pathExists then IO.FS.removeDirAll dir
+  withTestDir fun dir => do
+    let files := getIonSerializer% League "com.test"
+    let pkgDir := dir / "com" / "test"
+    IO.FS.createDirAll pkgDir
+    let mut filePaths : Array String := #[]
+    for (name, content) in files.files do
+      let path := pkgDir / name
+      IO.FS.writeFile path content
+      filePaths := filePaths.push path.toString
 
-  let files := getIonSerializer% League "com.test"
-  let pkgDir := dir / "com" / "test"
-  IO.FS.createDirAll pkgDir
-  let mut filePaths : Array String := #[]
-  for (name, content) in files.files do
-    let path := pkgDir / name
-    IO.FS.writeFile path content
-    filePaths := filePaths.push path.toString
-
-  let result ← IO.Process.output {
-    cmd := "javac"
-    args := #["-cp", s!"{jarPath}:{dir}"] ++ filePaths
-  }
-  if result.exitCode != 0 then
-    Lean.throwError s!"javac failed for nested containers:\n{result.stderr}"
-
-  IO.FS.removeDirAll dir
+    let result ← IO.Process.output {
+      cmd := "javac"
+      args := #["-cp", s!"{jarPath}:{dir}"] ++ filePaths
+    }
+    if result.exitCode != 0 then
+      Lean.throwError s!"javac failed for nested containers:\n{result.stderr}"
 
 #testCompileNested
 
@@ -439,26 +425,22 @@ elab "#testCompileVoid" : command => do
     Lean.logWarning s!"Test skipped: ion-java jar not found at {jarPath}"
     return
 
-  let dir : System.FilePath := "/tmp/strata-java-test-void"
-  if ← dir.pathExists then IO.FS.removeDirAll dir
+  withTestDir fun dir => do
+    let files := getIonSerializer% Void "com.test"
+    let pkgDir := dir / "com" / "test"
+    IO.FS.createDirAll pkgDir
+    let mut filePaths : Array String := #[]
+    for (name, content) in files.files do
+      let path := pkgDir / name
+      IO.FS.writeFile path content
+      filePaths := filePaths.push path.toString
 
-  let files := getIonSerializer% Void "com.test"
-  let pkgDir := dir / "com" / "test"
-  IO.FS.createDirAll pkgDir
-  let mut filePaths : Array String := #[]
-  for (name, content) in files.files do
-    let path := pkgDir / name
-    IO.FS.writeFile path content
-    filePaths := filePaths.push path.toString
-
-  let result ← IO.Process.output {
-    cmd := "javac"
-    args := #["-cp", s!"{jarPath}:{dir}"] ++ filePaths
-  }
-  if result.exitCode != 0 then
-    Lean.throwError s!"javac failed for zero-ctor inductive:\n{result.stderr}"
-
-  IO.FS.removeDirAll dir
+    let result ← IO.Process.output {
+      cmd := "javac"
+      args := #["-cp", s!"{jarPath}:{dir}"] ++ filePaths
+    }
+    if result.exitCode != 0 then
+      Lean.throwError s!"javac failed for zero-ctor inductive:\n{result.stderr}"
 
 #testCompileVoid
 

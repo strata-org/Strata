@@ -154,11 +154,11 @@ def observeBoth (prog : Except String UnorderedProgram) : IO Unit :=
 info: without cleanup:
 checks: assertion fails  @25; returns r = 11
 catching: returns r = 6
-uncaught: raises  @52
+uncaught: call does not throw an uncaught 'Exn' fails  @52; returns r = 0
 with cleanup:
 checks: assertion fails  @25; returns r = 11
 catching: returns r = 6
-uncaught: raises  @52
+uncaught: call does not throw an uncaught 'Exn' fails  @52; returns r = 0
 -/
 #guard_msgs in
 #eval observeBoth all
@@ -218,6 +218,131 @@ b0:
   { name := "extern", inputs := [{ name := "a", ty := int }], outputs := [{ name := "r", ty := int }],
     throws := none, requires := [], body := none, entry := false, source := at_ 0 },
   proc "tidy" [("a", int)] [("r", int)] [blk "b0" [.set "r" (some (v "a")) (at_ 1)] (.finish (at_ 2))]]
+
+def rethrow : Wire.Procedure :=
+  proc "rethrow" [] [("r", int)]
+    [blk "b0" [.init "e" (.named "Exn") none (at_ 60)] (.goto "b1" (at_ 61)),
+     blk "b1" [.call ["r"] "fail" [] (at_ 62)] (.finish (at_ 63)),
+     blk "h" [.throw (v "e") none (at_ 64)] (.finish (at_ 65))]
+    [{ covered := ["b1"], catchType := some "Exn", binder := "e", target := "h", source := at_ 0 }]
+
+/--
+info: without cleanup:
+callsRethrow: call does not throw an uncaught 'Exn' fails  @71; returns r = 0
+with cleanup:
+callsRethrow: call does not throw an uncaught 'Exn' fails  @71; returns r = 0
+-/
+#guard_msgs in
+#eval observeBoth <| program [throwProc, rethrow,
+  proc "callsRethrow" [] [("r", int)] (entry := true)
+    [blk "b0" [.call ["r"] "rethrow" [] (at_ 71)] (.finish (at_ 72))]]
+
+def fAB : Wire.Procedure :=
+  proc "fAB" [("c", .bool)] [("r", int)]
+    [blk "b0" [] (.condGoto (v "c") "bA" "bB" (at_ 20)),
+     blk "bA" [.init "a" (.named "A") none (at_ 21), .new "a" "A" (at_ 22), .throw (v "a") none (at_ 23)]
+       (.finish (at_ 24)),
+     blk "bB" [.init "b" (.named "B") none (at_ 25), .new "b" "B" (at_ 26), .throw (v "b") none (at_ 27)]
+       (.finish (at_ 28))]
+
+def gCatchA : Wire.Procedure :=
+  proc "gCatchA" [("c", .bool)] [("r", int)]
+    [blk "b0" [.init "e" (.named "A") none (at_ 30)] (.goto "b1" (at_ 30)),
+     blk "b1" [.call ["r"] "fAB" [v "c"] (at_ 31)] (.finish (at_ 32)),
+     blk "h" [] (.finish (at_ 33))]
+    [{ covered := ["b1"], catchType := some "A", binder := "e", target := "h", source := at_ 0 }]
+
+def mainCatchB : Wire.Procedure :=
+  proc "mainCatchB" [] [("r", int)] (entry := true)
+    [blk "b0" [.init "e" (.named "B") none (at_ 40)] (.goto "b1" (at_ 40)),
+     blk "b1" [.call ["r"] "gCatchA" [.bool false] (at_ 41), .assert "after" (.bool false) none (at_ 42)]
+       (.finish (at_ 43)),
+     blk "h" [.assert "inHandler" (.bool false) none (at_ 44)] (.finish (at_ 45))]
+    [{ covered := ["b1"], catchType := some "B", binder := "e", target := "h", source := at_ 0 }]
+
+/--
+info: without cleanup:
+mainCatchB: assertion fails  @44; returns r = 0
+with cleanup:
+mainCatchB: assertion fails  @44; returns r = 0
+-/
+#guard_msgs in
+#eval observeBoth <| Wire.Program.toCortex
+  { composites := composites ++ [{ name := "A", extending := [], fields := [] },
+                                 { name := "B", extending := [], fields := [] }],
+    constrained := [], procedures := [fAB, gCatchA, mainCatchB] }
+
+def fB2 : Wire.Procedure :=
+  proc "fB2" [] [("r", int)]
+    [blk "b0" [.init "b" (.named "B") none (at_ 100), .new "b" "B" (at_ 101), .throw (v "b") none (at_ 102)]
+       (.finish (at_ 103))]
+
+def fAB2 : Wire.Procedure :=
+  proc "fAB2" [("c", .bool)] [("r", int)]
+    [blk "b0" [] (.condGoto (v "c") "bA" "bB" (at_ 110)),
+     blk "bA" [.init "a" (.named "A") none (at_ 111), .new "a" "A" (at_ 112), .throw (v "a") none (at_ 113)]
+       (.finish (at_ 114)),
+     blk "bB" [.call ["r"] "fB2" [] (at_ 115)] (.finish (at_ 116))]
+
+def gCatchA2 : Wire.Procedure :=
+  proc "gCatchA2" [("c", .bool)] [("r", int)]
+    [blk "b0" [.init "e" (.named "A") none (at_ 120)] (.goto "b1" (at_ 120)),
+     blk "b1" [.call ["r"] "fAB2" [v "c"] (at_ 121)] (.finish (at_ 122)),
+     blk "h" [] (.finish (at_ 123))]
+    [{ covered := ["b1"], catchType := some "A", binder := "e", target := "h", source := at_ 0 }]
+
+def mainCatchB2 : Wire.Procedure :=
+  proc "mainCatchB2" [] [("r", int)] (entry := true)
+    [blk "b0" [.init "e" (.named "B") none (at_ 130)] (.goto "b1" (at_ 130)),
+     blk "b1" [.call ["r"] "gCatchA2" [.bool false] (at_ 131), .assert "after" (.bool false) none (at_ 132)]
+       (.finish (at_ 133)),
+     blk "h" [.assert "inHandler" (.bool false) none (at_ 134)] (.finish (at_ 135))]
+    [{ covered := ["b1"], catchType := some "B", binder := "e", target := "h", source := at_ 0 }]
+
+/--
+info: without cleanup:
+mainCatchB2: assertion fails  @134; returns r = 0
+with cleanup:
+mainCatchB2: assertion fails  @134; returns r = 0
+-/
+#guard_msgs in
+#eval observeBoth <| Wire.Program.toCortex
+  { composites := composites ++ [{ name := "A", extending := [], fields := [] },
+                                 { name := "B", extending := [], fields := [] }],
+    constrained := [], procedures := [fB2, fAB2, gCatchA2, mainCatchB2] }
+
+def quiet : Wire.Procedure :=
+  proc "quiet" [] [("r", int)]
+    [blk "b0" [.set "r" (some (.int 1)) (at_ 140)] (.finish (at_ 141))]
+
+def twoHandlers : Wire.Procedure :=
+  proc "twoHandlers" [] [("r", int)]
+    [blk "b0" [.init "e" (.named "Exn") none (at_ 142)] (.goto "b1" (at_ 143)),
+     blk "b1" [.call ["r"] "quiet" [] (at_ 144)] (.goto "b2" (at_ 145)),
+     blk "b2" [.call ["r"] "fail" [] (at_ 146)] (.finish (at_ 147)),
+     blk "hA" [] (.finish (at_ 148)),
+     blk "hB" [.throw (v "e") none (at_ 149)] (.finish (at_ 150))]
+    [{ covered := ["b1"], catchType := some "A", binder := "e", target := "hA", source := at_ 0 },
+     { covered := ["b2"], catchType := some "Exn", binder := "e", target := "hB", source := at_ 0 }]
+
+def mainTwoHandlers : Wire.Procedure :=
+  proc "mainTwoHandlers" [] [("r", int)] (entry := true)
+    [blk "b0" [.init "e" (.named "Exn") none (at_ 70)] (.goto "b1" (at_ 71)),
+     blk "b1" [.call ["r"] "twoHandlers" [] (at_ 73), .assert "after" (.bool false) none (at_ 72)]
+       (.finish (at_ 76)),
+     blk "h" [.assert "inHandler" (.bool false) none (at_ 74)] (.finish (at_ 75))]
+    [{ covered := ["b1"], catchType := some "Exn", binder := "e", target := "h", source := at_ 0 }]
+
+/--
+info: without cleanup:
+mainTwoHandlers: assertion fails  @74; returns r = 0
+with cleanup:
+mainTwoHandlers: assertion fails  @74; returns r = 0
+-/
+#guard_msgs in
+#eval observeBoth <| Wire.Program.toCortex
+  { composites := composites ++ [{ name := "A", extending := [], fields := [] }],
+    constrained := [], procedures := [throwProc, quiet, twoHandlers, mainTwoHandlers] }
 
 end Cortex.CleanupTest
 

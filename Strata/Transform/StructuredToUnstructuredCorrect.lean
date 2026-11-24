@@ -2491,7 +2491,8 @@ theorem stmtsToCFG_stmtsToBlocks_spec {P : PureExpr}
       (stmtsToCFG ss).entry = entry ∧
       (∀ b ∈ blocks, b ∈ (stmtsToCFG ss).blocks) ∧
       (stmtsToCFG ss).blocks.lookup lend =
-        some ({ cmds := [], transfer := .finish .empty } : BasicBlock (DetTransferCmd String P) (Cmd P)) ∧
+        some ({ cmds := [], transfer := .finish .empty } :
+          BasicBlock (DetTransferCmd String P) (Cmd P) P) ∧
       StringGenState.WF gen ∧
       -- `gen` is the generator state after the single `endPrefix` generate that
       -- `stmtsToCFGM` performs before invoking `stmtsToBlocks`.  Exposing this

@@ -45,6 +45,22 @@ public theorem find?_push_of_some [EquivBEq α] [LawfulHashable α]
   rw [find?_push, h]
   rfl
 
+/-- Pushing one scope onto stacks with the same lookups gives stacks with the same lookups. -/
+public theorem find?_push_congr [EquivBEq α] [LawfulHashable α] {ms ms' : HMaps α β}
+    (h : ∀ y, HMaps.find? ms' y = HMaps.find? ms y) (m : HMap α β) (y : α) :
+    HMaps.find? (ms'.push m) y = HMaps.find? (ms.push m) y := by
+  rw [find?_push, find?_push, h y]
+
+/-- Inserting one binding into stacks with the same lookups gives stacks with the same
+    lookups. -/
+public theorem find?_insert_congr [LawfulBEq α] [LawfulHashable α] {ms ms' : HMaps α β}
+    (h : ∀ y, HMaps.find? ms' y = HMaps.find? ms y) (x : α) (v : β) (y : α) :
+    HMaps.find? (ms'.insert x v) y = HMaps.find? (ms.insert x v) y := by
+  by_cases hxy : y = x
+  · subst hxy
+    rw [find?_insert_self, find?_insert_self]
+  · rw [find?_insert_ne _ _ _ _ hxy, find?_insert_ne _ _ _ _ hxy, h y]
+
 /-- Mapping a function that fixes every stored value gives an equivalent stack. -/
 public theorem mapValues_fix_Equiv [LawfulBEq α] (f : β → β) (ms : HMaps α β)
     (h : ∀ value, value ∈ ms.values → f value = value) :
