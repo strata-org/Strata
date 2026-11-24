@@ -33,18 +33,16 @@ namespace Core.AxiomSeedsCacheTests
 open Lambda Imperative
 open LExpr.SyntaxMono LTy.Syntax Core.Syntax
 
-private def opName (op : CoreIdent) : String := Core.NameMangling.demangledBaseName op.toPretty
-
 /-- Specification of the precise seeds and of `antecedentOpsCached`: the function names of
     the path condition's expressions, in order, skipping the assumptions labelled in
     `axiomSet`. -/
 private def antecedentSpec (pcs : PathConditions Expression) (axiomSet : Std.HashSet String) :
     List String :=
   pcs.flatten.flatMap fun
-    | .assumption label e => if axiomSet.contains label then [] else (LExpr.getOps e).map opName
-    | .varDecl _ _ (.det e) => (LExpr.getOps e).map opName
+    | .assumption label e => if axiomSet.contains label then [] else (LExpr.getOps e).flatMap Core.seedNames
+    | .varDecl _ _ (.det e) => (LExpr.getOps e).flatMap Core.seedNames
     | .varDecl _ _ .nondet => []
-    | .distinct _ es => es.flatMap fun e => (LExpr.getOps e).map opName
+    | .distinct _ es => es.flatMap fun e => (LExpr.getOps e).flatMap Core.seedNames
 
 /-- Specification of `collectModelVars`: the variables of `ProofObligation.getVars` that the
     goal and the non-managed entries reach through the managed definitions, that
@@ -95,10 +93,10 @@ private def defs : List VarDefinition := [{ name := "d", ty := default, body := 
 /-- The cached seeds for `goal`, run on `cache`, with the cache it leaves. -/
 private def seedsCached (goal : Expression.Expr) (cache : ExprFactsCache) :
     List String × ExprFactsCache :=
-  (seedsKeepLastCached ((LExpr.getOps goal).map opName) pcs axiomSet).run cache
+  (seedsKeepLastCached ((LExpr.getOps goal).flatMap Core.seedNames) pcs axiomSet).run cache
 
 private def seedsSpec (goal : Expression.Expr) : List String :=
-  ((LExpr.getOps goal).map opName ++ antecedentSpec pcs axiomSet).uniq
+  ((LExpr.getOps goal).flatMap Core.seedNames ++ antecedentSpec pcs axiomSet).uniq
 
 -- Precise seeds: fresh cache, and the cache left by the other goal.
 #guard goals.all fun g => (seedsCached g ExprFactsCache.empty).1 == seedsSpec g

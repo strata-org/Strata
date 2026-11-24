@@ -6,6 +6,7 @@
 module
 
 public import Strata.Transform.MonomorphizeFunctions
+public import Strata.Languages.Core.NameManglingProps
 public import Strata.Languages.Core.Analysis.DeductiveVerificationProps
 public import Strata.Languages.Core
 public import Strata.Languages.Core.Analysis.FragmentFactory
@@ -77,130 +78,104 @@ namespace Core.MonomorphizeFunctions
 
 open Lambda Core.NameMangling
 
-/-- The name `mangleFuncName` gives a reference to `o` at the instantiation `τs`. -/
-@[expose] def mangledName (o : String) (τs : List LMonoTy) : String :=
-  if τs.isEmpty then o else monoPrefix ++ monoDelim ++ o ++ monoDelim ++ mangleTyArgs τs
+/-- The name `mangleFuncName pfx` gives a reference to `o` at the instantiation `τs`. -/
+@[expose] def mangledName (pfx o : String) (τs : List LMonoTy) : String := copyName pfx o τs
 
-/-- `mangleFuncName` gives `mangledName`, whatever its cache. -/
-private theorem mangleFuncName_fst (c : Strata.PtrCache.PtrCache mangleTy) (o : String)
-    (τs : List LMonoTy) : (mangleFuncName c o τs).1 = ⟨mangledName o τs, ()⟩ := by
-  unfold mangleFuncName mangledName
-  split
-  · rfl
-  · generalize (mangleTyArgsPtrCache τs).run c = r
-    obtain ⟨⟨out, hout⟩, c'⟩ := r
-    simp [hout]
-
-/-- `n` is the mangled name of `o` at some nonempty instantiation, and `o` has no `#`. -/
-@[expose] def MangledFrom (n o : String) : Prop :=
-  '#' ∉ o.toList ∧ ∃ rest : String, n = monoPrefix ++ monoDelim ++ o ++ monoDelim ++ rest
-
-/-- Two character lists without `#`, each followed by `#`, are equal when what follows makes the
-    two whole lists equal. -/
-private theorem list_prefix_hash_unique :
-    ∀ {a a' b b' : List Char}, '#' ∉ a → '#' ∉ a' →
-      a ++ '#' :: b = a' ++ '#' :: b' → a = a'
-  | [], [], _, _, _, _, _ => rfl
-  | [], c :: _, _, _, _, h', h => by
-    simp only [List.nil_append, List.cons_append, List.cons.injEq] at h
-    exact absurd (h.1 ▸ List.mem_cons_self) h'
-  | c :: _, [], _, _, h, _, hh => by
-    simp only [List.nil_append, List.cons_append, List.cons.injEq] at hh
-    exact absurd (hh.1 ▸ List.mem_cons_self) h
-  | c :: a, c' :: a', b, b', h, h', hh => by
-    simp only [List.cons_append, List.cons.injEq] at hh
-    obtain ⟨rfl, hh⟩ := hh
-    rw [list_prefix_hash_unique (fun hm => h (List.mem_cons_of_mem _ hm))
-      (fun hm => h' (List.mem_cons_of_mem _ hm)) hh]
+/-- `n` is the mangled name, with prefix `pfx`, of `o` at some nonempty instantiation. -/
+@[expose] def MangledFrom (pfx n o : String) : Prop :=
+  ∃ rest : String, n = pfx ++ monoDelim ++ escName o ++ monoDelim ++ rest
 
 /-- A mangled name determines the name it was mangled from. -/
-theorem MangledFrom.unique {n o o' : String} (h : MangledFrom n o) (h' : MangledFrom n o') :
-    o = o' := by
-  obtain ⟨ho, r, rfl⟩ := h
-  obtain ⟨ho', r', he⟩ := h'
+theorem MangledFrom.unique {pfx n o o' : String} (h : MangledFrom pfx n o)
+    (h' : MangledFrom pfx n o') : o = o' := by
+  obtain ⟨r, rfl⟩ := h
+  obtain ⟨r', he⟩ := h'
   have hl := congrArg String.toList he
-  simp only [String.toList_append, List.append_assoc, monoPrefix, monoDelim] at hl
+  simp only [String.toList_append, List.append_assoc, monoDelim] at hl
   have hl' := List.append_cancel_left hl
   have hl'' := List.append_cancel_left hl'
-  exact String.toList_inj.mp (list_prefix_hash_unique ho ho' (by simpa using hl''))
+  exact escName_inj (String.toList_inj.mp (prefix_hash_unique (hash_not_mem_escName o)
+    (hash_not_mem_escName o') (by simpa using hl'')))
 
-/-- A mangled name contains `#`. -/
-private theorem MangledFrom.hash_mem {n o : String} (h : MangledFrom n o) : '#' ∈ n.toList := by
-  obtain ⟨_, r, rfl⟩ := h
-  simp [String.toList_append, monoPrefix, monoDelim]
+/-- A mangled name starts with its prefix and `#`. -/
+private theorem MangledFrom.prefix {pfx n o : String} (h : MangledFrom pfx n o) :
+    (pfx ++ monoDelim).toList <+: n.toList := by
+  obtain ⟨r, rfl⟩ := h
+  exact ⟨(escName o ++ monoDelim ++ r).toList, by simp [String.toList_append]⟩
 
 /-- The name a mangled name was mangled from, and any other name itself. A model of the
     monomorphized program reads an operator `n` as the original model reads
-    `demangleName n`. -/
-@[expose] noncomputable def demangleName (n : String) : String :=
-  open Classical in if h : ∃ o, MangledFrom n o then Classical.choose h else n
+    `demangleName pfx n`. -/
+@[expose] noncomputable def demangleName (pfx n : String) : String :=
+  open Classical in if h : ∃ o, MangledFrom pfx n o then Classical.choose h else n
 
-/-- A name without `#` demangles to itself. -/
-theorem demangleName_of_not_hash {n : String} (h : '#' ∉ n.toList) : demangleName n = n := by
+/-- A name that does not start with the prefix and `#` demangles to itself. -/
+theorem demangleName_of_not_prefix {pfx n : String}
+    (h : ¬ (pfx ++ monoDelim).toList <+: n.toList) : demangleName pfx n = n := by
   unfold demangleName
   split
   · rename_i hex
     obtain ⟨o, ho⟩ := hex
-    exact absurd ho.hash_mem h
+    exact absurd ho.prefix h
   · rfl
 
-/-- The mangled name of a name without `#` demangles to that name. -/
-theorem demangleName_mangledName {o : String} (h : '#' ∉ o.toList) (τs : List LMonoTy) :
-    demangleName (mangledName o τs) = o := by
-  unfold mangledName
+/-- **The mangled name of any name demangles to that name.** The base is escaped, so this
+    needs no premise on `o`; a nullary instantiation leaves `o` as is, which then must not
+    start with the prefix. -/
+theorem demangleName_mangledName {pfx o : String} (τs : List LMonoTy)
+    (h : τs = [] → ¬ (pfx ++ monoDelim).toList <+: o.toList) :
+    demangleName pfx (mangledName pfx o τs) = o := by
+  unfold mangledName copyName
   split
-  · exact demangleName_of_not_hash h
-  · have hm : MangledFrom (monoPrefix ++ monoDelim ++ o ++ monoDelim ++ mangleTyArgs τs) o :=
-      ⟨h, _, rfl⟩
-    have hex : ∃ o', MangledFrom (monoPrefix ++ monoDelim ++ o ++ monoDelim ++ mangleTyArgs τs) o'
-        :=
-      ⟨o, hm⟩
+  · exact demangleName_of_not_prefix (h (List.isEmpty_iff.mp ‹_›))
+  · have hm : MangledFrom pfx (pfx ++ monoDelim ++ escName o ++ monoDelim ++ mangleTyArgs τs) o :=
+      ⟨_, rfl⟩
     unfold demangleName
     split
     · rename_i hex'
       exact (Classical.choose_spec hex').unique hm
-    · exact absurd hex ‹_›
+    · rename_i hno; exact absurd ⟨o, hm⟩ hno
 
 /-! ## Models of a factory of instances
 
-A function `g'` is an instance of `g` (`FnInstance g g'`) when it is `g` with a type
+A function `g'` is an instance of `g` (`FnInstance pfx g g'`) when it is `g` with a type
 substitution `S` applied to its signature, body and axioms, and then operators renamed by
-some `r` that `demangleName` undoes on `g`'s expressions. Reading each operator `n` as the
-original model reads `demangleName n` makes a model of every factory whose functions are
+some `r` that `demangleName pfx` undoes on `g`'s expressions. Reading each operator `n` as the
+original model reads `demangleName pfx n` makes a model of every factory whose functions are
 instances of the functions of a factory with a model (`Interp.ofInstances`). -/
 
-variable {T : LExprParams}
+variable {T : LExprParams} {pfx : String}
 
 /-- The operator interpretation that reads every operator `n` as `op` reads
-    `demangleName n`. -/
-@[expose] noncomputable def demangledOpInterp {tc : TyConstrInterp} (op : OpInterp tc) :
+    `demangleName pfx n`. -/
+@[expose] noncomputable def demangledOpInterp (pfx : String) {tc : TyConstrInterp} (op : OpInterp tc) :
     OpInterp tc :=
-  fun n => op (demangleName n)
+  fun n => op (demangleName pfx n)
 
 /-- Rename every operator to the name it was mangled from. -/
-@[expose] noncomputable def demangleRen : Identifier T.IDMeta → Option LMonoTy → Identifier
-    T.IDMeta :=
-  fun o _ => ⟨demangleName o.name, o.metadata⟩
+@[expose] noncomputable def demangleRen (pfx : String) :
+    Identifier T.IDMeta → Option LMonoTy → Identifier T.IDMeta :=
+  fun o _ => ⟨demangleName pfx o.name, o.metadata⟩
 
-/-- Under `demangledOpInterp op`, an expression denotes what it denotes under `op` with its
+/-- Under `demangledOpInterp pfx op`, an expression denotes what it denotes under `op` with its
     operators demangled. -/
 private theorem denote_demangledOpInterp {tc : TyConstrInterp} {op : OpInterp tc}
     {fv : FreeVarVal T tc} {vt : TyVarVal} {Δ : List LMonoTy} (bv : BVarVal tc vt Δ)
     {e : LExpr T.mono} {τ : LMonoTy} (h : e.HasTypeA Δ τ) :
-    LExpr.denote tc (demangledOpInterp op) fv vt bv e τ h =
-      LExpr.denote tc op fv vt bv (e.renameOps demangleRen) τ
-        (LExpr.HasTypeA_renameOps demangleRen h) :=
-  (denote_renameOps demangleRen bv h _ (fun _ _ => rfl)).symm
+    LExpr.denote tc (demangledOpInterp pfx op) fv vt bv e τ h =
+      LExpr.denote tc op fv vt bv (e.renameOps (demangleRen pfx)) τ
+        (LExpr.HasTypeA_renameOps (demangleRen pfx) h) :=
+  (denote_renameOps (demangleRen pfx) bv h _ (fun _ _ => rfl)).symm
 
-/-- Under `demangledOpInterp op`, arguments denote what they denote under `op` with their
+/-- Under `demangledOpInterp pfx op`, arguments denote what they denote under `op` with their
     operators demangled. -/
 private theorem denoteArgs_demangledOpInterp {tc : TyConstrInterp} {op : OpInterp tc}
     {fv : FreeVarVal T tc} {vt : TyVarVal} {Δ : List LMonoTy} (bv : BVarVal tc vt Δ) :
     ∀ (args : List (LExpr T.mono)) (tys : List LMonoTy)
       (h : List.Rel₂ (LExpr.HasTypeA Δ) args tys)
-      (h' : List.Rel₂ (LExpr.HasTypeA Δ) (args.map (·.renameOps demangleRen)) tys),
-      denoteArgs tc (demangledOpInterp op) fv vt bv args tys h =
-        denoteArgs tc op fv vt bv (args.map (·.renameOps demangleRen)) tys h'
+      (h' : List.Rel₂ (LExpr.HasTypeA Δ) (args.map (·.renameOps (demangleRen pfx))) tys),
+      denoteArgs tc (demangledOpInterp pfx op) fv vt bv args tys h =
+        denoteArgs tc op fv vt bv (args.map (·.renameOps (demangleRen pfx))) tys h'
   | [], [], _, _ => rfl
   | a :: as, ty :: tys, h, h' => by
     simp only [List.map_cons, denoteArgs]
@@ -208,19 +183,19 @@ private theorem denoteArgs_demangledOpInterp {tc : TyConstrInterp} {op : OpInter
       denoteArgs_demangledOpInterp bv as tys h.tail h'.tail]
 
 /-- `g'` is `g` instantiated by a type substitution `S`, with operators renamed by a
-    renaming `r` that `demangleName` undoes on the instantiated expressions of `g`, and named
+    renaming `r` that `demangleName pfx` undoes on the instantiated expressions of `g`, and named
     by a name that demangles to `g`'s. Typing of the instantiated body and axioms reflects
     to the originals. Instances of a constructor are the constructor up to its expressions. -/
-@[expose] def FnInstance (g g' : LFunc T) : Prop :=
+@[expose] def FnInstance (pfx : String) (g g' : LFunc T) : Prop :=
   ∃ (S : Subst) (r : Identifier T.IDMeta → Option LMonoTy → Identifier T.IDMeta),
-    demangleName g'.name.name = g.name.name ∧
+    demangleName pfx g'.name.name = g.name.name ∧
     g'.inputs = g.inputs.map (fun p => (p.1, LMonoTy.subst S p.2)) ∧
     g'.output = LMonoTy.subst S g.output ∧
     g'.body = g.body.map (fun b => (b.applyTypeSubst S).renameOps r) ∧
     g'.axioms = g.axioms.map (fun a => (a.applyTypeSubst S).renameOps r) ∧
     g'.concreteEval = g.concreteEval ∧
     (∀ e ∈ g.body.toList ++ g.axioms, ∀ p ∈ (e.applyTypeSubst S).opAnnots,
-      demangleName (r p.1 (some p.2)).name = p.1.name) ∧
+      demangleName pfx (r p.1 (some p.2)).name = p.1.name) ∧
     (∀ b, g.body = some b → (b.applyTypeSubst S).HasTypeA [] (LMonoTy.subst S g.output) →
       b.HasTypeA [] g.output) ∧
     (∀ a ∈ g.axioms, (a.applyTypeSubst S).HasTypeA [] .bool → a.HasTypeA [] .bool)
@@ -277,8 +252,8 @@ private theorem bindings_subst (S : Subst) (vt : TyVarVal)
 theorem FnInstance.interpConsistentBody [DecidableEq T.IDMeta] {tc : TyConstrInterp}
     {op : OpInterp tc} {g g' : LFunc T}
     (hI : ∀ b, g.body = some b → LFunc.InterpConsistentBody tc op g b)
-    (hrel : FnInstance g g') {b' : LExpr T.mono} (hb' : g'.body = some b') :
-    LFunc.InterpConsistentBody tc (demangledOpInterp op) g' b' := by
+    (hrel : FnInstance pfx g g') {b' : LExpr T.mono} (hb' : g'.body = some b') :
+    LFunc.InterpConsistentBody tc (demangledOpInterp pfx op) g' b' := by
   obtain ⟨S, r, hname, hin, hout, hbody, -, -, hops, htyb, -⟩ := hrel
   rw [hbody] at hb'
   obtain ⟨b, hb, rfl⟩ := Option.map_eq_some_iff.mp hb'
@@ -299,16 +274,16 @@ theorem FnInstance.interpConsistentBody [DecidableEq T.IDMeta] {tc : TyConstrInt
   let args := cast (congrArg (HList (SortDenote tc)) hsorts) args'
   have hargs : HEq args' args := (cast_heq _ _).symm
   have hold' := hold h_b args
-  have hops' : LExpr.OpsReadAs op (demangledOpInterp op) r (b.applyTypeSubst S) := by
+  have hops' : LExpr.OpsReadAs op (demangledOpInterp pfx op) r (b.applyTypeSubst S) := by
     intro p hp
-    show op (demangleName (r p.1 (some p.2)).name) = op p.1.name
+    show op (demangleName pfx (r p.1 (some p.2)).name) = op p.1.name
     rw [hops b (by simp [hb]) p hp]
   have h_td : TyDenote tc vt (LMonoTy.subst S g.output) =
       TyDenote tc (substVal S vt) g.output := by
     simp only [TyDenote, substTyVars_subst']
   apply eq_of_heq
   refine (applyArgs_heq (f₂ := op g.name.name _) hsorts (by rw [hosort]) ?_ hargs).trans ?_
-  · show HEq (op (demangleName g'.name.name) _) _
+  · show HEq (op (demangleName pfx g'.name.name) _) _
     rw [hname]
     exact opInterp_heq op _ (by rw [hosort, hsorts])
   rw [hold']
@@ -324,9 +299,9 @@ theorem FnInstance.interpConsistentBody [DecidableEq T.IDMeta] {tc : TyConstrInt
 theorem FnInstance.axiomsSatisfied {tc : TyConstrInterp} {op : OpInterp tc} {g g' : LFunc T}
     (hI : ∀ ax ∈ g.axioms, ∀ (vt : TyVarVal) (fv : FreeVarVal T tc) (h : ax.HasTypeA [] .bool),
       (LExpr.denote tc op fv vt .nil ax .bool h : Bool) = true)
-    (hrel : FnInstance g g') :
+    (hrel : FnInstance pfx g g') :
     ∀ ax' ∈ g'.axioms, ∀ (vt : TyVarVal) (fv : FreeVarVal T tc) (h' : ax'.HasTypeA [] .bool),
-      (LExpr.denote tc (demangledOpInterp op) fv vt .nil ax' .bool h' : Bool) = true := by
+      (LExpr.denote tc (demangledOpInterp pfx op) fv vt .nil ax' .bool h' : Bool) = true := by
   obtain ⟨S, r, -, -, -, -, hax, -, hops, -, htya⟩ := hrel
   intro ax' hmem vt fv h'
   rw [hax] at hmem
@@ -336,13 +311,13 @@ theorem FnInstance.axiomsSatisfied {tc : TyConstrInterp} {op : OpInterp tc} {g g
   have h_sub' : (a.applyTypeSubst S).HasTypeA [] (LMonoTy.subst S .bool) := by
     rw [hbool]; exact h_sub
   have h_a : a.HasTypeA [] .bool := htya a ha h_sub
-  have hops' : LExpr.OpsReadAs op (demangledOpInterp op) r (a.applyTypeSubst S) := by
+  have hops' : LExpr.OpsReadAs op (demangledOpInterp pfx op) r (a.applyTypeSubst S) := by
     intro p hp
-    show op (demangleName (r p.1 (some p.2)).name) = op p.1.name
+    show op (demangleName pfx (r p.1 (some p.2)).name) = op p.1.name
     rw [hops a (by simp [ha]) p hp]
   have h_td : TyDenote tc vt (LMonoTy.subst S .bool) = TyDenote tc (substVal S vt) .bool := by
     simp only [TyDenote, substTyVars_subst']
-  have hfin : HEq (LExpr.denote tc (demangledOpInterp op) fv vt .nil
+  have hfin : HEq (LExpr.denote tc (demangledOpInterp pfx op) fv vt .nil
       ((a.applyTypeSubst S).renameOps r) .bool h')
       (LExpr.denote tc op fv (substVal S vt) .nil a .bool h_a) := by
     rw [denote_renameOps r .nil h_sub h' hops']
@@ -385,12 +360,12 @@ private theorem exists_subst_comp (S tySubst : Subst) (out : LMonoTy) (ins : Lis
     consistent with a model is consistent with it under the demangled interpretation,
     when the evaluator commutes with demangling. -/
 theorem FnInstance.interpConsistentEval [DecidableEq T.IDMeta] {tc : TyConstrInterp}
-    {op : OpInterp tc} {g g' : LFunc T} (hrel : FnInstance g g')
+    {op : OpInterp tc} {g g' : LFunc T} (hrel : FnInstance pfx g g')
     {c : ConcreteEval T}
     (hI : LFunc.InterpConsistentEval tc op g c)
     (hnat : ∀ md opTy args res, c md opTy args = some res →
-      c md opTy (args.map (·.renameOps demangleRen)) = some (res.renameOps demangleRen)) :
-    LFunc.InterpConsistentEval tc (demangledOpInterp op) g' c := by
+      c md opTy (args.map (·.renameOps (demangleRen pfx))) = some (res.renameOps (demangleRen pfx))) :
+    LFunc.InterpConsistentEval tc (demangledOpInterp pfx op) g' c := by
   obtain ⟨S, r, hname, hin, hout, -, -, -, -, -, -⟩ := hrel
   intro vt fvarVal md tySubst args res
   dsimp only
@@ -409,57 +384,57 @@ theorem FnInstance.interpConsistentEval [DecidableEq T.IDMeta] {tc : TyConstrInt
   rw [show g'.instTy tySubst = g.instTy τ by simp only [LFunc.instTy, hins, hout']] at hres
   have hold := hI vt fvarVal md τ _ _ (hnat md _ args res hres)
   dsimp only at hold
-  have h_args0 : List.Rel₂ (LExpr.HasTypeA []) (args.map (·.renameOps demangleRen))
+  have h_args0 : List.Rel₂ (LExpr.HasTypeA []) (args.map (·.renameOps (demangleRen pfx)))
       ((List.map Prod.snd g.inputs).map (LMonoTy.subst τ)) :=
-    hins ▸ Rel₂_renameOps demangleRen h_args
-  have h_res0 : (res.renameOps demangleRen).HasTypeA [] (LMonoTy.subst τ g.output) :=
-    hout' ▸ LExpr.HasTypeA_renameOps demangleRen h_result
+    hins ▸ Rel₂_renameOps (demangleRen pfx) h_args
+  have h_res0 : (res.renameOps (demangleRen pfx)).HasTypeA [] (LMonoTy.subst τ g.output) :=
+    hout' ▸ LExpr.HasTypeA_renameOps (demangleRen pfx) h_result
   have hold' := hold h_args0 h_res0
   apply eq_of_heq
   rw [denote_demangledOpInterp]
   refine (denote_heq_ty hout' _ h_res0).trans ?_
-  rw [hold', denoteArgs_demangledOpInterp .nil args _ h_args (Rel₂_renameOps demangleRen h_args)]
+  rw [hold', denoteArgs_demangledOpInterp .nil args _ h_args (Rel₂_renameOps (demangleRen pfx) h_args)]
   refine applyArgs_heq (congrArg (List.map _) hins.symm) (by rw [hout']) ?_
     (denoteArgs_heq_tys hins.symm _ _)
-  show HEq (op g.name.name _) (op (demangleName g'.name.name) _)
+  show HEq (op g.name.name _) (op (demangleName pfx g'.name.name) _)
   rw [hname]
   exact opInterp_heq op _ (by rw [hout', hins])
 
 /-- An instance of a function has the function's concrete evaluator. -/
-private theorem FnInstance.concreteEval_eq {g g' : LFunc T} (hrel : FnInstance g g') :
+private theorem FnInstance.concreteEval_eq {g g' : LFunc T} (hrel : FnInstance pfx g g') :
     g'.concreteEval = g.concreteEval := by
   obtain ⟨_, _, -, -, -, -, -, h, -⟩ := hrel
   exact h
 
 /-- Demangling is a renaming every concrete evaluator of `F` commutes with. -/
-@[expose] def ConcreteEvalsCommuteDemangle (F : Lambda.Factory T) : Prop :=
+@[expose] def ConcreteEvalsCommuteDemangle (pfx : String) (F : Lambda.Factory T) : Prop :=
   ∀ o (ho : o ∈ F), ∀ c, (F[o]'ho).concreteEval = some c → ∀ md opTy args res,
     c md opTy args = some res →
-    c md opTy (args.map (·.renameOps demangleRen)) = some (res.renameOps demangleRen)
+    c md opTy (args.map (·.renameOps (demangleRen pfx))) = some (res.renameOps (demangleRen pfx))
 
 /-- A constructor whose name demangles to itself has the same application under the demangled
     interpretation as under the original. -/
 private theorem constrApp_demangledOpInterp {tc : TyConstrInterp} (op : OpInterp tc)
     (f : LFunc T) (vt : TyVarVal)
     (args : HList (SortDenote tc) (f.inputs.values.map (LMonoTy.substTyVars vt)))
-    (hname : demangleName f.name.name = f.name.name) :
-    constrApp tc (demangledOpInterp op) f vt args = constrApp tc op f vt args := by
+    (hname : demangleName pfx f.name.name = f.name.name) :
+    constrApp tc (demangledOpInterp pfx op) f vt args = constrApp tc op f vt args := by
   simp only [constrApp, demangledOpInterp, hname]
 
 /-- **A model of a factory of instances.** If every function of `F'` is an instance of a
     function of `F`, `F`'s concrete evaluators commute with demangling, and every
     constructor of `F'` is a constructor of `F` with a name that demangles to itself and every
     constructor of `F` is in `F'`, then `F'` has a model with the same carriers. That model
-    reads each operator `n` as the model of `F` reads `demangleName n`. -/
+    reads each operator `n` as the model of `F` reads `demangleName pfx n`. -/
 @[expose] noncomputable def Interp.ofInstances [DecidableEq T.IDMeta] {F F' : Lambda.Factory T}
     (I : Interp F)
-    (hrel : ∀ n (hn : n ∈ F'), ∃ o, ∃ ho : o ∈ F, FnInstance (F[o]'ho) (F'[n]'hn))
-    (hnat : ConcreteEvalsCommuteDemangle F)
+    (hrel : ∀ n (hn : n ∈ F'), ∃ o, ∃ ho : o ∈ F, FnInstance pfx (F[o]'ho) (F'[n]'hn))
+    (hnat : ConcreteEvalsCommuteDemangle pfx F)
     (hconstr : ∀ f' ∈ F'.toArray, f'.isConstr = true →
-      f' ∈ F.toArray ∧ demangleName f'.name.name = f'.name.name)
+      f' ∈ F.toArray ∧ demangleName pfx f'.name.name = f'.name.name)
     (hcover : ∀ f ∈ F.toArray, f.isConstr = true → f ∈ F'.toArray) : Interp F' where
   tcInterp := I.tcInterp
-  opInterp := demangledOpInterp I.opInterp
+  opInterp := demangledOpInterp pfx I.opInterp
   allInhabited := I.allInhabited
   interpConsistent := by
     refine ⟨fun n hn body hb => ?_, fun n hn c hc => ?_⟩
@@ -515,7 +490,7 @@ public def monoRen (P : PolymorphicFuncDecls) (F : Lambda.Factory CoreLParams)
   match P.lookup F o.name with
   | some (fdef, _) =>
     match getTypeSubstitution fdef ty with
-    | some ts => ⟨mangledName o.name ts.givenTypes, ()⟩
+    | some ts => ⟨mangledName P.copyPrefix o.name ts.givenTypes, ()⟩
     | none => o
   | none => o
 
@@ -849,26 +824,29 @@ open Lambda Core.NameMangling Strata.PtrCache
 
 /-- A specialization `x.2` of `x.1` is a type instance, under its mangled name, of a function
     at `x.1`'s source. -/
-public def IsCopyOf (p : Program) (F : Lambda.Factory CoreLParams)
+public def IsCopyOf (pfx : String) (p : Program) (F : Lambda.Factory CoreLParams)
     (x : FuncSpecialization × Function) : Prop :=
   ∃ f ∈ x.1.functionsAt p F,
-    x.2 = monomorphizeFunction f ⟨mangledName x.1.name x.1.typeSubst.givenTypes, ()⟩ x.1.typeSubst
+    x.2 = monomorphizeFunction f ⟨mangledName pfx x.1.name x.1.typeSubst.givenTypes, ()⟩
+      x.1.typeSubst
 
 /-- The invariant of the worklist state: every specialization recorded for the program comes
     from the program, every one recorded for the factory from the factory, and each is a copy. -/
-def CopiesInv (p : Program) (F : Lambda.Factory CoreLParams) (st : MonoWorklistState) : Prop :=
-  (∀ x ∈ st.specializedFnsInProg, (∃ didx, x.1.source = .program didx) ∧ IsCopyOf p F x) ∧
-  (∀ x ∈ st.specializedFnsInFactory, x.1.source = .factory ∧ IsCopyOf p F x)
+def CopiesInv (pfx : String) (p : Program) (F : Lambda.Factory CoreLParams)
+    (st : MonoWorklistState) : Prop :=
+  (∀ x ∈ st.specializedFnsInProg, (∃ didx, x.1.source = .program didx) ∧ IsCopyOf pfx p F x) ∧
+  (∀ x ∈ st.specializedFnsInFactory, x.1.source = .factory ∧ IsCopyOf pfx p F x)
 
 /-- Recording the copy of a function at a specialization keeps every recorded specialization a
     copy from the right source. -/
 private theorem addSpecializedFunctions_inv (P : PolymorphicFuncDecls) (p : Program)
     (F : Lambda.Factory CoreLParams) (fs : FuncSpecialization) (f : Function)
-    (hf : f ∈ fs.functionsAt p F) (st : MonoWorklistState) (hst : CopiesInv p F st) :
-    CopiesInv p F ((addSpecializedFunctions P F fs f).run st).2 := by
-  have hcopy : IsCopyOf p F (fs, monomorphizeFunction f
-      (mangleFuncName st.cache fs.name fs.typeSubst.givenTypes).1 fs.typeSubst) :=
-    ⟨f, hf, by rw [mangleFuncName_fst]⟩
+    (hf : f ∈ fs.functionsAt p F) (st : MonoWorklistState)
+    (hst : CopiesInv P.copyPrefix p F st) :
+    CopiesInv P.copyPrefix p F ((addSpecializedFunctions P F fs f).run st).2 := by
+  have hcopy : IsCopyOf P.copyPrefix p F (fs, monomorphizeFunction f
+      (mangleFuncName P.copyPrefix st.cache fs.name fs.typeSubst.givenTypes).1 fs.typeSubst) :=
+    ⟨f, hf, by rw [mangleFuncName_fst]; rfl⟩
   unfold addSpecializedFunctions
   simp only [StateT.run, bind, StateT.bind, get, getThe, MonadStateOf.get, StateT.get, set,
     MonadStateOf.set, StateT.set, pure, StateT.pure]
@@ -888,13 +866,13 @@ private theorem addSpecializedFunctions_inv (P : PolymorphicFuncDecls) (p : Prog
     source. -/
 private theorem processFuncSpecialization_inv (P : PolymorphicFuncDecls) (p : Program)
     (F : Lambda.Factory CoreLParams) (fs : FuncSpecialization) (st : MonoWorklistState)
-    (hst : CopiesInv p F st) :
-    CopiesInv p F ((processFuncSpecialization P p F fs).run st).2 := by
+    (hst : CopiesInv P.copyPrefix p F st) :
+    CopiesInv P.copyPrefix p F ((processFuncSpecialization P p F fs).run st).2 := by
   unfold processFuncSpecialization
   simp only [StateT.run, bind, StateT.bind]
   split
   rename_i r a s heq
-  exact foldlM_state_inv_of_eq (CopiesInv p F) heq
+  exact foldlM_state_inv_of_eq (CopiesInv P.copyPrefix p F) heq
     (fun m hm b s hs => by
       have h := addSpecializedFunctions_inv P p F fs m hm s hs
       simp only [StateT.run] at h ⊢
@@ -905,10 +883,6 @@ private theorem processFuncSpecialization_inv (P : PolymorphicFuncDecls) (p : Pr
 /-- What `run` computes, without the monad. -/
 def runSt (p : Program) (cap : Nat) (s : Transform.CoreTransformState) :
     Except Transform.Err Program × Transform.CoreTransformState :=
-  if !namesUnmangled p then (.error (mangledNameError p), s)
-  else match s.factory.toArray.find? (hasMonoDelim ·.name.name) with
-  | some f => (.error (delimNameError f.name.name), s)
-  | none =>
     let F := s.factory
     let polyfuncDecls := collectPolymorphicFuncDecls p F
     match (processTopDecls polyfuncDecls F p).run PtrCache.empty with
@@ -938,18 +912,12 @@ def runSt (p : Program) (cap : Nat) (s : Transform.CoreTransformState) :
 private theorem run_eq (p : Program) (cap : Nat) (s : Transform.CoreTransformState) :
     (MonomorphizeFunctions.run p cap).run.run s = runSt p cap s := by
   unfold MonomorphizeFunctions.run runSt
-  cases namesUnmangled p
-  · rfl
-  · simp only [Bool.not_true, Bool.false_eq_true, ↓reduceIte]
-    simp only [StateT.run, ExceptT.run, bind, ExceptT.bind, ExceptT.mk, ExceptT.bindCont,
+  · simp only [StateT.run, ExceptT.run, bind, ExceptT.bind, ExceptT.mk, ExceptT.bindCont,
       StateT.bind, pure, ExceptT.pure, StateT.pure, liftM, monadLift, MonadLift.monadLift,
       ExceptT.lift, Functor.map, StateT.map, Core.Transform.getFactory,
       Core.Transform.setFactory, get, getThe, MonadStateOf.get, StateT.get, modify, modifyGet,
       MonadStateOf.modifyGet, throw, throwThe, MonadExceptOf.throw]
-    cases hf : s.factory.toArray.find? (hasMonoDelim ·.name.name) with
-    | some f => rfl
-    | none =>
-    dsimp only
+    try dsimp only
     generalize processTopDecls (collectPolymorphicFuncDecls p s.factory) s.factory p
       PtrCache.empty = r
     obtain ⟨⟨p1, seeds⟩, c⟩ := r
@@ -975,11 +943,10 @@ private theorem run_ok' {p : Program} {cap : Nat} {s s' : Transform.CoreTransfor
     {p' : Program}
     (hnp : ∀ d ∈ p.decls, d.kind ≠ .proc)
     (h : (MonomorphizeFunctions.run p cap).run.run s = (.ok p', s')) :
-    namesUnmangled p = true ∧
     ∃ st : MonoWorklistState,
       let P := collectPolymorphicFuncDecls p s.factory
       let g := monoRen P s.factory
-      CopiesInv { decls := p.decls.map (topDecl g) } s.factory st ∧
+      CopiesInv P.copyPrefix { decls := p.decls.map (topDecl g) } s.factory st ∧
       p'.decls = (p.decls.map (topDecl g)).zipIdx.flatMap
         (updDecl g (specsByFnOf st.specializedFnsInProg)) ∧
       s'.factory = Lambda.Factory.ofArray
@@ -990,16 +957,8 @@ private theorem run_ok' {p : Program} {cap : Nat} {s s' : Transform.CoreTransfor
           { MonoWorklistState.init with cache := c } = (true, st) := by
   rw [run_eq] at h
   unfold runSt at h
-  cases hn : namesUnmangled p
-  · simp only [hn, Bool.not_false, ↓reduceIte] at h
-    exact absurd (congrArg Prod.fst h) (by simp)
-  · simp only [hn, Bool.not_true, Bool.false_eq_true, ↓reduceIte, StateT.run] at h
-    cases hf : s.factory.toArray.find? (hasMonoDelim ·.name.name) with
-    | some f => rw [hf] at h; exact absurd (congrArg Prod.fst h) (by simp)
-    | none =>
-    rw [hf] at h
-    dsimp only at h
-    refine ⟨rfl, ?_⟩
+  · simp only [StateT.run] at h
+    try dsimp only at h
     have hdecls := processTopDecls_decls (collectPolymorphicFuncDecls p s.factory) s.factory p
       hnp PtrCache.empty
     have hpfx := processTopDecls_usedIdentPrefixes (collectPolymorphicFuncDecls p s.factory)
@@ -1015,7 +974,8 @@ private theorem run_ok' {p : Program} {cap : Nat} {s s' : Transform.CoreTransfor
     dsimp only at h
     generalize hw : (Strata.Worklist.run (m := StateM MonoWorklistState) (α := FuncSpecialization)
       _ _ cap) _ = w at h
-    have hinv : CopiesInv { decls := p.decls.map (topDecl (monoRen
+    have hinv : CopiesInv (collectPolymorphicFuncDecls p s.factory).copyPrefix
+        { decls := p.decls.map (topDecl (monoRen
         (collectPolymorphicFuncDecls p s.factory) s.factory)) } s.factory w.2 := by
       rw [← hw]
       exact Strata.Worklist.run_inv _ _
@@ -1054,17 +1014,16 @@ private theorem run_ok' {p : Program} {cap : Nat} {s s' : Transform.CoreTransfor
 theorem run_ok {p : Program} {cap : Nat} {s s' : Transform.CoreTransformState} {p' : Program}
     (hnp : ∀ d ∈ p.decls, d.kind ≠ .proc)
     (h : (MonomorphizeFunctions.run p cap).run.run s = (.ok p', s')) :
-    namesUnmangled p = true ∧
     ∃ st : MonoWorklistState,
       let P := collectPolymorphicFuncDecls p s.factory
       let g := monoRen P s.factory
-      CopiesInv { decls := p.decls.map (topDecl g) } s.factory st ∧
+      CopiesInv P.copyPrefix { decls := p.decls.map (topDecl g) } s.factory st ∧
       p'.decls = (p.decls.map (topDecl g)).zipIdx.flatMap
         (updDecl g (specsByFnOf st.specializedFnsInProg)) ∧
       s'.factory = Lambda.Factory.ofArray
         (keptOf P s.factory g ++ copiesOf s.factory g st.specializedFnsInFactory).toArray := by
-  obtain ⟨hn, st, h1, h2, h3, -⟩ := run_ok' hnp h
-  exact ⟨hn, st, h1, h2, h3⟩
+  obtain ⟨st, h1, h2, h3, -⟩ := run_ok' hnp h
+  exact ⟨st, h1, h2, h3⟩
 
 /-! ## Runtime factories as folds of `pushIfNew` -/
 
@@ -1123,51 +1082,55 @@ end RuntimeFactory
 
 section Instances
 
-/-- `g` renames every operator without `#` to a name that demangles back to it. -/
-def RenOK (g : CoreIdent → Option LMonoTy → CoreIdent) : Prop :=
-  ∀ o ty, '#' ∉ o.name.toList → demangleName (g o ty).name = o.name
+/-- The name `n` does not start with the copies' prefix `pfx` and `#`, so it is not read as a
+    copy's (`demangleName_of_not_prefix`). -/
+@[expose] public def NotCopyName (pfx n : String) : Prop := ¬ (pfx ++ monoDelim).toList <+: n.toList
 
-/-- The renaming the pass applies demangles back to every operator name without `#`. -/
+/-- A name that does not start with `monoPrefix` is not a copy's name, whatever prefix the pass
+    chose (`monoPrefix_prefix_choosePrefix`). -/
+theorem notCopyName_of_not_monoPrefix {N : List String} {n : String}
+    (h : ¬ monoPrefix.toList <+: n.toList) : NotCopyName (choosePrefix N) n := fun hp =>
+  h ((monoPrefix_prefix_choosePrefix N).trans
+    ((List.prefix_append _ _).trans (by simpa [String.toList_append] using hp)))
+
+/-- `g` renames every operator whose name is not a copy's to a name that demangles back to it. -/
+def RenOK (pfx : String) (g : CoreIdent → Option LMonoTy → CoreIdent) : Prop :=
+  ∀ o ty, NotCopyName pfx o.name → demangleName pfx (g o ty).name = o.name
+
+/-- The renaming the pass applies demangles back to every operator name that is not a copy's. -/
 private theorem monoRen_ok (P : PolymorphicFuncDecls) (F : Lambda.Factory CoreLParams) :
-    RenOK (monoRen P F) := by
+    RenOK P.copyPrefix (monoRen P F) := by
   intro o ty h
   unfold monoRen
   split
   · split
-    · exact demangleName_mangledName h _
-    · exact demangleName_of_not_hash h
-  · exact demangleName_of_not_hash h
+    · exact demangleName_mangledName _ (fun _ => h)
+    · exact demangleName_of_not_prefix h
+  · exact demangleName_of_not_prefix h
 
-/-- `hasMonoDelim s` is false exactly when `s` has no `#`. -/
-private theorem not_hasMonoDelim_iff (s : String) : hasMonoDelim s = false ↔ '#' ∉ s.toList := by
-  simp only [hasMonoDelim, monoDelim, List.any_eq_false]
-  simp only [String.reduceToList, List.mem_cons, ↓Char.isValue, List.not_mem_nil, or_false,
-      decide_eq_true_eq]
-  exact ⟨fun h hm => h _ hm rfl, fun h x hx hxe => h (hxe ▸ hx)⟩
+/-- No operator of `e` has a copy's name. -/
+@[expose] public def OpsUnmangled (pfx : String) (e : Expression.Expr) : Prop :=
+  ∀ o ∈ e.getOps, NotCopyName pfx o.name
 
-/-- No operator of `e` has `#` in its name. -/
-@[expose] public def OpsUnmangled (e : Expression.Expr) : Prop := ∀ o ∈ e.getOps, '#' ∉
-    o.name.toList
-
-/-- No operator of `f`'s body or axioms, and not `f`'s name, has `#`. -/
-@[expose] public def FnUnmangled (f : LFunc CoreLParams) : Prop :=
-  '#' ∉ f.name.name.toList ∧ ∀ e ∈ f.body.toList ++ f.axioms, OpsUnmangled e
+/-- No operator of `f`'s body or axioms, and not `f`'s name, has a copy's name. -/
+@[expose] public def FnUnmangled (pfx : String) (f : LFunc CoreLParams) : Prop :=
+  NotCopyName pfx f.name.name ∧ ∀ e ∈ f.body.toList ++ f.axioms, OpsUnmangled pfx e
 
 /-- Every annotated operator of a substituted expression whose operators have no `#` is renamed
     by an admissible renaming to a name that demangles to it. -/
-private theorem ops_ok {g : CoreIdent → Option LMonoTy → CoreIdent} (hg : RenOK g)
-    {S : Subst} {e : Expression.Expr} (he : OpsUnmangled e) :
-    ∀ p ∈ (e.applyTypeSubst S).opAnnots, demangleName (g p.1 (some p.2)).name = p.1.name := by
+private theorem ops_ok {pfx : String} {g : CoreIdent → Option LMonoTy → CoreIdent}
+    (hg : RenOK pfx g) {S : Subst} {e : Expression.Expr} (he : OpsUnmangled pfx e) :
+    ∀ p ∈ (e.applyTypeSubst S).opAnnots, demangleName pfx (g p.1 (some p.2)).name = p.1.name := by
   intro p hp
   have hmem := LExpr.mem_getOps_of_opAnnots hp
   rw [LExpr.getOps_applyTypeSubst] at hmem
   exact hg _ _ (he _ hmem)
 
 /-- A function with its operators renamed is an instance of itself. -/
-private theorem fnInstance_renFn {g : CoreIdent → Option LMonoTy → CoreIdent} (hg : RenOK g)
-    (lf : LFunc CoreLParams) (hu : FnUnmangled lf) :
-    FnInstance lf { lf with toFunc := renFn g lf.toFunc } := by
-  refine ⟨[], g, demangleName_of_not_hash hu.1, ?_, ?_, ?_, ?_, rfl, ?_, ?_, ?_⟩
+private theorem fnInstance_renFn {pfx : String} {g : CoreIdent → Option LMonoTy → CoreIdent}
+    (hg : RenOK pfx g) (lf : LFunc CoreLParams) (hu : FnUnmangled pfx lf) :
+    FnInstance pfx lf { lf with toFunc := renFn g lf.toFunc } := by
+  refine ⟨[], g, demangleName_of_not_prefix hu.1, ?_, ?_, ?_, ?_, rfl, ?_, ?_, ?_⟩
   · simp only [renFn, LMonoTy.subst_nil]
     induction lf.inputs <;> simp_all <;> rfl
   · simp [renFn, LMonoTy.subst_nil]
@@ -1178,28 +1141,28 @@ private theorem fnInstance_renFn {g : CoreIdent → Option LMonoTy → CoreIdent
   · intro a _ h; rwa [LExpr.applyTypeSubst_nil] at h
 
 /-- A function is an instance of itself. -/
-private theorem fnInstance_self (lf : LFunc CoreLParams) (hu : FnUnmangled lf) :
-    FnInstance lf lf := by
-  refine ⟨[], fun o _ => o, demangleName_of_not_hash hu.1, ?_, ?_, ?_, ?_, rfl, ?_, ?_, ?_⟩
+private theorem fnInstance_self {pfx : String} (lf : LFunc CoreLParams)
+    (hu : FnUnmangled pfx lf) : FnInstance pfx lf lf := by
+  refine ⟨[], fun o _ => o, demangleName_of_not_prefix hu.1, ?_, ?_, ?_, ?_, rfl, ?_, ?_, ?_⟩
   · simp only [LMonoTy.subst_nil]
     induction lf.inputs <;> simp_all <;> rfl
   · simp [LMonoTy.subst_nil]
   · cases lf.body <;> simp [LExpr.applyTypeSubst_nil, LExpr.renameOps_id]
   · simp [LExpr.applyTypeSubst_nil, LExpr.renameOps_id]
-  · intro e he p _; exact demangleName_of_not_hash (hu.2 e he p.1 (by
+  · intro e he p _; exact demangleName_of_not_prefix (hu.2 e he p.1 (by
       have := LExpr.mem_getOps_of_opAnnots ‹_›; rwa [LExpr.getOps_applyTypeSubst] at this))
   · intro b _ h; rwa [LExpr.applyTypeSubst_nil, LMonoTy.subst_nil] at h
   · intro a _ h; rwa [LExpr.applyTypeSubst_nil] at h
 
 /-- The copy of a function at an instantiation is an instance of the function, when the
     function's body and axioms are well typed. -/
-private theorem fnInstance_copy {g : CoreIdent → Option LMonoTy → CoreIdent} (hg : RenOK g)
-    (lf : LFunc CoreLParams) (hu : FnUnmangled lf) (ts : TypeArgsSubstitution)
+private theorem fnInstance_copy {pfx : String} {g : CoreIdent → Option LMonoTy → CoreIdent}
+    (hg : RenOK pfx g) (lf : LFunc CoreLParams) (hu : FnUnmangled pfx lf) (ts : TypeArgsSubstitution)
     (hb : ∀ b, lf.body = some b → b.HasTypeA [] lf.output)
     (ha : ∀ a ∈ lf.axioms, a.HasTypeA [] .bool) :
-    FnInstance lf { toFunc := renFn g (monomorphizeFunction lf.toFunc
-      ⟨mangledName lf.name.name ts.givenTypes, ()⟩ ts), concreteEval := lf.concreteEval } := by
-  refine ⟨ts.subst, g, demangleName_mangledName hu.1 _, ?_, rfl, ?_, ?_, rfl, ?_,
+    FnInstance pfx lf { toFunc := renFn g (monomorphizeFunction lf.toFunc
+      ⟨mangledName pfx lf.name.name ts.givenTypes, ()⟩ ts), concreteEval := lf.concreteEval } := by
+  refine ⟨ts.subst, g, demangleName_mangledName _ (fun _ => hu.1), ?_, rfl, ?_, ?_, rfl, ?_,
     fun b h _ => hb b h, fun a h _ => ha a h⟩
   · simp only [renFn, monomorphizeFunction, Lambda.LFuncDefined.applyTypeSubst]; rfl
   · simp [renFn, monomorphizeFunction, Lambda.LFuncDefined.applyTypeSubst, Option.map_map,
@@ -1308,9 +1271,9 @@ section Pre
   (∀ b, f.body = some b → b.HasTypeA [] f.output) ∧ ∀ a ∈ f.axioms, a.HasTypeA [] .bool
 
 /-- `f`'s concrete evaluator, if any, commutes with demangling operator names. -/
-@[expose] public def EvalCommutesDemangle (f : LFunc CoreLParams) : Prop :=
+@[expose] public def EvalCommutesDemangle (pfx : String) (f : LFunc CoreLParams) : Prop :=
   ∀ c, f.concreteEval = some c → ∀ md opTy args res, c md opTy args = some res →
-    c md opTy (args.map (·.renameOps demangleRen)) = some (res.renameOps demangleRen)
+    c md opTy (args.map (·.renameOps (demangleRen pfx))) = some (res.renameOps (demangleRen pfx))
 
 /-- The operator names the same-theory fragment's checks read: `Real.Mul` and `Real.Div` for
     linear real terms, `Real.Neg` for real literals,
@@ -1378,12 +1341,17 @@ section Pre
   (∀ (f : Function) md (b : Expression.Expr), Decl.func f md ∈ p.decls → f.body = some b →
     InstanceAnnotated (Core.Specification.Analysis.runtimeFactoryOf F p.decls) b)
 
+/-- The prefix the pass names the copies of `p`'s functions with, over `s`'s factory
+    (`choosePrefix`). -/
+@[expose] public def copyPrefixOf (s : Transform.CoreTransformState) (p : Program) : String :=
+  (collectPolymorphicFuncDecls p s.factory).copyPrefix
+
 /-- **What the phase needs of its input** (state `s`, program `p`):
     - `noProcs`: `p` declares no procedure;
     - `distinct`: the functions the state's factory and `p` contribute to a runtime factory
       have pairwise distinct names;
-    - `unmangled`: none of them has a name, or an operator in its body or axioms, containing
-      `#` (for `p`'s own names the phase checks this itself);
+    - `unmangled`: none of them has a name, or an operator in its body or axioms, that starts
+      with the copies' prefix (`copyPrefixOf`) and `#`;
     - `typed`: the bodies and axioms of the state's functions and of `p`'s functions are well
       typed (a copy instantiates them);
     - `evals`: every concrete evaluator commutes with demangling;
@@ -1394,9 +1362,9 @@ section Pre
 public structure MonoPre (s : Transform.CoreTransformState) (p : Program) : Prop where
   noProcs : Core.Specification.Analysis.NoProcedures p
   distinct : ((contributed s.factory p.decls).map (·.name.name)).Nodup
-  unmangled : ∀ f ∈ contributed s.factory p.decls, FnUnmangled f
+  unmangled : ∀ f ∈ contributed s.factory p.decls, FnUnmangled (copyPrefixOf s p) f
   typed : (∀ f ∈ s.factory.toArray, FnTyped f) ∧ ∀ f ∈ p.decls.flatMap progFns, FnTyped f.toLFunc
-  evals : ∀ f ∈ contributed s.factory p.decls, EvalCommutesDemangle f
+  evals : ∀ f ∈ contributed s.factory p.decls, EvalCommutesDemangle (copyPrefixOf s p) f
   noConstr : (∀ f ∈ s.factory.toArray, f.isConstr = false) ∧
     ∀ f ∈ p.decls.flatMap progFns, f.isConstr = false
   fragOps : ∀ n ∈ fragmentOpNames, ∃ f ∈ s.factory.toArray, f.name.name = n ∧ f.typeArgs = []
@@ -1404,8 +1372,6 @@ public structure MonoPre (s : Transform.CoreTransformState) (p : Program) : Prop
   ground : groundInstantiationsB s.factory p = true
   /-- Every type parameter of a function occurs in its signature. -/
   sigTypeArgs : sigTypeArgsB s.factory p = true
-  /-- The type constructors in operator annotations have plain names. -/
-  plainAnnots : plainAnnotsB s.factory p = true
   /-- The state's factory keeps programs in the same-theory fragment when it evaluates. -/
   fragment : Core.Specification.Analysis.FragmentFactory s.factory
   /-- Each function of the state's factory has a sound evaluator, is well formed, has no
@@ -1465,11 +1431,11 @@ end Pre
 section CopyCases
 
 /-- A recorded copy from a function declaration is that function instantiated and renamed. -/
-private theorem copy_func {p : Program} {F : Lambda.Factory CoreLParams}
+private theorem copy_func {pfx : String} {p : Program} {F : Lambda.Factory CoreLParams}
     {x : FuncSpecialization × Function}
-    {j : Nat} {f : Function} {md} (hsrc : x.1.source = .program j) (hc : IsCopyOf p F x)
+    {j : Nat} {f : Function} {md} (hsrc : x.1.source = .program j) (hc : IsCopyOf pfx p F x)
     (hd : p.decls[j]? = some (.func f md)) :
-    x.2 = monomorphizeFunction f ⟨mangledName x.1.name x.1.typeSubst.givenTypes, ()⟩ x.1.typeSubst
+    x.2 = monomorphizeFunction f ⟨mangledName pfx x.1.name x.1.typeSubst.givenTypes, ()⟩ x.1.typeSubst
         := by
   obtain ⟨f0, hf0, h⟩ := hc
   simp only [FuncSpecialization.functionsAt, hsrc, getElem!_def, hd, List.mem_singleton] at hf0
@@ -1477,12 +1443,12 @@ private theorem copy_func {p : Program} {F : Lambda.Factory CoreLParams}
 
 /-- A recorded copy from a recursive block is a member of the block, of the copy's base name,
     instantiated and renamed. -/
-private theorem copy_rec {p : Program} {F : Lambda.Factory CoreLParams}
+private theorem copy_rec {pfx : String} {p : Program} {F : Lambda.Factory CoreLParams}
     {x : FuncSpecialization × Function}
-    {j : Nat} {ms : List Function} {md} (hsrc : x.1.source = .program j) (hc : IsCopyOf p F x)
+    {j : Nat} {ms : List Function} {md} (hsrc : x.1.source = .program j) (hc : IsCopyOf pfx p F x)
     (hd : p.decls[j]? = some (.recFuncBlock ms md)) :
     ∃ f0 ∈ ms, f0.name.name = x.1.name ∧
-      x.2 = monomorphizeFunction f0 ⟨mangledName x.1.name x.1.typeSubst.givenTypes, ()⟩
+      x.2 = monomorphizeFunction f0 ⟨mangledName pfx x.1.name x.1.typeSubst.givenTypes, ()⟩
           x.1.typeSubst := by
   obtain ⟨f0, hf0, h⟩ := hc
   simp only [FuncSpecialization.functionsAt, hsrc, getElem!_def, hd, List.mem_filter,
@@ -1491,10 +1457,10 @@ private theorem copy_rec {p : Program} {F : Lambda.Factory CoreLParams}
 
 /-- A recorded copy from the factory is the factory's function of the copy's base name,
     instantiated and renamed. -/
-private theorem copy_factory {p : Program} {F : Lambda.Factory CoreLParams}
-    {x : FuncSpecialization × Function} (hsrc : x.1.source = .factory) (hc : IsCopyOf p F x) :
+private theorem copy_factory {pfx : String} {p : Program} {F : Lambda.Factory CoreLParams}
+    {x : FuncSpecialization × Function} (hsrc : x.1.source = .factory) (hc : IsCopyOf pfx p F x) :
     ∃ lf, F[x.1.name]? = some lf ∧ lf.name.name = x.1.name ∧
-      x.2 = monomorphizeFunction lf.toFunc ⟨mangledName x.1.name x.1.typeSubst.givenTypes, ()⟩
+      x.2 = monomorphizeFunction lf.toFunc ⟨mangledName pfx x.1.name x.1.typeSubst.givenTypes, ()⟩
         x.1.typeSubst := by
   obtain ⟨f0, hf0, h⟩ := hc
   simp only [FuncSpecialization.functionsAt, hsrc] at hf0
@@ -1526,7 +1492,7 @@ theorem runtime_constr_cover {s s' : Transform.CoreTransformState} {p p' : Progr
     (hdist : ((contributed s.factory p.decls).map (·.name.name)).Nodup)
     (hsrc : ∀ f', f' ∈
       (Core.Specification.Analysis.runtimeFactoryOf s'.factory p'.decls).toArray →
-      ∃ lf ∈ contributed s.factory p.decls, FnInstance lf f' ∧
+      ∃ lf ∈ contributed s.factory p.decls, FnInstance (copyPrefixOf s p) lf f' ∧
         ((f'.isConstr = true → f' = lf) ∧ (lf.isConstr = true → f' = lf))) :
     ∀ f ∈ (Core.Specification.Analysis.runtimeFactoryOf s.factory p.decls).toArray,
       f.isConstr = true →
@@ -1589,7 +1555,7 @@ theorem runtime_constr_cover {s s' : Transform.CoreTransformState} {p p' : Progr
   obtain ⟨S, r, hdem, -⟩ := hinst
   have hlfname : lf.name.name = f.name.name := by
     rw [← hdem, hhname]
-    exact demangleName_of_not_hash (hpre.unmangled f hcon).1
+    exact demangleName_of_not_prefix (hpre.unmangled f hcon).1
   have hlff : lf = f :=
     List.nodup_map_injOn hdist hlf hcon hlfname
   subst hlff
@@ -1608,16 +1574,16 @@ private theorem mem_declPart_take {decls : List Decl} {i j : Nat}
     the same constructor if either is a constructor. -/
 private theorem newFn_source_base {s : Transform.CoreTransformState} {p : Program}
     (hpre : MonoPre s p)
-    {P : PolymorphicFuncDecls} {g : CoreIdent → Option LMonoTy → CoreIdent} (hg : RenOK g)
+    {P : PolymorphicFuncDecls} {g : CoreIdent → Option LMonoTy → CoreIdent} (hg : RenOK (copyPrefixOf s p) g)
     {st : MonoWorklistState}
-    (hinv : CopiesInv { decls := p.decls.map (topDecl g) } s.factory st)
+    (hinv : CopiesInv (copyPrefixOf s p) { decls := p.decls.map (topDecl g) } s.factory st)
     (i : Nat) {f' : LFunc CoreLParams}
     (hb : f' ∈ (Lambda.Factory.ofArray (keptOf P s.factory g ++ copiesOf s.factory g
           st.specializedFnsInFactory).toArray).toArray.toList) :
-    ∃ lf ∈ s.factory.toArray.toList, FnInstance lf f' ∧
+    ∃ lf ∈ s.factory.toArray.toList, FnInstance (copyPrefixOf s p) lf f' ∧
       ((f'.isConstr = true → f' = lf) ∧ (lf.isConstr = true → f' = lf)) := by
   have hsub := contributed_take_sublist s.factory p.decls i
-  have hun : ∀ lf ∈ contributed s.factory (p.decls.take i), FnUnmangled lf :=
+  have hun : ∀ lf ∈ contributed s.factory (p.decls.take i), FnUnmangled (copyPrefixOf s p) lf :=
     fun lf h => hpre.unmangled lf (hsub.subset h)
   have hb' := Lambda.Factory.ofArray_mem (Array.mem_toList_iff.mp hb)
   rw [List.mem_toArray, List.mem_append] at hb'
@@ -1654,16 +1620,16 @@ private theorem newFn_source_base {s : Transform.CoreTransformState} {p : Progra
     constructor. -/
 private theorem newFn_source_decls {s : Transform.CoreTransformState} {p : Program}
     (hpre : MonoPre s p)
-    {g : CoreIdent → Option LMonoTy → CoreIdent} (hg : RenOK g)
+    {g : CoreIdent → Option LMonoTy → CoreIdent} (hg : RenOK (copyPrefixOf s p) g)
     {st : MonoWorklistState}
-    (hinv : CopiesInv { decls := p.decls.map (topDecl g) } s.factory st)
+    (hinv : CopiesInv (copyPrefixOf s p) { decls := p.decls.map (topDecl g) } s.factory st)
     (i : Nat) {f' : LFunc CoreLParams}
     (hd : f' ∈ (((p.decls.map (topDecl g)).zipIdx.take i).flatMap
           (updDecl g (specsByFnOf st.specializedFnsInProg))).flatMap declFns) :
-    ∃ lf ∈ (p.decls.take i).flatMap declFns, FnInstance lf f' ∧
+    ∃ lf ∈ (p.decls.take i).flatMap declFns, FnInstance (copyPrefixOf s p) lf f' ∧
       ((f'.isConstr = true → f' = lf) ∧ (lf.isConstr = true → f' = lf)) := by
   have hsub := contributed_take_sublist s.factory p.decls i
-  have hun : ∀ lf ∈ contributed s.factory (p.decls.take i), FnUnmangled lf :=
+  have hun : ∀ lf ∈ contributed s.factory (p.decls.take i), FnUnmangled (copyPrefixOf s p) lf :=
     fun lf h => hpre.unmangled lf (hsub.subset h)
   obtain ⟨d', hd', hf'd⟩ := List.mem_flatMap.mp hd
   obtain ⟨⟨dT, j⟩, hx, hd'u⟩ := List.mem_flatMap.mp hd'
@@ -1750,16 +1716,16 @@ private theorem newFn_source_decls {s : Transform.CoreTransformState} {p : Progr
 /-- Every function of the output's runtime factory before index `i` is an instance of a function
     of the input's, and the same constructor if either is a constructor. -/
 theorem newFn_source {s : Transform.CoreTransformState} {p : Program} (hpre : MonoPre s p)
-    {P : PolymorphicFuncDecls} {g : CoreIdent → Option LMonoTy → CoreIdent} (hg : RenOK g)
+    {P : PolymorphicFuncDecls} {g : CoreIdent → Option LMonoTy → CoreIdent} (hg : RenOK (copyPrefixOf s p) g)
     {st : MonoWorklistState}
-    (hinv : CopiesInv { decls := p.decls.map (topDecl g) } s.factory st)
+    (hinv : CopiesInv (copyPrefixOf s p) { decls := p.decls.map (topDecl g) } s.factory st)
     (i : Nat) {f' : LFunc CoreLParams}
     (hf' : f' ∈ contributed
         (Lambda.Factory.ofArray (keptOf P s.factory g ++ copiesOf s.factory g
           st.specializedFnsInFactory).toArray)
         (((p.decls.map (topDecl g)).zipIdx.take i).flatMap
           (updDecl g (specsByFnOf st.specializedFnsInProg)))) :
-    ∃ lf ∈ contributed s.factory (p.decls.take i), FnInstance lf f' ∧
+    ∃ lf ∈ contributed s.factory (p.decls.take i), FnInstance (copyPrefixOf s p) lf f' ∧
       ((f'.isConstr = true → f' = lf) ∧ (lf.isConstr = true → f' = lf)) := by
   rcases List.mem_append.mp hf' with hb | hd
   · obtain ⟨lf, hlf, h1, h2⟩ := newFn_source_base hpre hg hinv i hb
@@ -1773,21 +1739,20 @@ end NewFns
 
 section Assembly
 
-/-- When the pass's name check accepts a program, no operator of a declaration's own expressions
-    has `#`. -/
-private theorem opsUnmangled_of_namesUnmangled {p : Program} (h : namesUnmangled p = true)
-    {d : Decl}
-    (hd : d ∈ p.decls) {e : Expression.Expr} (he : e ∈ d.ownExprs) : OpsUnmangled e := by
-  unfold namesUnmangled mangledNameIn? at h
-  have hnone := List.find?_eq_none.mp (Option.isNone_iff_eq_none.mp h)
+/-- No operator of a declaration's own expressions has a copy's name: its name is among the names
+    the copies' prefix is chosen against (`avoidNames`), so it does not start with the prefix
+    (`choosePrefix_fresh`). -/
+private theorem opsUnmangled_of_mem {s : Transform.CoreTransformState} {p : Program} {d : Decl}
+    (hd : d ∈ p.decls) {e : Expression.Expr} (he : e ∈ d.ownExprs) :
+    OpsUnmangled (copyPrefixOf s p) e := by
   intro o ho
   have hmem : o.name ∈ checkedNames p := by
     unfold checkedNames
     refine List.mem_append_left _ (List.mem_flatMap.mpr ⟨d, hd, ?_⟩)
     exact List.mem_flatMap.mpr ⟨e, List.mem_append_right _ he, List.mem_append_left _
         (List.mem_map_of_mem ho)⟩
-  have := hnone _ hmem
-  exact (not_hasMonoDelim_iff _).mp (by simpa using this)
+  have havoid : o.name ∈ avoidNames p s.factory := by simp [avoidNames, hmem]
+  exact choosePrefix_fresh _ _ havoid
 
 /-- A run of the phase is a run of `MonomorphizeFunctions.run`. -/
 theorem passMono_runs {s s' : Transform.CoreTransformState} {p p' : Program}
@@ -1817,31 +1782,32 @@ section InstModel
 open Core.Specification.Analysis
 
 /-- The model of a factory of instances, as a runtime factory. -/
-noncomputable def instModel (M : ModeledFactory CoreLParams) {F' : Lambda.Factory CoreLParams}
-    (hrel : ∀ n (hn : n ∈ F'), ∃ o, ∃ ho : o ∈ M.factory, FnInstance (M.factory[o]'ho) (F'[n]'hn))
-    (hnat : ConcreteEvalsCommuteDemangle M.factory)
+noncomputable def instModel {pfx : String} (M : ModeledFactory CoreLParams)
+    {F' : Lambda.Factory CoreLParams}
+    (hrel : ∀ n (hn : n ∈ F'), ∃ o, ∃ ho : o ∈ M.factory, FnInstance pfx (M.factory[o]'ho) (F'[n]'hn))
+    (hnat : ConcreteEvalsCommuteDemangle pfx M.factory)
     (hconstr : ∀ f' ∈ F'.toArray, f'.isConstr = true →
-      f' ∈ M.factory.toArray ∧ demangleName f'.name.name = f'.name.name)
+      f' ∈ M.factory.toArray ∧ demangleName pfx f'.name.name = f'.name.name)
     (hcover : ∀ f ∈ M.factory.toArray, f.isConstr = true → f ∈ F'.toArray) :
     ModeledFactory CoreLParams :=
   ⟨F', Interp.ofInstances M.model hrel hnat hconstr hcover, M.tyVarVal⟩
 
 /-- Renaming the operators of an expression without `#` keeps its value from the old model to
     the model of instances. -/
-private theorem eval_instModel {g : CoreIdent → Option LMonoTy → CoreIdent} (hg : RenOK g)
+private theorem eval_instModel {pfx : String} {g : CoreIdent → Option LMonoTy → CoreIdent} (hg : RenOK pfx g)
     (M : ModeledFactory CoreLParams) {F' : Lambda.Factory CoreLParams} {hrel hnat hconstr hcover}
-    (σ : ValStore CoreLParams) {e : Expression.Expr} (he : OpsUnmangled e) :
-    (e.renameOps g).denoteEval (instModel M (F' := F') hrel hnat hconstr hcover) σ =
+    (σ : ValStore CoreLParams) {e : Expression.Expr} (he : OpsUnmangled pfx e) :
+    (e.renameOps g).denoteEval (instModel (pfx := pfx) M (F' := F') hrel hnat hconstr hcover) σ =
       e.denoteEval M σ := by
   refine LExpr.denoteEval_renameOps (M := M) (M' := instModel M hrel hnat hconstr hcover) g σ e
     rfl HEq.rfl rfl ?_
   intro q hq
-  show HEq (M.model.opInterp (demangleName (g q.1 (some q.2)).name)) _
+  show HEq (M.model.opInterp (demangleName pfx (g q.1 (some q.2)).name)) _
   rw [hg _ _ (he _ (LExpr.mem_getOps_of_opAnnots hq))]
 
 /-- The disequality of two expressions whose operators have no `#` has no operator with `#`. -/
-private theorem opsUnmangled_distinctPairExpr {a b : Expression.Expr} (ha : OpsUnmangled a)
-    (hb : OpsUnmangled b) : OpsUnmangled (distinctPairExpr a b) := by
+private theorem opsUnmangled_distinctPairExpr {pfx : String} {a b : Expression.Expr} (ha : OpsUnmangled pfx a)
+    (hb : OpsUnmangled pfx b) : OpsUnmangled pfx (distinctPairExpr a b) := by
   intro o ho
   simp only [distinctPairExpr, LExpr.getOps, LExpr.boolConst, List.append_nil,
     List.mem_append] at ho

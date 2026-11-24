@@ -316,33 +316,6 @@ open Lambda
     | _ => true) &&
   F.toArray.toList.all sigVarsB
 
-/-- `c` can name a type constructor in a mangled name: no `#`, not a numeral, not `$bv`. -/
-@[expose] def plainNameB (c : String) : Bool :=
-  !c.toList.contains '#' && !(!c.toList.isEmpty && c.toList.all Char.isDigit) && c != "$bv"
-
-/-- Every type constructor in an operator annotation of `e` has a plain name. -/
-@[expose] def annotsPlainB (e : Expression.Expr) : Bool :=
-  e.opAnnots.all fun a => (Core.NameMangling.tconsNames a.2).all plainNameB
-
-/-- Every type constructor in an operator annotation of `f`'s expressions has a plain name. -/
-@[expose] def fnAnnotsPlainB (f : LFunc CoreLParams) : Bool :=
-  f.toFunc.exprs.all annotsPlainB
-
-/-- **Every type constructor the pass can put into a mangled name has a plain name**: those in
-    the operator annotations of `p`'s lemmas, axioms, `distinct` declarations and functions,
-    and of the functions of the factory `F`. The pass names a copy after the type constructors
-    of its instantiation, which it reads off these annotations. -/
-@[expose] def plainAnnotsB (F : Lambda.Factory CoreLParams) (p : Program) : Bool :=
-  (p.decls.all fun d =>
-    match d with
-    | .ax a _ => annotsPlainB a.e
-    | .lemma l _ => annotsPlainB l.e
-    | .distinct _ es _ => es.all annotsPlainB
-    | .func f _ => fnAnnotsPlainB f.toLFunc
-    | .recFuncBlock fs _ => fs.all fun f => fnAnnotsPlainB f.toLFunc
-    | _ => true) &&
-  F.toArray.toList.all fnAnnotsPlainB
-
 end MonomorphizeFunctions
 
 /-- Short, human-readable name for each fact. Used in diagnostic

@@ -770,11 +770,28 @@ def isCoreTriggerListExpr (tr : LExpr CoreLParams.mono) : Bool :=
 
 /-- The function of `factory` that implements the built-in collection operator `base` at type
     instantiation `tys`: `base` itself, or, once functions are monomorphized, its specialized
-    copy. -/
+    copy. Fails if neither is in the factory: the literal's operator has no copy at `tys`. -/
 def collectionOpIdent (factory : @Lambda.Factory CoreLParams) (base : String)
-    (tys : List LMonoTy) : CoreIdent :=
-  if (factory[base]?).isSome then ⟨base, ()⟩
-  else (Core.NameMangling.mangleFuncName Strata.PtrCache.PtrCache.empty base tys).1
+    (tys : List LMonoTy) : Except Format CoreIdent :=
+  if (factory[base]?).isSome then .ok ⟨base, ()⟩
+  else
+    -- The mark (`FuncAttr.monoCopyOf`) decides that a function is `base`'s copy; it does not
+    -- record the instantiation, so the copy at `tys` is picked out by the name monomorphization
+    -- built for it (`copyName`), under the prefix it chose. No name is decoded here.
+    let isCopy (f : Lambda.LFunc CoreLParams) :=
+      Strata.DL.Util.FuncAttr.findMonoCopyOf f.attr == some base
+    let plain := Core.NameMangling.copyName Core.NameMangling.monoPrefix base tys
+    -- Under a padded prefix: the marked copy whose name is the copy's name at `tys` under
+    -- its own prefix.
+    let scan (_ : Unit) : Except Format CoreIdent :=
+      let atTys (n : String) := (Core.NameMangling.copyPrefixOf? n).any fun pfx =>
+        n == Core.NameMangling.copyName pfx base tys
+      match factory.toArray.find? fun f => isCopy f && atTys f.name.name with
+      | some f => .ok f.name
+      | none => .error f!"collection literal: the factory has no copy of {base} marked at {tys}"
+    match factory[plain]? with
+    | some f => if isCopy f then .ok f.name else scan ()
+    | none => scan ()
 
 mutual
 /-- Encode a constant. A collection literal is encoded as the applications of the operators
@@ -802,13 +819,13 @@ def litToSMTTerm (factory : @Lambda.Factory CoreLParams) (c : LConst) (ctx : SMT
     let vt := v.toMonoTy
     let (dT, ctx, pending) ← litToSMTTerm factory d ctx pending
     let (mk, mty, ctx, pending) ←
-      toSMTOp factory (collectionOpIdent factory "mapConst" [kt, vt])
+      toSMTOp factory (← collectionOpIdent factory "mapConst" [kt, vt])
         (.arrow vt (mapTy kt vt)) ctx pending
     litEntriesToSMTTerm factory kt vt (mk [dT] mty) xs ctx pending
   | .sequenceConst a ⟨xs⟩ => do
     let et := a.toMonoTy
     let (mk, sty, ctx, pending) ←
-      toSMTOp factory (collectionOpIdent factory "Sequence.empty" [et]) (seqTy et) ctx pending
+      toSMTOp factory (← collectionOpIdent factory "Sequence.empty" [et]) (seqTy et) ctx pending
     litElemsToSMTTerm factory et (mk [] sty) xs ctx pending
 /-- Encode `base` updated with map entries, the first one outermost. -/
 def litEntriesToSMTTerm (factory : @Lambda.Factory CoreLParams) (kt vt : LMonoTy) (base : Term) :
@@ -820,7 +837,7 @@ def litEntriesToSMTTerm (factory : @Lambda.Factory CoreLParams) (kt vt : LMonoTy
     let (keyT, ctx, pending) ← litToSMTTerm factory key ctx pending
     let (xT, ctx, pending) ← litToSMTTerm factory x ctx pending
     let (upd, uty, ctx, pending) ←
-      toSMTOp factory (collectionOpIdent factory "update" [kt, vt])
+      toSMTOp factory (← collectionOpIdent factory "update" [kt, vt])
         (.arrow (mapTy kt vt) (.arrow kt (.arrow vt (mapTy kt vt)))) ctx pending
     .ok (upd [restT, keyT, xT] uty, ctx, pending)
 /-- Encode `acc` with sequence elements appended in order. -/
@@ -831,7 +848,7 @@ def litElemsToSMTTerm (factory : @Lambda.Factory CoreLParams) (et : LMonoTy) (ac
   | x :: rest, ctx, pending => do
     let (xT, ctx, pending) ← litToSMTTerm factory x ctx pending
     let (bld, bty, ctx, pending) ←
-      toSMTOp factory (collectionOpIdent factory "Sequence.build" [et])
+      toSMTOp factory (← collectionOpIdent factory "Sequence.build" [et])
         (.arrow (seqTy et) (.arrow et (seqTy et))) ctx pending
     litElemsToSMTTerm factory et (bld [acc, xT] bty) rest ctx pending
 end

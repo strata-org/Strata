@@ -1935,21 +1935,29 @@ def axiomCacheFor (mode : IrrelevantAxiomsMode) (prog : Program) :
   else some (IrrelevantAxioms.Cache.build prog
     (directed := mode == .Directed))
 
-/-- The name under which the axiom-relevance query knows the function `op`: its base name,
-    with any monomorphization mangling removed. An obligation is post-`MonomorphizeFunctions`,
+/-- The names under which the axiom-relevance query may know the function `op`: its own name,
+    and its base name with any monomorphization mangling removed. An obligation is post-`MonomorphizeFunctions`,
     so its function references carry mangled names (`$__mono#f#int`), whereas the axiom
     program, cache and call graph the query runs against are the pre-pipeline program, which
     names the base `f`. Without demangling, a specialized function's axiom would be deemed
-    irrelevant and pruned, turning a valid goal into a false alarm. An unmangled name is
-    returned unchanged. Every seed name, the goal's and the path's, goes through this
-    function. -/
-def seedName (op : CoreIdent) : String :=
-  Core.NameMangling.demangledBaseName op.toPretty
+    irrelevant and pruned, turning a valid goal into a false alarm. An unmangled name gives
+    only itself. Every seed name, the goal's and the path's, goes through this function.
+
+    It decodes by name, under any prefix monomorphization can choose (`monoPrefix` followed by
+    underscores, `choosePrefix`): copies of program functions are program declarations and
+    carry no mark (`FuncAttr.monoCopyOf` marks factory copies only), and the prefix chosen
+    for a program is not known here. A name that decodes seeds both itself and its base, so
+    a user function named like a copy keeps its own axioms and only adds its look-alike
+    base's, which are true. -/
+def seedNames (op : CoreIdent) : List String :=
+  let n := op.toPretty
+  let b := Core.NameMangling.demangledBaseNameAnyPrefix n
+  if b == n then [n] else [n, b]
 
 /-- What the per-obligation steps read off one expression of a path condition. Consecutive
     obligations share most of their path, by pointer, so these are computed once per
     expression (`ExprFactsCache`) instead of once per expression per obligation.
-    - `ops`: its function names, as the axiom-relevance seeds name them (`seedName`);
+    - `ops`: its function names, as the axiom-relevance seeds name them (`seedNames`);
     - `opsLast`: `List.uniqKeepLast ops`. `uniqKeepLast` of a concatenation is unchanged
       when each part is first replaced by its own `uniqKeepLast`: a name's last occurrence
       in the whole is its last occurrence in the last part that has it;
@@ -1961,7 +1969,7 @@ structure ExprFacts where
   vars : Thunk (List (Lambda.IdentT Lambda.LMonoTy Unit))
 
 def exprFacts (e : Expression.Expr) : ExprFacts :=
-  let ops := Thunk.mk fun _ => (Lambda.LExpr.getOps e).map seedName
+  let ops := Thunk.mk fun _ => (Lambda.LExpr.getOps e).flatMap seedNames
   { ops, opsLast := Thunk.mk fun _ => ops.get.uniqKeepLast,
     vars := Thunk.mk fun _ => Strata.Util.OrderedSet.eraseDups (Lambda.LExpr.freeVars e) }
 
@@ -2094,9 +2102,9 @@ def preprocessObligation (obligation : ProofObligation Expression) (p : Program)
     | mode, .some cache, _ => -- All property types except `.cover`.
       if peSatResult.isSome && peValResult.isSome then pure (obligation, [])
       else do
-        -- Named as the path's seeds are (`seedName`), so that a monomorphized
+        -- Named as the path's seeds are (`seedNames`), so that a monomorphized
         -- function's axioms are not pruned.
-        let consequentFns := obligation.obligation.getOps.map seedName
+        let consequentFns := obligation.obligation.getOps.flatMap seedNames
         -- Seeding from axioms would keep every axiom.
         let axiomSet := Std.HashSet.ofList axiomNames
         let exprCache ← match exprCache with

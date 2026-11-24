@@ -9,6 +9,7 @@ public import Strata.Languages.Core.PipelinePhase
 public import Strata.Languages.Core.Program
 public import Strata.Languages.Core.Statement
 public import Strata.Languages.Core.NameMangling
+public import Strata.Languages.Core.NameSets
 public import Strata.DL.Lambda.LTyUnify
 public import Strata.DL.Lambda.LExprType
 import Strata.DL.Lambda.LExprTraversal
@@ -80,6 +81,8 @@ structure PolymorphicFuncDecls where
   declIdxByName : Std.HashMap String Nat
   /-- The names of polymorphic Factory functions. -/
   polyFactoryNames : Std.HashSet String
+  /-- The prefix of the copies' names (`choosePrefix` of `avoidNames`). -/
+  copyPrefix : String := monoPrefix
 
 /-- Collect the names of polymorphic functions in `factory`, excluding
     SMT-trigger meta-operators (matched by name by the SMT encoder and only
@@ -99,8 +102,89 @@ where
     name == "Triggers.addGroup" ||
     name == "Triggers.empty"
 
+/-- The names `p` uses at operator level or declares: every operator `p` refers to, in a
+    statement or not, and the type constructors in its annotation; and every name `p` declares
+    for a function, a type, a datatype's type parameter, a constructor, a tester or a field. -/
+def checkedNames (p : Program) : List String :=
+  let opNames := p.decls.flatMap fun d =>
+    (Statements.allExprs d.statements ++ d.ownExprs).flatMap fun e =>
+      e.getOps.map (·.name) ++ e.opAnnots.flatMap fun a => tconsNames a.2
+  let declNames := p.decls.flatMap fun d =>
+    match d with
+    | .func f _ => [f.name.name]
+    | .recFuncBlock fs _ => fs.map (·.name.name)
+    | .type (.con tc) _ => [tc.name]
+    | .type (.syn ts) _ => [ts.name]
+    | .type (.data block) _ => block.flatMap fun dt =>
+        dt.name :: dt.typeArgs ++ dt.constrs.flatMap fun c =>
+          c.name.name :: c.testerName :: c.args.map (·.1.name)
+    | _ => []
+  opNames ++ declNames
+
+
+/-- The names of the binders of `e` (quantifiers and abstractions). The SMT encoder names a
+    bound variable after its binder, and a bound variable shadows a function of the same name
+    inside its body. -/
+def binderNames : Expression.Expr → List String
+  | .abs _ n _ e => n :: binderNames e
+  | .quant _ _ n _ tr e => n :: (binderNames tr ++ binderNames e)
+  | .app _ f a => binderNames f ++ binderNames a
+  | .ite _ c t f => binderNames c ++ binderNames t ++ binderNames f
+  | .eq _ a b => binderNames a ++ binderNames b
+  | _ => []
+
+/-- The names of the variables of `p`: every free variable of its expressions, the binders of
+    its expressions, the parameters of its procedures and the variables their bodies define or
+    modify, and the parameters of its functions. The SMT encoder declares a free variable as a
+    nullary function, in the same namespace as the functions, so a variable must not be named
+    like a copy either. -/
+def varNames (p : Program) : List String :=
+  let exprs := p.decls.flatMap fun d => Statements.allExprs d.statements ++ d.ownExprs
+  (exprs.flatMap fun e => e.collectFvarNames.map (·.name) ++ binderNames e) ++
+  (p.decls.flatMap fun
+    | .proc q _ =>
+      (q.header.inputs.keys ++ q.header.outputs.keys).map (·.name) ++
+      (Imperative.Block.modifiedOrDefinedVars q.body.statements true).map (·.name)
+    | .func f _ => f.inputs.keys.map (·.name)
+    | .recFuncBlock fs _ => fs.flatMap fun f => f.inputs.keys.map (·.name)
+    | _ => [])
+
+/-- **The names a copy's name must differ from**: the names `p` uses or declares
+    (`checkedNames`), the names a generated declaration avoids (`Program.takenNames`): those of
+    all its declarations, axioms, lemmas, `distinct` declarations and procedures included, which
+    share one namespace with the copies that become function declarations, and the labels of its
+    checks, which name proof obligations and which the pipeline requires to be distinct from
+    every declaration's name; the functions its datatypes generate (eliminators, constructors,
+    testers, destructors and unsafe destructors, `MutualDatatype.generatedFuncNames`), the names
+    of its variables and binders (`varNames`), and the functions of `factory`, which holds Core's
+    built-in functions and those a front end registers (`moreFns`), with their parameters and
+    binders: monomorphization rewrites a factory function's body to call copies, and the
+    encoder declares its parameters by name, so a parameter named like a copy would shadow it.
+    Binders are included, so a quantifier's binder never shares a copy's name in SMT, whichever
+    symbols the encoder has declared when it names the binder.
+
+    A copy's name starts with `monoPrefix`, so only the names that start with it matter
+    (`choosePrefix`). The names the phases after monomorphization generate start with other
+    reserved prefixes (`$__lam_`, `$__opaque`, `$__bv`), except those built from an existing
+    name `x` by appending a suffix. Such a name starts with `P#` only if `x` is `monoPrefix`
+    followed by underscores and the suffix continues with more underscores and then `#`, since
+    the padded `P` is longer than every name here. So the condition on a later phase is that
+    **the suffixes it appends start with neither `#` nor a run of underscores followed by `#`**.
+    The suffixes appended today are `@` or `_` followed by digits, which meet it; a new name
+    generator must meet it too. -/
+def avoidNames (p : Program) (factory : Lambda.Factory CoreLParams) : List String :=
+  checkedNames p ++
+  p.takenNames ++
+  (p.decls.flatMap fun
+    | .type (.data block) _ => Lambda.MutualDatatype.generatedFuncNames block
+    | _ => []) ++
+  varNames p ++
+  factory.toArray.toList.flatMap fun f =>
+    f.name.name :: f.inputs.keys.map (·.name) ++ f.exprs.flatMap binderNames
+
 /-- Index the polymorphic top-level functions of `p` and polymorphic
-    functions in `factory`. -/
+    functions in `factory`. The copies' prefix is chosen against `avoidNames p factory`
+    (`choosePrefix_fresh`). -/
 def collectPolymorphicFuncDecls (p : Program) (factory : Lambda.Factory CoreLParams) :
     PolymorphicFuncDecls :=
   let init : Std.HashMap String Function × Std.HashMap String Nat := ({}, {})
@@ -111,7 +195,8 @@ def collectPolymorphicFuncDecls (p : Program) (factory : Lambda.Factory CoreLPar
       | .recFuncBlock fs _ => fs.foldl (init := acc) fun acc f => insertIfPoly acc idx f
       | _ => acc
   { functionByName, declIdxByName,
-    polyFactoryNames := collectPolymorphicFuncDeclsFromFactory factory }
+    polyFactoryNames := collectPolymorphicFuncDeclsFromFactory factory,
+    copyPrefix := choosePrefix (avoidNames p factory) }
 where
   /-- Add `f` to the `(functionByName, declIdxByName)` accumulator if it is
       polymorphic; otherwise leave the accumulator unchanged. -/
@@ -215,7 +300,8 @@ def rewriteLExprOp (polyfunDecls : PolymorphicFuncDecls) (factory : Lambda.Facto
   let some (fdef, source) := polyfunDecls.lookup factory o.name | pure (none, [])
   let some typeSubst := getTypeSubstitution fdef ty | pure (none, [])
   let fs : FuncSpecialization := { name := o.name, typeSubst, source }
-  let nm ← modifyGet (fun cache => mangleFuncName cache fs.name fs.typeSubst.givenTypes)
+  let nm ← modifyGet (fun cache =>
+    mangleFuncName polyfunDecls.copyPrefix cache fs.name fs.typeSubst.givenTypes)
   return (some (.op m nm ty), [fs])
 
 /-- Rewrite every reference to a polymorphic function to its specialized
@@ -389,7 +475,7 @@ def addSpecializedFunctions (pfuncDecls : PolymorphicFuncDecls)
   -- `functionsAt` returns only the member whose name matches `fs.name`, so
   -- `f.name.name == fs.name` and we can use `fs` directly.
   let s ← get
-  let (nm, cache') := mangleFuncName s.cache fs.name fs.typeSubst.givenTypes
+  let (nm, cache') := mangleFuncName pfuncDecls.copyPrefix s.cache fs.name fs.typeSubst.givenTypes
   let tf := monomorphizeFunction f nm fs.typeSubst
   let newState := match fs.source with
     | .program _ => { s with cache := cache', specializedFnsInProg := s.specializedFnsInProg.push (fs, tf) }
@@ -501,67 +587,12 @@ def updateFactory (polyfuncDecls : PolymorphicFuncDecls) (factory : Lambda.Facto
 
 /-! ### The top-level transformation -/
 
-/-- The names the pass checks: every operator `p` refers to, in a statement or not, and the
-    type constructors in its annotation; and every name `p` declares for a function, a type,
-    a constructor, a tester or a field. Copies are named after the operator and the type
-    constructors of its instantiation (`mangleTy`), so a `#` in any of these could make an
-    input name, or two distinct instantiations, collide with a copy's name. Type variables
-    are not checked, since only ground instantiations are mangled, nor are the types of
-    free variables: the pass runs after type checking, which rejects an undeclared type
-    constructor, so every type constructor there is a declared one, checked here, or a
-    built-in one, none of which contains `#`. -/
-def checkedNames (p : Program) : List String :=
-  let opNames := p.decls.flatMap fun d =>
-    (Statements.allExprs d.statements ++ d.ownExprs).flatMap fun e =>
-      e.getOps.map (·.name) ++ e.opAnnots.flatMap fun a => tconsNames a.2
-  let declNames := p.decls.flatMap fun d =>
-    match d with
-    | .func f _ => [f.name.name]
-    | .recFuncBlock fs _ => fs.map (·.name.name)
-    | .type (.con tc) _ => [tc.name]
-    | .type (.syn ts) _ => [ts.name]
-    | .type (.data block) _ => block.flatMap fun dt =>
-        dt.name :: dt.constrs.flatMap fun c =>
-          c.name.name :: c.testerName :: c.args.map (·.1.name)
-    | _ => []
-  opNames ++ declNames
-
-/-- The first checked name that contains the delimiter of mangled names, if any. -/
-def mangledNameIn? (p : Program) : Option String :=
-  (checkedNames p).find? hasMonoDelim
-
-/-- No name in `checkedNames p` contains the delimiter of mangled names. -/
-def namesUnmangled (p : Program) : Bool :=
-  (mangledNameIn? p).isNone
-
-/-- The error for an input name `name` that contains the delimiter of mangled names. -/
-def delimNameError (name : String) : Strata.Message :=
-  Strata.Message.fromString <|
-    s!"MonomorphizeFunctions: the name '{name}' contains '{monoDelim}', \
-       which is reserved for monomorphized copies" ++
-    -- A name of a copy's shape is the user's or the pass's own output, which it can't tell
-    -- apart; say what the second case means.
-    if name.startsWith (monoPrefix ++ monoDelim) then
-      "; if it is a copy, monomorphizeFunctions ran on its own output, and it must run \
-       once per pipeline"
-    else ""
-
-/-- The error for a program `namesUnmangled` rejects, naming the offending identifier. -/
-def mangledNameError (p : Program) : Strata.Message :=
-  delimNameError ((mangledNameIn? p).getD "")
-
-/-- The pass rejects any program with a `#` in a checked name (`namesUnmangled`), and any
-    Factory whose function names contain one: a front end can supply Factory functions the
-    program never declares, and one named like a copy would clash with it.
-
-    It runs at most once per pipeline: its own output names copies `$__mono#…`, which
-    contain `#`, so a second run rejects the first one's output, with an error saying so. -/
+/-- No name is rejected: the copies' names are built with a prefix no name of the program or
+    the factory starts with (`collectPolymorphicFuncDecls`), and every name written into them
+    is escaped (`escName`). A copy in the factory is marked with the function it copies
+    (`markCopyOf`), which is how the SMT encoder tells it from a function named like one. -/
 def run (p : Program) (cap : Nat := maxSpecializations) : CoreTransformM Program := do
-  if !namesUnmangled p then
-    throw (mangledNameError p)
   let factory ← Core.Transform.getFactory
-  if let some f := factory.toArray.find? (hasMonoDelim ·.name.name) then
-    throw (delimNameError f.name.name)
   let polyfuncDecls := collectPolymorphicFuncDecls p factory
 
   -- Seed from the always-live top-level declarations (procedures, axioms,

@@ -6,7 +6,6 @@
 module
 
 public import Strata.Languages.Core.PipelinePhase
-public import Strata.Languages.Core.NameMangling
 public import Strata.Languages.Core.Function
 public import Strata.Languages.Core.Factory
 import Strata.Transform.FoldConnectives
@@ -50,12 +49,14 @@ def geName : String := (intGeFunc (T := CoreLParams)).name.name
 def gtName : String := (intGtFunc (T := CoreLParams)).name.name
 def negName : String := (intNegFunc (T := CoreLParams)).name.name
 
-/-- Demangled base name of an op identifier. Monomorphization mangles
-    `Sequence.select!` to `$__mono#Sequence.select!#…`, so the selectors are recognized
-    through this. The connectives are recognized by `FoldConnectives.boolOpOf?`. The
-    integer comparisons and negation are monomorphic and never mangled, so they are
-    recognized by their exact names. -/
-abbrev baseName : String → String := Core.NameMangling.demangledBaseName
+/-- The function the op named `n` denotes in `F`: the one its factory entry is marked a copy of
+    (`FuncAttr.monoCopyOf`), or `n` itself. Monomorphization copies `Sequence.select!` into the
+    factory, so the selectors' copies are recognized through this; a user function named like
+    a copy carries no mark and is read as written. The connectives are recognized by
+    `FoldConnectives.boolOpOf?`. The integer comparisons and negation are monomorphic and never
+    copied, so they are recognized by their exact names. -/
+def baseName (F : @Lambda.Factory CoreLParams) (n : String) : String :=
+  ((F[n]?).bind (Strata.DL.Util.FuncAttr.findMonoCopyOf ·.attr)).getD n
 
 /-! ## Caps
 
@@ -137,39 +138,40 @@ stated of a nested sequence: `length(select!(s,k))` names no value until
 abbrev SelectEnv := List (LExpr CoreLParams.mono × LExpr CoreLParams.mono)
 
 /-- Is `e` `select(s, literal k)` or `select!(s, literal k)` with `k ≥ 0`? -/
-def isLiteralSelect : LExpr CoreLParams.mono → Bool
+def isLiteralSelect (F : @Lambda.Factory CoreLParams) : LExpr CoreLParams.mono → Bool
   | .app _ (.app _ (.op _ o _) _) (.const _ (.intConst k)) =>
-    let bn := baseName o.name
+    let bn := baseName F o.name
     (bn == selectName || bn == selectBangName) && k ≥ 0
   | _ => false
 
 /-- `(t, elem)` if `e` states that the selector term `t` equals `elem`, with either
     side of the equation carrying the selector. -/
-def selectFactOf? : LExpr CoreLParams.mono →
+def selectFactOf? (F : @Lambda.Factory CoreLParams) : LExpr CoreLParams.mono →
     Option (LExpr CoreLParams.mono × LExpr CoreLParams.mono)
   | .eq _ lhs rhs =>
-    if isLiteralSelect lhs then some (lhs, rhs)
-    else if isLiteralSelect rhs then some (rhs, lhs)
+    if isLiteralSelect F lhs then some (lhs, rhs)
+    else if isLiteralSelect F rhs then some (rhs, lhs)
     else none
   | _ => none
 
 mutual
 /-- The element facts `s` states unconditionally. -/
-def collectAssumeSelectFacts (s : Statement) : SelectEnv :=
+def collectAssumeSelectFacts (F : @Lambda.Factory CoreLParams) (s : Statement) : SelectEnv :=
   match s with
-  | .cmd (.cmd (.assume _ e _)) => (selectFactOf? e).elim [] (fun p => [p])
+  | .cmd (.cmd (.assume _ e _)) => (selectFactOf? F e).elim [] (fun p => [p])
   | .cmd _ => []
-  | .block _ ss _ => collectAssumeSelectFactsBlock ss
+  | .block _ ss _ => collectAssumeSelectFactsBlock F ss
   | .ite _ _ _ _ => []
   | .loop _ _ _ _ _ => []
   | .exit _ _ => []
   | .typeDecl _ _ => []
   termination_by structural s
 
-def collectAssumeSelectFactsBlock (ss : List Statement) : SelectEnv :=
+def collectAssumeSelectFactsBlock (F : @Lambda.Factory CoreLParams) (ss : List Statement) :
+    SelectEnv :=
   match ss with
   | [] => []
-  | s :: rest => collectAssumeSelectFacts s ++ collectAssumeSelectFactsBlock rest
+  | s :: rest => collectAssumeSelectFacts F s ++ collectAssumeSelectFactsBlock F rest
   termination_by structural ss
 end
 
@@ -184,22 +186,22 @@ def resolveSelect (env : SelectEnv) (t : LExpr CoreLParams.mono) :
 /-- Replace pinned `select[!](s, literal k)` by its element, top-down. The element
     substituted in is not rescanned, so a fact stating an element in terms of a
     selector on the same sequence cannot substitute without end. -/
-def normalizeSelects (env : SelectEnv) (e : LExpr CoreLParams.mono) :
+def normalizeSelects (F : @Lambda.Factory CoreLParams) (env : SelectEnv) (e : LExpr CoreLParams.mono) :
     LExpr CoreLParams.mono :=
-  if isLiteralSelect e then
+  if isLiteralSelect F e then
     match resolveSelect env e with
     | some elem => elem
     | none =>
       match e with
-      | .app m f a => .app m (normalizeSelects env f) (normalizeSelects env a)
+      | .app m f a => .app m (normalizeSelects F env f) (normalizeSelects F env a)
       | _ => e
   else
     match e with
-    | .app m f a => .app m (normalizeSelects env f) (normalizeSelects env a)
-    | .abs m n t b => .abs m n t (normalizeSelects env b)
-    | .quant m qk n t tr b => .quant m qk n t tr (normalizeSelects env b)
-    | .ite m c t f => .ite m (normalizeSelects env c) (normalizeSelects env t) (normalizeSelects env f)
-    | .eq m a b => .eq m (normalizeSelects env a) (normalizeSelects env b)
+    | .app m f a => .app m (normalizeSelects F env f) (normalizeSelects F env a)
+    | .abs m n t b => .abs m n t (normalizeSelects F env b)
+    | .quant m qk n t tr b => .quant m qk n t tr (normalizeSelects F env b)
+    | .ite m c t f => .ite m (normalizeSelects F env c) (normalizeSelects F env t) (normalizeSelects F env f)
+    | .eq m a b => .eq m (normalizeSelects F env a) (normalizeSelects F env b)
     | other => other
 
 /-! ## Definitional reduction
@@ -233,7 +235,7 @@ structure UEnv where
     not matter, since a path stating both makes the obligation vacuous. -/
 def extendUEnv (env : UEnv) (s : Statement) : UEnv :=
   { env with ints := collectAssumeIntFacts s ++ env.ints,
-             sel := collectAssumeSelectFacts s ++ env.sel }
+             sel := collectAssumeSelectFacts env.F s ++ env.sel }
 
 /-! ## Term normalization -/
 
@@ -241,7 +243,7 @@ def extendUEnv (env : UEnv) (s : Statement) : UEnv :=
     reduction to a fixpoint. -/
 def normTerm (env : UEnv) (fuel : Nat) (e : LExpr CoreLParams.mono) :
     LExpr CoreLParams.mono :=
-  let e1 := evalTerm env.F (normalizeSelects env.sel e)
+  let e1 := evalTerm env.F (normalizeSelects env.F env.sel e)
   if e1.beqIgnoringMetadata e || fuel == 0 then e1 else normTerm env (fuel - 1) e1
   termination_by fuel
   decreasing_by
@@ -479,7 +481,7 @@ def reduceUnderBinders (env : UEnv) (depth : Nat) (e : LExpr CoreLParams.mono) :
 /-- Resolve the elements a literal index pins, then reduce. -/
 def reduceInstance (env : UEnv) (depth : Nat) (e : LExpr CoreLParams.mono) :
     LExpr CoreLParams.mono :=
-  foldConnectives (reduceUnderBinders env depth (normalizeSelects env.sel e))
+  foldConnectives (reduceUnderBinders env depth (normalizeSelects env.F env.sel e))
 
 /-- Conjoin (`.all`) or disjoin (`.exist`) the instances. No instances leaves the
     connective's unit, which is the quantifier's value over an empty range. -/
@@ -664,7 +666,7 @@ def Scope.extend (sc : Scope) (decl : Decl) : Scope :=
   match decl with
   | .ax a _ =>
     { sc with axiomInts := (intFactOf? a.e).elim sc.axiomInts (· :: sc.axiomInts),
-              sel := (selectFactOf? a.e).elim sc.sel (· :: sc.sel) }
+              sel := (selectFactOf? sc.F a.e).elim sc.sel (· :: sc.sel) }
   | .type (.data b) _ =>
     { sc with F := addBlockFactory sc.F b }
   | _ => sc

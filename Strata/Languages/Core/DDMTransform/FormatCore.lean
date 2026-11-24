@@ -144,6 +144,13 @@ namespace ToCSTContext
 
 def empty {M} : ToCSTContext M := { scopes := #[{}] }
 
+/-- The name to display for `name`: its base when `name` is a copy's name, and `name` itself
+    otherwise. A program function (`progFnNames`) is displayed as written, even when its name
+    looks like a copy's. -/
+def displayBaseName {M} (ctx : ToCSTContext M) (name : String) : String :=
+  if ctx.progFnNames.contains name then name
+  else Core.NameMangling.demangledBaseNameAnyPrefix name
+
 -- Format context for error messages
 private def toErrorString {M} (ctx : ToCSTContext M) : String :=
   let lines := ctx.scopes.toList.mapIdx fun i scope =>
@@ -411,7 +418,7 @@ def lconstToExpr {M} [Inhabited M] (c : Lambda.LConst) :
 /-- Handle 0-ary operations -/
 def handleZeroaryOps {M} [Inhabited M] (name : String)
     : ToCSTM M (CoreDDM.Expr M) :=
-  let (silent, name) := match Core.NameMangling.demangleFuncName name with
+  let (silent, name) := match Core.NameMangling.demangleFuncNameAnyPrefix name with
                        | some (base, _) => (true, base)
                        | none => (false, name)
   open Core in
@@ -738,7 +745,7 @@ private def groupedBinaryCST? {M} [Inhabited M] (name : String) (arg1 arg2 : Cor
 /-- Handle unary operations -/
 def handleUnaryOps {M} [Inhabited M] (name : String) (arg : CoreDDM.Expr M)
     : ToCSTM M (CoreDDM.Expr M) :=
-  let (silent, name) := match Core.NameMangling.demangleFuncName name with
+  let (silent, name) := match Core.NameMangling.demangleFuncNameAnyPrefix name with
                        | some (base, _) => (true, base)
                        | none => (false, name)
   let ty := CoreType.tvar default unknownTypeVar
@@ -780,7 +787,7 @@ def handleUnaryOps {M} [Inhabited M] (name : String) (arg : CoreDDM.Expr M)
 /-- Handle binary operations -/
 def handleBinaryOps {M} [Inhabited M] (name : String)
     (arg1 arg2 : CoreDDM.Expr M) : ToCSTM M (CoreDDM.Expr M) :=
-  let (silent, name) := match Core.NameMangling.demangleFuncName name with
+  let (silent, name) := match Core.NameMangling.demangleFuncNameAnyPrefix name with
                        | some (base, _) => (true, base)
                        | none => (false, name)
   let ty := CoreType.tvar default unknownTypeVar
@@ -844,7 +851,7 @@ def handleBinaryOps {M} [Inhabited M] (name : String)
 /-- Handle ternary operations -/
 def handleTernaryOps {M} [Inhabited M] (name : String)
     (arg1 arg2 arg3 : CoreDDM.Expr M) : ToCSTM M (CoreDDM.Expr M) :=
-  let (silent, name) := match Core.NameMangling.demangleFuncName name with
+  let (silent, name) := match Core.NameMangling.demangleFuncNameAnyPrefix name with
                        | some (base, _) => (true, base)
                        | none => (false, name)
   let ty := CoreType.tvar default unknownTypeVar
@@ -870,7 +877,7 @@ def lopToExpr {M} [Inhabited M]
     : ToCSTM M (CoreDDM.Expr M) := do
   -- Demangle Factory-op references; program-function references keep their
   -- mangled name (they appear in `progFnNames`).
-  let (silent, displayName) := match Core.NameMangling.demangleFuncName name with
+  let (silent, displayName) := match Core.NameMangling.demangleFuncNameAnyPrefix name with
                               | some (base, _) => (true, base)
                               | none => (false, name)
   let ctx ← get
@@ -977,7 +984,7 @@ partial def lexprToExpr {M} [Inhabited M]
       | some (.tcons c [ety]) =>
         if c == coll then lmonoTyToCoreType ety else unknown
       | _ => unknown
-    match CoreOp.ofString (Core.NameMangling.demangledBaseName name.name) with
+    match CoreOp.ofString ((← get).displayBaseName name.name) with
     | .seq .Empty => pure (.seq_empty default (← elemTy "Sequence"))
     | .set .Empty => pure (.set_empty default (← elemTy "Set"))
     | _ => lopToExpr name.name []
@@ -1102,7 +1109,7 @@ partial def lappToExpr {M} [Inhabited M]
     -- from the op's function type `V → Map K V`.  Demangle first so a
     -- monomorphized reference (`$__mono#mapConst#K#V`) renders with its
     -- mandatory `<K>` annotation.
-    if Core.NameMangling.demangledBaseName fn.name == "mapConst" then
+    if (← get).displayBaseName fn.name == "mapConst" then
       match args with
       | [valArg] =>
         let valCST ← lexprToExpr valArg qLevel
@@ -1204,13 +1211,13 @@ def mkTypeArgsAnn {M} [Inhabited M] (typeArgs : List String) : Ann (Option (Type
 /-- Decompose a single-level `map_update(base, idx, val)` where `base` is (or starts
     with) an fvar matching `varName`. Returns `(indices, innerVal)` with indices
     in left-to-right order, or `none` if the expression is not this pattern. -/
-private def decomposeMapUpdate (varName : String)
+private def decomposeMapUpdate (baseOf : String → String) (varName : String)
     (e : Lambda.LExpr CoreLParams.mono)
     : Option (List (Lambda.LExpr CoreLParams.mono) × Lambda.LExpr CoreLParams.mono) :=
   let (head, args) := Lambda.getLFuncCall e
   match head, args with
   | .op _ opName _, [base, idx, val] =>
-    if Core.NameMangling.demangledBaseName opName.name == "update" then
+    if baseOf opName.name == "update" then
       match base with
       | .fvar _ ident _ =>
         if ident.name == varName then some ([idx], val)
@@ -1244,7 +1251,7 @@ partial def stmtToCST {M} [Inhabited M] (s : Core.Statement)
     pure result
   | .set name expr md => do
     -- Detect map_update(name, idx, val) pattern to produce lhsArray syntax
-    let (lhs, exprCST) ← match decomposeMapUpdate name.name expr with
+    let (lhs, exprCST) ← match decomposeMapUpdate (← get).displayBaseName name.name expr with
       | some (idxs, val) => do
         let baseLhs := Lhs.lhsIdent default ⟨default, name.name⟩
         let lhs ← idxs.foldlM (init := baseLhs) fun acc idx => do
