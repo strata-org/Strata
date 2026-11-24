@@ -580,6 +580,16 @@ public def topDecl (g : CoreIdent → Option LMonoTy → CoreIdent) : Decl → D
   | .distinct n es md => .distinct n (es.map (·.renameOps g)) md
   | d => d
 
+/-- The program `processTopDecls` builds records no `usedIdentPrefixes`: the program is
+    built from the rewritten declarations alone. -/
+private theorem processTopDecls_usedIdentPrefixes (P : PolymorphicFuncDecls)
+    (F : Lambda.Factory CoreLParams) (p : Program) (c : PtrCache mangleTy) :
+    ((processTopDecls P F p).run c).1.1.usedIdentPrefixes = none := by
+  unfold processTopDecls
+  simp only [StateT.run, bind, StateT.bind, pure, StateT.pure]
+  split
+  rfl
+
 /-- On a program without procedures, `processTopDecls` renames the operators of the axioms,
     lemmas and `distinct` declarations, and keeps the other declarations. -/
 theorem processTopDecls_decls (P : PolymorphicFuncDecls) (F : Lambda.Factory CoreLParams)
@@ -992,13 +1002,15 @@ private theorem run_ok' {p : Program} {cap : Nat} {s s' : Transform.CoreTransfor
     refine ⟨rfl, ?_⟩
     have hdecls := processTopDecls_decls (collectPolymorphicFuncDecls p s.factory) s.factory p
       hnp PtrCache.empty
-    simp only [StateT.run] at hdecls
+    have hpfx := processTopDecls_usedIdentPrefixes (collectPolymorphicFuncDecls p s.factory)
+      s.factory p PtrCache.empty
+    simp only [StateT.run] at hdecls hpfx
     generalize hpt : processTopDecls (collectPolymorphicFuncDecls p s.factory) s.factory p
-      PtrCache.empty = r at h hdecls
+      PtrCache.empty = r at h hdecls hpfx
     obtain ⟨⟨p1, seeds⟩, c⟩ := r
     have hp1 : p1 = { decls := p.decls.map (topDecl (monoRen (collectPolymorphicFuncDecls p
         s.factory) s.factory)) } := by
-      cases p1; simp only at hdecls; simp [hdecls]
+      cases p1; simp only at hdecls hpfx; simp [hdecls, hpfx]
     subst hp1
     dsimp only at h
     generalize hw : (Strata.Worklist.run (m := StateM MonoWorklistState) (α := FuncSpecialization)

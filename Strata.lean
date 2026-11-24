@@ -61,6 +61,7 @@ import Strata.Transform.MonomorphizeFunctionsProps
 import Strata.Transform.MonomorphizeFunctionsCorrect
 import Strata.Languages.Core.ProcedureProps
 import Strata.Languages.Core.ProgramProps
+import Strata.Languages.Core.NameSetsProps
 import Strata.Transform.CoreTransformProps
 import Strata.Transform.DetToKleeneCorrect
 import Strata.Transform.FunctionInlining

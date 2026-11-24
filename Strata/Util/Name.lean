@@ -122,6 +122,31 @@ def freshNames (taken : Std.HashSet String) (bases : List String) :
   let names := freshNamesBy taken.contains taken.size bases
   (names, names.foldl (fun t n => t.insert n) taken)
 
+/-! ## The namespace of generated names
+
+Names starting with `$__` (`internalMarker`) are reserved for the names Strata generates. A
+program records prefixes covering the names it has in that namespace
+(`Core.Program.usedIdentPrefixes`), so that a pass whose prefix no recorded prefix is comparable
+with (`prefixesComparable`) can tell that no name of the program starts with it. -/
+
+/-- The start of every name in the namespace reserved for generated names. -/
+@[expose] def internalMarker : String := "$__"
+
+/-- Is `n` in the namespace reserved for generated names? -/
+@[expose] def isInternal (n : String) : Bool := n.startsWith internalMarker
+
+/-- The prefix recorded for the internal name `n`: `$__` followed by the letters that follow it,
+    so `$__ty12` gives `$__ty` and `$__ndelim_ite$_0` gives `$__ndelim`. When no letter follows
+    `$__`, the character that does is kept, so `$__0` gives `$__0` rather than `$__`, which would
+    overlap every prefix. Any prefix of `n` would do; a shorter one overlaps more prefixes. -/
+@[expose] def internalPrefixOf (n : String) : String :=
+  let rest := n.toList.drop internalMarker.length
+  let letters := rest.takeWhile Char.isAlpha
+  internalMarker ++ String.ofList (if letters.isEmpty then rest.take 1 else letters)
+
+/-- Is one of `a` and `b` a prefix of the other? A name can start with both only if they are. -/
+@[expose] def prefixesComparable (a b : String) : Bool := a.startsWith b || b.startsWith a
+
 end Strata.Name
 
 end -- public section

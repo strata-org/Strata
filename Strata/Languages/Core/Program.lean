@@ -226,7 +226,18 @@ abbrev Decls := List Decl
 /-- A Core.Program is an ordered list of declarations. -/
 structure Program where
   /-- The declarations that make up this program. -/
-  { decls : Decls }
+  decls : Decls
+  /-- Prefixes of the names in the `$__` namespace, which is reserved for generated names, that
+      the program may use, or `none` when they were not collected. The type-checking phase
+      collects the prefixes of every such name of the program (`Program.internalNames`), so every
+      such name starts with one of them (`Program.identPrefixesCovered`). A pass whose prefix no
+      listed prefix is comparable with (`Program.identPrefixesFree`) can then name things with it
+      without scanning the program. `none` makes a reader collect the prefixes first
+      (`Program.knownIdentPrefixes`), so a program nobody scanned is never taken as free.
+
+      No pass reads or extends the record yet: a pass that generates `$__` names does not add
+      their prefixes, so after such a pass the record need not cover the program. -/
+  usedIdentPrefixes : Option (List String) := none
   deriving DecidableEq
 
 @[expose]
@@ -307,10 +318,11 @@ def Program.typeNamesWithPrefix (p : Program) (pfx : String) : Std.HashSet Strin
 def Program.eraseTypes (p : Program) : Program :=
   { p with decls := p.decls.map Decl.eraseTypes }
 
-/-- Erase every annotation of a program: expression types, declared types, and the type
-    parameters of functions, procedures and lemmas. -/
+/-- Erase every annotation of a program: expression types, declared types, the type
+    parameters of functions, procedures and lemmas, and the recorded `$__` prefixes
+    (`usedIdentPrefixes`), which the type-checking phase computes as it computes types. -/
 def Program.eraseAnnots (p : Program) : Program :=
-  { p with decls := p.decls.map Decl.eraseAnnots }
+  { decls := p.decls.map Decl.eraseAnnots }
 
 /-- Remove all metadata from a program. -/
 def Program.stripMetaData (p : Program) : Program :=
@@ -343,7 +355,7 @@ theorem Program.find?_kind : ∀ {p : Program}, (p.find? k x) = some d → d.kin
     unfold Program.find?.go at Hfind
     split at Hfind <;> simp_all
     next h =>
-    apply ih (by rfl)
+    exact ih (p := { decls := tail }) rfl
 
 def Program.getAxiom? (P: Program) (n : Expression.Ident) : Option Axiom := do
   let decl ← P.find? .ax n

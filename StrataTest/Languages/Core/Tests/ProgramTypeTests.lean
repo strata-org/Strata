@@ -900,7 +900,7 @@ private def firstStoredTypeVars : List String :=
     [.fvar Core.coreLoc ⟨"y", ()⟩ none,
      .const Core.coreLoc (.intConst 1)]
   match Core.Program.typeCheck initTyContext openScopeEnv program with
-  | .ok ({ decls := [.distinct _ (e :: _) _] }, _) => (annotTyVars e).eraseDups
+  | .ok ({ decls := [.distinct _ (e :: _) _], .. }, _) => (annotTyVars e).eraseDups
   | _ => ["rejected"]
 
 -- A distinct group whose free variable has the generated binder's name is rejected.
@@ -1077,7 +1077,7 @@ Cons : some (arrow int (arrow (List int) (List int))), Nil : some (List int)
   let prog : Core.Program :=
     { decls := listDecls ++ [.distinct ⟨"d", ()⟩ nilConsGroup .empty] }
   match Core.Program.typeCheck initTyContext Lambda.TEnv.default prog with
-  | .ok ({ decls := ds }, _) =>
+  | .ok ({ decls := ds, .. }, _) =>
     match ds.getLast? with
     | some (.distinct _ es _) =>
       printEach (es.map fun e => Std.format (", ".intercalate (opAnnotations e)))
