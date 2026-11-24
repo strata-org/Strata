@@ -326,10 +326,10 @@ theorem checkedBody_triple (π : String → Option Procedure)
     (fun ρ₀ hp hg => ⟨ρ₀, ⟨rfl, hpin ρ₀ hp, htyped ρ₀ hp hg⟩, hp⟩) ?_ ?_
     (fun _ ρ' ρ'' _ _ _ _ hR hp => hpost ρ' ρ'' hR hp)
   · intro ρ₀ ρ' trace hp _ hrun ev hev
-    rw [coreBlock_terminatesAt_events_factory hnc hrun ev hev]
+    rw [coreBlock_events_factory hnc hrun ev hev]
     exact hpin ρ₀ hp
   · intro ρ₀ ρ₀' ρ'' trace hp hrel _ hrun ev hev
-    rw [coreBlock_terminatesAt_events_factory hnc' hrun ev hev, hrel.1]
+    rw [coreBlock_events_factory hnc' hrun ev hev, hrel.1]
     exact hpin ρ₀ hp
   · intro _ _ hs ht hrel hv
     exact (weakensAssumes_denoteBasedInterp hrel hs ht).assertionsValid_reflect hv

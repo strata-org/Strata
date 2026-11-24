@@ -211,7 +211,7 @@ theorem Procedure.call_of_contract (p : Core.Program) (params : InitEnvWFParams)
           (Imperative.starE_preserves_factory hrun).symm
         have hrun' := Imperative.stmtRun_to_singletonE
           (EvalCommandE p.findProcByString?) hrun
-        have htb := htriple
+        have htb := Strata.Logic.Hoare.TripleWith.run htriple
           { store := σAO, factory := ρ₀.factory }
           ρ' _ ⟨hcontractPre, hax⟩ hbodyWF (Or.inl hrun')
         exact finish ρ' _ hρ'fac houtputsRel hframeRel hcallexit htb
@@ -222,8 +222,8 @@ theorem Procedure.call_of_contract (p : Core.Program) (params : InitEnvWFParams)
         rename_i ρ'
         have hρ'fac : ρ'.factory = ρ₀.factory :=
           (StepCFGStarE.preserves_factory hrun).symm
-        have htb := htriple
-          { store := σAO, factory := ρ₀.factory }
+        have htb := Strata.Logic.Hoare.TripleWith.run
+          (htriple { store := σAO, factory := ρ₀.factory })
           { store := σAO, factory := ρ₀.factory }
           ρ' _ ⟨⟨hcontractPre, hax⟩, rfl⟩ hbodyWF (Or.inl hrun)
         exact finish { ρ' with store := Imperative.projectStore σAO ρ'.store } _

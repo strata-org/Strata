@@ -199,7 +199,8 @@ precondition, body trace interpretation, and postcondition. -/
     On a well-formed program, the factory contains Core's built-ins and exactly
     the user-defined functions declared before the procedure and the functions
     generated for the datatypes declared before it. Partial correctness
-    means a diverging body satisfies any postcondition. -/
+    means a diverging body satisfies any postcondition, though its assertions must still
+    hold on every finite execution, finished or not. -/
 @[expose] def Procedure.contractTriple (p : Core.Program) (params : InitEnvWFParams)
     (procName : String) : Prop :=
   ∃ proc₀, p.findProcByString? procName = some proc₀ ∧

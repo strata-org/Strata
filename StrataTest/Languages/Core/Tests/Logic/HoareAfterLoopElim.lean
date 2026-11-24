@@ -330,8 +330,6 @@ theorem count_meets_contract :
     (by simp [count_inner_eq, Core.Statements.noCalls, Block.allSubstmts_cons,
       Stmt.allSubstmts_loop, Stmt.allSubstmts_cmd, Block.allSubstmts_nil,
       Core.Statement.isNotCall, Core.Statement.set])
-    (by simp [count_inner_eq, Block.loopExitsLocal, Stmt.loopExitsLocal,
-      Block.exitsCoveredByBlocks, Stmt.exitsCoveredByBlocks])
   rw [count_out_decl] at hd
   simp only [Option.some.injEq, Core.Decl.proc.injEq] at hd
   obtain rfl : countTgt = ss' := Imperative.Body.structured.inj (congrArg (·.body) hd.1)

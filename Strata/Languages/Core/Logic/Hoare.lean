@@ -93,7 +93,7 @@ theorem of_storeWF_pre (params : InitEnvWFParams)
     (h : Triple π params (fun ρ => Pre ρ ∧ Imperative.WellFormedStore ρ.store ρ.factory) ss
       Post (factory := factory)) :
     Triple π params Pre ss Post (factory := factory) :=
-  fun ρ₀ ρ' tr hpre hinit hrun => h ρ₀ ρ' tr ⟨hpre, hinit.storeWellDefined⟩ hinit hrun
+  fun ρ₀ hpre hinit => h ρ₀ ⟨hpre, hinit.storeWellDefined⟩ hinit
 
 /-- A triple holds when it holds, for every runtime factory `E`, from the entries whose
     runtime factory is `E`. -/
@@ -101,7 +101,7 @@ theorem of_forall_entryFactory (params : InitEnvWFParams)
     {Pre Post : Imperative.Env Expression → Prop} {ss : Statements}
     (h : ∀ E, Triple π params (fun ρ => Pre ρ ∧ ρ.factory = E) ss Post (factory := factory)) :
     Triple π params Pre ss Post (factory := factory) :=
-  fun ρ₀ ρ' tr hpre hinit hrun => h ρ₀.factory ρ₀ ρ' tr ⟨hpre, rfl⟩ hinit hrun
+  fun ρ₀ hpre hinit => h ρ₀.factory ρ₀ ⟨hpre, rfl⟩ hinit
 
 /-! ## Rules for a single command -/
 

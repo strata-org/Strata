@@ -40,14 +40,12 @@ interpretation under which every condition that evaluates to `true` holds
 (`ConditionInterp.TrueStutterHolds`), as evaluation to `true` does
 (`Core.LoopElim.evalInterp_trueStutterHolds`).
 
-A Hoare triple also asks for assertion validity on completed runs, which the run relation does
-not carry.  When no loop iteration leaves its loop by an `exit` (`Block.loopExitsLocal`), every
-event of a source run is kept by some target run ending the same way (`LoopElim.run_sim_at`), so
-every source run from an entry over a Lambda factory `F` has a target run ending the same way
-whose assertions are valid under `DenoteBasedInterp F` only if the source's are
-(`Core.LoopElim.overapproximatesTraces_whenLoopExitsLocal`), and a Core triple on the output
-gives the triple on the input (`Core.LoopElim.triple`, by
-`overapproximatesTraces2UptoWhen_triple_general`).
+A Hoare triple asks for the validity of the assertions of every finite execution, which follows
+from the prefix clause in the same way, each assertion reflected through the execution ending at
+it, and for its postcondition on completed runs, which the run relation carries: a run of the
+output ending in the same environment has its assumptions hold where the source's do.  So a Core
+triple on the output over a Lambda factory `F` gives the triple on the input
+(`Core.LoopElim.triple`, by `overapproximatesTraces2UptoWhen_triple_of_reflectsLastAssertion`).
 
 In a verification pipeline, the prefix relation keeps the last assertion of a prefix
 (`Trace.ReflectsLastAssertion`), not every assertion of a trace, so the pipeline lemmas whose
@@ -71,7 +69,7 @@ value-valued store (`WellFormedStore`) holds typed values (`LawfulHasVal.value_t
 havocs of the target can reach every store of the source.
 
 Key theorems: `Core.LoopElim.overapproximatesTraces`, `Core.LoopElim.assertValid`,
-`Core.LoopElim.overapproximatesTraces_whenLoopExitsLocal`, `Core.LoopElim.triple`,
+`Core.LoopElim.triple`,
 `Core.LoopElim.evalInterp_trueStutterHolds`, and for the Core pass
 `Core.LoopElim.overapproximatesTraces_coreProgram`, `Core.LoopElim.assertValid_coreProgram`,
 `Core.LoopElim.triple_coreProgram` and `Core.LoopElim.validOnTracesVerifier_coreProgram`. -/
@@ -147,69 +145,18 @@ theorem evalInterp_trueStutterHolds (allowed : Expression.Factory → Prop) :
     (evalInterp : ConditionInterp Expression).TrueStutterHolds allowed :=
   fun _ _ h _ => h
 
-/-- **Loop elimination over-approximates the traces of a Core statement list whose loop
-    iterations never leave their loop by an `exit`**, its completed runs reflecting assertion
-    validity under `DenoteBasedInterp F`.  For a call-free Core statement list `ss` whose loop
-    iterations never leave their loop by an `exit` (`Block.loopExitsLocal`) and whose loops
-    `Block.loopElim` eliminates, and every entry environment `ρ₀` over `F`
-    (`ρ₀.factory.factory = F`) satisfying `BlockInitEnvWF` of `ss` at `params` with
-    `Core.loopElimPrefix` reserved for block labels: as `overapproximatesTraces`, with every
-    terminating or exiting run of `ss` from `ρ₀` matched by a run of the output whose trace,
-    besides being related to the source's by dropping events and inserting true assumptions,
-    has valid assertions only if the source's has (`Trace.ImpliesAssertValidity`) and is
-    reachable if the source's is (`Trace.ImpliesReachability`), under `DenoteBasedInterp F`. -/
-theorem overapproximatesTraces_whenLoopExitsLocal (params : InitEnvWFParams)
-    (F : Lambda.Factory CoreLParams) :
-    OverapproximatesTraces2UptoWhen
-      (Trace.HasExtraEvents
-        (Trace.PreservesLastEvent (RComp Trace.MayDropEvents
-          (Trace.InsertsTrueAssumes (WellFormedSemanticEval (P := Expression)))))
-        (Trace.InsertsTrueAssumes (WellFormedSemanticEval (P := Expression)) []))
-      (fun trace trace' =>
-        RComp Trace.MayDropEvents
-          (Trace.InsertsTrueAssumes (WellFormedSemanticEval (P := Expression))) trace trace' ∧
-        Trace.ImpliesAssertValidity (DenoteBasedInterp F) trace trace' ∧
-        Trace.ImpliesReachability (DenoteBasedInterp F) trace trace')
-      -- Both executions start from the same environment, over `F`.
-      (fun (ρ₀ ρ₀' : Env Expression) => ρ₀ = ρ₀' ∧ ρ₀.factory.factory = F)
-      -- Completed runs end in the same environment.
-      (· = ·)
-      (EventLang.coreBlock π) (EventLang.coreBlock π)
-      (fun ss => Imperative.Block.loopElim ss)
-      -- The bridge to the big-step semantics requires a call-free source; no loop iteration
-      -- leaves its loop by an `exit`.
-      (fun ss => Statements.noCalls ss = Bool.true ∧ Block.loopExitsLocal ss)
-      (params.extendBlockLabels [loopElimPrefix]) params :=
-  overapproximatesTraces_whenLoopExitsLocal_of_blockRel π params [loopElimPrefix]
-    (fun _ _ _ ht hwf => blockRel_of_loopElim ht hwf) F
-
 /-- **A Hoare triple transported back through loop elimination.**  For a call-free Core
-    statement list `ss` whose loop iterations never leave their loop by an `exit`
-    (`Block.loopExitsLocal`) and whose loops `Block.loopElim` eliminates into `ss'`, and a
-    precondition admitting only entry environments over `F`: a Core triple `{Pre} ss' {Post}`
-    over `F` (`Core.Logic.Hoare.Triple`, read by `DenoteBasedInterp F`) at `params` gives the
-    triple `{Pre} ss {Post}` at `params` with `Core.loopElimPrefix` reserved for block labels.
-
-    Why `Block.loopExitsLocal` is needed: in
-    ```
-    block L { i := 0; while (true) { if (i == 0) { assert A: false; i := 1 } else { exit L } };
-      i := 2 }
-    ```
-    the source ends with `i = 1` after failing `A`: the first iteration asserts `A`, and the
-    second runs `exit L`, which skips `i := 2`.  The output replaces the loop by one iteration
-    from a havocked `i`; its runs not running `exit L` run `i := 2` and end with `i = 2`, and
-    those running it replay only that iteration, with trace `[assume true]`.  No run of the
-    output ending the way the source's does fails `A`, so its triple does not determine the
-    source's. -/
+    statement list `ss` whose loops `Block.loopElim` eliminates into `ss'`, and a precondition
+    admitting only entry environments over `F`: a Core triple `{Pre} ss' {Post}` over `F`
+    (`Core.Logic.Hoare.Triple`, read by `DenoteBasedInterp F`) at `params` gives the triple
+    `{Pre} ss {Post}` at `params` with `Core.loopElimPrefix` reserved for block labels. -/
 theorem triple (params : InitEnvWFParams) {ss ss' : Statements}
     (ht : Imperative.Block.loopElim ss = some ss') (hnc : Statements.noCalls ss = Bool.true)
-    (hloc : Block.loopExitsLocal ss)
     {F : Lambda.Factory CoreLParams} {Pre Post : Env Expression → Prop}
     (hpin : ∀ ρ₀, Pre ρ₀ → ρ₀.factory.factory = F)
     (h : Core.Logic.Hoare.Triple π params Pre ss' Post F) :
     Core.Logic.Hoare.Triple π (params.extendBlockLabels [loopElimPrefix]) Pre ss Post F :=
-  triple_of_blockRel π params [loopElimPrefix] (fun _ => blockRel_of_loopElim ht) hnc hloc
-    hpin h
+  triple_of_blockRel π params [loopElimPrefix] (fun _ => blockRel_of_loopElim ht) hnc hpin h
 
 /-! ## The Core pass, `Core.loopElim`
 
@@ -268,23 +215,21 @@ theorem assertValid_coreProgram (params : InitEnvWFParams) {p p' : Program} {c :
 
 /-- **The Core pass transports Hoare triples back to each procedure body.**  When
     `Core.loopElim p` succeeds with `p'`, a call-free structured body `ss` of a procedure of `p`
-    whose loop iterations never leave their loop by an `exit` (`Block.loopExitsLocal`) has, at
-    its position in `p'`, a body `ss'` such that, for a precondition admitting only entry
-    environments over `F`, a Core triple `{Pre} ss' {Post}` over `F` at `params` gives the
-    triple `{Pre} ss {Post}` at `params`.  `triple` shows why loops left by an `exit` are
-    excluded. -/
+    has, at its position in `p'`, a body `ss'` such that, for a precondition admitting only
+    entry environments over `F`, a Core triple `{Pre} ss' {Post}` over `F` at `params` gives
+    the triple `{Pre} ss {Post}` at `params`. -/
 theorem triple_coreProgram (params : InitEnvWFParams) {p p' : Program} {c : Bool}
     {σ σ' : Transform.CoreTransformState} (h : loopElim p σ = (.ok (c, p'), σ'))
     {i : Nat} {proc : Procedure} {md : Imperative.MetaData Expression} {ss : Statements}
     (hproc : p.decls[i]? = some (.proc proc md)) (hbody : proc.body = .structured ss)
-    (hnc : Statements.noCalls ss = Bool.true) (hloc : Block.loopExitsLocal ss) :
+    (hnc : Statements.noCalls ss = Bool.true) :
     ∃ ss', p'.decls[i]? = some (.proc { proc with body := .structured ss' } md) ∧
       ∀ {F : Lambda.Factory CoreLParams} {Pre Post : Env Expression → Prop},
         (∀ ρ₀, Pre ρ₀ → ρ₀.factory.factory = F) →
         Core.Logic.Hoare.Triple π params Pre ss' Post F →
         Core.Logic.Hoare.Triple π params Pre ss Post F :=
   have ⟨ss', hd, hrel⟩ := loopElim_body_blockRel h hproc hbody
-  ⟨ss', hd, fun hpin h => triple_of_blockRel π params [] (fun _ _ => hrel) hnc hloc hpin h⟩
+  ⟨ss', hd, fun hpin h => triple_of_blockRel π params [] (fun _ _ => hrel) hnc hpin h⟩
 
 /-- **A verifier run after the Core pass is sound on each procedure body.**  When
     `Core.loopElim p` succeeds with `p'`, a call-free structured body `ss` of a procedure of `p`

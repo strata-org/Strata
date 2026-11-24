@@ -337,7 +337,7 @@ theorem sum_meets_contract :
     Core.LoopInitHoist.triple π testParams sum_hoist
       ⟨by decide +kernel, show List.Nodup _ by decide +kernel⟩
       (fun _ h => h.1.2.1) (fun _ _ _ hp hwf hf hd hag hx => done_transport hp.2 hwf hf hd hag hx)
-      (fun ρ₀ ρ' tr hpre hinit hrun => sumTgt_triple hE ρ₀ ρ' tr hpre.2 hinit hrun)
+      (fun ρ₀ hpre hinit => sumTgt_triple hE ρ₀ hpre.2 hinit)
   have hpost : Imperative.Logic.Hoare.PostWF sumBody (Done E) := by
     intro ρ ⟨hf, a, hs, ha⟩
     have hnd : sId ∉ Block.definedVars (P := Core.Expression) (C := Core.Command) sumBody true := by

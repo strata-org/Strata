@@ -682,31 +682,6 @@ private theorem copyCfg_run {n : String} {T : Lambda.LMonoTy} {fac : Core.Expres
     obtain ⟨hr, hother, -⟩ := copyCfg_finished hrun
     exact ⟨hr, hother⟩
 
-/-- **`copyCfgProc n T`'s body meets its contract**: from every entry meeting the contract
-    precondition, the CFG `r := x; return` ends, on the store projected through the entry
-    store, with `r == x`. -/
-private theorem copyCfg_triple (n : String) (T : Lambda.LMonoTy)
-    (F : Lambda.Factory Core.CoreLParams) (A : Env Core.Expression → Prop)
-    (ρEntry : Env Core.Expression) :
-    Core.Logic.Hoare.TripleUnstructured π testParams
-      (fun ρ => (Core.Logic.Hoare.Procedure.contractPre F (copyCfgProc n T) ρ ∧ A ρ) ∧
-        ρ = ρEntry)
-      (copyCfg n T)
-      (fun ρ' => Core.Logic.Hoare.Procedure.contractPost F (copyCfgProc n T)
-        { ρ' with store := projectStore ρEntry.store ρ'.store })
-      (factory := F) := by
-  intro ρ₀ ρ' trace ⟨⟨hpre, _⟩, hρ⟩ hinit hterm
-  subst hρ
-  have hrun : ReflTransTrace (StepCFGE Core.Expression (Core.EvalCommandE π))
-      (.atBlock (copyCfg n T) "entry" ρ₀) trace (.terminal ρ') := by
-    rcases hterm with h | ⟨_, h⟩ <;> exact h
-  obtain ⟨hr, hother, hf, rfl⟩ := copyCfg_finished hrun
-  obtain ⟨vx, hx, -⟩ := copy_input rfl hpre
-  refine ⟨True.intro, fun _ => post_of_eq (copySpec_post n T) (by rw [hf]; exact hpre.2.1)
-    (hr.trans hx) ((hother xId (by decide)).trans hx) ?_⟩
-  rw [hf]
-  exact hinit.storeWellDefined _ _ hx
-
 /-- From every entry meeting the contract precondition of `copyCfgProc n T`, every run of
     `copyCfg n T` must terminate, with no assertion. -/
 private theorem copyCfg_terminates (n : String) (T : Lambda.LMonoTy)
@@ -743,6 +718,34 @@ private theorem copyCfg_terminates (n : String) (T : Lambda.LMonoTy)
         | step_cmd hcmd => obtain ⟨-, -, -, rfl⟩ := copySet_inv hcmd; simp [Trace.AssertionsHoldIn])
       (fun _ _ h _ => by cases h; exact hfin _)
 
+/-- **`copyCfgProc n T`'s body meets its contract**: from every entry meeting the contract
+    precondition, the CFG `r := x; return` ends, on the store projected through the entry
+    store, with `r == x`. -/
+private theorem copyCfg_triple (n : String) (T : Lambda.LMonoTy)
+    (F : Lambda.Factory Core.CoreLParams) (A : Env Core.Expression → Prop)
+    (ρEntry : Env Core.Expression) :
+    Core.Logic.Hoare.TripleUnstructured π testParams
+      (fun ρ => (Core.Logic.Hoare.Procedure.contractPre F (copyCfgProc n T) ρ ∧ A ρ) ∧
+        ρ = ρEntry)
+      (copyCfg n T)
+      (fun ρ' => Core.Logic.Hoare.Procedure.contractPost F (copyCfgProc n T)
+        { ρ' with store := projectStore ρEntry.store ρ'.store })
+      (factory := F) := by
+  intro ρ₀ ⟨⟨hpre, _⟩, hρ⟩ hinit
+  subst hρ
+  refine ⟨fun c trace hrun => (Trace.AssertionsValid_iff_assertionsHoldIn _ trace).2 fun w =>
+    (copyCfg_terminates n T F hpre hinit.storeWellDefined _ w).assertionsHoldIn hrun,
+    fun ρ' trace hterm _ => ?_⟩
+  have hrun : ReflTransTrace (StepCFGE Core.Expression (Core.EvalCommandE π))
+      (.atBlock (copyCfg n T) "entry" ρ₀) trace (.terminal ρ') := by
+    rcases hterm with h | ⟨_, h⟩ <;> exact h
+  obtain ⟨hr, hother, hf, rfl⟩ := copyCfg_finished hrun
+  obtain ⟨vx, hx, -⟩ := copy_input rfl hpre
+  refine post_of_eq (copySpec_post n T) (by rw [hf]; exact hpre.2.1)
+    (hr.trans hx) ((hother xId (by decide)).trans hx) ?_
+  rw [hf]
+  exact hinit.storeWellDefined _ _ hx
+
 /-- **`copyCfgProc n T`'s body meets its contract under total correctness**: from every entry
     meeting the contract precondition, the CFG `r := x; return` terminates and ends, on the
     store projected through the entry store, with `r == x`. -/
@@ -758,7 +761,7 @@ private theorem copyCfg_triple_total (n : String) (T : Lambda.LMonoTy)
       (factory := F) :=
   fun ρ₀ hpre hinit =>
     ⟨fun w => copyCfg_terminates n T F hpre.1.1 hinit.storeWellDefined _ w,
-      fun ρ' trace hrun => (copyCfg_triple n T F A ρEntry ρ₀ ρ' trace hpre hinit hrun).2⟩
+      (copyCfg_triple n T F A ρEntry ρ₀ hpre hinit).2⟩
 
 /-- **`IdCfg` meets its contract**: at every type, its CFG body ends with `r == x`. -/
 theorem idCfg_meets_contract :
