@@ -81,8 +81,8 @@ def typeCheck (C : Expression.TyContext) (Env : Expression.TyEnv)
       if out.all (·.2) then
         .ok (out.map (·.1), EnvR)
       else
-        .error
-          f!"Distinct '{name}' is typed at a generated type variable that is not declared"
+        .error (format <| Function.undeterminedTypeMsg s!"Distinct '{name}'"
+          "an unresolved type variable" "annotating a binder")
 
 end Distinct
 

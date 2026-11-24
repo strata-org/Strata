@@ -343,13 +343,18 @@ private def checkPositions (self : Option String)
     env := Env
   }
 
+/-- The error for `what`, which mentions the type variables that `tyVars` names and that nothing
+    determines: the type of a polymorphic instance there is not fixed. `fix` says how to fix it. -/
+def undeterminedTypeMsg (what tyVars fix : String) : String :=
+  s!"{what} leaves a type undetermined: it mentions {tyVars}; fix the type, for instance by {fix}"
+
 /-- The rejection of function `name` for an expression annotated at an undeclared type
     variable. -/
 def storedTyVarMsg (name : String) : Format :=
-  f!"Function '{name}': the body, the decreases expression, a precondition or an \
-     axiom is typed at a generated type variable that is not declared. Nothing fixes \
-     the type of a polymorphic instance there; annotate it, or use a type parameter the \
-     signature mentions"
+  undeterminedTypeMsg
+    s!"Function '{name}': the body, the decreases expression, a precondition or an axiom"
+    "an unresolved type variable, which is not a type parameter of the function"
+    "annotating a binder or using a type parameter the signature mentions"
 
 /-- Rename each type parameter of `func` that starts with a reserved prefix to a fresh name,
     throughout the function, and keep the others. The new names avoid the type variables of the

@@ -297,7 +297,7 @@ private def hashLemmaPgm : Core.Program :=
 
 /--
 error: ❌ Type checking error.
-Lemma 'L#1' is typed at a generated type variable that is not declared
+Lemma 'L#1' leaves a type undetermined: it mentions an unresolved type variable; fix the type, for instance by annotating a binder
 -/
 #guard_msgs in
 #eval EIO.toIO (fun s => IO.userError s) (Core.verifyProgram hashLemmaPgm quietOpts)

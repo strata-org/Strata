@@ -502,7 +502,7 @@ procedure P()
 
 /--
 error: ❌ Type checking error.
-Axiom 'p' is typed at a generated type variable that is not declared
+Axiom 'p' leaves a type undetermined: it mentions an unresolved type variable; fix the type, for instance by annotating a binder
 -/
 #guard_msgs in
 #eval Core.verify axiomFreeElementTypePgm (options := .quiet)

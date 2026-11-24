@@ -77,7 +77,7 @@ lemma [nil_refl]: first(Nil()) == second(Nil());
 -- does not declare.
 /--
 error: ❌ Type checking error.
-Lemma 'nil_refl' is typed at a generated type variable that is not declared
+Lemma 'nil_refl' leaves a type undetermined: it mentions an unresolved type variable; fix the type, for instance by annotating a binder
 -/
 #guard_msgs in
 #eval Core.verify reservedNamedSingleton (options := .quiet)
@@ -97,7 +97,7 @@ lemma [nil_refl]: first(Nil()) == second(Nil());
 
 /--
 error: ❌ Type checking error.
-Lemma 'nil_refl' is typed at a generated type variable that is not declared
+Lemma 'nil_refl' leaves a type undetermined: it mentions an unresolved type variable; fix the type, for instance by annotating a binder
 -/
 #guard_msgs in
 #eval Core.verify unreservedSingleton (options := .quiet)

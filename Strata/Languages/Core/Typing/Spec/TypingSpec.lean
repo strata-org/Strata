@@ -241,11 +241,12 @@ structure ProcWellTyped (P : Program) (C : LContext CoreLParams) (ts : TypeScope
     v ∈ LMonoTys.freeVars proc.header.inputs.values ++
         LMonoTys.freeVars proc.header.outputs.values →
     v ∈ proc.header.typeArgs
-  /-- Every type variable in the declared type of a local variable, and in a type argument
-      stored on a call, anywhere in the body (structured or control-flow graph), is one of the
-      procedure's type parameters. Type variables in operator and binder annotations are not
-      constrained. -/
-  declTyVarsBound : ∀ v ∈ bodyCollect (fun _ => []) LMonoTy.freeVars proc.body,
+  /-- Every type variable that the conditions and the body mention is one of the procedure's
+      type parameters: in the declared types of locals, in the type arguments stored on calls, and
+      in the operator, free-variable and binder annotations of every expression, in a structured
+      or control-flow graph body. No local, call or polymorphic operator is left at a type that
+      nothing determines. -/
+  annotTyVarsBound : ∀ v ∈ procCollect annotTyVars LMonoTy.freeVars proc,
     v ∈ proc.header.typeArgs
   signatureWellKinded : ∀ ty ∈ proc.header.inputs.values ++ proc.header.outputs.values,
     C.WellKindedTy ty

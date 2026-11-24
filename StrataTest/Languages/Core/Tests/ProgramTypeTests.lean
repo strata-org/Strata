@@ -680,7 +680,7 @@ Free Variables: [$__var0]
                       (.const Core.coreLoc (.intConst 1)))))
 
 -- An axiom whose binder type nothing constrains is rejected.
-/-- info: REJECTED: Axiom 'A' is typed at a generated type variable that is not declared -/
+/-- info: REJECTED: Axiom 'A' leaves a type undetermined: it mentions an unresolved type variable; fix the type, for instance by annotating a binder -/
 #guard_msgs in
 #eval programVerdict (axiomProgram "A"
                       (allOf none (.eq Core.coreLoc (.bvar Core.coreLoc 0) (.bvar Core.coreLoc 0))))
@@ -829,7 +829,7 @@ Free Variables: [y]
     (.eq Core.coreLoc (.bvar Core.coreLoc 0) (.fvar Core.coreLoc "y" (some (.ftvar "a"))))))
 
 -- A lemma whose binder type nothing constrains is rejected.
-/-- info: REJECTED: Lemma 'L' is typed at a generated type variable that is not declared -/
+/-- info: REJECTED: Lemma 'L' leaves a type undetermined: it mentions an unresolved type variable; fix the type, for instance by annotating a binder -/
 #guard_msgs in
 #eval programVerdict (lemmaProgram "L" []
                       (allOf none (.eq Core.coreLoc (.bvar Core.coreLoc 0) (.bvar Core.coreLoc 0))))
@@ -915,7 +915,7 @@ Free Variables: [$__var0]
    .const Core.coreLoc (.boolConst true)])
 
 -- A distinct group containing a binder whose type nothing constrains is rejected.
-/-- info: REJECTED: Distinct 'g' is typed at a generated type variable that is not declared -/
+/-- info: REJECTED: Distinct 'g' leaves a type undetermined: it mentions an unresolved type variable; fix the type, for instance by annotating a binder -/
 #guard_msgs in
 #eval programVerdict (distinctProgram "g"
   [allOf none (.eq Core.coreLoc (.bvar Core.coreLoc 0) (.bvar Core.coreLoc 0)),
@@ -1111,7 +1111,7 @@ function g(x : int) : int requires (Sequence.length(loose()) == 0);
 #end
 
 /--
-info: REJECTED: Function 'g': the body, the decreases expression, a precondition or an axiom is typed at a generated type variable that is not declared. Nothing fixes the type of a polymorphic instance there; annotate it, or use a type parameter the signature mentions
+info: REJECTED: Function 'g': the body, the decreases expression, a precondition or an axiom leaves a type undetermined: it mentions an unresolved type variable, which is not a type parameter of the function; fix the type, for instance by annotating a binder or using a type parameter the signature mentions
 -/
 #guard_msgs in
 #eval programVerdict (translate looseSiblingClausesPgm)
@@ -1127,7 +1127,7 @@ function gb(x : int) : int { Sequence.length(loose()) }
 #end
 
 /--
-info: REJECTED: Function 'gb': the body, the decreases expression, a precondition or an axiom is typed at a generated type variable that is not declared. Nothing fixes the type of a polymorphic instance there; annotate it, or use a type parameter the signature mentions
+info: REJECTED: Function 'gb': the body, the decreases expression, a precondition or an axiom leaves a type undetermined: it mentions an unresolved type variable, which is not a type parameter of the function; fix the type, for instance by annotating a binder or using a type parameter the signature mentions
 -/
 #guard_msgs in
 #eval programVerdict (translate looseBodyPgm)
@@ -1142,7 +1142,7 @@ function gs(x : int) : int requires (Sequence.length(loose()) == 0); { x }
 #end
 
 /--
-info: REJECTED: Function 'gs': the body, the decreases expression, a precondition or an axiom is typed at a generated type variable that is not declared. Nothing fixes the type of a polymorphic instance there; annotate it, or use a type parameter the signature mentions
+info: REJECTED: Function 'gs': the body, the decreases expression, a precondition or an axiom leaves a type undetermined: it mentions an unresolved type variable, which is not a type parameter of the function; fix the type, for instance by annotating a binder or using a type parameter the signature mentions
 -/
 #guard_msgs in
 #eval programVerdict (translate looseOneClausePgm)
@@ -1209,7 +1209,7 @@ private def setEmptyPgm (elemTy : Option LMonoTy) : Program :=
 #eval programVerdict (setEmptyPgm (some LMonoTy.int))
 
 /--
-info: REJECTED: Function 'k': the body, the decreases expression, a precondition or an axiom is typed at a generated type variable that is not declared. Nothing fixes the type of a polymorphic instance there; annotate it, or use a type parameter the signature mentions
+info: REJECTED: Function 'k': the body, the decreases expression, a precondition or an axiom leaves a type undetermined: it mentions an unresolved type variable, which is not a type parameter of the function; fix the type, for instance by annotating a binder or using a type parameter the signature mentions
 -/
 #guard_msgs in
 #eval programVerdict (setEmptyPgm none)

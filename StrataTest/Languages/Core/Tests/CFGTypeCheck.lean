@@ -1733,14 +1733,53 @@ info: Except.ok [("entry", []), ("n", [("x", "some int"), ("x", "some int")])]
 #guard_msgs in
 #eval mdAnnotatedTypes mdLaterSolvedAst
 
-/-! ### An unreachable block does not share fresh type variables.
+/-! ### An unreachable block is checked on its own.
 
-`dead` and the later live block `live` each compare two `None()`s, which leaves
-each block's element type a fresh, unsolved type variable. `dead`'s generator
-state is carried forward, so `live` gets a different variable rather than
-reusing `dead`'s. -/
+`dead` and the later live block `live` each build a `None()`, whose element type is fixed by the
+declared type of the local it initializes: `int` in `dead`, `bool` in `live`. An unreachable block
+is checked in its own substitution, so each block's instance is its own. Whether `live` draws a
+different fresh variable from `dead`'s is not visible here: an accepted procedure keeps no
+unsolved variable, and solved ones are shown as their solution. -/
 
 private def deadThenLivePolyPgm :=
+#strata
+program Core;
+
+datatype Opt (a : Type) { None(), Some(v: a) };
+
+procedure P(out y : int)
+cfg entry {
+  entry: {
+    goto live;
+  }
+  dead: {
+    var a : Opt int := None();
+    return;
+  }
+  live: {
+    var b : Opt bool := None();
+    y := 1;
+    return;
+  }
+};
+#end
+
+/--
+info: [Strata.Core] Type checking succeeded.
+
+---
+info: Except.ok [("entry", []), ("dead", [("None", "some (Opt int)")]),
+  ("live", [("None", "some (Opt bool)")])]
+-/
+#guard_msgs (whitespace := lax) in
+#eval annotatedTypes (translatePgm deadThenLivePolyPgm)
+
+/-! ### A block that leaves a type undetermined is rejected, even when unreachable.
+
+`dead` and `live` each compare two `None()`s, and nothing fixes the element type, so the
+procedure is rejected at the first such assertion. -/
+
+private def undeterminedBlocksPgm :=
 #strata
 program Core;
 
@@ -1764,15 +1803,12 @@ cfg entry {
 #end
 
 /--
-info: [Strata.Core] Type checking succeeded.
-
----
-info: Except.ok [("entry", []),
- ("dead", [("None", "some (Opt $__ty3)"), ("None", "some (Opt $__ty3)")]),
- ("live", [("None", "some (Opt $__ty7)"), ("None", "some (Opt $__ty7)")])]
+info: Except.error "Procedure 'P': assertion 'assert_0' leaves a type undetermined: it mentions
+an unresolved type variable, which is not a type parameter of the procedure; fix the type, for
+instance by annotating a binder or through a local variable declared at it"
 -/
-#guard_msgs in
-#eval annotatedTypes (translatePgm deadThenLivePolyPgm)
+#guard_msgs (whitespace := lax) in
+#eval annotatedTypes (translatePgm undeterminedBlocksPgm)
 
 /-! ## Calls inside a CFG body.
 
@@ -2433,10 +2469,11 @@ private def guardProgram (guard : Core.Expression.Expr) : Core.Program :=
     [("entry", { cmds := [], transfer := .condGoto guard "a" "a" .empty }),
      ("a", { cmds := [], transfer := .finish .empty })]
 
-/-- `∀ z. (v == v)` for the free variable `v`. -/
+/-- `∀ z : bool. (v == v)` for the free variable `v`. The binder is annotated, since nothing
+    else would fix its type. -/
 private def forallEqGuard (v : String) : Core.Expression.Expr :=
   let fv : Core.Expression.Expr := .fvar Core.coreLoc ⟨v, ()⟩ none
-  .quant Core.coreLoc .all "z" none (.bvar Core.coreLoc 0) (.eq Core.coreLoc fv fv)
+  .quant Core.coreLoc .all "z" (some .bool) (.bvar Core.coreLoc 0) (.eq Core.coreLoc fv fv)
 
 /--
 info: error: Procedure 'P': [P] No free variables are allowed here!
@@ -2490,9 +2527,32 @@ info: "ok"
   | .ok _ => "ok"
   | .error e => s!"{Std.format e}")
 
-/-- A binder named `x` that shadows the declared input `x` in `∀ x. (x == x)`. -/
+/-- `∀ z. true`: nothing fixes the type of the binder `z`. -/
+private def unfixedBinderGuard : Core.Expression.Expr :=
+  .quant Core.coreLoc .all "z" none (.bvar Core.coreLoc 0) (.const Core.coreLoc (.boolConst true))
+
+-- A branch guard whose binder type nothing fixes is rejected, naming the block.
+/--
+info: error: Procedure 'P': the branch guard of block 'entry' leaves a type undetermined: it
+mentions an unresolved type variable, which is not a type parameter of the procedure; fix the type,
+for instance by annotating a binder or through a local variable declared at it
+-/
+#guard_msgs (whitespace := lax) in
+#eval Std.format (Core.typeCheck .default (guardProgram unfixedBinderGuard))
+
+-- So is a loop invariant in a block's metadata.
+/--
+info: error: Procedure 'P': the metadata of block 'h' leaves a type undetermined: it mentions an
+unresolved type variable, which is not a type parameter of the procedure; fix the type, for
+instance by annotating a binder or through a local variable declared at it
+-/
+#guard_msgs (whitespace := lax) in
+#eval Std.format (Core.typeCheck .default (invariantProgram unfixedBinderGuard))
+
+/-- A binder named `x` that shadows the declared input `x` in `∀ x : int. (x == x)`. The binder
+    is annotated, since nothing else would fix its type. -/
 private def shadowGuard : Core.Expression.Expr :=
-  .quant Core.coreLoc .all "x" none (.bvar Core.coreLoc 0)
+  .quant Core.coreLoc .all "x" (some .int) (.bvar Core.coreLoc 0)
       (.eq Core.coreLoc (.bvar Core.coreLoc 0) (.bvar Core.coreLoc 0))
 
 /--

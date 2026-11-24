@@ -858,7 +858,7 @@ function g<b> (@[cases] ys : MyList int) : MyList b
 
 /--
 error: ❌ Type checking error.
-Function 'f': the body, the decreases expression, a precondition or an axiom is typed at a generated type variable that is not declared. Nothing fixes the type of a polymorphic instance there; annotate it, or use a type parameter the signature mentions
+Function 'f': the body, the decreases expression, a precondition or an axiom leaves a type undetermined: it mentions an unresolved type variable, which is not a type parameter of the function; fix the type, for instance by annotating a binder or using a type parameter the signature mentions
 -/
 #guard_msgs in
 #eval Core.verify outputOnlyTypeParamPgm (options := .quiet)

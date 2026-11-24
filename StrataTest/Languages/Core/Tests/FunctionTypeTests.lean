@@ -708,7 +708,7 @@ function f() : bool { anyval() == anyval() }
 #end
 
 /--
-info: error: Function 'f': the body, the decreases expression, a precondition or an axiom is typed at a generated type variable that is not declared. Nothing fixes the type of a polymorphic instance there; annotate it, or use a type parameter the signature mentions
+info: error: Function 'f': the body, the decreases expression, a precondition or an axiom leaves a type undetermined: it mentions an unresolved type variable, which is not a type parameter of the function; fix the type, for instance by annotating a binder or using a type parameter the signature mentions
 -/
 #guard_msgs (whitespace := lax) in
 #eval
@@ -766,7 +766,7 @@ private def undeterminedBinderFunc : Core.Function :=
       (.fvar Core.coreLoc ⟨"x", ()⟩ none) (.fvar Core.coreLoc ⟨"x", ()⟩ none)) }
 
 /--
-info: error: Function 'f': the body, the decreases expression, a precondition or an axiom is typed at a generated type variable that is not declared. Nothing fixes the type of a polymorphic instance there; annotate it, or use a type parameter the signature mentions
+info: error: Function 'f': the body, the decreases expression, a precondition or an axiom leaves a type undetermined: it mentions an unresolved type variable, which is not a type parameter of the function; fix the type, for instance by annotating a binder or using a type parameter the signature mentions
 -/
 #guard_msgs in
 #eval checkedSummary undeterminedBinderFunc
@@ -776,7 +776,7 @@ private def undeterminedBinderMonoFunc : Core.Function :=
   { undeterminedBinderFunc with typeArgs := [], inputs := [(⟨"x", ()⟩, .int)], output := .int }
 
 /--
-info: error: Function 'f': the body, the decreases expression, a precondition or an axiom is typed at a generated type variable that is not declared. Nothing fixes the type of a polymorphic instance there; annotate it, or use a type parameter the signature mentions
+info: error: Function 'f': the body, the decreases expression, a precondition or an axiom leaves a type undetermined: it mentions an unresolved type variable, which is not a type parameter of the function; fix the type, for instance by annotating a binder or using a type parameter the signature mentions
 -/
 #guard_msgs in
 #eval checkedSummary undeterminedBinderMonoFunc
@@ -793,7 +793,7 @@ private def undeterminedEmptySeqPgm : Program :=
                  (.intConst Core.coreLoc 0)) } .empty] }
 
 /--
-info: REJECTED: Function 'f': the body, the decreases expression, a precondition or an axiom is typed at a generated type variable that is not declared. Nothing fixes the type of a polymorphic instance there; annotate it, or use a type parameter the signature mentions
+info: REJECTED: Function 'f': the body, the decreases expression, a precondition or an axiom leaves a type undetermined: it mentions an unresolved type variable, which is not a type parameter of the function; fix the type, for instance by annotating a binder or using a type parameter the signature mentions
 -/
 #guard_msgs in
 #eval programVerdict undeterminedEmptySeqPgm

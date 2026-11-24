@@ -1781,8 +1781,8 @@ private def unboundLocalPgm : Program := { decls :=
   [mkProc "p" [] [] [] [declNondet "y" (.ftvar "b")]] }
 
 /--
-info: REJECTED: Procedure 'p': local 'y' is declared at type variable 'b',
-which is not a type parameter of the procedure
+info: REJECTED: Procedure 'p': local 'y' is declared at type variable 'b', which is not a type
+parameter of the procedure
 -/
 #guard_msgs (whitespace := lax) in
 #eval coreVerdict unboundLocalPgm
@@ -1848,7 +1848,8 @@ private def polymorphicLocalPgm : Program := { decls :=
 #guard_msgs in
 #eval coreVerdict polymorphicLocalPgm
 
--- An unsolved type variable on an operator annotation, not on a local, stays accepted.
+-- An unsolved type variable on an operator annotation is rejected too: nothing determines the
+-- type at which `n` is compared.
 open Strata in
 private def opAnnotPgm :=
 #strata
@@ -1860,9 +1861,286 @@ procedure P()
 };
 #end
 
+/--
+info: REJECTED: Procedure 'P': assertion 'assert_0' leaves a type undetermined: it mentions an
+unresolved type variable, which is not a type parameter of the procedure; fix the type, for
+instance by annotating a binder or through a local variable declared at it
+-/
+#guard_msgs (whitespace := lax) in
+#eval coreVerdict (translate opAnnotPgm)
+
+-- `sz(emp())` does not determine the element type: the assertion is rejected.
+open Strata in
+private def undeterminedElemPgm :=
+#strata
+program Core;
+function emp<a>() : Sequence a;
+function sz<a>(s : Sequence a) : int;
+procedure P()
+{
+  assert [e]: sz(emp()) == 0;
+};
+#end
+
+/--
+info: REJECTED: Procedure 'P': assertion 'e' leaves a type undetermined: it mentions an unresolved
+type variable, which is not a type parameter of the procedure; fix the type, for instance by
+annotating a binder or through a local variable declared at it
+-/
+#guard_msgs (whitespace := lax) in
+#eval coreVerdict (translate undeterminedElemPgm)
+
+-- With the element type fixed, through a local declared at a declared type, the assertion is
+-- accepted.
+open Strata in
+private def explicitElemPgm :=
+#strata
+program Core;
+type A;
+function emp<a>() : Sequence a;
+function sz<a>(s : Sequence a) : int;
+procedure P()
+{
+  var s : Sequence A := emp();
+  assert [e]: sz(s) == 0;
+};
+#end
+
 /-- info: ACCEPTED -/
 #guard_msgs in
-#eval coreVerdict (translate opAnnotPgm)
+#eval coreVerdict (translate explicitElemPgm)
+
+-- In a precondition, the condition is named.
+open Strata in
+private def undeterminedPrePgm :=
+#strata
+program Core;
+function emp<a>() : Sequence a;
+function sz<a>(s : Sequence a) : int;
+procedure P()
+spec {
+  requires [r]: sz(emp()) == 0;
+}
+{
+};
+#end
+
+/--
+info: REJECTED: Procedure 'P': precondition 'r' leaves a type undetermined: it mentions an
+unresolved type variable, which is not a type parameter of the procedure; fix the type, for
+instance by annotating a binder or through a local variable declared at it
+-/
+#guard_msgs (whitespace := lax) in
+#eval coreVerdict (translate undeterminedPrePgm)
+
+-- A polymorphic procedure may instantiate an operator at its own type parameter.
+open Strata in
+private def ownParamElemPgm :=
+#strata
+program Core;
+function emp<a>() : Sequence a;
+function sz<a>(s : Sequence a) : int;
+procedure P<t>()
+{
+  var s : Sequence t := emp();
+  assert [e]: sz(s) == 0;
+};
+#end
+
+/-- info: ACCEPTED -/
+#guard_msgs in
+#eval coreVerdict (translate ownParamElemPgm)
+
+-- In a postcondition, the condition is named.
+open Strata in
+private def undeterminedPostPgm :=
+#strata
+program Core;
+function emp<a>() : Sequence a;
+function sz<a>(s : Sequence a) : int;
+procedure P(out r : int)
+spec {
+  ensures [q]: sz(emp()) == r;
+}
+{
+  r := 0;
+};
+#end
+
+/--
+info: REJECTED: Procedure 'P': postcondition 'q' leaves a type undetermined: it mentions an
+unresolved type variable, which is not a type parameter of the procedure; fix the type, for
+instance by annotating a binder or through a local variable declared at it
+-/
+#guard_msgs (whitespace := lax) in
+#eval coreVerdict (translate undeterminedPostPgm)
+
+-- In an assumption, the assumption is named.
+open Strata in
+private def undeterminedAssumePgm :=
+#strata
+program Core;
+function emp<a>() : Sequence a;
+function sz<a>(s : Sequence a) : int;
+procedure P(out r : int)
+{
+  assume [h]: sz(emp()) == 0;
+  r := 0;
+};
+#end
+
+/--
+info: REJECTED: Procedure 'P': assumption 'h' leaves a type undetermined: it mentions an unresolved
+type variable, which is not a type parameter of the procedure; fix the type, for instance by
+annotating a binder or through a local variable declared at it
+-/
+#guard_msgs (whitespace := lax) in
+#eval coreVerdict (translate undeterminedAssumePgm)
+
+-- In an initial value, the variable is named.
+open Strata in
+private def undeterminedInitPgm :=
+#strata
+program Core;
+function emp<a>() : Sequence a;
+function sz<a>(s : Sequence a) : int;
+procedure P(out r : int)
+{
+  var x : int := sz(emp());
+  r := x;
+};
+#end
+
+/--
+info: REJECTED: Procedure 'P': the initial value of 'x' leaves a type undetermined: it mentions an
+unresolved type variable, which is not a type parameter of the procedure; fix the type, for
+instance by annotating a binder or through a local variable declared at it
+-/
+#guard_msgs (whitespace := lax) in
+#eval coreVerdict (translate undeterminedInitPgm)
+
+-- In an assigned value, the variable is named.
+open Strata in
+private def undeterminedSetPgm :=
+#strata
+program Core;
+function emp<a>() : Sequence a;
+function sz<a>(s : Sequence a) : int;
+procedure P(out r : int)
+{
+  r := sz(emp());
+};
+#end
+
+/--
+info: REJECTED: Procedure 'P': the value assigned to 'r' leaves a type undetermined: it mentions an
+unresolved type variable, which is not a type parameter of the procedure; fix the type, for
+instance by annotating a binder or through a local variable declared at it
+-/
+#guard_msgs (whitespace := lax) in
+#eval coreVerdict (translate undeterminedSetPgm)
+
+-- In a call argument, the callee is named.
+open Strata in
+private def undeterminedCallArgPgm :=
+#strata
+program Core;
+function emp<a>() : Sequence a;
+function sz<a>(s : Sequence a) : int;
+procedure Q(n : int);
+procedure P(out r : int)
+{
+  call Q(sz(emp()));
+  r := 0;
+};
+#end
+
+/--
+info: REJECTED: Procedure 'P': an argument of the call to 'Q' leaves a type undetermined: it
+mentions an unresolved type variable, which is not a type parameter of the procedure; fix the type,
+for instance by annotating a binder or through a local variable declared at it
+-/
+#guard_msgs (whitespace := lax) in
+#eval coreVerdict (translate undeterminedCallArgPgm)
+
+-- In a loop invariant, the loop is named, at its statement.
+open Strata in
+private def undeterminedInvariantPgm :=
+#strata
+program Core;
+function emp<a>() : Sequence a;
+function sz<a>(s : Sequence a) : int;
+procedure P(out r : int)
+{
+  r := 0;
+  while (int.lt(r, 1))
+    invariant sz(emp()) == 0
+  {
+    r := int.add(r, 1);
+  }
+};
+#end
+
+/--
+info: REJECTED: Procedure 'P': a loop guard, measure or invariant leaves a type undetermined: it
+mentions an unresolved type variable, which is not a type parameter of the procedure; fix the type,
+for instance by annotating a binder or through a local variable declared at it
+-/
+#guard_msgs (whitespace := lax) in
+#eval coreVerdict (translate undeterminedInvariantPgm)
+
+-- In a conditional's guard, the guard is named, at its statement.
+open Strata in
+private def undeterminedIteGuardPgm :=
+#strata
+program Core;
+function emp<a>() : Sequence a;
+function sz<a>(s : Sequence a) : int;
+procedure P(out r : int)
+{
+  if (sz(emp()) == 0) {
+    r := 0;
+  } else {
+    r := 1;
+  }
+};
+#end
+
+/--
+info: REJECTED: Procedure 'P': a branch guard leaves a type undetermined: it mentions an unresolved
+type variable, which is not a type parameter of the procedure; fix the type, for instance by
+annotating a binder or through a local variable declared at it
+-/
+#guard_msgs (whitespace := lax) in
+#eval coreVerdict (translate undeterminedIteGuardPgm)
+
+/-- `p(x : bool) { assert ∀ z. (z == x) }`: the binder `z` has no annotation, but comparing it with
+    `x` fixes its type, so the check still accepts it. -/
+private def inferredBinderPgm : Program := { decls :=
+  [mkProc "p" [] [("x", .bool)] []
+    [Statement.assert "a"
+      (.quant Core.coreLoc .all "z" none (.bvar Core.coreLoc 0)
+        (.eq Core.coreLoc (.bvar Core.coreLoc 0) (.fvar Core.coreLoc ⟨"x", ()⟩ none))) .empty]] }
+
+/-- info: ACCEPTED -/
+#guard_msgs in
+#eval coreVerdict inferredBinderPgm
+
+/-- `p() { assert ∀ z. true }`: nothing fixes the type of the unannotated binder `z`, so the
+    assertion is rejected. -/
+private def unfixedBinderPgm : Program := { decls :=
+  [mkProc "p" [] [] []
+    [Statement.assert "a"
+      (.quant Core.coreLoc .all "z" none (.bvar Core.coreLoc 0)
+        (.const Core.coreLoc (.boolConst true))) .empty]] }
+
+/--
+info: REJECTED: Procedure 'p': assertion 'a' leaves a type undetermined: it mentions an unresolved
+type variable, which is not a type parameter of the procedure; fix the type, for instance by
+annotating a binder or through a local variable declared at it
+-/
+#guard_msgs (whitespace := lax) in
+#eval coreVerdict unfixedBinderPgm
 
 end UnboundTyVars
 

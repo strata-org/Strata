@@ -673,6 +673,86 @@ def checkDeclTyVarsBound (procName : CoreIdent) (md : MetaData Expression)
     throw (loc.toDiagnosticF
       f!"{procedureMsgPrefix procName}{"; ".intercalate (m :: rest.map (·.2)).eraseDups}")
 
+/-- Where the expressions that the command `c` reads are, for an error message: the command's
+    metadata and a phrase naming them. -/
+def cmdExprsWhat (c : Command) : MetaData Expression × String :=
+  match c with
+  | .cmd (.assert l _ md) => (md, s!"assertion '{l}'")
+  | .cmd (.assume l _ md) => (md, s!"assumption '{l}'")
+  | .cmd (.cover l _ md) => (md, s!"cover '{l}'")
+  | .cmd (.init x _ _ md) =>
+    (md, if isAllowedName x.name then s!"the initial value of '{x.name}'" else "an initial value")
+  | .cmd (.set x _ md) =>
+    (md, if isAllowedName x.name then s!"the value assigned to '{x.name}'"
+      else "an assigned value")
+  | .call callee _ _ md => (md, s!"an argument of the call to '{callee}'")
+
+/-- A place in a procedure that an error can name: its metadata, a phrase naming it, and the
+    expressions it holds. -/
+abbrev AnnotSite := MetaData Expression × String × List Expression.Expr
+
+mutual
+/-- The places of a statement and of the statements nested in it, in order: each command, the
+    guard of a conditional, and the guard, measure and invariants of a loop. -/
+def stmtAnnotSites (s : Statement) : List AnnotSite :=
+  match s with
+  | .cmd c => [let (m, w) := cmdExprsWhat c; (m, w, Statement.cmdExprs c)]
+  | .block _ bss _ => stmtsAnnotSites bss
+  | .ite c tss ess md =>
+    (md, "a branch guard", c.toList) :: (stmtsAnnotSites tss ++ stmtsAnnotSites ess)
+  | .loop g m i body md =>
+    (md, "a loop guard, measure or invariant", Statement.loopExprs g m i) :: stmtsAnnotSites body
+  | .exit _ _ | .typeDecl _ _ => []
+/-- The places of a list of statements, in order. -/
+def stmtsAnnotSites (ss : List Statement) : List AnnotSite :=
+  match ss with
+  | [] => []
+  | s :: rest => stmtAnnotSites s ++ stmtsAnnotSites rest
+end
+
+/-- The places of a procedure body: those of its statements, or for each block of its control
+    flow graph, its commands, the expressions in its metadata and its branch guard. -/
+def bodyAnnotSites (body : Procedure.Body) : List AnnotSite :=
+  match body with
+  | .structured ss _ => stmtsAnnotSites ss
+  | .cfg c _ => c.blocks.flatMap fun (l, blk) =>
+      blk.cmds.map (fun c => let (m, w) := cmdExprsWhat c; (m, w, Statement.cmdExprs c)) ++
+        (blk.md, s!"the metadata of block '{l}'", blk.md.exprs) ::
+        match blk.transfer with
+        | .condGoto g _ _ md => [(md, s!"the branch guard of block '{l}'", [g])]
+        | .finish _ => []
+  | .abstract => []
+
+/-- Error unless every type variable that `proc` mentions, in its conditions and statements,
+    including the declared types of locals, the type arguments of calls and the annotations of
+    expressions, is one of its type parameters. An expression whose polymorphic operator nothing
+    instantiates, such as `Sequence.length(Sequence.empty())`, keeps a type variable in its
+    annotations, so the procedure is refused: its meaning would depend on a type that nothing
+    determines. The error names the first condition, command, guard, measure or invariant whose
+    expressions mention such a variable, located at it, or at `md`, the procedure's metadata,
+    when it has no source location. The location is searched only in expressions: declared types
+    and call type arguments are reported first by `checkDeclTyVarsBound`. -/
+def checkAnnotTyVarsBound (procName : CoreIdent) (md : MetaData Expression)
+    (proc : Procedure) : Except Message Unit :=
+  let typeArgs := proc.header.typeArgs
+  match (procCollect annotTyVars LMonoTy.freeVars proc).filter (· ∉ typeArgs) |>.eraseDups with
+  | [] => .ok ()
+  | all =>
+    let unbound := fun (es : List Expression.Expr) =>
+      (es.flatMap annotTyVars).filter (· ∉ typeArgs) |>.eraseDups
+    let conds := fun (kind : String) (cs : ListMap CoreLabel Check) =>
+      (cs.map fun (l, c) => (c.md, s!"{kind} '{l}'", [c.expr]) : List AnnotSite)
+    let sites := conds "precondition" proc.spec.preconditions ++
+      conds "postcondition" proc.spec.postconditions ++ bodyAnnotSites proc.body
+    let (siteMd, what, vs) := match sites.findSome? fun (m, w, es) =>
+        match unbound es with | [] => none | vs => some (m, w, vs) with
+      | some r => r
+      | none => (md, "an expression", all)
+    let loc := if (Imperative.getFileRange siteMd).isSome then siteMd else md
+    throw (loc.toDiagnosticF
+      f!"{procedureMsgPrefix procName}{Function.undeterminedTypeMsg what (unboundTyVarsPhrase vs)
+        "annotating a binder or through a local variable declared at it"}")
+
 /-- Check the names of a procedure header (`checkSignatureNames`). -/
 def checkHeaderNames (h : Procedure.Header) : Except Format Unit :=
   checkSignatureNames "Procedure" h.name.name h.typeArgs
@@ -749,6 +829,7 @@ def typeCheckCore (scope progSigs : Thunk (Std.HashSet String))
       header := h,
       spec := { preconditions := preconds', postconditions := postconds' },
       body := body' }
+  checkAnnotTyVarsBound name md proc'
   .ok (proc', Env)
 
 /-- Type check a `Procedure` after renaming its reserved type parameters

@@ -80,43 +80,26 @@ private theorem Procedure.ensureAmbientRigidVarsFixed_ok (procName : CoreIdent)
   elim_err h
   assumption
 
-/-- A command with no error mentions no type variable outside the type parameters in a local's
-    declared type or a call type argument. -/
-private theorem Procedure.cmdUnboundTyVars_of_msg_none
-    (typeArgs : List TyIdentifier) (c : Command)
-    (h : Procedure.cmdUnboundMsg? typeArgs c = none) :
-    Procedure.cmdUnboundTyVars typeArgs c = [] := by
-  unfold Procedure.cmdUnboundMsg? at h
+/-- A successful check means every type variable that a procedure mentions in its conditions,
+    its statements and the annotations of their expressions is one of its type parameters. -/
+private theorem Procedure.annotTyVarsBound_of_check (procName : CoreIdent)
+    (md : MetaData Expression) (proc : Procedure)
+    (h : Procedure.checkAnnotTyVarsBound procName md proc = .ok ()) :
+    ∀ v ∈ procCollect annotTyVars LMonoTy.freeVars proc, v ∈ proc.header.typeArgs := by
+  intro v hv
+  unfold Procedure.checkAnnotTyVarsBound at h
+  dsimp only at h
   split at h
   · rename_i hnil
-    exact hnil
-  · simp at h
-
-/-- A successful check means every type variable that the body mentions in a local's declared
-    type or in a call type argument is one of the procedure's type parameters. -/
-private theorem Procedure.declTyVarsBound_of_check (procName : CoreIdent)
-    (md : MetaData Expression) (typeArgs : List TyIdentifier) (body : Procedure.Body)
-    (h : Procedure.checkDeclTyVarsBound procName md typeArgs body = .ok ()) :
-    ∀ v ∈ bodyCollect (fun _ => []) LMonoTy.freeVars body, v ∈ typeArgs := by
-  intro v hv
-  rw [Procedure.bodyCollect_noExprs_eq_cmds, List.mem_flatMap] at hv
-  obtain ⟨c, hc, hvc⟩ := hv
-  unfold Procedure.checkDeclTyVarsBound at h
-  split at h
-  · rename_i hnone
-    have hcnone : Procedure.cmdUnboundMsg? typeArgs c = none :=
-      List.filterMap_eq_nil_iff.mp hnone c hc
-    have hnil := Procedure.cmdUnboundTyVars_of_msg_none typeArgs c hcnone
-    by_cases hin : v ∈ typeArgs
-    · exact hin
-    · have hmem : v ∈ Procedure.cmdUnboundTyVars typeArgs c := by
-        unfold Procedure.cmdUnboundTyVars
-        have hnotin : decide (v ∉ typeArgs) = true := by simpa using hin
-        rw [List.mem_eraseDups, List.mem_filter]
-        exact ⟨hvc, hnotin⟩
+    by_cases hn : v ∈ proc.header.typeArgs
+    · exact hn
+    · have hmem : v ∈ ((procCollect annotTyVars LMonoTy.freeVars proc).filter
+          (· ∉ proc.header.typeArgs)).eraseDups :=
+        List.mem_eraseDups.mpr (List.mem_filter.mpr ⟨hv, by simpa using hn⟩)
       rw [hnil] at hmem
-      exact absurd hmem (List.not_mem_nil)
-  · simp at h
+      exact absurd hmem List.not_mem_nil
+  · simp only [throw, throwThe, MonadExceptOf.throw] at h
+    cases h
 
 /-- The signature the body scope is built from. -/
 def bodySig (hdr : Procedure.Header) : @LMonoTySignature Unit :=
@@ -215,10 +198,9 @@ private structure Procedure.CheckRun (sc ps : Thunk (Std.HashSet String))
       (Function.formalsEnv Env (Procedure.rigidNames sc ps C proc tn) (bodySig proc'.header))
       proc.header.name (Procedure.rigidNames sc ps C proc tn) a.1 a.2 = .ok b.2)
     proc.spec.postconditions proc'.spec.postconditions
-  /-- The returned body mentions only type parameters in the declared types of its locals and in
-      its call type arguments. -/
-  declTyVarsBound : Procedure.checkDeclTyVarsBound proc.header.name md proc.header.typeArgs
-    proc'.body = .ok ()
+  /-- The returned procedure mentions only type parameters in its conditions, its statements and
+      the annotations of their expressions. -/
+  annotTyVarsBound : Procedure.checkAnnotTyVarsBound proc.header.name md proc' = .ok ()
   /-- A CFG body, skolemized, passes the CFG checker in the body scope, and the returned body is
       the deskolemized result. -/
   bodyCfg : ∀ c o, proc.body = .cfg c o → ∃ loc cOut EnvX,
@@ -328,8 +310,14 @@ private theorem Procedure.typeCheckCore_ok_inv
           LMonoTy.subst EnvX.stateSubstInfo.subst (.ftvar v) = .ftvar v) ∧
         body' = .structured
           (mapStmtsTys (deskolemizeTy (Procedure.rigidNames sc ps C proc tn)) ssOut) o) ∧
-      Procedure.checkDeclTyVarsBound proc.header.name md proc.header.typeArgs body' = .ok () ∧
       (proc.body = .abstract → body' = .abstract) ∧
+      Procedure.checkAnnotTyVarsBound proc.header.name md
+        { proc with
+          header :=
+            { proc.header with inputs := proc.header.inputs.keys.zip insR,
+                               outputs := proc.header.outputs.keys.zip outsR },
+          spec := { preconditions := preconds', postconditions := postconds' },
+          body := body' } = .ok () ∧
       ({ proc with
           header :=
             { proc.header with inputs := proc.header.inputs.keys.zip insR,
@@ -341,8 +329,9 @@ private theorem Procedure.typeCheckCore_ok_inv
       elim_err h with vC hC
       obtain ⟨cOut, EnvX⟩ := vC
       elim_err h
-      elim_err h with hchk
-      refine ⟨_, fun c' o' hc' => ?_, fun ss o' hss => ?_, hchk, fun ha => ?_, Except.ok.inj h⟩
+      elim_err h
+      elim_err h with hann
+      refine ⟨_, fun c' o' hc' => ?_, fun ss o' hss => ?_, fun ha => ?_, hann, Except.ok.inj h⟩
       · rw [hc] at hc'
         cases hc'
         have hC' := Except.mapError_ok_h' hC
@@ -357,8 +346,9 @@ private theorem Procedure.typeCheckCore_ok_inv
       elim_err h with vB hBMap
       obtain ⟨ssOut, EnvX⟩ := vB
       elim_err h with hrig
-      elim_err h with hchk
-      refine ⟨_, fun c o' hc => ?_, fun ss' o' hss' => ?_, hchk, fun ha => ?_, Except.ok.inj h⟩
+      elim_err h
+      elim_err h with hann
+      refine ⟨_, fun c o' hc => ?_, fun ss' o' hss' => ?_, fun ha => ?_, hann, Except.ok.inj h⟩
       · rw [hss] at hc
         cases hc
       · rw [hss] at hss'
@@ -372,13 +362,14 @@ private theorem Procedure.typeCheckCore_ok_inv
       · rw [hss] at ha
         cases ha
     · rename_i ha
-      elim_err h with hchk
-      refine ⟨_, fun c o hc => ?_, fun ss o hss => ?_, hchk, fun _ => rfl, Except.ok.inj h⟩
+      elim_err h
+      elim_err h with hann
+      refine ⟨_, fun c o hc => ?_, fun ss o hss => ?_, fun _ => rfl, hann, Except.ok.inj h⟩
       · rw [ha] at hc
         cases hc
       · rw [ha] at hss
         cases hss
-  obtain ⟨body', hbodyCfg, hbodyStructured, hbodyChk, hbodyAbstract, hret⟩ := hbody
+  obtain ⟨body', hbodyCfg, hbodyStructured, hbodyAbstract, hbodyAnn, hret⟩ := hbody
   simp only [Prod.mk.injEq] at hret
   obtain ⟨rfl, rfl⟩ := hret
   have hpreRun := Procedure.conditionsMapM_ok
@@ -416,7 +407,7 @@ private theorem Procedure.typeCheckCore_ok_inv
       postconditionsStored := hpostStored
       preconditionsRel := (mapM_except_rel₂ _ _ _ hPre).imp ?preRel
       postconditionsRel := (mapM_except_rel₂ _ _ _ hPost).imp ?postRel
-      declTyVarsBound := hbodyChk
+      annotTyVarsBound := hbodyAnn
       bodyCfg := hbodyCfg
       bodyStructured := hbodyStructured
       bodyAbstract := hbodyAbstract }⟩
@@ -2141,10 +2132,9 @@ private theorem Procedure.typeCheckCore_sound_output
       noUndeclaredVars :=
         Procedure.typeCheckCore_noUndeclaredVars C Env Env' p proc proc' md h hdecl
           h_env.aliasesWF
-      declTyVarsBound := by
+      annotTyVarsBound := by
         obtain ⟨-, _, _, run⟩ := Procedure.typeCheckCore_ok_inv h
-        rw [htaEq]
-        exact Procedure.declTyVarsBound_of_check _ _ _ _ run.declTyVarsBound
+        exact Procedure.annotTyVarsBound_of_check _ _ _ run.annotTyVarsBound
       signatureWellKinded := fun ty hty => (ResolvedTyWF.of_knownInstance
         (Procedure.typeCheckCore_paramTypes_knownInstance C Env Env' p proc proc' md h ty
           hty)).wellKinded
@@ -2254,7 +2244,7 @@ theorem TypeSpec.ProcWellTyped.program_congr_calls {P1 P2 : Program} {C : LConte
   oldNamesFresh := h.oldNamesFresh
   typeArgsNodup := h.typeArgsNodup
   noUndeclaredVars := h.noUndeclaredVars
-  declTyVarsBound := h.declTyVarsBound
+  annotTyVarsBound := h.annotTyVarsBound
   signatureWellKinded := h.signatureWellKinded
   modRights := h.modRights
   preconditionsTyped := h.preconditionsTyped
@@ -2285,7 +2275,7 @@ theorem TypeSpec.ProcWellTyped.withIdents {C : Expression.TyContext} {j : Identi
   oldNamesFresh := h.oldNamesFresh
   typeArgsNodup := h.typeArgsNodup
   noUndeclaredVars := h.noUndeclaredVars
-  declTyVarsBound := h.declTyVarsBound
+  annotTyVarsBound := h.annotTyVarsBound
   signatureWellKinded := h.signatureWellKinded
   modRights := h.modRights
   preconditionsTyped := fun c hc => (h.preconditionsTyped c hc).withIdents

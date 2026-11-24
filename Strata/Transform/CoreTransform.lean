@@ -137,7 +137,7 @@ def callArgType? (vt : TypeSpec.TypeScopes) : Expression.Expr → Option Lambda.
     `Procedure.callTypeArgs` gives; every other parameter gets a fresh opaque type at
     `prefixStr` that is not in `taken`, and so does every parameter when the matching fails. On a
     type-checked program the matching cannot fail, and the checker rejects a call that leaves a
-    callee type parameter undetermined (`ProcWellTyped.declTyVarsBound`), so the fresh opaque
+    callee type parameter undetermined (`ProcWellTyped.annotTyVarsBound`), so the fresh opaque
     types serve only programs that were not type-checked. An error means the stored `tyArgs`
     disagree with the argument types. -/
 def callTypeSubst (prefixStr : String) (taken : Std.HashSet String) (vt : TypeSpec.TypeScopes)

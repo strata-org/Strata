@@ -31,8 +31,10 @@ def typeCheckProp (scope : Thunk (Std.HashSet String)) (kind : String)
     (Function.checkBoolProp (addSkolemTypes C σ) Env typeArgs σ (format e) (tyVarsIn typeArgs)
       e).mapError (fun m => f!"Error in {kind} {name}: {m}")
   if !stored then
-    throw f!"{kind.capitalize} '{name}' is typed at a generated type variable that is not \
-             declared"
+    throw (format <| Function.undeterminedTypeMsg s!"{kind.capitalize} '{name}'"
+      (if typeArgs.isEmpty then "an unresolved type variable"
+       else s!"an unresolved type variable, which is not a type parameter of the {kind}")
+      "annotating a binder")
   .ok (out, EnvR)
 
 namespace Axiom

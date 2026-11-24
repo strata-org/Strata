@@ -592,9 +592,11 @@ theorem ProcWellTyped.declTysScoped {P : Program} {C : LContext CoreLParams} {ts
     (hss : proc.body = .structured ss opq) :
     Statements.AllDeclTys (fun ty => ∀ τ, ty = .forAll [] τ →
       ∀ a ∈ LMonoTy.freeVars τ, a ∈ proc.header.typeArgs) ss := by
-  have hbound := h.declTyVarsBound
-  rw [hss] at hbound
-  refine Statements.AllDeclTys.of_stmtCollect (fe := fun _ => []) (ft := LMonoTy.freeVars)
+  have hbound : ∀ v ∈ stmtsCollect annotTyVars LMonoTy.freeVars ss, v ∈ proc.header.typeArgs :=
+    fun v hv => h.annotTyVarsBound v (by
+      simp only [procCollect, bodyCollect, hss, List.mem_append]
+      exact .inr hv)
+  refine Statements.AllDeclTys.of_stmtCollect (fe := annotTyVars) (ft := LMonoTy.freeVars)
     (Q := fun a => a ∈ proc.header.typeArgs) ?_ ss hbound
   intro ty hty τ hτ
   subst hτ
