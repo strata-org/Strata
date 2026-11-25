@@ -49,7 +49,7 @@ Write **total** (not `partial`) Lean functions to measure program properties.
 **Transformation-specific:**
 - CallElim: call count decreases or stays same
 - LoopElim: loop count becomes zero
-- DetToNondet: deterministic constructs eliminated
+- DetToKleene: deterministic constructs eliminated
 
 **Semantic (when feasible):**
 - Evaluation equivalence: `eval(transform(x)) = eval(x)`

@@ -9,7 +9,7 @@ Use Plausible for property-based testing in Strata test files. It finds counter-
 
 ## When to Use
 
-- Testing transformation correctness properties (e.g., `DetToNondetCorrect.lean`, `CallElimCorrect.lean`)
+- Testing transformation correctness properties (e.g., `DetToKleeneCorrect.lean`, `CallElimCorrect.lean`)
 - Validating semantic equivalences between program representations
 - Testing expression evaluation properties (Lambda, Imperative dialects)
 - Verifying type system properties

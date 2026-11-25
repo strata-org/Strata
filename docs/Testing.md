@@ -2,8 +2,7 @@
 
 This guide shows how to write tests for Strata dialects in the `StrataTest/`
 directory. It focuses on **Laurel** (the path that received the most recent
-ergonomic work) and notes where **Boole** uses the same primitives. For Python
-test wiring, see [`StrataTest/Languages/Python/README.md`](../StrataTest/Languages/Python/README.md).
+ergonomic work).
 
 > **Quick rule of thumb:** put the dialect program inside a `#strata` block
 > and call the helper that matches the test's directory: `testLaurelExecution`
@@ -18,12 +17,12 @@ test wiring, see [`StrataTest/Languages/Python/README.md`](../StrataTest/Languag
 
 - `#strata <dialect>; … #end` is a **term-elaboration block** that parses the
   inner Strata program at Lean compile time and elaborates to a
-  `Strata.SourcedProgram` (the parsed `Program` plus the snippet text and the
+  `StrataDDM.SourcedProgram` (the parsed `Program` plus the snippet text and the
   byte/line offset of the snippet inside the surrounding `.lean` file). Parse
   errors surface as Lean errors, so the LSP highlights them inside the block
   while you edit.
 - A `Coe SourcedProgram Program` instance lets the result of `#strata` flow
-  into APIs that expect a plain `Program` (e.g. `Strata.Boole.verify`); when
+  into APIs that expect a plain `Program`; when
   consumers need `Program` directly, just write `.program`.
 - `#guard_msgs` is Lean's built-in golden-test command. Used here for
   **positive tests** — wrap an `#eval` in `#guard_msgs in` and pin the
@@ -275,22 +274,11 @@ file held.
 > annotations to match the actual diagnostics. For now step 4 is a manual
 > copy from the failure report; adding a bless mode is a natural follow-up.
 
-## Other dialects
-
-- **Boole** uses `#strata program Boole; … #end` directly with hand-written
-  helpers (e.g. `Strata.Boole.verify`); see
-  [`StrataTest/Languages/Boole/find_max.lean`](../StrataTest/Languages/Boole/find_max.lean)
-  for the canonical pattern. `#strata` is dialect-agnostic — Boole could use
-  inline annotations the same way once a Boole-side helper analogous to
-  `testLaurelVerification` is written.
-- **Python** has its own pipeline-driven harness; see
-  [`StrataTest/Languages/Python/README.md`](../StrataTest/Languages/Python/README.md).
-
 ## Where things live
 
 | Concept | File |
 | --- | --- |
-| `#strata` elaborator + `SourcedProgram` | `Strata/DDM/Integration/Lean/HashCommands.lean` |
+| `#strata` elaborator + `SourcedProgram` | `StrataDDM.Integration.Lean.HashCommands` (in [Strata-DDM](https://github.com/strata-org/Strata-DDM)) |
 | `Diagnostic` data type | `Strata/Languages/Core/Verifier.lean` |
 | Laurel test helpers | `StrataLaurel/Tests/Util/TestLaurel.lean` |
 | Example tests | `StrataLaurel/Tests/EndToEndTests/**/*.lean` |
