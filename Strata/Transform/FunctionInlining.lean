@@ -10,6 +10,7 @@ public import Strata.Languages.Core.Statement
 public import Strata.Languages.Core.Expressions
 public import Strata.Languages.Core.Factory
 public import Strata.Languages.Core.PipelinePhase
+public import Strata.Transform.FunctionInlining.CallBody
 import Strata.DL.Lambda.LExprType
 
 namespace Strata
@@ -31,19 +32,6 @@ is expressed by passing a small `fuel`.
 -/
 
 public section
-
-/-- The body of `lfunc`, called as `op_expr` applied to `args`, with its type
-    parameters instantiated and `args` substituted for its parameters. `none`
-    when `lfunc` has no body, or when the type substitution does not exist
-    (which a well-typed call does not produce). -/
-@[expose] def inlineCallBody
-    (lfunc : Lambda.LFunc Core.CoreLParams)
-    (op_expr : Lambda.LExpr Core.CoreLParams.mono)
-    (args : List (Lambda.LExpr Core.CoreLParams.mono))
-    : Option (Lambda.LExpr Core.CoreLParams.mono) :=
-  match lfunc.body with
-  | none => none
-  | some body => lfunc.instantiateBody? body op_expr args
 
 /-- Try to inline a single function call. Returns `some result` if the
     function has a body and is fully applied; `none` otherwise.

@@ -251,6 +251,9 @@ import Strata.Transform.WP.WPCorePrefix
 import Strata.Transform.EqualitySimplificationCorrect
 import Strata.Transform.FoldAxiomsEntry
 
+-- Contextual rewriting: rewrites each goal under the facts on its path.
+import Strata.Transform.ContextualRewrite
+
 /- The monadic interpreter: the monad-generic engine, its soundness and completeness against
    the reference event semantics, Core's instantiation, the `EvalM`
    instance and its soundness and completeness, counterexample replay, and symbolic execution

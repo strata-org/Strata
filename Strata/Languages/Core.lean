@@ -30,6 +30,7 @@ import Strata.Transform.CommonSubexprElim
 import Strata.Transform.DeadDefElim
 import Strata.Transform.Simplify
 import Strata.Transform.EqualitySimplification
+import Strata.Transform.ContextualRewrite
 import Strata.Transform.FoldAxioms
 
 /-! ## Strata Core Transform & Verification API
@@ -237,6 +238,12 @@ def Core.passSimplify : Core.PipelinePhase :=
 def Core.passEqualitySimplification : Core.PipelinePhase :=
   _root_.Core.equalitySimplificationPhase
 
+/-- Rewrite each `assert` goal under the facts on its path, and replace it by `true` when it
+    rewrites to `true`. No default order lists it; a phase list runs it after `betaReduce` in
+    the order of `--vcgen symexec` or `--vcgen wp`. -/
+def Core.passContextualRewrite : Core.PipelinePhase :=
+  _root_.Core.contextualRewritePhase
+
 /-- Fold every axiom without quantifiers, so that a later phase reads values that
     only appear once a field of a constructor application is selected. No default
     pipeline lists it. -/
@@ -377,7 +384,8 @@ def Core.nameablePhases (options : Core.VerifyOptions := Core.VerifyOptions.defa
     List Core.PipelinePhase :=
   let defaults := Core.corePipelinePhases options
   let others := [Core.passInlineAll, Core.passUnrollBoundedQuantifiers, Core.passFunctionInlining,
-      Core.passFoldAxioms, Core.passEqualitySimplification, Core.passDeclObligations options,
+      Core.passFoldAxioms, Core.passEqualitySimplification, Core.passContextualRewrite,
+      Core.passDeclObligations options,
       _root_.Core.ProgramFact.assertPhase .noCFGBodies,
       Core.passWP, Core.passSSA, Core.passGuardFwd, Core.passDefInline, Core.passDeadDefElim,
       Core.passWPLoop, Core.passGuardProp, Core.passCtorFold, Core.passSymbolicEval options,
