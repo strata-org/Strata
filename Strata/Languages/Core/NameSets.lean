@@ -6,6 +6,7 @@
 module
 public import Strata.Languages.Core.Program
 public import Strata.Util.Name
+public import Strata.Util.PtrCache
 
 /-! # The names a generated name avoids
 
@@ -108,20 +109,21 @@ def Program.takenNames (p : Program) : List String :=
 Names starting with `$__` (`Strata.Name.internalMarker`) are reserved for the names Strata
 generates. `Program.internalNames` lists every such name of a program, wherever it occurs, and
 `Program.usedIdentPrefixes` records prefixes covering them (`Program.identPrefixesCovered`): the
-type-checking phase collects them, and a pass that adds such names is to add their prefixes
-(`Program.addIdentPrefixes`). When the record is `none`, the prefixes are collected on demand
-(`Program.knownIdentPrefixes`). -/
+type-checking phase collects them, and a pass that adds such names adds their prefixes
+(`Program.addIdentPrefixes`, through `Transform.recordIdentPrefixes`). When the record is
+`none`, the prefixes are collected on demand (`Program.knownIdentPrefixes`). -/
 
 namespace Program.InternalNames
 
 open Imperative Lambda
 
-/-- The names collected so far. -/
-abbrev Acc := Array String
+/-- The names collected so far, each once: an expression whose subterms are shared may name the
+    same variable many times. -/
+abbrev Acc := Std.HashSet String
 
 /-- Add `n` to `acc` when it is internal. -/
 @[inline] def add (acc : Acc) (n : String) : Acc :=
-  if Strata.Name.isInternal n then acc.push n else acc
+  if Strata.Name.isInternal n then acc.insert n else acc
 
 /-- Add the internal names of `ns`. -/
 def addAll (acc : Acc) (ns : List String) : Acc := ns.foldl add acc
@@ -149,15 +151,94 @@ def optTy (acc : Acc) : Option LMonoTy → Acc
 
 /-- The internal names of an expression: its operators, free variables and type annotations. The
     display names of binders are not names a program refers to, so they are not collected. -/
-def expr (acc : Acc) : Expression.Expr → Acc
-  | .const _ _ | .bvar _ _ => acc
-  | .op _ o t => optTy (add acc o.name) t
-  | .fvar _ x t => optTy (add acc x.name) t
-  | .abs _ _ t e => expr (optTy acc t) e
-  | .quant _ _ _ t tr e => expr (expr (optTy acc t) tr) e
-  | .app _ f a => expr (expr acc f) a
-  | .ite _ c t e => expr (expr (expr acc c) t) e
-  | .eq _ a b => expr (expr acc a) b
+def exprNames : Expression.Expr → Acc
+  | .const _ _ | .bvar _ _ => {}
+  | .op _ o t => optTy (add {} o.name) t
+  | .fvar _ x t => optTy (add {} x.name) t
+  | .abs _ _ t e => optTy {} t ∪ exprNames e
+  | .quant _ _ _ t tr e => optTy {} t ∪ exprNames tr ∪ exprNames e
+  | .app _ f a => exprNames f ∪ exprNames a
+  | .ite _ c t e => exprNames c ∪ exprNames t ∪ exprNames e
+  | .eq _ a b => exprNames a ∪ exprNames b
+
+open Strata.PtrCache in
+/-- `exprNames`, memoized by pointer address (`PtrCache`), so that each physically distinct
+    subterm is visited once: the output of symbolic evaluation shares subterms, and a tree walk
+    over it can take time exponential in its size. The result carries a proof that it is
+    `exprNames e`. -/
+def exprNamesPtrCache : (e : Expression.Expr) → PtrCacheM exprNames e
+  | .const _ _ => pure ⟨{}, by simp only [exprNames]⟩
+  | .bvar _ _ => pure ⟨{}, by simp only [exprNames]⟩
+  | .op _ o t => pure ⟨optTy (add {} o.name) t, by simp only [exprNames]⟩
+  | .fvar _ x t => pure ⟨optTy (add {} x.name) t, by simp only [exprNames]⟩
+  | .abs _ _ t e => do
+    let r ← evalPtrCache e (exprNamesPtrCache e)
+    pure ⟨optTy {} t ∪ r.output, by simp only [exprNames, r.h]⟩
+  | .quant _ _ _ t tr e => do
+    let r₁ ← evalPtrCache tr (exprNamesPtrCache tr)
+    let r₂ ← evalPtrCache e (exprNamesPtrCache e)
+    pure ⟨optTy {} t ∪ r₁.output ∪ r₂.output, by simp only [exprNames, r₁.h, r₂.h]⟩
+  | .app _ f a => do
+    let r₁ ← evalPtrCache f (exprNamesPtrCache f)
+    let r₂ ← evalPtrCache a (exprNamesPtrCache a)
+    pure ⟨r₁.output ∪ r₂.output, by simp only [exprNames, r₁.h, r₂.h]⟩
+  | .ite _ c t e => do
+    let r₁ ← evalPtrCache c (exprNamesPtrCache c)
+    let r₂ ← evalPtrCache t (exprNamesPtrCache t)
+    let r₃ ← evalPtrCache e (exprNamesPtrCache e)
+    pure ⟨r₁.output ∪ r₂.output ∪ r₃.output, by simp only [exprNames, r₁.h, r₂.h, r₃.h]⟩
+  | .eq _ a b => do
+    let r₁ ← evalPtrCache a (exprNamesPtrCache a)
+    let r₂ ← evalPtrCache b (exprNamesPtrCache b)
+    pure ⟨r₁.output ∪ r₂.output, by simp only [exprNames, r₁.h, r₂.h]⟩
+
+/-- Add the internal names of an expression to `acc`, walking it as a tree, with at most `fuel`
+    nodes: each occurrence of a shared subterm is walked again, but the names go into the one
+    set `acc`. Returns the set and the fuel left, or `none` when the tree has more than `fuel`
+    nodes. -/
+def exprTree (acc : Acc) (fuel : Nat) : Expression.Expr → Option (Acc × Nat)
+  | .const _ _ | .bvar _ _ => step acc
+  | .op _ o t => step (optTy (add acc o.name) t)
+  | .fvar _ x t => step (optTy (add acc x.name) t)
+  | .abs _ _ t e => do let (acc, fuel) ← step (optTy acc t); exprTree acc fuel e
+  | .quant _ _ _ t tr e => do
+    let (acc, fuel) ← step (optTy acc t)
+    let (acc, fuel) ← exprTree acc fuel tr
+    exprTree acc fuel e
+  | .app _ f a => do
+    let (acc, fuel) ← step acc
+    let (acc, fuel) ← exprTree acc fuel f
+    exprTree acc fuel a
+  | .ite _ c t e => do
+    let (acc, fuel) ← step acc
+    let (acc, fuel) ← exprTree acc fuel c
+    let (acc, fuel) ← exprTree acc fuel t
+    exprTree acc fuel e
+  | .eq _ a b => do
+    let (acc, fuel) ← step acc
+    let (acc, fuel) ← exprTree acc fuel a
+    exprTree acc fuel b
+where
+  /-- Spend one node of fuel. -/
+  step (acc : Acc) : Option (Acc × Nat) :=
+    match fuel with
+    | 0 => none
+    | fuel + 1 => some (acc, fuel)
+
+/-- The number of nodes `expr` walks as a tree before it turns to `exprNamesPtrCache`. -/
+def treeWalkFuel : Nat := 1 <<< 16
+
+/-- Add the internal names of an expression (`exprNames`). It is walked as a tree (`exprTree`),
+    which costs its tree size, unless the tree has more than `treeWalkFuel` nodes. A tree that
+    large usually shares subterms (the output of symbolic evaluation can be a tree exponentially
+    larger than its DAG), so it is then walked through `exprNamesPtrCache`, which visits each
+    distinct subterm once but builds a set per subterm: it costs about the number of distinct
+    subterms times the number of names they hold. Most expressions are far smaller than the
+    limit, and their names go into one set, as before memoization. -/
+def expr (acc : Acc) (e : Expression.Expr) : Acc :=
+  match exprTree acc treeWalkFuel e with
+  | some (acc', _) => acc'
+  | none => acc ∪ ((exprNamesPtrCache e).run' Strata.PtrCache.PtrCache.empty).output
 
 /-- `expr` for each expression of a list. -/
 def exprs (acc : Acc) (es : List Expression.Expr) : Acc := es.foldl expr acc
@@ -270,7 +351,7 @@ end Program.InternalNames
     blocks, contract clauses and assertions, and the type names of every type and annotation. -/
 @[expose] def Program.internalNames (p : Program) : List String :=
   -- The traversal adds internal names only; the filter states it where proofs can read it.
-  (p.decls.foldl Program.InternalNames.decl #[]).toList.filter Strata.Name.isInternal
+  (p.decls.foldl Program.InternalNames.decl {}).toList.filter Strata.Name.isInternal
 
 /-- The prefixes of the internal names of `p` (`Strata.Name.internalPrefixOf`), each once. -/
 @[expose] def Program.collectIdentPrefixes (p : Program) : List String :=
@@ -308,8 +389,7 @@ def Program.withCollectedIdentPrefixes (p : Program) : Program :=
 
 /-- Is no known prefix of `p` comparable with a prefix of `pfxs`? -/
 @[expose] def Program.identPrefixesFree (p : Program) (pfxs : List String) : Bool :=
-  let known := p.knownIdentPrefixes
-  pfxs.all fun pfx => !known.any (Strata.Name.prefixesComparable pfx)
+  Strata.Name.prefixesFree p.knownIdentPrefixes pfxs
 
 end Core
 

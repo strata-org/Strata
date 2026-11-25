@@ -6,6 +6,8 @@
 module
 
 public import Strata.Transform.TerminationCheckFactCorrect
+import Strata.Transform.CoreTransformProps
+import Strata.Languages.Core.AbstractCalls
 
 /-! # The `termCheck` pipeline phase
 
@@ -23,7 +25,13 @@ public section
 
     Its contract is proved, but for `typeAnnotated` (`termCheck_keeps`). -/
 def termCheckPipelinePhase : PipelinePhase where
-  transform := TermCheck.termCheck
+  -- Its lemmas name the type parameters of a callee that a call does not determine with
+  -- `termTyVarPrefix`, and bind the type variables of abstracted calls with `abstractTyPrefix`.
+  -- Both are reserved type-variable prefixes (`Lambda.reservedNamePrefixes`), which type
+  -- checking renames away from the program's type parameters, so the pass only records them.
+  transform p := Transform.recordIdentPrefixes [TermCheck.termTyVarPrefix, abstractTyPrefix] p
+    (TermCheck.termCheck p)
+  maintainsIdentPrefixes := true
   phase.name := "termCheck"
   requires := factSet![.typeAnnotated]
   -- `noBetaRedexes` is not claimed because a call's measure is instantiated by
@@ -43,7 +51,9 @@ def termCheckPipelinePhase : PipelinePhase where
   unproved := factSet![.typeAnnotated]
   preserves_ok := by
     intro f hf hu _ _ _ hp _ _ _ hrun
-    refine termCheck_keeps ?_ hrun hp
+    obtain ⟨_, hrun₀, rfl⟩ := Transform.recordIdentPrefixes_run hrun
+    refine ProgramFact.holds_of_decls_eq ?_ (termCheck_keeps ?_ hrun₀ hp)
+    · rfl
     revert hf hu
     cases f <;> decide
 

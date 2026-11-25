@@ -247,14 +247,22 @@ private theorem PipelinePhase.Produces.of_post {pp : PipelinePhase} {p p' : Prog
     every procedure unchanged. -/
 theorem termCheckPhase_bodyOf {p p' : Program} (hp : termCheckPipelinePhase.Produces p p')
     {n : String} : p'.bodyOf n = p.bodyOf n :=
-  hp.of_post (Q := (·.bodyOf n = _)) (termCheck_bodyOf_ok p)
+  hp.of_post (Q := (·.bodyOf n = _)) (by
+    show Post (Transform.recordIdentPrefixes [TermCheck.termTyVarPrefix, abstractTyPrefix] p
+      (termCheck p)) _
+    exact Post.recordIdentPrefixes (Q := (·.bodyOf n = _)) (termCheck_bodyOf_ok p)
+      fun _ _ h => h)
 
 /-- If `nondetElim` produces `p'` from `p` (`PipelinePhase.Produces`), it maps the body of
     every procedure by `Block.nondetElim`. -/
 theorem nondetElimPhase_bodyOf {p p' : Program}
     (hp : NondetElim.nondetElimPipelinePhase.Produces p p')
     (n : String) : p'.bodyOf n = Block.nondetElim (p.bodyOf n) :=
-  hp.of_post (Q := (·.bodyOf n = _)) ((nondetElim_bodyOf_ok p).mono fun _ h => h n)
+  hp.of_post (Q := (·.bodyOf n = _)) (by
+    show Post (Transform.recordIdentPrefixes Imperative.NondetElim.prefixesReserved p
+      (NondetElim.nondetElim p)) _
+    exact Post.recordIdentPrefixes (Q := (·.bodyOf n = _))
+      ((nondetElim_bodyOf_ok p).mono fun _ h => h n) fun _ _ h => h)
 
 /-- If `filterProcedures` produces `p'` from `p` (`PipelinePhase.Produces`), the
     declarations of `p'` are a filter of those of `p`. -/
@@ -278,14 +286,22 @@ theorem filterProceduresPhase_bodyOf {procs : List String} {respectNoFilter : Bo
     (contract-wrapped body) of every procedure unchanged. -/
 theorem termCheckPhase_unitBodyOf {p p' : Program} (hp : termCheckPipelinePhase.Produces p p')
     {n : String} : p'.unitBodyOf n = p.unitBodyOf n :=
-  hp.of_post (Q := (·.unitBodyOf n = _)) (termCheck_unitBodyOf_ok p)
+  hp.of_post (Q := (·.unitBodyOf n = _)) (by
+    show Post (Transform.recordIdentPrefixes [TermCheck.termTyVarPrefix, abstractTyPrefix] p
+      (termCheck p)) _
+    exact Post.recordIdentPrefixes (Q := (·.unitBodyOf n = _)) (termCheck_unitBodyOf_ok p)
+      fun _ _ h => h)
 
 /-- If `nondetElim` produces `p'` from `p` (`PipelinePhase.Produces`), it maps the unit
     (contract-wrapped body) of every procedure by `Block.nondetElim`. -/
 theorem nondetElimPhase_unitBodyOf {p p' : Program}
     (hp : NondetElim.nondetElimPipelinePhase.Produces p p')
     (n : String) : p'.unitBodyOf n = Block.nondetElim (p.unitBodyOf n) :=
-  hp.of_post (Q := (·.unitBodyOf n = _)) ((nondetElim_unitBodyOf_ok p).mono fun _ h => h n)
+  hp.of_post (Q := (·.unitBodyOf n = _)) (by
+    show Post (Transform.recordIdentPrefixes Imperative.NondetElim.prefixesReserved p
+      (NondetElim.nondetElim p)) _
+    exact Post.recordIdentPrefixes (Q := (·.unitBodyOf n = _))
+      ((nondetElim_unitBodyOf_ok p).mono fun _ h => h n) fun _ _ h => h)
 
 /-- If `filterProcedures` produces `p'` from `p` (`PipelinePhase.Produces`), it keeps the
     unit (contract-wrapped body) of a procedure it keeps, when `p` has at most one procedure

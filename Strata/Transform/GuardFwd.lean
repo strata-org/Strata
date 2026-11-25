@@ -390,7 +390,7 @@ end GuardFwd
     It keeps the statements and only rewrites expressions, with free variables, operators and
     annotated variables taken from the input, so it keeps the facts of its input. -/
 def guardFwdPipelinePhase : PipelinePhase :=
-  modelPreservingPipelinePhase "guardFwd" GuardFwd.guardFwdProgram
+  modelPreservingPipelinePhase "guardFwd" (maintainsIdentPrefixes := true) GuardFwd.guardFwdProgram
     (requires := factSet![.noCFGBodies, .noCalls, .noLoops, .staticSingleAssignment,
                          .hasObligationForm])
     (preserves := Strata.Pipeline.factSetUnion obligationRewritePreserves

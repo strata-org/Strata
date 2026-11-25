@@ -209,7 +209,7 @@ public section
     functions into an applied arm, a redex. -/
 def ctorFoldPipelinePhase
     (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default) : PipelinePhase :=
-  modelPreservingPipelinePhase "ctorFold"
+  modelPreservingPipelinePhase "ctorFold" (maintainsIdentPrefixes := true)
     (fun program => do
       let fac ← Transform.liftDiag (wpFactory moreFns program)
       CtorFold.ctorFoldProgram fac program)

@@ -10,12 +10,12 @@ procedure TestProc (x : int, out output : int)
 spec {
   ensures [testProc_result]: output == int.mul(x, 4);
   } {
-  var tmp_arg_0 : int := x;
-  var tmp_output_1 : int := output;
+  var $__callElimTmp_arg_0 : int := x;
+  var $__callElimTmp_output_1 : int := output;
   havoc output;
-  assume [$__callElimAssume_double_correct_2]: output == int.mul(tmp_arg_0, 2);
-  var tmp_arg_3 : int := output;
-  var tmp_output_4 : int := output;
+  assume [$__callElimAssume_double_correct_2]: output == int.mul($__callElimTmp_arg_0, 2);
+  var $__callElimTmp_arg_3 : int := output;
+  var $__callElimTmp_output_4 : int := output;
   havoc output;
-  assume [$__callElimAssume_double_correct_5]: output == int.mul(tmp_arg_3, 2);
+  assume [$__callElimAssume_double_correct_5]: output == int.mul($__callElimTmp_arg_3, 2);
 };

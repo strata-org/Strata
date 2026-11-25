@@ -5,6 +5,22 @@ proofs. Most passes rewrite Strata Core programs, and Core's verifier runs them 
 pipeline (`Core.PipelinePhase`, in `Strata/Languages/Core/PipelinePhase.lean`). Each file's
 header lists its key definitions and theorems.
 
+A pass that introduces names (variables, labels, types) must make them fresh: distinct from
+every name the program already uses, or it may capture one and change the program's meaning.
+Each such pass names things under its own prefix in the `$__` namespace, which is reserved for
+generated names, and the program records the prefixes of that namespace it may use
+(`Program.usedIdentPrefixes`, collected by type checking). Before generating names, a pass that
+already avoids the program's names checks its prefixes with `Transform.withClaimedPrefixes`.
+When they are free, no name of the program starts with them, and the pass may number its names
+without collecting the program's. When they conflict, the pass warns and must still generate
+names the program does not use; the prefix only makes finding a fresh name faster, never
+optional. Either way, the pass adds its prefixes to its output's record
+(`Transform.recordIdentPrefixes`, which every pass that generates `$__` names uses), so that
+the record keeps covering the program's names; `IdentPrefixCoverageTest` checks this after
+every phase. A pass that still numbers names blindly carries a TODO saying where it must
+generate them freshly. `docs/verso/TransformsDoc.lean` ("Reserved Prefixes and Fresh
+Identifiers") describes this in more detail.
+
 ## Shared files
 
 - `CoreTransform.lean` — `CoreTransformState`, the state every Core pass runs in, and the

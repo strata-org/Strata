@@ -364,6 +364,15 @@ structure PipelinePhase where
       default every fact, so a phase owes no proof until it lists less. A test pins what
       each shipped phase leaves unproved, so proving a fact means updating that test too. -/
   unproved : ProgramFactSet := ProgramFactSet.all
+  /-- Whether the output's recorded `$__` prefixes (`Program.usedIdentPrefixes`) cover its `$__`
+      names when the input's did: the phase records the prefixes of the `$__` names it generates
+      (`Transform.recordIdentPrefixes`, `Transform.withClaimedPrefixes`,
+      `Transform.recollectIdentPrefixes`), or it generates none. After a phase that does not say
+      so, `runTransformsRecording` does not let the next phase trust the record
+      (`Transform.CoreTransformState.identPrefixesTrusted`), so that a later pass collects the
+      prefixes again rather than trust a record that may miss some: a phase that forgets to set
+      this only loses speed. -/
+  maintainsIdentPrefixes : Bool := false
   /-- Every fact in `establishes` that is not `unproved` holds on the output.
       The shape is "any successful run of the transform on a program meeting
       `requires` produces a program on which every such fact holds." `s'` is the
@@ -390,13 +399,15 @@ structure PipelinePhase where
     cannot introduce spurious models (e.g. it only removes information). -/
 def modelPreservingPipelinePhase (name : String)
     (t : Program → Transform.CoreTransformM (Bool × Program))
-    («requires» establishes preserves : ProgramFactSet := factSet![]) : PipelinePhase where
+    («requires» establishes preserves : ProgramFactSet := factSet![])
+    (maintainsIdentPrefixes : Bool := false) : PipelinePhase where
   transform := t
   phase.name := name
   phase.getValidation _ := .modelPreserving
   requires := requires
   establishes := establishes
   preserves := preserves
+  maintainsIdentPrefixes := maintainsIdentPrefixes
 
 /-- The name of the `assert` phase for a fact: `assert` followed by the fact's
     name with its first letter capitalized, so `noCFGBodies` gives
@@ -485,6 +496,8 @@ def assertFactPhase (f : ProgramFact) (hc : f.check?.isSome = true := by decide)
     lift := fun _st outcome => outcome })
   establishes := ProgramFactSet.ofList [f]
   preserves := ProgramFactSet.all
+  -- It returns its input.
+  maintainsIdentPrefixes := true
   unproved := ProgramFactSet.empty
   establishes_ok := by
     intro p s b p' s' _ hrun g hg _
@@ -587,14 +600,26 @@ abbrev ValidatedPipeline.ofListFromDelivering (σ₀ : ProgramFactSet) (consumer
     `recordLinks` says whether the run builds the counterexample back-link carrier of each
     executed phase (`PipelinePhase.buildBackLink`). A carrier keeps its phase's input and output
     programs alive until the run returns, so a run whose links are not used passes `false`, and
-    the returned list of carriers is then empty. -/
+    the returned list of carriers is then empty.
+
+    The programs are passed from phase to phase as the phases return them. Whether a phase may
+    trust its input's recorded `$__` prefixes (`Program.usedIdentPrefixes`) is set in the
+    transform state it runs from (`Transform.CoreTransformState.identPrefixesTrusted`): not for
+    the first phase, since the caller may have changed the program after the record was computed,
+    nor after a phase that does not maintain the record (`PipelinePhase.maintainsIdentPrefixes`);
+    after a phase that does, when its input's record was trusted or its output's record is found
+    to cover the output's `$__` names (`Program.identPrefixesCovered`). The warnings the phases
+    report are in the returned state (`Transform.CoreTransformState.warnings`); printing them is
+    left to the caller. -/
 def runTransformsRecording (recordLinks : Bool) (p : Program) (phases : List PipelinePhase)
     (initState : Transform.CoreTransformState := .emp)
     (pipelineCtx : Option Strata.Pipeline.PipelineContext := none)
     (keepAllFilesPrefix : Option String := none)
     : EIO Transform.Err
         (Program × Transform.CoreTransformState × List RuntimeBackLink × List (Nat × Program)) := do
-  let initState := { initState with currentProgram := .some p }
+  -- The input's recorded prefixes may be stale: the caller may have changed the program since
+  -- they were computed. So the first phase does not trust them.
+  let initState := { initState with currentProgram := .some p, identPrefixesTrusted := false }
   if let some pfx := keepAllFilesPrefix then
     if let some parent := (System.FilePath.mk pfx).parent then
       IO.toEIO (fun e => Strata.Message.fromFormat f!"{e}")
@@ -620,8 +645,13 @@ def runTransformsRecording (recordLinks : Bool) (p : Program) (phases : List Pip
       unmarked := unmarked || (changed && pp.phase.leavesUnmarkedAbstractions)
       if recordLinks then
         links := links ++ [(pp.buildBackLink current next).withPrograms current next]
+      -- The next phase trusts the record when this phase maintains it and either trusted its
+      -- input's or produced one that covers its output (as type checking does), which is
+      -- checked only while the record is not trusted.
+      let trusted := pp.maintainsIdentPrefixes &&
+        (state.identPrefixesTrusted || next.identPrefixesCovered)
       current := next
-      state := newState
+      state := { newState with identPrefixesTrusted := trusted }
       step := step + 1
       if let some pfx := keepAllFilesPrefix then
         let path := s!"{pfx}.{step}.{pp.phase.name}.core.st"

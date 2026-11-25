@@ -1435,9 +1435,9 @@ def paramTy (tyArgs : List TyIdentifier) (fieldTy : LMonoTy) : LDatatype Unit :=
 #guard_msgs in
 #eval IO.println (validateMsg [paramTy ["$__cety_0"] (.ftvar "$__cety_0")])
 
-/-- info: Datatype 'Pa': type parameter '$__inlinety_0' is a reserved name -/
+/-- info: Datatype 'Pa': type parameter '$__inlty_0' is a reserved name -/
 #guard_msgs in
-#eval IO.println (validateMsg [paramTy ["$__inlinety_0"] (.ftvar "$__inlinety_0")])
+#eval IO.println (validateMsg [paramTy ["$__inlty_0"] (.ftvar "$__inlty_0")])
 
 /-- info: Datatype 'Pa': type parameter '$__precond_b' is a reserved name -/
 #guard_msgs in

@@ -104,7 +104,7 @@ def filterProceduresPipelinePhase (procs : List String)
   -- afterwards. `wellFormedCalls` checks each call against its callee, and still
   -- holds because the filter keeps every callee of a procedure it keeps: every call
   -- in the input names a declared procedure, so the callee closure is complete.
-  modelPreservingPipelinePhase "filterProcedures"
+  modelPreservingPipelinePhase "filterProcedures" (maintainsIdentPrefixes := true)
     (requires := factSet![.typeAnnotated])
     (preserves := factSet![.wellFormedCalls, .noCFGBodies, .noCalls, .noLoops, .noLoopInvariants,
                          .noLoopMeasures, .staticSingleAssignment,

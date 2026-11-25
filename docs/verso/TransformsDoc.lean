@@ -39,6 +39,54 @@ strata transform file.core.st --pass <name> [--procedures <procs>] [--pass <name
 Passes are applied left to right. The `--procedures` and `--functions` flags
 bind to the most recent `--pass`.
 
+## Reserved Prefixes and Fresh Identifiers
+
+Many transforms introduce new names: guard variables, temporaries, block labels, assertion
+labels and type names. Each such name must be fresh, that is, distinct from every name the
+program already uses; a generated variable that reuses a program variable's name overwrites it,
+and the verifier can then report a false assertion as passing.
+
+Finding a fresh name the slow way means collecting the program's names, often across the whole
+program, before generating any. To avoid this, each transform reserves its own prefix in the
+`$__` namespace, which is set aside for generated names: for instance `$__ndelim_ite$` and
+`$__ndelim_loop$` for the guards of nondeterminism elimination, `$__callElim` for the
+temporaries and labels of call elimination, `$__cety` for its opaque types and `$__cse.` for
+common subexpression elimination.
+
+A program records which prefixes of the `$__` namespace it may use, in its
+`usedIdentPrefixes` field. Type checking walks the program once and collects the prefix of
+every name it has in that namespace, including the names type checking itself introduces and
+the names of the factory functions. A program that has not been through type checking, such as
+one built directly in Lean, records `none`; its prefixes are then collected when a transform
+asks for them, so no transform takes a program whose names nobody has seen as free of a prefix.
+Every transform that generates `$__` names adds their prefixes to the list of its output, so the
+list keeps covering the program's names through the pipeline (a test runs the shipped examples
+and random programs through each pipeline and checks this after every phase).
+
+A transform that already generates names avoiding the program's, such as call elimination,
+procedure inlining for its types, and `genOpaqueTypeParams`, compares its prefixes with the
+recorded ones first:
+
+* When no recorded prefix is a prefix of one of the transform's prefixes, or the other way
+  round, the program has no name starting with the transform's prefix, and the transform skips
+  collecting the program's names. This is the fast path.
+* Otherwise the transform prints one warning per run naming the conflicting prefixes and avoids
+  the program's names as before.
+
+The other transforms that generate `$__` names only record their prefixes. Some are protected
+another way: a reserved type-variable prefix (`Lambda.reservedNamePrefixes`), which type
+checking renames away from the program's type parameters, or a check that rejects a program
+using the prefix. The others (nondeterminism elimination, common subexpression elimination,
+loop elimination, the insertion of loop invariant checks, the variables of procedure
+inlining and the functions of lambda lifting) still number their names without looking at the
+program, and carry a TODO: when the program may use their prefix, they must generate their names
+freshly.
+
+The reserved prefix is a performance device, not a restriction on the input. A program that
+already uses names starting with a transform's prefix must still be transformed correctly, only
+more slowly. A transform must never assume that its prefix is unused unless the recorded
+prefixes say so, since that would silently capture a name of the program.
+
 ## Procedure Inlining (`inlineProcedures`)
 
 Replaces procedure call sites with the body of the callee, substituting actuals
@@ -417,7 +465,7 @@ zero check). Generated checks are labelled after what they check:
   maintained along the back edge from `<block>` (`<header>_<block>` gets a
   numeric suffix if another header and block make the same text). Their location
   is the loop header's transfer: its `branch` or its `goto`.
-- `callElimAssert_<label>_<n>`: a callee's precondition at a call.
+- `$__callElimAssert_<label>_<n>`: a callee's precondition at a call.
 - `<context>_calls_<function>_<n>`: a partial function's precondition, where
   `<context>` names the command (`set_y`, `assert_<label>`, `branch_cond`, ...).
   In the default order a loop invariant is checked as the command that

@@ -105,7 +105,7 @@ end
   let r := p.decls.map (wpLoopDecl body)
   Transform.incrementStat "wpLoop.rounds" (r.foldl (fun n d => n + d.2.2.1) 0)
   Transform.incrementStat "wpLoop.fuelExhausted" (r.countP (·.2.2.2))
-  return (r.any (·.2.1), { decls := r.map (·.1) })
+  return (r.any (·.2.1), { p with decls := r.map (·.1) })
 
 /-- The substituting normalization of the loop's inlining, under the factory of functions `fac`
     of the pipeline: the substitution and the rewrites of `DefInline.rwAll`, then the folding of

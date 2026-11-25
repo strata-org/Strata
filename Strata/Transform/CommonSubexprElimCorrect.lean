@@ -17,6 +17,7 @@ import all Strata.Languages.Core.Statement
 import all Strata.DL.Imperative.Stmt
 import all Strata.Languages.Core.PipelinePhase
 import Strata.DL.Imperative.StmtSemanticsProps
+import Strata.Transform.CoreTransformProps
 
 /-! # Common subexpression elimination keeps failures
 
@@ -1030,12 +1031,16 @@ private theorem commonSubexprElimPhase_mem {minTreeSize : Option Nat} {program o
     {opq : Bool} (hq : Decl.proc q md ∈ program.decls) (hb : q.body = .structured ss opq) :
     ∃ ss', Decl.proc { q with body := .structured ss' opq } md ∈ out.decls ∧
       (ss' = ss ∨ ∃ idx, ss' = (stmtRunCSESinglePass ss idx).1) := by
+  obtain ⟨out₀, h₀, rfl⟩ := Transform.recordIdentPrefixes_run h
+  clear h
+  show ∃ ss', Decl.proc { q with body := .structured ss' opq } md ∈ out₀.decls ∧ _
   cases minTreeSize with
   | none =>
-    obtain ⟨idx, hm⟩ := runCSE_mem (p := program) h hq hb
+    obtain ⟨idx, hm⟩ := runCSE_mem (p := program) h₀ hq hb
     exact ⟨_, hm, .inr ⟨idx, rfl⟩⟩
   | some n =>
-    change (runCSEAbove n program).run s = (.ok (b, out), s') at h
+    have h : (runCSEAbove n program).run s = (.ok (b, out₀), s') := h₀
+    clear h₀
     unfold runCSEAbove at h
     split at h
     · simp only [pure] at h

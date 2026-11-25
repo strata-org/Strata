@@ -45,7 +45,7 @@ info: [Strata.Core] Type checking succeeded.
 
 
 VCs:
-Label: callElimAssert_Extract_requires_0_2
+Label: $__callElimAssert_Extract_requires_0_2
 Property: assert
 Obligation:
 List..isCons(xs@2)
@@ -57,7 +57,7 @@ true
 
 ---
 info:
-Obligation: callElimAssert_Extract_requires_0_2
+Obligation: $__callElimAssert_Extract_requires_0_2
 Property: assert
 Result: ❌ fail
 Model:
@@ -100,14 +100,14 @@ VCs:
 Label: assert_0
 Property: assert
 Assumptions:
-callElimPost_MkCons_ensures_0_2: List..isCons(r@2)
+$__callElimPost_MkCons_ensures_0_2: List..isCons(r@2)
 Obligation:
 List..isCons(r@2)
 
 Label: Test_ensures_0
 Property: assert
 Assumptions:
-callElimPost_MkCons_ensures_0_2: List..isCons(r@2)
+$__callElimPost_MkCons_ensures_0_2: List..isCons(r@2)
 Obligation:
 true
 

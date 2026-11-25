@@ -61,7 +61,7 @@ def typeCheckPipelinePhase
   -- constructor an expression is, so a redex-free program stays redex-free.
   -- It rejects an `exit` whose label names no enclosing block, so every body of
   -- its output has its exits covered.
-  modelPreservingPipelinePhase "typeCheck"
+  modelPreservingPipelinePhase "typeCheck" (maintainsIdentPrefixes := true)
     (establishes := factSet![.wellFormedCalls, .typeAnnotated, .exitsCovered])
     (preserves := factSet![.noCFGBodies, .noCalls, .noLoops, .noLoopInvariants,
                          .noLoopMeasures, .staticSingleAssignment, .noBetaRedexes,

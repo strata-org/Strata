@@ -107,7 +107,7 @@ private def reduceDetBlock (blk : Imperative.DetBlock String Command Expression)
 
 /-- Beta-reduce all lambda redexes in every expression of the program. -/
 def betaReduceProgram (p : Program) : Program :=
-  { decls := p.decls.map fun decl =>
+  { p with decls := p.decls.map fun decl =>
       match decl with
       | .proc proc md =>
         let spec := { proc.spec with
@@ -138,7 +138,7 @@ def Core.betaReducePipelinePhase : Core.PipelinePhase :=
   -- `noBetaRedexes`. `betaReduceRedexesWith` is fuel-bounded, so a term no budget
   -- normalizes, such as an ill-typed self-application, comes back with a
   -- redex intact: that is the one way the claim can fail.
-  Core.modelPreservingPipelinePhase "betaReduce"
+  Core.modelPreservingPipelinePhase "betaReduce" (maintainsIdentPrefixes := true)
     (requires := factSet![.typeAnnotated])
     (establishes := factSet![.noBetaRedexes])
     (preserves := factSet![.noCFGBodies, .noCalls, .noLoops, .noLoopInvariants,

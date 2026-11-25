@@ -28,22 +28,26 @@ namespace Core
 
 public section
 
+/-- Common prefix of the names call elimination generates: its temporaries, its labels and its
+    markers, in the `$__` namespace reserved for generated names. -/
+@[expose] def CallElim.callElimPrefix : String := "$__callElim"
+
 /-- Label prefix of the marker assumptions of call elimination: the postcondition assumptions of
     a call. -/
-def CallElim.callElimAssumePrefix : String := "$__callElimAssume_"
+def CallElim.callElimAssumePrefix : String := CallElim.callElimPrefix ++ "Assume_"
 
 /-- Label prefix of the marker assumption of call elimination on a call that havocs outputs of a
     callee without postconditions: the assumption `true` after the havocs. Only call elimination
     generates labels with it, so, unlike a postcondition assumption, whose label is derived from
     the postcondition's, such a marker's condition is always `true`. -/
-def CallElim.callElimHavocPrefix : String := "$__callElimHavoc_"
+def CallElim.callElimHavocPrefix : String := CallElim.callElimPrefix ++ "Havoc_"
 
 /-- Label prefix of the postcondition assumptions of a call to an opaque procedure. They are not
     markers, so this prefix is not one of `abstractionMarkerPrefixes`: the contract of an opaque
     procedure is its call semantics, so a path through the call's replacement is a path of the
     program. `rejectMarkerLabels` does not reserve it, so a written label that starts with it is
     accepted. -/
-def CallElim.callElimPostPrefix : String := "callElimPost_"
+def CallElim.callElimPostPrefix : String := CallElim.callElimPrefix ++ "Post_"
 
 /-- Label prefix of the marker assumptions of the insertion of loop invariant checks: the
     invariant and measure assumptions it inserts. -/

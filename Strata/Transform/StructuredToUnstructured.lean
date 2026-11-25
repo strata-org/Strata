@@ -345,7 +345,11 @@ that fails them. It also rejects a body initializing a name under a reserved
 prefix, for which the theorem's source gate is unsatisfiable. -/
 def structuredToUnstructuredPipelinePhase : PipelinePhase :=
   modelPreservingPipelinePhase
-    "structuredToUnstructured" structuredToUnstructured
+    "structuredToUnstructured" (maintainsIdentPrefixes := true)
+    -- The checks of `structuredToUnstructuredDecl` reject a body whose names could capture a
+    -- generated one, so the pass only records its prefix.
+    (fun p => Transform.recordIdentPrefixes [Imperative.StructuredToUnstructured.s2uPrefix] p
+      (structuredToUnstructured p))
     (requires := factSet![.noCFGBodies, .noCalls, .noLoopInvariants,
       .noLoopMeasures, .uniqueInits, .loopBodyNoInits, .noNondetGuards])
     (establishes := factSet![])

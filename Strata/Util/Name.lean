@@ -147,6 +147,10 @@ with (`prefixesComparable`) can tell that no name of the program starts with it.
 /-- Is one of `a` and `b` a prefix of the other? A name can start with both only if they are. -/
 @[expose] def prefixesComparable (a b : String) : Bool := a.startsWith b || b.startsWith a
 
+/-- Is no prefix of `known` comparable with a prefix of `pfxs`? -/
+@[expose] def prefixesFree (known pfxs : List String) : Bool :=
+  pfxs.all fun pfx => !known.any (prefixesComparable pfx)
+
 end Strata.Name
 
 end -- public section

@@ -628,7 +628,9 @@ private def verifyStoredAlias : IO Unit := do
         IO.println s!"{r.obligation.label}: {r.formatOutcome}"
     | .error e => IO.println s!"error: {e}"
 
-/-- info: callElimAssert_pre_2: ❓ unknown -/
+/--
+info: $__callElimAssert_pre_2: ❓ unknown
+-/
 #guard_msgs in
 #eval verifyStoredAlias
 

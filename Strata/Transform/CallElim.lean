@@ -35,7 +35,7 @@ inductive Stats where
 @[expose] def callElimTyPrefix : String := "$__cety"
 
 /-- Label prefix for call-elimination assert statements. -/
-def callElimAssertPrefix : String := "callElimAssert_"
+def callElimAssertPrefix : String := callElimPrefix ++ "Assert_"
 
 /--
 The call elimination kernel: replace the call `procName(callArgs)` (with call-site metadata `md`)
@@ -105,13 +105,13 @@ def callElimCall (taken takenVars : Std.HashSet String) (vt : TypeSpec.TypeScope
   let oldVars := oldPairs.map (·.1)
 
   let genArgTrips :=
-    genArgExprIdentsTrip takenVars (Lambda.LMonoTySignature.toTrivialLTy instantiatedInputs) args
+    genArgExprIdentsTrip callElimPrefix takenVars (Lambda.LMonoTySignature.toTrivialLTy instantiatedInputs) args
   let argTrips
       : List ((Expression.Ident × Expression.Ty) × Expression.Expr)
       ← genArgTrips
 
   let genOutTrips :=
-    genOutExprIdentsTrip takenVars (Lambda.LMonoTySignature.toTrivialLTy instantiatedOutputs) lhs
+    genOutExprIdentsTrip callElimPrefix takenVars (Lambda.LMonoTySignature.toTrivialLTy instantiatedOutputs) lhs
   let outTrips
       : List ((Expression.Ident × Expression.Ty) × Expression.Ident)
       ← genOutTrips
@@ -119,7 +119,7 @@ def callElimCall (taken takenVars : Std.HashSet String) (vt : TypeSpec.TypeScope
   -- Generate fresh variables for "old g" (one per modified variable in lhs).
   -- For input/output parameters, look up types from the callee's inputs.
   let oldParams := oldPairs.map (·.2)
-  let genOldIdents ← genOldExprIdents takenVars oldVars
+  let genOldIdents ← genOldExprIdents callElimPrefix takenVars oldVars
   let oldTys ← oldParams.mapM fun param => do
     match instantiatedInputs.find? param with
     | some ty => pure (Lambda.LTy.forAll [] ty)
@@ -233,10 +233,13 @@ def callElimCmd (taken takenVars : Std.HashSet String) (vt : TypeSpec.TypeScopes
       | _ => return .none
 
 /-- Call Elimination for an entire program by walking through all procedure
-bodies, structured ones and the blocks of CFG ones. -/
-def callElim' (p : Program) : CoreTransformM (Bool × Program) :=
-  let taken := p.typeNamesWithPrefix callElimTyPrefix
-  let takenVars := p.varNames.insertMany (p.declaredNames ++ p.funcNames)
+bodies, structured ones and the blocks of CFG ones. When `avoid` is set, the temporaries avoid
+the program's variable and declaration names, and the opaque types its type names with
+`callElimTyPrefix`; a caller that knows the program has no name with call elimination's prefixes
+(`Transform.withClaimedPrefixes`) clears it, and no names are collected. -/
+def callElim' (p : Program) (avoid : Bool := true) : CoreTransformM (Bool × Program) :=
+  let taken := if avoid then p.typeNamesWithPrefix callElimTyPrefix else {}
+  let takenVars := if avoid then p.varNames.insertMany (p.declaredNames ++ p.funcNames) else {}
   declareGeneratedTypes callElimTyPrefix taken
     (runProgramTyped (targetProcList := .none) (callElimCmd taken takenVars) p
       (cfgCmd := some (callElimCommand taken takenVars)))
@@ -251,13 +254,27 @@ end CallElim
     `callElimPostPrefix`, which is not a marker. A marker of a havoc (`callElimHavocPrefix`) has
     the condition `true`, so where `--vcgen wp` keeps it under its reach condition
     (`markerGuards`), a counterexample that falsifies that condition does not pass the call; a
-    postcondition assumption is a marker on every path that keeps it. The `init`s that replace a call in a CFG block on a
-    cycle are rejected by `CFG.typeCheck` (`checkNoLoopInits`) if the body is checked again. -/
+    postcondition assumption is a marker on every path that keeps it. The `init`s that replace a
+    call in a CFG block on a cycle are rejected by `CFG.typeCheck` (`checkNoLoopInits`) if the
+    body is checked again. It claims the prefixes of its names (`Transform.withClaimedPrefixes`):
+    only when the program may use them do its temporaries avoid the program's variable names
+    and its opaque types the program's type names. It records `callElimPrefix` only when it
+    eliminated a call, and `callElimTyPrefix` only when it declared an opaque type, so that
+    running it again on its output does not find its own prefixes recorded and warn. A program
+    with a label that has the prefix of a marker is rejected in any case. -/
 def callElimPipelinePhase : PipelinePhase where
-  transform p := do
-    rejectMarkerLabels "call elimination" CallElim.callElimAssumePrefix p
-    rejectMarkerLabels "call elimination" CallElim.callElimHavocPrefix p
-    CallElim.callElim' p
+  maintainsIdentPrefixes := true
+  transform p :=
+    Transform.withClaimedPrefixes "callElim" [CallElim.callElimTyPrefix, CallElim.callElimPrefix]
+      p
+      (fun free => do
+        rejectMarkerLabels "call elimination" CallElim.callElimAssumePrefix p
+        rejectMarkerLabels "call elimination" CallElim.callElimHavocPrefix p
+        CallElim.callElim' p (avoid := !free))
+      (recorded := fun changed out =>
+        (if changed then [CallElim.callElimPrefix] else []) ++
+        (if Transform.declaresWithPrefix out CallElim.callElimTyPrefix then
+          [CallElim.callElimTyPrefix] else []))
   phase.name := "callElim"
   phase.validationPrefixes := [CallElim.callElimAssumePrefix]
   -- A call to a callee without postconditions becomes a bare `havoc` of its outputs.

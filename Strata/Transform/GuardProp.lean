@@ -198,7 +198,8 @@ end GuardProp
     keeps every statement and only rewrites conditions, with free variables, operators and
     annotated variables taken from the input, so it keeps the facts of its input. -/
 def guardPropPipelinePhase : PipelinePhase :=
-  modelPreservingPipelinePhase "guardProp" GuardProp.guardPropProgram
+  modelPreservingPipelinePhase "guardProp" (maintainsIdentPrefixes := true)
+      GuardProp.guardPropProgram
     (requires := factSet![.noCFGBodies, .noCalls, .noLoops, .staticSingleAssignment,
                          .hasObligationForm])
     (preserves := Strata.Pipeline.factSetUnion obligationRewritePreserves

@@ -182,7 +182,7 @@ end FunctionInlining
     phase after `precondElim`, since inlining a call removes the site where the
     function's precondition would be raised as an obligation. -/
 def functionInliningPipelinePhase (maxDepth : Option Nat := none) : PipelinePhase :=
-  modelPreservingPipelinePhase "functionInlining"
+  modelPreservingPipelinePhase "functionInlining" (maintainsIdentPrefixes := true)
     (requires := factSet![.noPrecondsFromFuncs, .typeAnnotated])
     (preserves := factSet![.noCFGBodies, .noCalls, .noLoops, .noLoopInvariants,
                          .noLoopMeasures, .staticSingleAssignment, .noPrecondsFromFuncs,

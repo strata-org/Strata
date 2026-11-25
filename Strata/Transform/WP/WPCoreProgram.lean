@@ -109,7 +109,7 @@ public section
   let decls ← program.decls.mapM fun d => match d with
     | .proc p md => if isObligationUnit p then pure (some d) else wpProc G p md
     | d => pure (some d)
-  pure { decls := decls.filterMap id }
+  pure { program with decls := decls.filterMap id }
 
 /-- The declaration phase of a program (`declObligationsProgramWith`), then its WP phase
     (`wpProcsProgram`). -/
@@ -150,7 +150,7 @@ def wpProgram (program : Program)
     annotated variables, literals and `ite`s. -/
 def wpPipelinePhase
     (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default) : PipelinePhase :=
-  modelPreservingPipelinePhase "wp"
+  modelPreservingPipelinePhase "wp" (maintainsIdentPrefixes := true)
     (requires := factSet![.noCFGBodies, .noCalls, .noLoops, .noNondetGuards, .typeAnnotated,
       .exitsCovered])
     (establishes := factSet![.noProcedureContracts, .treeForm, .armsHaveObligations])

@@ -148,22 +148,23 @@ def CallInIte  : Core.Program := translate CallInIteSrc
 
 -- The names the pass generates (non-empty, so the agreement below is not vacuous).
 #guard passGeneratedNames MultiCall ==
-  ["tmp_arg_0", "tmp_output_1", "$__callElimAssume_double_correct_2", "tmp_arg_3", "tmp_output_4",
-   "$__callElimAssume_double_correct_5"]
+  ["$__callElimTmp_arg_0", "$__callElimTmp_output_1", "$__callElimAssume_double_correct_2",
+   "$__callElimTmp_arg_3", "$__callElimTmp_output_4", "$__callElimAssume_double_correct_5"]
 #guard passGeneratedNames InoutOld ==
-  ["tmp_arg_0", "tmp_arg_1", "tmp_arg_2", "tmp_arg_3", "tmp_arg_4", "tmp_j_5", "tmp_b_6",
-   "old_j_7", "callElimAssert_f_requires_0_8", "callElimPost_f_ensures_1_9",
-   "callElimPost_f_ensures_2_10"]
+  ["$__callElimTmp_arg_0", "$__callElimTmp_arg_1", "$__callElimTmp_arg_2", "$__callElimTmp_arg_3",
+   "$__callElimTmp_arg_4", "$__callElimTmp_j_5", "$__callElimTmp_b_6", "$__callElimOld_j_7",
+   "$__callElimAssert_f_requires_0_8", "$__callElimPost_f_ensures_1_9",
+   "$__callElimPost_f_ensures_2_10"]
 #guard passGeneratedNames CallInIte ==
-  ["tmp_arg_0", "tmp_output_1", "$__callElimAssume_double_correct_2", "tmp_arg_3", "tmp_output_4",
-   "$__callElimAssume_double_correct_5"]
+  ["$__callElimTmp_arg_0", "$__callElimTmp_output_1", "$__callElimAssume_double_correct_2",
+   "$__callElimTmp_arg_3", "$__callElimTmp_output_4", "$__callElimAssume_double_correct_5"]
 
 -- The extractor's fresh names are the pass's generated names, exactly and in order.
 #guard extractorFreshNames MultiCall == passGeneratedNames MultiCall
 #guard extractorFreshNames InoutOld == passGeneratedNames InoutOld
 #guard extractorFreshNames CallInIte == passGeneratedNames CallInIte
 
-/-- The precondition targets the extractor records: each generated `callElimAssert_*`
+/-- The precondition targets the extractor records: each generated `$__callElimAssert_*`
     label paired with the label of the callee precondition it checks (`[]` on an
     extractor error). -/
 def extractorPreTargets (p : Core.Program) : List (String × String) :=
@@ -171,8 +172,8 @@ def extractorPreTargets (p : Core.Program) : List (String × String) :=
   | .ok origins => origins.flatMap fun o => o.preconditionTargets.map fun (l, t) => (l, t.label)
   | .error _ => []
 
--- The generated label is one the pass emitted (`callElimAssert_f_requires_0_8` above).
-/-- info: [("callElimAssert_f_requires_0_8", "f_requires_0")] -/
+-- The generated label is one the pass emitted (`$__callElimAssert_f_requires_0_8` above).
+/-- info: [("$__callElimAssert_f_requires_0_8", "f_requires_0")] -/
 #guard_msgs in #eval extractorPreTargets InoutOld
 #guard extractorPreTargets MultiCall == []
 
@@ -214,17 +215,17 @@ def CfgThenStructured : Core.Program := translate CfgThenStructuredSrc
 /-- info: 1 -/
 #guard_msgs in #eval extractorCallCount CfgThenStructured
 #guard passGeneratedNames CfgThenStructured ==
-  ["tmp_arg_0", "tmp_y_1", "$__callElimAssume_double_correct_2", "tmp_arg_3", "tmp_y_4",
-   "$__callElimAssume_double_correct_5"]
+  ["$__callElimTmp_arg_0", "$__callElimTmp_y_1", "$__callElimAssume_double_correct_2",
+   "$__callElimTmp_arg_3", "$__callElimTmp_y_4", "$__callElimAssume_double_correct_5"]
 #guard extractorFreshNames CfgThenStructured == (passGeneratedNames CfgThenStructured).drop 3
 
 /-! ## A program variable named like a temporary
 
 The pass draws its temporaries with `CoreGenState.genAvoiding`, which skips a name of the
-program: here the parameter `tmp_arg_0`, so the argument's temporary is `tmp_arg_1`. The
-generator still logs the skipped draw (`passGeneratedNames`); the extractor records only the
-names the pass used, so the call-elimination back-link keeps `tmp_arg_0` in a lifted store
-(`RStore.dropVars`). -/
+program: here the parameter `$__callElimTmp_arg_0`, so the argument's temporary is
+`$__callElimTmp_arg_1`. The generator still logs the skipped draw (`passGeneratedNames`); the
+extractor records only the names the pass used, so the call-elimination back-link keeps
+`$__callElimTmp_arg_0` in a lifted store (`RStore.dropVars`). -/
 
 /-- A procedure whose parameter is named like the pass's first argument temporary. -/
 def ClashSrc :=
@@ -239,30 +240,35 @@ spec {
   r := int.add(n, 1);
 };
 
-procedure P(tmp_arg_0 : int, out y : int) {
-  call Inc(tmp_arg_0, out y);
-  assert [a]: (tmp_arg_0 != 5);
+procedure P($__callElimTmp_arg_0 : int, out y : int) {
+  call Inc($__callElimTmp_arg_0, out y);
+  assert [a]: ($__callElimTmp_arg_0 != 5);
 };
 #end
 
 def Clash : Core.Program := translate ClashSrc
 
 #guard passGeneratedNames Clash ==
-  ["tmp_arg_0", "tmp_arg_1", "tmp_y_2", "$__callElimAssume_inc_post_3"]
-#guard extractorFreshNames Clash == ["tmp_arg_1", "tmp_y_2", "$__callElimAssume_inc_post_3"]
+  ["$__callElimTmp_arg_0", "$__callElimTmp_arg_1", "$__callElimTmp_y_2",
+   "$__callElimAssume_inc_post_3"]
+#guard extractorFreshNames Clash ==
+  ["$__callElimTmp_arg_1", "$__callElimTmp_y_2", "$__callElimAssume_inc_post_3"]
 
-/-- Whether a store binding `tmp_arg_0` and `tmp_arg_1` keeps each of them once the fresh
-    variables the extractor records for `Clash` are dropped (`RStore.dropVars`). -/
+/-- Whether a store binding `$__callElimTmp_arg_0` and `$__callElimTmp_arg_1` keeps each of them
+    once the fresh variables the extractor records for `Clash` are dropped (`RStore.dropVars`). -/
 def clashStoreKept : Bool × Bool :=
   match (runWith Clash callElimOrigin' CoreTransformState.emp).1 with
   | .ok origins =>
     let σ : Imperative.RStore Expression := fun (x : Expression.Ident) =>
-      if x.name == "tmp_arg_0" || x.name == "tmp_arg_1" then some Imperative.HasBool.tt else none
+      if x.name == "$__callElimTmp_arg_0" || x.name == "$__callElimTmp_arg_1" then
+        some Imperative.HasBool.tt
+      else none
     let σ' := Imperative.RStore.dropVars (callElimFreshVars origins) σ
-    ((σ' ⟨"tmp_arg_0", ()⟩).isSome, (σ' ⟨"tmp_arg_1", ()⟩).isSome)
+    ((σ' ⟨"$__callElimTmp_arg_0", ()⟩).isSome, (σ' ⟨"$__callElimTmp_arg_1", ()⟩).isSome)
   | .error _ => (false, true)
 
--- The program's `tmp_arg_0` survives; the pass's temporary `tmp_arg_1` is dropped.
+-- The program's `$__callElimTmp_arg_0` survives; the pass's temporary `$__callElimTmp_arg_1` is
+-- dropped.
 #guard clashStoreKept == (true, false)
 
 /-! ## Per-site expansions

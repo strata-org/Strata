@@ -56,7 +56,7 @@ public section
   let decls ← mid.decls.mapM fun d => match d with
     | .proc q _ => ssaProc fac G q
     | d => pure (some d)
-  pure { decls := decls.filterMap id }
+  pure { mid with decls := decls.filterMap id }
 
 end -- public section
 
@@ -89,7 +89,7 @@ def ssaProgramOf (program : Program)
     emits an `ite *` only when both arms are nonempty, so its output keeps that fact. -/
 def ssaPipelinePhase
     (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default) : PipelinePhase :=
-  modelPreservingPipelinePhase "ssa"
+  modelPreservingPipelinePhase "ssa" (maintainsIdentPrefixes := true)
     (requires := factSet![.noCFGBodies, .noProcedureContracts, .typeAnnotated, .treeForm,
       .armsHaveObligations])
     (establishes := factSet![.staticSingleAssignment, .hasObligationForm])

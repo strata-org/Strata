@@ -696,7 +696,7 @@ def unrollBoundedQuantifiersProgram (F : @Lambda.Factory CoreLParams) (p : Progr
   let (_, rs) := p.decls.foldl (init := (Scope.init F, ([] : List (Decl × Counts))))
     fun (sc, acc) decl => (sc.extend decl, unrollDecl sc decl :: acc)
   let (decls, counts) := unzipCounts rs.reverse
-  ({ decls := decls }, counts)
+  ({ p with decls := decls }, counts)
 
 end Core.UnrollBoundedQuantifiers
 
@@ -713,7 +713,7 @@ public section
     subject reassigned between the `assume` stating it and the goal, the fold would
     range over the old value and drop conjuncts. -/
 def Core.unrollBoundedQuantifiersPipelinePhase : Core.PipelinePhase :=
-  Core.modelPreservingPipelinePhase "unrollBoundedQuantifiers"
+  Core.modelPreservingPipelinePhase "unrollBoundedQuantifiers" (maintainsIdentPrefixes := true)
     -- `hasObligationForm` rules out `block` and `exit`. `collectAssumeIntFacts`
     -- reads an `assume` out of a `block`, which is unsound if an `exit` skips it.
     (requires := factSet![.noCFGBodies, .noLoops, .staticSingleAssignment,

@@ -581,7 +581,7 @@ def precondElimPipelinePhase : PipelinePhase :=
   -- precondition is instantiated by substituting the call's arguments into it,
   -- and a function-typed parameter applied to an abstraction argument would
   -- leave a redex behind.
-  modelPreservingPipelinePhase "precondElim"
+  modelPreservingPipelinePhase "precondElim" (maintainsIdentPrefixes := true)
     (requires := factSet![.typeAnnotated])
     (establishes := factSet![.noPrecondsFromFuncs])
     (preserves := factSet![.noCFGBodies, .noCalls, .noLoops, .noLoopInvariants,
@@ -589,8 +589,13 @@ def precondElimPipelinePhase : PipelinePhase :=
                          .noProcedureContracts,
                          .noPolymorphicFunctions, .typeAnnotated, .noInits, .exitsCovered,
                          .noCFGCycles])
-    fun prog => do
-      PrecondElim.precondElim prog
+    -- The preconditions instantiated at calls name the callee's type parameters that a call
+    -- does not determine with `Lambda.precondTyVarPrefix`, and its lemmas bind the type
+    -- variables of abstracted calls with `abstractTyPrefix`. Both are reserved type-variable
+    -- prefixes (`Lambda.reservedNamePrefixes`), which type checking renames away from the
+    -- program's type parameters, so the pass only records them.
+    fun prog => Transform.recordIdentPrefixes [Lambda.precondTyVarPrefix, abstractTyPrefix] prog
+      (PrecondElim.precondElim prog)
 
 end Core
 

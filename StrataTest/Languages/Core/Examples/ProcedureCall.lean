@@ -86,21 +86,21 @@ a_positive: int.gt(a@1, 0)
 Obligation:
 int.sub(int.add(counter@1, a@1), a@1) == counter@1
 
-Label: callElimAssert_counter_ge_zero_5
+Label: $__callElimAssert_counter_ge_zero_5
 Property: assert
 Assumptions:
 counter_ge_zero: int.ge(counter@2, 0)
 Obligation:
 int.ge(counter@2, 0)
 
-Label: callElimAssert_a_positive_6
+Label: $__callElimAssert_a_positive_6
 Property: assert
 Assumptions:
 counter_ge_zero: int.ge(counter@2, 0)
 Obligation:
 true
 
-Label: callElimAssert_counter_ge_zero_14
+Label: $__callElimAssert_counter_ge_zero_14
 Property: assert
 Assumptions:
 counter_ge_zero: int.ge(counter@2, 0)
@@ -109,7 +109,7 @@ $__callElimAssume_old_g_property_8: int.sub(b@2, 8) == counter@2
 Obligation:
 int.ge(counter@3, 0)
 
-Label: callElimAssert_a_positive_15
+Label: $__callElimAssert_a_positive_15
 Property: assert
 Assumptions:
 counter_ge_zero: int.ge(counter@2, 0)
@@ -144,19 +144,19 @@ Obligation: old_g_property
 Property: assert
 Result: ✅ pass
 
-Obligation: callElimAssert_counter_ge_zero_5
+Obligation: $__callElimAssert_counter_ge_zero_5
 Property: assert
 Result: ✅ pass
 
-Obligation: callElimAssert_a_positive_6
+Obligation: $__callElimAssert_a_positive_6
 Property: assert
 Result: ✅ pass
 
-Obligation: callElimAssert_counter_ge_zero_14
+Obligation: $__callElimAssert_counter_ge_zero_14
 Property: assert
 Result: ✅ pass
 
-Obligation: callElimAssert_a_positive_15
+Obligation: $__callElimAssert_a_positive_15
 Property: assert
 Result: ✅ pass
 

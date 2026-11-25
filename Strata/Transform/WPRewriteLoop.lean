@@ -81,7 +81,7 @@ end WPRewriteLoop
     `betaReducePipelinePhase` after it.  Each component keeps the facts listed in `preserves`. -/
 def wpRewriteLoopPipelinePhase
     (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default) : PipelinePhase :=
-  modelPreservingPipelinePhase "wpLoop"
+  modelPreservingPipelinePhase "wpLoop" (maintainsIdentPrefixes := true)
     (fun program => do
       let fac ← Transform.liftDiag (wpFactory moreFns program)
       WPLoop.wpLoopProgramWith (WPRewriteLoop.loopBodyF fac) program)

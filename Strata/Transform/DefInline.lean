@@ -198,7 +198,8 @@ end DefInline
     expressions, with free variables, operators and annotated variables taken from the input, and
     substitutes no function value, so it keeps the facts of its input. -/
 def defInlinePipelinePhase : PipelinePhase :=
-  modelPreservingPipelinePhase "defInline" (DefInline.defInlineProgram (.after DefInline.addFold))
+  modelPreservingPipelinePhase "defInline" (maintainsIdentPrefixes := true)
+      (DefInline.defInlineProgram (.after DefInline.addFold))
     (requires := factSet![.noCFGBodies, .noCalls, .noLoops, .staticSingleAssignment,
                          .hasObligationForm])
     (preserves := Strata.Pipeline.factSetUnion obligationRewritePreserves

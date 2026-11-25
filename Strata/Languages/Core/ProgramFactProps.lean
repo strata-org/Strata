@@ -43,7 +43,10 @@ Key results:
 * `ProgramFact.holds_iff_decls_all`, `ProgramFact.holds_of_decls_subset`,
   `ProgramFact.holds_of_procs_eq_of_subset` — every fact but `wellFormedCalls` and `noLambdas`
   checks each declaration on its own, so it holds of a program whose declarations are among
-  those of one it holds of; with the same procedures, `wellFormedCalls` does too. -/
+  those of one it holds of; with the same procedures, `wellFormedCalls` does too.
+* `ProgramFact.holds_of_decls_eq` — every fact reads only the declarations, so it holds of a
+  program with the same declarations, such as one that differs only in its recorded identifier
+  prefixes. -/
 
 namespace Core
 
@@ -288,6 +291,18 @@ theorem ProgramFact.holds_of_procs_eq_of_subset {f : ProgramFact} (hl : f ≠ .n
   by_cases hv : f = .varsNotFunctions
   · subst hv; exact Program.varsNotFunctions_of_subset hsub h
   · exact ProgramFact.holds_of_decls_subset hf hl hv hsub h
+
+/-- A fact reads only the declarations, so it holds of a program with the same ones (one that
+    differs only in its recorded identifier prefixes, for instance). -/
+theorem ProgramFact.holds_of_decls_eq {f : ProgramFact} {p p' : Program}
+    (hd : p'.decls = p.decls) (h : f.holds p) : f.holds p' := by
+  by_cases hw : f = .wellFormedCalls
+  · subst hw; exact Program.callsWellFormed_of_procs_eq (by rw [hd]) h
+  obtain ⟨d, u⟩ := p
+  obtain ⟨d', u'⟩ := p'
+  simp only at hd
+  subst hd
+  cases f <;> first | exact absurd rfl hw | exact h
 
 end -- public section
 

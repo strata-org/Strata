@@ -711,7 +711,7 @@ Result: ✅ pass
 
 Call elimination rewrites calls in CFG blocks as well as in structured bodies, so a
 `cfg` procedure may call other procedures. Each call becomes an `assert` of the
-callee's precondition (labelled `callElimAssert_…`), a `havoc` of its outputs, and
+callee's precondition (labelled `$__callElimAssert_…`), a `havoc` of its outputs, and
 an `assume` of its postcondition, in place in its block. `CfgCaller` calls `Inc`
 once on one branch and twice on the other; its preconditions and postcondition
 hold. `CfgBadCaller` has no precondition, so `Inc`'s `x ≥ 0` cannot be shown. -/
@@ -766,15 +766,15 @@ Obligation: inc_post
 Property: assert
 Result: ✅ pass
 
-Obligation: callElimAssert_inc_nonneg_2
+Obligation: $__callElimAssert_inc_nonneg_2
 Property: assert
 Result: ✅ pass
 
-Obligation: callElimAssert_inc_nonneg_6
+Obligation: $__callElimAssert_inc_nonneg_6
 Property: assert
 Result: ✅ pass
 
-Obligation: callElimAssert_inc_nonneg_10
+Obligation: $__callElimAssert_inc_nonneg_10
 Property: assert
 Result: ✅ pass
 
@@ -786,7 +786,7 @@ Obligation: m_gt_a
 Property: assert
 Result: ✅ pass
 
-Obligation: callElimAssert_inc_nonneg_14
+Obligation: $__callElimAssert_inc_nonneg_14
 Property: assert
 Result: ❌ fail
 -/
@@ -799,15 +799,15 @@ Obligation: inc_post
 Property: assert
 Result: ✅ pass
 
-Obligation: callElimAssert_inc_nonneg_2
+Obligation: $__callElimAssert_inc_nonneg_2
 Property: assert
 Result: ✅ pass
 
-Obligation: callElimAssert_inc_nonneg_6
+Obligation: $__callElimAssert_inc_nonneg_6
 Property: assert
 Result: ✅ pass
 
-Obligation: callElimAssert_inc_nonneg_10
+Obligation: $__callElimAssert_inc_nonneg_10
 Property: assert
 Result: ✅ pass
 
@@ -819,7 +819,7 @@ Obligation: m_gt_a
 Property: assert
 Result: ✅ pass
 
-Obligation: callElimAssert_inc_nonneg_14
+Obligation: $__callElimAssert_inc_nonneg_14
 Property: assert
 Result: ❌ fail
 -/

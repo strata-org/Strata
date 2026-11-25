@@ -659,7 +659,12 @@ end Core.LambdaLift
     when a capture has neither. These claims are not proved; `LambdaHigherOrderTests`
     checks each one that has an executable check on every program of that file. -/
 def Core.lambdaLiftPipelinePhase : Core.PipelinePhase where
-  transform := Core.LambdaLift.run
+  -- TODO: the lifted functions are numbered without looking at the program's names, so a
+  -- program declaring one (`$__lam_0`) is refused as a redefinition. When the program may use
+  -- `liftedLambdaPrefix` (`Program.identPrefixesFree`), the names must be generated freshly.
+  transform p := Transform.recordIdentPrefixes
+    [Core.NameMangling.liftedLambdaPrefix, Core.spuriousModelsLabel] p (Core.LambdaLift.run p)
+  maintainsIdentPrefixes := true
   phase.name := "lambdaLift"
   phase.getValidation := Core.spuriousModelsValidation
   requires := factSet![.noCFGBodies, .noBetaRedexes, .noPolymorphicProcedures,
@@ -681,7 +686,9 @@ def Core.lambdaLiftPipelinePhase : Core.PipelinePhase where
     `noLambdas` it is the identity, which establishes and preserves the same facts. -/
 def Core.lambdaLiftIfNeededPipelinePhase : Core.PipelinePhase :=
   { Core.lambdaLiftPipelinePhase with
-    transform := Core.LambdaLift.runIfNeeded
+    transform p := Transform.recordIdentPrefixes
+      [Core.NameMangling.liftedLambdaPrefix, Core.spuriousModelsLabel] p
+      (Core.LambdaLift.runIfNeeded p)
     phase := { Core.lambdaLiftPipelinePhase.phase with name := "lambdaLiftIfNeeded" }
     establishes_ok := by unproved_contract
     preserves_ok := by unproved_contract }

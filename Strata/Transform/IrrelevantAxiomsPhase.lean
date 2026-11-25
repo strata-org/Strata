@@ -26,6 +26,8 @@ public section
     fact (`irrelevantAxioms_keeps`). -/
 def irrelevantAxiomsPipelinePhase (functions : List String) : PipelinePhase where
   transform := irrelevantAxiomsTransform functions
+  -- It generates no `$__` name.
+  maintainsIdentPrefixes := true
   phase.name := "removeIrrelevantAxioms"
   requires := factSet![.typeAnnotated]
   preserves := factSet![.wellFormedCalls, .noCFGBodies, .noCalls, .noLoops,

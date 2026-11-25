@@ -19,7 +19,12 @@ public section
 Small, transformation-agnostic store lemmas shared across the
 structured-to-unstructured passes (`projectStore_undef_at`).  They depend only on
 the base statement semantics, so they sit below every pass-specific correctness
-proof. -/
+proof.
+
+`Core.Transform.recordIdentPrefixes_run` and `Core.Transform.withClaimedPrefixes_run` reduce a
+successful run of a pass that records or claims name prefixes to a run of the pass itself, with
+the same declarations; `Core.Transform.recordIdentPrefixes_run_of_run` goes the other way.
+Pipeline-phase correctness proofs use them. -/
 
 
 namespace Imperative
@@ -718,6 +723,9 @@ theorem runProgramUntil_post {f : Statement → CoreTransformM (Option (List Sta
 variable (prefixStr : String)
 
 variable (taken : Std.HashSet String)
+-- The prefix call elimination's temporaries carry (`CallElim.callElimPrefix` in the pass); the
+-- freshness results below hold for any.
+variable {pfx : String}
 
 /-- A name `CoreGenState.gen` draws at the prefix `prefixStr` has the `<prefix>_<n>` shape. -/
 private theorem gen_form (γ : CoreGenState) :
@@ -914,28 +922,28 @@ private theorem mapM_fresh_spec {α : Type} (g : α → CoreGenM Expression.Iden
 /-- The argument temporaries `genArgExprIdents` draws are pairwise distinct, new, and not in
     `taken`. -/
 private theorem genArgExprIdents_spec (k : Nat) {γ γ' : CoreGenState} {ns : List Expression.Ident}
-    (hwf : γ.WF) (h : genArgExprIdents taken k γ = (ns, γ')) :
+    (hwf : γ.WF) (h : genArgExprIdents pfx taken k γ = (ns, γ')) :
     γ'.WF ∧ γ.generated ⊆ γ'.generated ∧ ns.Nodup ∧
       ∀ n ∈ ns, n ∈ γ'.generated ∧ n ∉ γ.generated ∧ n.name ∉ taken :=
-  mapM_fresh_spec taken (fun _ => genArgExprIdent taken)
+  mapM_fresh_spec taken (fun _ => genArgExprIdent pfx taken)
     (fun _ _ _ _ hwf h => genTempIdent_spec taken _ _ hwf h) _ hwf h
 
 /-- The output temporaries `genOutExprIdents` draws are pairwise distinct, new, and not in
     `taken`. -/
 private theorem genOutExprIdents_spec (idents : List Expression.Ident) {γ γ' : CoreGenState}
-    {ns : List Expression.Ident} (hwf : γ.WF) (h : genOutExprIdents taken idents γ = (ns, γ')) :
+    {ns : List Expression.Ident} (hwf : γ.WF) (h : genOutExprIdents pfx taken idents γ = (ns, γ')) :
     γ'.WF ∧ γ.generated ⊆ γ'.generated ∧ ns.Nodup ∧
       ∀ n ∈ ns, n ∈ γ'.generated ∧ n ∉ γ.generated ∧ n.name ∉ taken :=
-  mapM_fresh_spec taken (genOutExprIdent taken)
+  mapM_fresh_spec taken (genOutExprIdent pfx taken)
     (fun _ _ _ _ hwf h => genTempIdent_spec taken _ _ hwf h) _ hwf h
 
 /-- The `old` variables `genOldExprIdents` draws are pairwise distinct, new, and not in
     `taken`. -/
 private theorem genOldExprIdents_spec (idents : List Expression.Ident) {γ γ' : CoreGenState}
-    {ns : List Expression.Ident} (hwf : γ.WF) (h : genOldExprIdents taken idents γ = (ns, γ')) :
+    {ns : List Expression.Ident} (hwf : γ.WF) (h : genOldExprIdents pfx taken idents γ = (ns, γ')) :
     γ'.WF ∧ γ.generated ⊆ γ'.generated ∧ ns.Nodup ∧
       ∀ n ∈ ns, n ∈ γ'.generated ∧ n ∉ γ.generated ∧ n.name ∉ taken :=
-  mapM_fresh_spec taken (genOldExprIdent taken)
+  mapM_fresh_spec taken (genOldExprIdent pfx taken)
     (fun _ _ _ _ hwf h => genTempIdent_spec taken _ _ hwf h) _ hwf h
 
 /-- Names drawn in two consecutive runs, each giving pairwise distinct names new to its input
@@ -961,9 +969,9 @@ private theorem fresh_append {γ γ1 γ2 : CoreGenState} {ns1 ns2 : List Express
     pairwise distinct, new to the generator, and none is in `taken`. -/
 theorem callElimTemps_spec (k : Nat) (outs olds : List Expression.Ident)
     {γ γ1 γ2 γ3 : CoreGenState} {as os ds : List Expression.Ident} (hwf : γ.WF)
-    (ha : genArgExprIdents taken k γ = (as, γ1))
-    (ho : genOutExprIdents taken outs γ1 = (os, γ2))
-    (hd : genOldExprIdents taken olds γ2 = (ds, γ3)) :
+    (ha : genArgExprIdents pfx taken k γ = (as, γ1))
+    (ho : genOutExprIdents pfx taken outs γ1 = (os, γ2))
+    (hd : genOldExprIdents pfx taken olds γ2 = (ds, γ3)) :
     γ3.WF ∧ (as ++ os ++ ds).Nodup ∧ ∀ n ∈ as ++ os ++ ds, n ∉ γ.generated ∧ n.name ∉ taken := by
   obtain ⟨hwf1, hsub1, hnd1, h1⟩ := genArgExprIdents_spec taken k hwf ha
   obtain ⟨hwf2, hsub2, hnd2, h2⟩ := genOutExprIdents_spec taken outs hwf1 ho
@@ -994,6 +1002,76 @@ theorem createInitVars_eq_cmds
     createInitVars trips md = (createInitVarCmds trips md).map .cmd := by
   simp only [createInitVars, createInitVarCmds, List.map_map]
   congr 1
+
+/-- A successful run of `recordIdentPrefixes` is a run of `t` with the same declarations: only
+    the recorded prefixes of the output differ. -/
+theorem recordIdentPrefixes_run {pfxs : List String} {p : Program}
+    {t : CoreTransformM (Bool × Program)} {s s' : CoreTransformState} {changed : Bool}
+    {out : Program}
+    (h : (recordIdentPrefixes pfxs p t).run s = (.ok (changed, out), s')) :
+    ∃ out₀, t.run s = (.ok (changed, out₀), s') ∧
+      out = out₀.addIdentPrefixes (p.knownIdentPrefixes ++ pfxs) := by
+  unfold recordIdentPrefixes at h
+  rcases ht : t.run s with ⟨_ | ⟨c, o⟩, σ⟩ <;>
+    simp_all only [ExceptT.run, bind, ExceptT.bind, ExceptT.mk, pure, ExceptT.pure,
+      StateT.bind, ExceptT.bindCont, StateT.pure]
+  · cases h
+  · obtain ⟨⟨rfl, rfl⟩, rfl⟩ := h
+    exact ⟨o, rfl, rfl⟩
+
+/-- A property of the output program that holds after every run of `t` holds after every run of
+    `recordIdentPrefixes`, when recording prefixes keeps it. -/
+theorem Post.recordIdentPrefixes {pfxs : List String} {p : Program}
+    {t : CoreTransformM (Bool × Program)} {Q : Program → Prop} (h : Post t fun r => Q r.2)
+    (hQ : ∀ q pfxs, Q q → Q (q.addIdentPrefixes pfxs)) :
+    Post (Transform.recordIdentPrefixes pfxs p t) fun r => Q r.2 := fun _ _ _ hr => by
+  obtain ⟨_, ht, hout⟩ := recordIdentPrefixes_run (s := _) (s' := _) hr
+  exact hout ▸ hQ _ _ (h _ _ _ ht)
+
+/-- When `t` succeeds, so does `recordIdentPrefixes`, with the prefixes added to its output. -/
+theorem recordIdentPrefixes_run_of_run {pfxs : List String} {p : Program}
+    {t : CoreTransformM (Bool × Program)} {s s' : CoreTransformState} {changed : Bool}
+    {out : Program} (h : t.run s = (.ok (changed, out), s')) :
+    (recordIdentPrefixes pfxs p t).run s =
+      (.ok (changed, out.addIdentPrefixes (p.knownIdentPrefixes ++ pfxs)), s') := by
+  unfold recordIdentPrefixes
+  simp only [ExceptT.run] at h
+  simp only [ExceptT.run, bind, ExceptT.bind, ExceptT.mk, pure, ExceptT.pure, StateT.bind,
+    ExceptT.bindCont, StateT.pure, h]
+
+/-- A successful run of `withClaimedPrefixes` is a run of `t` at whether the prefixes `pfxs` are
+    free among the prefixes `known` it read (the recorded ones of `p` when the state trusts them,
+    `Program.knownIdentPrefixes`, or those collected from `p`), from a state that may hold one
+    more warning, with the same declarations. -/
+theorem withClaimedPrefixes_run {pass : String} {pfxs : List String} {p : Program}
+    {t : Bool → CoreTransformM (Bool × Program)} {recorded : Bool → Program → List String}
+    {s s' : CoreTransformState} {changed : Bool} {out : Program}
+    (h : (withClaimedPrefixes pass pfxs p t recorded).run s = (.ok (changed, out), s')) :
+    ∃ known s₀ out₀,
+      (t (Strata.Name.prefixesFree known pfxs)).run s₀ = (.ok (changed, out₀), s') ∧
+      out = out₀.addIdentPrefixes (known ++ recorded changed out₀) := by
+  unfold withClaimedPrefixes at h
+  simp only [ExceptT.run, bind, ExceptT.bind, ExceptT.mk, pure, ExceptT.pure,
+      StateT.bind, ExceptT.bindCont, get, getThe,
+      MonadStateOf.get, StateT.get, ExceptT.lift, liftM, monadLift,
+      modify, modifyGet, MonadStateOf.modifyGet,
+      MonadLift.monadLift, Functor.map, StateT.map] at h
+  generalize (if s.identPrefixesTrusted = true then p.knownIdentPrefixes
+    else p.collectIdentPrefixes) = known at h
+  refine ⟨known, ?_⟩
+  cases hfree : Strata.Name.prefixesFree known pfxs <;>
+    simp only [hfree, ↓reduceIte, Bool.false_eq_true, StateT.bind, StateT.map, StateT.modifyGet,
+      ExceptT.bindCont, pure_bind] at h
+  · generalize hr : t false _ = r at h
+    obtain ⟨_ | ⟨c, o⟩, σ⟩ := r
+    · cases h
+    · obtain ⟨⟨rfl, rfl⟩, rfl⟩ := h
+      exact ⟨_, o, hr, rfl⟩
+  · generalize hr : t true s = r at h
+    obtain ⟨_ | ⟨c, o⟩, σ⟩ := r
+    · cases h
+    · obtain ⟨⟨rfl, rfl⟩, rfl⟩ := h
+      exact ⟨_, o, hr, rfl⟩
 
 end Transform
 

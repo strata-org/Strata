@@ -401,7 +401,9 @@ public section
     `--check-level full`: passed and unreachable), which is right for a goal that no state
     reaches. -/
 def Core.contextualRewritePhase : Core.PipelinePhase :=
-  Core.modelPreservingPipelinePhase "contextualRewrite" Core.ContextualRewrite.runContextualRewrite
+  -- It only rewrites goals and generates no names, so it keeps the recorded `$__` prefixes.
+  Core.modelPreservingPipelinePhase "contextualRewrite" (maintainsIdentPrefixes := true)
+    Core.ContextualRewrite.runContextualRewrite
     (requires := factSet![.noCFGBodies, .noCalls, .noPrecondsFromFuncs, .typeAnnotated])
     (preserves := factSet![.wellFormedCalls, .noCFGBodies, .noCalls, .noLoops,
                          .noLoopInvariants, .noLoopMeasures, .uniqueInits, .loopBodyNoInits,

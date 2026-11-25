@@ -766,7 +766,7 @@ def monomorphizeFunctionsPipelinePhase : PipelinePhase :=
   -- Specializing renames operator references rather than restructuring
   -- anything, so every fact carries across; it needs the lifted form because it
   -- only specializes top-level function declarations.
-  modelPreservingPipelinePhase "monomorphizeFunctions"
+  modelPreservingPipelinePhase "monomorphizeFunctions" (maintainsIdentPrefixes := true)
     -- A call inside a polymorphic procedure can instantiate a function at that
     -- procedure's type parameter, which is not a concrete type to specialize at,
     -- so the procedures must be monomorphic first.
@@ -777,7 +777,11 @@ def monomorphizeFunctionsPipelinePhase : PipelinePhase :=
                          .noPrecondsFromFuncs, .noNondetGuards, .noProcedureContracts,
                          .noPolymorphicProcedures,
                          .typeAnnotated, .noInits, .exitsCovered, .noCFGCycles])
-    fun prog => monomorphizeFunctions prog
+    -- The copies' prefix extends `monoPrefix` away from every name the copies could meet
+    -- (`avoidNames`), including the display names of binders, which the recorded prefixes do
+    -- not cover, so the pass cannot skip collecting them; it only records the prefix.
+    fun prog => Transform.recordIdentPrefixes [NameMangling.monoPrefix] prog
+      (monomorphizeFunctions prog)
 
 end Core
 

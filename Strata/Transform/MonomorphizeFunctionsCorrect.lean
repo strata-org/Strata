@@ -52,7 +52,9 @@ public theorem monomorphizeFunctions_reflectsLemmas :
     PhaseReflectsLemmas MonoPre Strata.Core.passMonomorphizeFunctions := by
   intro s p s' p' hpre hrun ρ hentry
   have hnp : ∀ d ∈ p.decls, d.kind ≠ .proc := hpre.noProcs
-  obtain ⟨st, hinv, hdecls, hfac⟩ := run_ok hnp (passMono_runs hrun)
+  obtain ⟨q, hq, hdq⟩ := passMono_runs hrun
+  obtain ⟨st, hinv, hdecls, hfac⟩ := run_ok hnp hq
+  replace hdecls := hdq.trans hdecls
   obtain ⟨hfac0, hstore⟩ := hentry
   have hg : RenOK (copyPrefixOf s p) (monoRen (collectPolymorphicFuncDecls p s.factory) s.factory) :=
     monoRen_ok _ _
@@ -179,7 +181,9 @@ public theorem monomorphizeFunctions_overapproximates :
 public theorem monomorphizeFunctions_noProcedures {s s' : Transform.CoreTransformState}
     {p p' : Program} (hnp : NoProcedures p)
     (hrun : Strata.Core.passMonomorphizeFunctions.Runs s p s' p') : NoProcedures p' := by
-  obtain ⟨st, -, hdecls, -⟩ := run_ok hnp (passMono_runs hrun)
+  obtain ⟨q, hq, hdq⟩ := passMono_runs hrun
+  obtain ⟨st, -, hdecls, -⟩ := run_ok hnp hq
+  replace hdecls := hdq.trans hdecls
   intro d hd
   rw [hdecls] at hd
   obtain ⟨⟨dT, j⟩, hx, hdx⟩ := List.mem_flatMap.mp hd

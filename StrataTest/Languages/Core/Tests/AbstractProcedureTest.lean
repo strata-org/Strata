@@ -104,7 +104,7 @@ false
 Label: Caller_ensures_0
 Property: assert
 Assumptions:
-callElimPost_Seven_ensures_0_1: y@2 == 7
+$__callElimPost_Seven_ensures_0_1: y@2 == 7
 Obligation:
 y@2 == 7
 

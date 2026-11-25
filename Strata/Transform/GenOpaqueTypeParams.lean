@@ -109,7 +109,7 @@ def substProc (S : Subst) (proc : Procedure) : Procedure :=
     `Core.CallElim.callElimTyPrefix := "$__cety"` is, so that generated names stand out.
     It does not make them fresh: `genOpaqueTypeName` skips the names the
     program declares with it. -/
-private def opaqueTypePrefix : String := "$__opaque"
+def opaqueTypePrefix : String := "$__opaque"
 
 /-- Mint a fresh, globally-unique opaque type name for type variable `tyVar` of
     procedure `procName`, differing from every name in `taken`: the `opaqueTypePrefix`-prefixed
@@ -196,12 +196,15 @@ open Core.Transform in
 /-- `CoreTransformM` runner for `GenOpaqueTypeParams`, suitable for use with
     `Core.Transform.run`.  Reports whether any opaque type declaration was
     introduced, which happens iff some procedure or lemma had type parameters or a
-    lemma had a type variable left in its annotations. -/
-def genOpaqueTypeParams (p : Program) : CoreTransformM (Bool × Program) := do
+    lemma had a type variable left in its annotations. Its opaque types avoid the names `p`
+    declares with their prefixes when `avoid` is set; a caller that knows the program has no
+    name with them (`Transform.withClaimedPrefixes`) clears it, and nothing is collected. -/
+def genOpaqueTypeParams (p : Program) (avoid : Bool := true) :
+    CoreTransformM (Bool × Program) := do
   -- `runAvoiding` declares only opaque-prefixed types, so the free-prefixed declared names
   -- of its output are those of `p`. Both steps avoid the names `p` declares with their
   -- prefix (`Program.declaredNames`).
-  let names := p.declaredNames
+  let names := if avoid then p.declaredNames else []
   let withOpaque ← GenOpaqueTypeParams.runAvoiding
     (namesWithPrefix names GenOpaqueTypeParams.opaqueTypePrefix) p
   let p' := GenOpaqueTypeParams.closeLemmaTypeVarsAvoiding
@@ -216,7 +219,7 @@ def genOpaqueTypeParamsPipelinePhase : PipelinePhase :=
   -- Processing each procedure on its own is sound only once no body
   -- contains a call, which is why `noCalls` is required and not merely
   -- convenient.
-  modelPreservingPipelinePhase "genOpaqueTypeParams"
+  modelPreservingPipelinePhase "genOpaqueTypeParams" (maintainsIdentPrefixes := true)
     (requires := factSet![.noCalls, .typeAnnotated])
     (establishes := factSet![.noPolymorphicProcedures])
     (preserves := factSet![.noCFGBodies, .noCalls, .noLoops, .noLoopInvariants,
@@ -225,8 +228,15 @@ def genOpaqueTypeParamsPipelinePhase : PipelinePhase :=
                          .noProcedureContracts,
                          .noPolymorphicFunctions, .typeAnnotated, .noInits, .exitsCovered,
                          .noCFGCycles])
-    fun prog =>
-      genOpaqueTypeParams prog
+    -- Its opaque types avoid the program's declared names with their prefixes only when the
+    -- program may use them. They are top-level declarations, and a prefix is recorded only when
+    -- one is declared with it, so that running the phase again does not warn.
+    fun prog => Transform.withClaimedPrefixes "genOpaqueTypeParams"
+      [GenOpaqueTypeParams.opaqueTypePrefix, GenOpaqueTypeParams.freeTyPrefix] prog
+      (fun free => genOpaqueTypeParams prog (avoid := !free))
+      (recorded := fun _ out =>
+        [GenOpaqueTypeParams.opaqueTypePrefix, GenOpaqueTypeParams.freeTyPrefix].filter
+          (Transform.declaresWithPrefix out))
 
 end Core
 

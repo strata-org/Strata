@@ -18,6 +18,7 @@ import all Strata.Transform.StructuredToUnstructured
 import Strata.Transform.StructuredToUnstructuredProps
 public import Strata.Languages.Core.ProgramFactProps
 import all Strata.Languages.Core.PipelinePhase
+import Strata.Transform.CoreTransformProps
 
 /-! # Core structured-to-unstructured correctness
 
@@ -285,11 +286,12 @@ theorem triple (base : InitEnvWFParams)
     hpost h
 
 /-- Running the structured-to-unstructured pipeline phase runs its program
-transform. -/
+transform, recording the prefix of its names. -/
 theorem structuredToUnstructuredPipelinePhase_ok (program : Program)
     (s : Transform.CoreTransformState) :
     (structuredToUnstructuredPipelinePhase.transform program).run s =
-      (structuredToUnstructured program).run s := by
+      (Transform.recordIdentPrefixes [Imperative.StructuredToUnstructured.s2uPrefix] program
+        (structuredToUnstructured program)).run s := by
   unfold structuredToUnstructuredPipelinePhase modelPreservingPipelinePhase
   rfl
 
@@ -385,10 +387,8 @@ theorem structuredToUnstructuredPipelinePhase_over
         AssertValidityPreservedWhen I (EventLang.coreBlock π) (EventLang.coreCFG π)
           (fun (st : Statements) => if st = ss then some cfg else none) (fun _ => True)
           (base.extend prefixesReserved) base := by
-  have htransform :
-      (structuredToUnstructured program).run s = (.ok (changed, out), s') := by
-    rw [← structuredToUnstructuredPipelinePhase_ok program s]
-    exact hrun
+  rw [structuredToUnstructuredPipelinePhase_ok program s] at hrun
+  obtain ⟨out₀, htransform, rfl⟩ := Transform.recordIdentPrefixes_run hrun
   have hnc := ProgramFact.noCalls_of_program hnoCallsProgram hq hb
   obtain ⟨bs, hproj, _⟩ := Core.noCalls_projectStmts hnc
   have hcfg := Core.stmtsToCFG_eq_some hproj

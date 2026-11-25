@@ -250,11 +250,12 @@ cfg entry {
 #end
 
 /--
-info: Obligation: f_ensures_1
+info:
+Obligation: f_ensures_1
 Property: assert
 Result: ✅ pass
 
-Obligation: callElimAssert_f_requires_0_2
+Obligation: $__callElimAssert_f_requires_0_2
 Property: assert
 Result: ✅ pass
 
@@ -1863,9 +1864,10 @@ info: [(s_pos3, fail), (s_v, fail), (x_int, fail)]
 
 /-! ## A call's temporaries do not take a name the procedure declares
 
-Call elimination names a call's temporaries `tmp_arg_N`, `tmp_<out>_N`, … with `N`
-past every number the program's names end in, so none is a name the program uses.
-`C` declares `tmp_arg_0` itself, and `D` has a parameter of that name, so the
+Call elimination names a call's temporaries `$__callElimTmp_arg_N`,
+`$__callElimTmp_<out>_N`, … with `N` past every number the program's names end in, so none
+is a name the program uses.
+`C` declares `$__callElimTmp_arg_0` itself, and `D` has a parameter of that name, so the
 program's variable keeps its value across the call. `c_bad` and `d_bad` do not pass,
 under symbolic execution or under `usp`; they are `unknown` rather than `fail`, as is
 any result whose path runs through a callee's contract. `E` is correct and is not
@@ -1877,16 +1879,18 @@ program Core;
 procedure g(x : int, out y : int) spec { ensures (y == int.add(x, 1)); } { y := int.add(x, 1); };
 procedure C(n : int, out r : int)
 cfg entry {
-  entry: { var tmp_arg_0 : int := 5; call g(7, out r); assert [c_bad]: (tmp_arg_0 == 7); return; }
+  entry: { var $__callElimTmp_arg_0 : int := 5; call g(7, out r);
+    assert [c_bad]: ($__callElimTmp_arg_0 == 7); return; }
 };
-procedure D(tmp_arg_0 : int, out r : int)
-spec { requires (tmp_arg_0 == 5); }
+procedure D($__callElimTmp_arg_0 : int, out r : int)
+spec { requires ($__callElimTmp_arg_0 == 5); }
 cfg entry {
-  entry: { call g(7, out r); assert [d_bad]: (tmp_arg_0 == 7); return; }
+  entry: { call g(7, out r); assert [d_bad]: ($__callElimTmp_arg_0 == 7); return; }
 };
 procedure E(n : int, out r : int)
 cfg entry {
-  entry: { var tmp_arg_0 : int := 5; call g(7, out r); assert [e_ok]: (tmp_arg_0 == 5); return; }
+  entry: { var $__callElimTmp_arg_0 : int := 5; call g(7, out r);
+    assert [e_ok]: ($__callElimTmp_arg_0 == 5); return; }
 };
 #end
 
@@ -1907,9 +1911,10 @@ info: [(c_bad, other), (d_bad, other), (e_ok, pass)]
 
 /-! ## A structured body's locals named like temporaries keep their values
 
-The structured twins of `C`: `SI` declares `tmp_s_1` and `old_s_2` next to a call with
-an `inout` argument, whose temporaries are named `tmp_s_<n>` and `old_s_<n>` (here
-they would be `tmp_s_1` and `old_s_2`), and `SC` declares `tmp_arg_0`. None of these is a temporary's name, so `sc_bad` and
+The structured twins of `C`: `SI` declares `$__callElimTmp_s_1` and `$__callElimOld_s_2` next
+to a call with an `inout` argument, whose temporaries are named `$__callElimTmp_s_<n>` and
+`$__callElimOld_s_<n>` (here they would be `$__callElimTmp_s_1` and `$__callElimOld_s_2`), and
+`SC` declares `$__callElimTmp_arg_0`. None of these is a temporary's name, so `sc_bad` and
 `si_bad` do not pass, under symbolic execution or `usp`/`uwp`. -/
 
 def structuredTempClash :=
@@ -1917,8 +1922,9 @@ def structuredTempClash :=
 program Core;
 procedure h(inout s : int) spec { ensures (s == int.add(old s, 1)); } { s := int.add(s, 1); };
 procedure SI(n : int, out r : int)
-{ var s : int := 0; var tmp_s_1 : int := 5; var old_s_2 : int := 5; call h(inout s);
-  assert [si_bad]: (int.add(tmp_s_1, old_s_2) == 0); };
+{ var s : int := 0; var $__callElimTmp_s_1 : int := 5; var $__callElimOld_s_2 : int := 5;
+  call h(inout s);
+  assert [si_bad]: (int.add($__callElimTmp_s_1, $__callElimOld_s_2) == 0); };
 #end
 
 def structuredTempClashArg :=
@@ -1926,7 +1932,8 @@ def structuredTempClashArg :=
 program Core;
 procedure g(x : int, out y : int) spec { ensures (y == int.add(x, 1)); } { y := int.add(x, 1); };
 procedure SC(n : int, out r : int)
-{ var tmp_arg_0 : int := 5; call g(7, out r); assert [sc_bad]: (tmp_arg_0 == 7); };
+{ var $__callElimTmp_arg_0 : int := 5; call g(7, out r);
+  assert [sc_bad]: ($__callElimTmp_arg_0 == 7); };
 #end
 
 /--
@@ -1949,12 +1956,12 @@ info: [(si_bad, other), (sc_bad, other)]
 
 /-! ## A call's output named like a temporary is the call's output
 
-`F` and `SF` (CFG and structured) pass `tmp_arg_0` as the call's output, and `G` and
+`F` and `SF` (CFG and structured) pass `$__callElimTmp_arg_0` as the call's output, and `G` and
 `SG` call into it and then assert `false`. The output is `8`, so `f_bad`/`sf_bad`
-(`tmp_arg_0 == 100`) and `g_bad`/`sg_bad` do not pass, under symbolic execution or
+(`$__callElimTmp_arg_0 == 100`) and `g_bad`/`sg_bad` do not pass, under symbolic execution or
 `usp`/`uwp`: the call's
-temporaries are not `tmp_arg_0`, so the output is not overwritten by (or merged with)
-a temporary the call assigns. `H` and `SH` pass `tmp_arg_0` (`5`) as the input of
+temporaries are not `$__callElimTmp_arg_0`, so the output is not overwritten by (or merged with)
+a temporary the call assigns. `H` and `SH` pass `$__callElimTmp_arg_0` (`5`) as the input of
 `g2`, which requires it to be `5`: the precondition and `h_ok`/`sh_ok` (`r == 6`)
 hold, as the argument's temporary is not the program's variable. -/
 
@@ -1965,28 +1972,34 @@ procedure g(x : int, out y : int) spec { ensures (y == int.add(x, 1)); } { y := 
 procedure g2(x : int, out y : int) spec { requires [g2_pre]: (x == 5); ensures (y == int.add(x, 1)); } { y := int.add(x, 1); };
 procedure H(n : int, out r : int)
 cfg entry {
-  entry: { var tmp_arg_0 : int := 5; call g2(tmp_arg_0, out r); assert [h_ok]: (r == 6); return; }
+  entry: { var $__callElimTmp_arg_0 : int := 5; call g2($__callElimTmp_arg_0, out r);
+    assert [h_ok]: (r == 6); return; }
 };
 procedure SH(n : int, out r : int)
-{ var tmp_arg_0 : int := 5; call g2(tmp_arg_0, out r); assert [sh_ok]: (r == 6); };
+{ var $__callElimTmp_arg_0 : int := 5; call g2($__callElimTmp_arg_0, out r);
+  assert [sh_ok]: (r == 6); };
 procedure F(n : int, out r : int)
 cfg entry {
-  entry: { var tmp_arg_0 : int := 0; call g(7, out tmp_arg_0); assert [f_bad]: (tmp_arg_0 == 100); return; }
+  entry: { var $__callElimTmp_arg_0 : int := 0; call g(7, out $__callElimTmp_arg_0);
+    assert [f_bad]: ($__callElimTmp_arg_0 == 100); return; }
 };
 procedure G(n : int, out r : int)
 cfg entry {
-  entry: { var tmp_arg_0 : int := 0; call g(7, out tmp_arg_0); assert [g_bad]: false; return; }
+  entry: { var $__callElimTmp_arg_0 : int := 0; call g(7, out $__callElimTmp_arg_0);
+    assert [g_bad]: false; return; }
 };
 procedure SF(n : int, out r : int)
-{ var tmp_arg_0 : int := 0; call g(7, out tmp_arg_0); assert [sf_bad]: (tmp_arg_0 == 100); };
+{ var $__callElimTmp_arg_0 : int := 0; call g(7, out $__callElimTmp_arg_0);
+  assert [sf_bad]: ($__callElimTmp_arg_0 == 100); };
 procedure SG(n : int, out r : int)
-{ var tmp_arg_0 : int := 0; call g(7, out tmp_arg_0); assert [sg_bad]: false; };
+{ var $__callElimTmp_arg_0 : int := 0; call g(7, out $__callElimTmp_arg_0);
+  assert [sg_bad]: false; };
 #end
 
 /--
-info: [(callElimAssert_g2_pre_3, pass), (h_ok, pass), (callElimAssert_g2_pre_7, pass), (sh_ok, pass), (f_bad, other), (g_bad, other), (sf_bad, other), (sg_bad, other)]
-[(callElimAssert_g2_pre_3, pass), (h_ok, pass), (callElimAssert_g2_pre_7, pass), (sh_ok, pass), (f_bad, other), (g_bad, other), (sf_bad, other), (sg_bad, other)]
-[(callElimAssert_g2_pre_3, pass), (h_ok, pass), (callElimAssert_g2_pre_7, pass), (sh_ok, pass), (f_bad, other), (g_bad, other), (sf_bad, other), (sg_bad, other)]
+info: [($__callElimAssert_g2_pre_3, pass), (h_ok, pass), ($__callElimAssert_g2_pre_7, pass), (sh_ok, pass), (f_bad, other), (g_bad, other), (sf_bad, other), (sg_bad, other)]
+[($__callElimAssert_g2_pre_3, pass), (h_ok, pass), ($__callElimAssert_g2_pre_7, pass), (sh_ok, pass), (f_bad, other), (g_bad, other), (sf_bad, other), (sg_bad, other)]
+[($__callElimAssert_g2_pre_3, pass), (h_ok, pass), ($__callElimAssert_g2_pre_7, pass), (sh_ok, pass), (f_bad, other), (g_bad, other), (sf_bad, other), (sg_bad, other)]
 -/
 #guard_msgs in
 #eval show IO Unit from do
@@ -2058,21 +2071,23 @@ info: [(p_post, other), (p2_post, other), (unreach, other)]
 
 /-! ## A call's temporaries do not take a function's name
 
-The function `tmp_arg_0` is named like a call's temporary, and the temporaries avoid
-it too: none of the variables call elimination declares in `K` is named `tmp_arg_0`. -/
+The function `$__callElimTmp_arg_0` is named like a call's temporary, and the temporaries avoid
+it too: none of the variables call elimination declares in `K` is named `$__callElimTmp_arg_0`. -/
 
 def funClash :=
 #strata
 program Core;
-function tmp_arg_0(x : int) : int { 100 }
+function $__callElimTmp_arg_0(x : int) : int { 100 }
 procedure g(x : int, out y : int) spec { ensures (y == int.add(x, 1)); } { y := int.add(x, 1); };
 procedure K(n : int, out r : int)
 cfg entry {
-  entry: { call g(7, out r); assert [k_ok]: (tmp_arg_0(r) == 100); return; }
+  entry: { call g(7, out r); assert [k_ok]: ($__callElimTmp_arg_0(r) == 100); return; }
 };
 #end
 
-/-- info: [tmp_arg_1, tmp_r_2] -/
+/--
+info: [$__callElimTmp_arg_1, $__callElimTmp_r_2]
+-/
 #guard_msgs in
 #eval show IO Unit from do
   let p := (TransM.run Inhabited.default (translateProgram funClash.program)).fst
@@ -2446,7 +2461,7 @@ cfg entry {
 /-! ## Replay confirms a callee's failing precondition after a loop
 
 Every run of `P` calls `f(0)`, outside `f`'s precondition `x > 0`. Call elimination
-turns the precondition into an assertion of `P`, `callElimAssert_f_pre_…`, which rests
+turns the precondition into an assertion of `P`, `$__callElimAssert_f_pre_…`, which rests
 on the cut of the loop. Replay finds the call it comes from, and the run's call of `f`
 fails the precondition, so the assertion fails. `p_post` comes after the failed check,
 and stays `unknown`. -/
@@ -2465,14 +2480,16 @@ cfg entry {
 };
 #end
 
-/-- info: [(f_pre, fail), (p_post, other)]
-[(f_pre, fail), (p_post, other)] -/
+/--
+info: [(f_pre, fail), (p_post, other)]
+[(f_pre, fail), (p_post, other)]
+-/
 #guard_msgs in
 #eval show IO Unit from do
   for m in [Core.VCGenMode.usp, .uwp] do
     let r ← Strata.Core.verify preAfterLoop (options := { Core.VerifyOptions.quiet with vcgen := m })
     IO.println (r.toList.map fun r =>
-      (if r.obligation.label.startsWith "callElimAssert_f_pre" then "f_pre" else r.obligation.label,
+      (if r.obligation.label.startsWith "$__callElimAssert_f_pre" then "f_pre" else r.obligation.label,
         if r.isSuccess then "pass" else if r.isFailure then "fail" else "other"))
 
 /-! ## Replay runs an abstract callee without outputs
@@ -2497,14 +2514,16 @@ cfg entry {
 };
 #end
 
-/-- info: [(a, fail)]
-[(a, fail)] -/
+/--
+info: [(a, fail)]
+[(a, fail)]
+-/
 #guard_msgs in
 #eval show IO Unit from do
   for m in [Core.VCGenMode.usp, .uwp] do
     let r ← Strata.Core.verify abstractNoOutputs
       (options := { Core.VerifyOptions.quiet with vcgen := m })
-    IO.println ((r.toList.filter (·.obligation.label.startsWith "callElimAssert_a")).map
+    IO.println ((r.toList.filter (·.obligation.label.startsWith "$__callElimAssert_a")).map
       fun r => ("a", if r.isSuccess then "pass" else if r.isFailure then "fail" else "other"))
 
 end Strata.Test.PassiveVCGenRegression

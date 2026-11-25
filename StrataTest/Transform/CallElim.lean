@@ -56,16 +56,16 @@ spec {
 };
 procedure h(i : bool, inout j : bool, k : bool) {
   var b : bool;
-  var tmp_arg_0 : bool := i;
-  var tmp_arg_1 : bool := j;
-  var tmp_arg_2 : bool := k;
-  var tmp_j_3 : bool := j;
-  var tmp_b_4 : bool := b;
-  assert [callElimAssert_f_requires_0_5]: (tmp_arg_0 == (!tmp_arg_2));
+  var $__callElimTmp_arg_0 : bool := i;
+  var $__callElimTmp_arg_1 : bool := j;
+  var $__callElimTmp_arg_2 : bool := k;
+  var $__callElimTmp_j_3 : bool := j;
+  var $__callElimTmp_b_4 : bool := b;
+  assert [$__callElimAssert_f_requires_0_5]: ($__callElimTmp_arg_0 == (!$__callElimTmp_arg_2));
   havoc j;
   havoc b;
-  assume [callElimPost_f_ensures_1_6]: (b == tmp_arg_2);
-  assume [callElimPost_f_ensures_2_7]: (b == j);
+  assume [$__callElimPost_f_ensures_1_6]: (b == $__callElimTmp_arg_2);
+  assume [$__callElimPost_f_ensures_2_7]: (b == j);
 };
 #end
 
@@ -95,19 +95,19 @@ spec {
 };
 procedure h(i : bool, inout j : bool, k : bool, l : bool) {
   var b : bool;
-  var tmp_arg_0 : bool := i;
-  var tmp_arg_1 : bool := j;
-  var tmp_arg_2 : bool := k;
-  var tmp_arg_3 : bool := k;
-  var tmp_arg_4 : bool := l;
-  var tmp_j_5 : bool := j;
-  var tmp_b_6 : bool := b;
-  var old_j_7 : bool := j;
-  assert [callElimAssert_f_requires_0_8]: tmp_arg_0 == !tmp_arg_3;
+  var $__callElimTmp_arg_0 : bool := i;
+  var $__callElimTmp_arg_1 : bool := j;
+  var $__callElimTmp_arg_2 : bool := k;
+  var $__callElimTmp_arg_3 : bool := k;
+  var $__callElimTmp_arg_4 : bool := l;
+  var $__callElimTmp_j_5 : bool := j;
+  var $__callElimTmp_b_6 : bool := b;
+  var $__callElimOld_j_7 : bool := j;
+  assert [$__callElimAssert_f_requires_0_8]: $__callElimTmp_arg_0 == !$__callElimTmp_arg_3;
   havoc j;
   havoc b;
-  assume [callElimPost_f_ensures_1_9]: b == (tmp_arg_2 && old_j_7);
-  assume [callElimPost_f_ensures_2_10]: b == old_j_7;
+  assume [$__callElimPost_f_ensures_1_9]: b == ($__callElimTmp_arg_2 && $__callElimOld_j_7);
+  assume [$__callElimPost_f_ensures_2_10]: b == $__callElimOld_j_7;
 };
 #end
 
@@ -137,19 +137,19 @@ spec {
 };
 procedure h(i : bool, inout j : bool, k : bool, l : bool) {
   var b : bool;
-  var tmp_arg_0 : bool := i;
-  var tmp_arg_1 : bool := j;
-  var tmp_arg_2 : bool := k;
-  var tmp_arg_3 : bool := k && i || j;
-  var tmp_arg_4 : bool := l;
-  var tmp_j_5 : bool := j;
-  var tmp_b_6 : bool := b;
-  var old_j_7 : bool := j;
-  assert [callElimAssert_f_requires_0_8]: tmp_arg_0 == !tmp_arg_3;
+  var $__callElimTmp_arg_0 : bool := i;
+  var $__callElimTmp_arg_1 : bool := j;
+  var $__callElimTmp_arg_2 : bool := k;
+  var $__callElimTmp_arg_3 : bool := k && i || j;
+  var $__callElimTmp_arg_4 : bool := l;
+  var $__callElimTmp_j_5 : bool := j;
+  var $__callElimTmp_b_6 : bool := b;
+  var $__callElimOld_j_7 : bool := j;
+  assert [$__callElimAssert_f_requires_0_8]: $__callElimTmp_arg_0 == !$__callElimTmp_arg_3;
   havoc j;
   havoc b;
-  assume [callElimPost_f_ensures_1_9]: b == (tmp_arg_2 && old_j_7);
-  assume [callElimPost_f_ensures_2_10]: b == old_j_7;
+  assume [$__callElimPost_f_ensures_1_9]: b == ($__callElimTmp_arg_2 && $__callElimOld_j_7);
+  assume [$__callElimPost_f_ensures_2_10]: b == $__callElimOld_j_7;
 };
 #end
 
@@ -180,15 +180,15 @@ spec {
 };
 procedure h(inout j : bool, k : bool) {
   var b : bool;
-  var tmp_arg_0 : bool := j;
-  var tmp_arg_1 : bool := k;
-  var tmp_arg_2 : bool := k;
-  var tmp_j_3 : bool := j;
-  var tmp_b_4 : bool := b;
-  assert [callElimAssert_f_requires_1_5]: (tmp_arg_2 == tmp_arg_0);
+  var $__callElimTmp_arg_0 : bool := j;
+  var $__callElimTmp_arg_1 : bool := k;
+  var $__callElimTmp_arg_2 : bool := k;
+  var $__callElimTmp_j_3 : bool := j;
+  var $__callElimTmp_b_4 : bool := b;
+  assert [$__callElimAssert_f_requires_1_5]: ($__callElimTmp_arg_2 == $__callElimTmp_arg_0);
   havoc j;
   havoc b;
-  assume [callElimPost_f_ensures_2_6]: (b == tmp_arg_2);
+  assume [$__callElimPost_f_ensures_2_6]: (b == $__callElimTmp_arg_2);
 };
 #end
 
@@ -220,10 +220,10 @@ end CallElimExamples
 
 /-! ## Temporaries avoid the program's variable names
 
-`h` declares a variable with the name each kind of temporary would get: `tmp_arg_0` for the first
-argument, `tmp_j_3` for the output `j`, and, after the call, `old_j_6` for `old j`. Each temporary
-takes the next name the program does not declare, so no `init` of a temporary overwrites a
-program variable. -/
+`h` declares a variable with the name each kind of temporary would get: `$__callElimTmp_arg_0`
+for the first argument, `$__callElimTmp_j_3` for the output `j`, and, after the call,
+`$__callElimOld_j_6` for `old j`. Each temporary takes the next name the program does not
+declare, so no `init` of a temporary overwrites a program variable. -/
 section CallElimFreshTemporaries
 
 def CallElimTestTakenNames :=
@@ -235,11 +235,11 @@ spec {
   ensures (j == old j);
 };
 procedure h(inout j : int) {
-  var tmp_arg_0 : int := 5;
-  var tmp_j_3 : int := 6;
+  var $__callElimTmp_arg_0 : int := 5;
+  var $__callElimTmp_j_3 : int := 6;
   var b : int;
   call f(7, inout j, out b);
-  var old_j_6 : int := 7;
+  var $__callElimOld_j_6 : int := 7;
 };
 #end
 
@@ -253,19 +253,19 @@ spec {
   } ;
 procedure h (inout j : int)
 {
-  var tmp_arg_0 : int := 5;
-  var tmp_j_3 : int := 6;
+  var $__callElimTmp_arg_0 : int := 5;
+  var $__callElimTmp_j_3 : int := 6;
   var b : int;
-  var tmp_arg_1 : int := 7;
-  var tmp_arg_2 : int := j;
-  var tmp_j_4 : int := j;
-  var tmp_b_5 : int := b;
-  var old_j_7 : int := j;
+  var $__callElimTmp_arg_1 : int := 7;
+  var $__callElimTmp_arg_2 : int := j;
+  var $__callElimTmp_j_4 : int := j;
+  var $__callElimTmp_b_5 : int := b;
+  var $__callElimOld_j_7 : int := j;
   havoc j;
   havoc b;
-  assume [callElimPost_f_ensures_0_8]: b == tmp_arg_1;
-  assume [callElimPost_f_ensures_1_9]: j == old_j_7;
-  var old_j_6 : int := 7;
+  assume [$__callElimPost_f_ensures_0_8]: b == $__callElimTmp_arg_1;
+  assume [$__callElimPost_f_ensures_1_9]: j == $__callElimOld_j_7;
+  var $__callElimOld_j_6 : int := 7;
 };
 -/
 #guard_msgs in
@@ -319,10 +319,10 @@ spec {
 procedure Caller ()
 {
   var ai : int;
-  var tmp_arg_0 : int := 7;
-  var tmp_ai_1 : int := ai;
+  var $__callElimTmp_arg_0 : int := 7;
+  var $__callElimTmp_ai_1 : int := ai;
   havoc ai;
-  assume [$__callElimAssume_idp_ensures_0_2]: ai == tmp_arg_0;
+  assume [$__callElimAssume_idp_ensures_0_2]: ai == $__callElimTmp_arg_0;
 };
 -/
 #guard_msgs in
@@ -342,14 +342,14 @@ procedure Caller ()
 {
   var i : int;
   var j : int;
-  var tmp_arg_0 : int := i;
-  var tmp_arg_1 : int := j;
-  var tmp_i_2 : int := i;
-  var tmp_j_3 : int := j;
-  var old_j_4 : int := j;
+  var $__callElimTmp_arg_0 : int := i;
+  var $__callElimTmp_arg_1 : int := j;
+  var $__callElimTmp_i_2 : int := i;
+  var $__callElimTmp_j_3 : int := j;
+  var $__callElimOld_j_4 : int := j;
   havoc i;
   havoc j;
-  assume [$__callElimAssume_swap_ensures_0_5]: i == old_j_4;
+  assume [$__callElimAssume_swap_ensures_0_5]: i == $__callElimOld_j_4;
 };
 -/
 #guard_msgs in
@@ -367,8 +367,8 @@ spec {
 };
 procedure Caller (t : Sequence (Sequence int))
 {
-  var tmp_arg_0 : Sequence (Sequence int) := t;
-  assert [callElimAssert_p_requires_0_1]: tmp_arg_0 == tmp_arg_0;
+  var $__callElimTmp_arg_0 : Sequence (Sequence int) := t;
+  assert [$__callElimAssert_p_requires_0_1]: $__callElimTmp_arg_0 == $__callElimTmp_arg_0;
 };
 -/
 #guard_msgs in
@@ -387,10 +387,10 @@ spec {
 procedure Caller<a> (z : a)
 {
   var w : a;
-  var tmp_arg_0 : a := z;
-  var tmp_w_1 : a := w;
+  var $__callElimTmp_arg_0 : a := z;
+  var $__callElimTmp_w_1 : a := w;
   havoc w;
-  assume [$__callElimAssume_idp_ensures_0_2]: w == tmp_arg_0;
+  assume [$__callElimAssume_idp_ensures_0_2]: w == $__callElimTmp_arg_0;
 };
 -/
 #guard_msgs in
@@ -409,11 +409,11 @@ spec {
 procedure Caller<a, b> (x : a, y : b)
 {
   var w : b;
-  var tmp_arg_0 : b := y;
-  var tmp_arg_1 : a := x;
-  var tmp_w_2 : b := w;
+  var $__callElimTmp_arg_0 : b := y;
+  var $__callElimTmp_arg_1 : a := x;
+  var $__callElimTmp_w_2 : b := w;
   havoc w;
-  assume [$__callElimAssume_pair_ensures_0_3]: w == tmp_arg_0;
+  assume [$__callElimAssume_pair_ensures_0_3]: w == $__callElimTmp_arg_0;
 };
 -/
 #guard_msgs in
@@ -432,7 +432,7 @@ spec {
 };
 procedure Caller ()
 {
-  assert [callElimAssert_q_requires_0_1]: forall y : $__cety_0 :: y == y;
+  assert [$__callElimAssert_q_requires_0_1]: forall y : $__cety_0 :: y == y;
 };
 -/
 #guard_msgs in
@@ -452,9 +452,9 @@ spec {
 };
 procedure Caller ()
 {
-  var tmp_arg_1 : int := 7;
-  assert [callElimAssert_r_requires_0_2]: tmp_arg_1 == tmp_arg_1;
-  assert [callElimAssert_r_requires_1_3]: forall y : $__cety_0 :: y == y;
+  var $__callElimTmp_arg_1 : int := 7;
+  assert [$__callElimAssert_r_requires_0_2]: $__callElimTmp_arg_1 == $__callElimTmp_arg_1;
+  assert [$__callElimAssert_r_requires_1_3]: forall y : $__cety_0 :: y == y;
 };
 -/
 #guard_msgs in
@@ -474,7 +474,7 @@ spec {
 };
 procedure Caller ()
 {
-  assert [callElimAssert_q_requires_0_0]: forall y : int :: y == y;
+  assert [$__callElimAssert_q_requires_0_0]: forall y : int :: y == y;
 };
 -/
 #guard_msgs in
@@ -509,8 +509,8 @@ spec {
 };
 procedure P<b> (y : b)
 {
-  var tmp_arg_0 : b := y;
-  assert [callElimAssert_q_requires_0_1]: forall y : b :: y == y;
+  var $__callElimTmp_arg_0 : b := y;
+  assert [$__callElimAssert_q_requires_0_1]: forall y : b :: y == y;
 };
 -/
 #guard_msgs in
@@ -532,8 +532,8 @@ spec {
 type $__opaque_P_b_1;
 procedure P (y : $__opaque_P_b_1)
 {
-  var tmp_arg_0 : $__opaque_P_b_1 := y;
-  assert [callElimAssert_q_requires_0_1]: forall y : $__opaque_P_b_1 :: y == y;
+  var $__callElimTmp_arg_0 : $__opaque_P_b_1 := y;
+  assert [$__callElimAssert_q_requires_0_1]: forall y : $__opaque_P_b_1 :: y == y;
 };
 -/
 #guard_msgs in
@@ -559,9 +559,9 @@ spec {
 };
 procedure Caller ()
 {
-  var tmp_arg_1 : int := 7;
-  assert [callElimAssert_r_requires_0_2]: tmp_arg_1 == tmp_arg_1;
-  assert [callElimAssert_r_requires_1_3]: forall y : $__cety_0 :: y == y;
+  var $__callElimTmp_arg_1 : int := 7;
+  assert [$__callElimAssert_r_requires_0_2]: $__callElimTmp_arg_1 == $__callElimTmp_arg_1;
+  assert [$__callElimAssert_r_requires_1_3]: forall y : $__cety_0 :: y == y;
 };
 -/
 #guard_msgs in
@@ -586,8 +586,8 @@ spec {
 procedure Caller ()
 {
   var s : (Sequence $__ty0);
-  var tmp_arg_0 : Sequence int := s;
-  assert [callElimAssert_Take_requires_0_1]: tmp_arg_0 == tmp_arg_0;
+  var $__callElimTmp_arg_0 : Sequence int := s;
+  assert [$__callElimAssert_Take_requires_0_1]: $__callElimTmp_arg_0 == $__callElimTmp_arg_0;
 };
 -/
 #guard_msgs in
@@ -618,9 +618,9 @@ spec {
 procedure Caller ()
 {
   var s : $__ty0;
-  var tmp_arg_0 : int := s;
-  var tmp_arg_1 : int := s;
-  assert [callElimAssert_Both_requires_0_2]: tmp_arg_0 == tmp_arg_0;
+  var $__callElimTmp_arg_0 : int := s;
+  var $__callElimTmp_arg_1 : int := s;
+  assert [$__callElimAssert_Both_requires_0_2]: $__callElimTmp_arg_0 == $__callElimTmp_arg_0;
 };
 -/
 #guard_msgs in
@@ -644,9 +644,9 @@ spec {
 procedure Caller ()
 {
   var s : $__ty0;
-  var tmp_arg_1 : int := s;
-  var tmp_arg_2 : $__cety_0 := s;
-  assert [callElimAssert_Both_requires_0_3]: tmp_arg_1 == tmp_arg_1;
+  var $__callElimTmp_arg_1 : int := s;
+  var $__callElimTmp_arg_2 : $__cety_0 := s;
+  assert [$__callElimAssert_Both_requires_0_3]: $__callElimTmp_arg_1 == $__callElimTmp_arg_1;
 };
 -/
 #guard_msgs in
@@ -681,9 +681,9 @@ spec {
 };
 procedure Caller ()
 {
-  var tmp_arg_1 : int := 7;
-  assert [callElimAssert_r_requires_0_2]: tmp_arg_1 == tmp_arg_1;
-  assert [callElimAssert_r_requires_1_3]: forall y : $__cety_0 :: y == y;
+  var $__callElimTmp_arg_1 : int := 7;
+  assert [$__callElimAssert_r_requires_0_2]: $__callElimTmp_arg_1 == $__callElimTmp_arg_1;
+  assert [$__callElimAssert_r_requires_1_3]: forall y : $__cety_0 :: y == y;
 };
 -/
 #guard_msgs in
@@ -741,8 +741,8 @@ spec {
 procedure Caller ()
 {
   var s : (Sequence $__callty0);
-  var tmp_arg_0 : Sequence int := s;
-  assert [callElimAssert_Take_requires_0_1]: tmp_arg_0 == tmp_arg_0;
+  var $__callElimTmp_arg_0 : Sequence int := s;
+  assert [$__callElimAssert_Take_requires_0_1]: $__callElimTmp_arg_0 == $__callElimTmp_arg_0;
 };
 -/
 #guard_msgs in
@@ -792,9 +792,9 @@ spec {
 };
 procedure Caller ()
 {
-  var tmp_arg_1 : int := 7;
-  assert [callElimAssert_r_requires_0_2]: tmp_arg_1 == tmp_arg_1;
-  assert [callElimAssert_r_requires_1_3]: forall y : $__cety_0 :: y == y;
+  var $__callElimTmp_arg_1 : int := 7;
+  assert [$__callElimAssert_r_requires_0_2]: $__callElimTmp_arg_1 == $__callElimTmp_arg_1;
+  assert [$__callElimAssert_r_requires_1_3]: forall y : $__cety_0 :: y == y;
 };
 -/
 #guard_msgs in
@@ -818,9 +818,9 @@ spec {
 };
 procedure Caller ()
 {
-  var tmp_arg_2 : $__cety_0 := int.neg(7);
-  assert [callElimAssert_r_requires_0_3]: tmp_arg_2 == tmp_arg_2;
-  assert [callElimAssert_r_requires_1_4]: forall y : $__cety_1 :: y == y;
+  var $__callElimTmp_arg_2 : $__cety_0 := int.neg(7);
+  assert [$__callElimAssert_r_requires_0_3]: $__callElimTmp_arg_2 == $__callElimTmp_arg_2;
+  assert [$__callElimAssert_r_requires_1_4]: forall y : $__cety_1 :: y == y;
 };
 -/
 #guard_msgs in
@@ -841,10 +841,10 @@ spec {
 procedure Caller ()
 {
   var bb : bool;
-  var tmp_arg_1 : $__cety_0 := 7;
-  var tmp_bb_2 : $__cety_0 := bb;
+  var $__callElimTmp_arg_1 : $__cety_0 := 7;
+  var $__callElimTmp_bb_2 : $__cety_0 := bb;
   havoc bb;
-  assume [$__callElimAssume_idp_ensures_0_3]: bb == tmp_arg_1;
+  assume [$__callElimAssume_idp_ensures_0_3]: bb == $__callElimTmp_arg_1;
 };
 -/
 #guard_msgs in
@@ -865,10 +865,10 @@ spec {
 procedure Caller ()
 {
   var bb : bool;
-  var tmp_arg_0 : int := 7;
-  var tmp_bb_1 : int := bb;
+  var $__callElimTmp_arg_0 : int := 7;
+  var $__callElimTmp_bb_1 : int := bb;
   havoc bb;
-  assume [$__callElimAssume_idp_ensures_0_2]: bb == tmp_arg_0;
+  assume [$__callElimAssume_idp_ensures_0_2]: bb == $__callElimTmp_arg_0;
 };
 -/
 #guard_msgs in
@@ -906,7 +906,7 @@ spec {
 };
 procedure P ()
 {
-  assert [callElimAssert_Q_requires_0_2]: forall x : $__cety_1 :: forall y : $__cety_1 :: x == y;
+  assert [$__callElimAssert_Q_requires_0_2]: forall x : $__cety_1 :: forall y : $__cety_1 :: x == y;
 };
 -/
 #guard_msgs in
@@ -987,25 +987,25 @@ procedure P (a : int, out b : int, out c : int)
 cfg entry {
   entry: {
     b := a;
-    var tmp_arg_0 : int := b;
-    var tmp_c_1 : int := c;
-    assert [callElimAssert_inc_pre_2]: int.ge(tmp_arg_0, 0);
+    var $__callElimTmp_arg_0 : int := b;
+    var $__callElimTmp_c_1 : int := c;
+    assert [$__callElimAssert_inc_pre_2]: int.ge($__callElimTmp_arg_0, 0);
     havoc c;
-    assume [callElimPost_inc_post_3]: c == int.add(tmp_arg_0, 1);
-    var tmp_arg_4 : int := c;
-    var tmp_b_5 : int := b;
-    assert [callElimAssert_inc_pre_6]: int.ge(tmp_arg_4, 0);
+    assume [$__callElimPost_inc_post_3]: c == int.add($__callElimTmp_arg_0, 1);
+    var $__callElimTmp_arg_4 : int := c;
+    var $__callElimTmp_b_5 : int := b;
+    assert [$__callElimAssert_inc_pre_6]: int.ge($__callElimTmp_arg_4, 0);
     havoc b;
-    assume [callElimPost_inc_post_7]: b == int.add(tmp_arg_4, 1);
+    assume [$__callElimPost_inc_post_7]: b == int.add($__callElimTmp_arg_4, 1);
     assert [b_big]: int.gt(b, a);
     goto check;
   }
   check: {
-    var tmp_arg_8 : int := b;
-    var tmp_c_9 : int := c;
-    assert [callElimAssert_inc_pre_10]: int.ge(tmp_arg_8, 0);
+    var $__callElimTmp_arg_8 : int := b;
+    var $__callElimTmp_c_9 : int := c;
+    assert [$__callElimAssert_inc_pre_10]: int.ge($__callElimTmp_arg_8, 0);
     havoc c;
-    assume [callElimPost_inc_post_11]: c == int.add(tmp_arg_8, 1);
+    assume [$__callElimPost_inc_post_11]: c == int.add($__callElimTmp_arg_8, 1);
     branch (int.gt(c, b)) goto up else goto down;
   }
   up: {
@@ -1049,8 +1049,8 @@ procedure Caller (n : int)
 cfg entry {
   entry: {
     var r : bool := true;
-    var tmp_arg_0 : int := n;
-    var tmp_r_1 : bool := r;
+    var $__callElimTmp_arg_0 : int := n;
+    var $__callElimTmp_r_1 : bool := r;
     havoc r;
     assume [$__callElimHavoc_call_2]: true;
     branch (r) goto up else goto down;

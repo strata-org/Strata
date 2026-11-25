@@ -42,6 +42,7 @@ import all Strata.DL.Lambda.LFuncEvalSound
 public import Strata.DL.Lambda.LExprRenameOps
 import all Strata.DL.Lambda.LExprRenameOps
 import Strata.Util.WorklistProps
+import Strata.Transform.CoreTransformProps
 
 /-! # Monomorphization: properties of `monomorphizeFunctions`
 
@@ -1765,13 +1766,19 @@ private theorem opsUnmangled_of_mem {s : Transform.CoreTransformState} {p : Prog
   have havoid : o.name ∈ avoidNames p s.factory := by simp [avoidNames, hmem]
   exact choosePrefix_fresh _ _ havoid
 
-/-- A run of the phase is a run of `MonomorphizeFunctions.run`. -/
+/-- A run of the phase is a run of `MonomorphizeFunctions.run`, up to the recorded prefixes of
+    the output. -/
 theorem passMono_runs {s s' : Transform.CoreTransformState} {p p' : Program}
     (h : Strata.Core.passMonomorphizeFunctions.Runs s p s' p') :
-    (MonomorphizeFunctions.run p).run.run s = (.ok p', s') := by
+    ∃ q, (MonomorphizeFunctions.run p).run.run s = (.ok q, s') ∧ p'.decls = q.decls := by
   obtain ⟨b, hb⟩ := h
   simp only [Strata.Core.passMonomorphizeFunctions, monomorphizeFunctionsPipelinePhase,
     modelPreservingPipelinePhase] at hb
+  obtain ⟨q, hb₀, rfl⟩ := Transform.recordIdentPrefixes_run hb
+  clear hb
+  refine ⟨q, ?_, rfl⟩
+  have hb := hb₀
+  clear hb₀
   unfold monomorphizeFunctions at hb
   simp only [ExceptT.run, StateT.run, bind, ExceptT.bind, ExceptT.mk, ExceptT.bindCont,
     StateT.bind, pure, ExceptT.pure] at hb ⊢

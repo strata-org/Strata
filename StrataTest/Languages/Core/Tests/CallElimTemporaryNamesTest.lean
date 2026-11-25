@@ -11,9 +11,11 @@ import StrataDDM.Integration.Lean.HashCommands
 /-! # A program variable named like a call elimination temporary keeps its value
 
 Call elimination saves a call's arguments, the pre-call values of its outputs and the `old`
-values of its `inout` parameters in temporaries named `tmp_arg_N`, `tmp_<out>_N` and
-`old_<x>_N`. Each procedure below declares a variable with the name the first such temporary
-would get. The temporaries take other names, so the variable keeps its value across the call:
+values of its `inout` parameters in temporaries named `$__callElimTmp_arg_N`,
+`$__callElimTmp_<out>_N` and `$__callElimOld_<x>_N`. Each procedure below declares a variable
+with the name the first such temporary would get. Type checking then records call elimination's
+prefix, so call elimination takes its slow path (`Transform.withClaimedPrefixes`), and the
+temporaries take other names, so the variable keeps its value across the call:
 the `_ok` assertion is proved and the `_bad` assertion is not, under symbolic evaluation and under
 `--vcgen symexec`. A `_bad` result rests on the callee's contract, so it is `unknown`, not
 `failed`; a temporary that overwrote the variable would make it `proved`.
@@ -23,7 +25,7 @@ meta section
 
 namespace Core.CallElimTemporaryNamesTest
 
-/-- `ArgClash` declares `tmp_arg_0`, the name of the temporary for the argument `7`. -/
+/-- `ArgClash` declares `$__callElimTmp_arg_0`, the name of the temporary for the argument `7`. -/
 private def pgm :=
 #strata
 program Core;
@@ -38,15 +40,15 @@ spec {
 
 procedure ArgClash(n : int, out r : int)
 {
-  var tmp_arg_0 : int := 5;
+  var $__callElimTmp_arg_0 : int := 5;
   call g(7, out r);
-  assert [arg_ok]: (tmp_arg_0 == 5);
-  assert [arg_bad]: (tmp_arg_0 == 7);
+  assert [arg_ok]: ($__callElimTmp_arg_0 == 5);
+  assert [arg_bad]: ($__callElimTmp_arg_0 == 7);
 };
 #end
 
-/-- `OutClash` declares `tmp_r_1`, the name of the temporary for the value of the output `r`
-    before the call. -/
+/-- `OutClash` declares `$__callElimTmp_r_1`, the name of the temporary for the value of the
+    output `r` before the call. -/
 private def outPgm :=
 #strata
 program Core;
@@ -61,15 +63,15 @@ spec {
 
 procedure OutClash(n : int, out r : int)
 {
-  var tmp_r_1 : int := 5;
+  var $__callElimTmp_r_1 : int := 5;
   r := 3;
   call g(7, out r);
-  assert [out_ok]: (tmp_r_1 == 5);
-  assert [out_bad]: (tmp_r_1 == 3);
+  assert [out_ok]: ($__callElimTmp_r_1 == 5);
+  assert [out_bad]: ($__callElimTmp_r_1 == 3);
 };
 #end
 
-/-- `OldClash` declares `old_x_2`, the name of the temporary for `old x` in `inc`'s
+/-- `OldClash` declares `$__callElimOld_x_2`, the name of the temporary for `old x` in `inc`'s
     postcondition. -/
 private def oldPgm :=
 #strata
@@ -85,16 +87,17 @@ spec {
 
 procedure OldClash(inout x : int)
 {
-  var old_x_2 : int := 5;
+  var $__callElimOld_x_2 : int := 5;
   call inc(inout x);
-  assert [old_ok]: (old_x_2 == 5);
-  assert [old_bad]: (old_x_2 == int.sub(x, 1));
+  assert [old_ok]: ($__callElimOld_x_2 == 5);
+  assert [old_bad]: ($__callElimOld_x_2 == int.sub(x, 1));
 };
 #end
 
 /-- An `out` argument named like the argument temporary: the postcondition of `g` stays
-    `tmp_arg_0 == 7 + 1` instead of becoming the false `tmp_arg_0 == tmp_arg_0 + 1`, which
-    would make every later assertion pass. -/
+    `$__callElimTmp_arg_0 == 7 + 1` instead of becoming the false
+    `$__callElimTmp_arg_0 == $__callElimTmp_arg_0 + 1`, which would make every later assertion
+    pass. -/
 private def outArgPgm :=
 #strata
 program Core;
@@ -109,10 +112,10 @@ spec {
 
 procedure OutArg()
 {
-  var tmp_arg_0 : int := 0;
-  call g(7, out tmp_arg_0);
-  assert [outarg_ok]: (tmp_arg_0 == 8);
-  assert [outarg_bad]: (tmp_arg_0 == 100);
+  var $__callElimTmp_arg_0 : int := 0;
+  call g(7, out $__callElimTmp_arg_0);
+  assert [outarg_ok]: ($__callElimTmp_arg_0 == 8);
+  assert [outarg_bad]: ($__callElimTmp_arg_0 == 100);
 };
 #end
 
@@ -123,8 +126,8 @@ private def fnPgm :=
 #strata
 program Core;
 
-function tmp_arg_0(): int;
-axiom [five]: (tmp_arg_0 == 5);
+function $__callElimTmp_arg_0(): int;
+axiom [five]: ($__callElimTmp_arg_0 == 5);
 
 procedure g(x : int, out y : int)
 spec {
@@ -137,8 +140,8 @@ spec {
 procedure FnClash(out r : int)
 {
   call g(7, out r);
-  assert [fn_ok]: (tmp_arg_0 == 5);
-  assert [fn_bad]: (tmp_arg_0 == 7);
+  assert [fn_ok]: ($__callElimTmp_arg_0 == 5);
+  assert [fn_bad]: ($__callElimTmp_arg_0 == 7);
 };
 #end
 

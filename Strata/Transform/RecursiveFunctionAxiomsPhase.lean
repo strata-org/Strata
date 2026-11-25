@@ -26,6 +26,8 @@ public section
 def Core.recursiveAxiomsPhase (options : Core.VerifyOptions := Core.VerifyOptions.default) :
     Core.PipelinePhase where
   transform := Core.RecursiveAxioms.run options
+  -- It generates no `$__` name.
+  maintainsIdentPrefixes := true
   phase.name := "recursiveAxioms"
   requires := factSet![.typeAnnotated]
   preserves := factSet![.noCFGBodies, .noCalls, .noLoops, .noLoopInvariants,

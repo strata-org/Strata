@@ -605,7 +605,8 @@ end Core.Simplify
     subterms of its input: a body substituted for a call and a value substituted for
     a variable both come from the program, and folding yields constants. -/
 def Core.simplifyPhase : Core.PipelinePhase :=
-  Core.modelPreservingPipelinePhase "simplify" Core.Simplify.runSimplify
+  Core.modelPreservingPipelinePhase "simplify" (maintainsIdentPrefixes := true)
+      Core.Simplify.runSimplify
     (requires := factSet![.noCalls, .noPrecondsFromFuncs, .typeAnnotated])
     (preserves := factSet![.noCFGBodies, .noCalls, .noLoops, .noLoopInvariants,
                          .noLoopMeasures, .staticSingleAssignment,

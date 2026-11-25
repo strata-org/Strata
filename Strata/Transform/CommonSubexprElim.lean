@@ -750,10 +750,14 @@ def Core.commonSubexprElimPhase (minTreeSize : Option Nat := none) : Core.Pipeli
   -- Naming a shared subexpression replaces it with a variable, which puts no
   -- abstraction in a function position, so `noBetaRedexes` survives the last
   -- phase before the encoder.
-  Core.modelPreservingPipelinePhase "commonSubexprElim"
-    (match minTreeSize with
-     | none => Core.CSE.runCSE
-     | some n => Core.CSE.runCSEAbove n)
+  -- TODO: the variables are numbered from 0 without looking at the program's names, so a
+  -- program name with `cseVarPrefix` can be captured. When the program may use the prefix
+  -- (`Program.identPrefixesFree`), the variables must be generated freshly.
+  Core.modelPreservingPipelinePhase "commonSubexprElim" (maintainsIdentPrefixes := true)
+    (fun p => Core.Transform.recordIdentPrefixes [Core.CSE.cseVarPrefix] p
+      (match minTreeSize with
+       | none => Core.CSE.runCSE p
+       | some n => Core.CSE.runCSEAbove n p))
     -- Abbreviating an expression is only sound if its value cannot change
     -- between the definition and the uses, which is what
     -- `staticSingleAssignment` gives. The abbreviations are prepended to the

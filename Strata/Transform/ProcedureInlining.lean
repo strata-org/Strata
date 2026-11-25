@@ -74,17 +74,20 @@ def Statement.replaceLabelsOfBlocksAndAssertAssumes
 end
 
 
+/-- Common prefix of the variables and labels procedure inlining generates (`inlinePrefix`). -/
+@[expose] def inlineNamesPrefix : String := "$__inline"
+
 /-- Fresh-name prefix (`$__inline<N>`) for variables and labels introduced by
     one inlining. The `$__` namespace is reserved for internal use, and each
     inlining site gets a distinct `N`. -/
-def inlinePrefix (n : Nat) : String := s!"$__inline{n}"
+def inlinePrefix (n : Nat) : String := s!"{inlineNamesPrefix}{n}"
 
 def inlineCounterKey : String := "inlineProcedures"
 
 /-- Prefix of the type variables procedure inlining uses to instantiate a callee.
     Kept as a literal copy in `Lambda.reservedNamePrefixes`, so type checking still
     rejects or renames program names that use it. -/
-@[expose] def inlineTyPrefix : String := "$__inlinety"
+@[expose] def inlineTyPrefix : String := "$__inlty"
 
 /-- Rename every variable and label occurrence in the callee's `inputs`,
     `outputs`, and `bodyStmts` according to the explicit `var_map` (variables) and
@@ -367,19 +370,33 @@ def procedureInliningPipelinePhase
   -- in the callee and its renaming is one-to-one. It preserves `exitsCovered` because
   -- it wraps the callee body in a fresh block and renames block labels and exit
   -- targets with the same map.
-  modelPreservingPipelinePhase "inlineProcedures"
+  modelPreservingPipelinePhase "inlineProcedures" (maintainsIdentPrefixes := true)
     (requires := factSet![.wellFormedCalls, .noCFGBodies, .typeAnnotated])
     (preserves := factSet![.wellFormedCalls, .noCFGBodies, .noCalls, .noLoops, .noLoopInvariants,
                          .noLoopMeasures, .noPrecondsFromFuncs, .noNondetGuards,
                          .noProcedureContracts,
                          .noPolymorphicProcedures,
                          .noPolymorphicFunctions, .typeAnnotated, .exitsCovered])
-    fun prog =>
-      let taken := prog.typeNamesWithPrefix ProcedureInlining.inlineTyPrefix
-      declareGeneratedTypes ProcedureInlining.inlineTyPrefix taken
-        (runProgramUntilTyped
-          (ProcedureInlining.inlineCallCmd taken (doInline := opts.doInline))
-          prog opts.maxIters)
+    -- The opaque types avoid the program's type names with `inlineTyPrefix`, which need not be
+    -- collected when the program records no name with that prefix. The prefix is recorded only
+    -- when the output declares such a type (`declareGeneratedTypes` declares them at the top
+    -- level), so that inlining again does not find it recorded and warn.
+    -- TODO: the variables and labels of an inlining are named `$__inline<N>…` with a counter
+    -- that does not look at the program's names, so a program name of that form can be
+    -- captured. When the program may use `inlineNamesPrefix` (`Program.identPrefixesFree`),
+    -- they must be generated freshly.
+    fun prog => recordIdentPrefixes [ProcedureInlining.inlineNamesPrefix] prog <|
+      withClaimedPrefixes "inlineProcedures" [ProcedureInlining.inlineTyPrefix] prog
+        (fun free =>
+          let taken := if free then {}
+            else prog.typeNamesWithPrefix ProcedureInlining.inlineTyPrefix
+          declareGeneratedTypes ProcedureInlining.inlineTyPrefix taken
+            (runProgramUntilTyped
+              (ProcedureInlining.inlineCallCmd taken (doInline := opts.doInline))
+              prog opts.maxIters))
+        (recorded := fun _ out =>
+          if declaresWithPrefix out ProcedureInlining.inlineTyPrefix then
+            [ProcedureInlining.inlineTyPrefix] else [])
 
 end Core
 

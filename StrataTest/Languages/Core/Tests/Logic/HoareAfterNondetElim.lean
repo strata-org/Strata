@@ -177,7 +177,7 @@ theorem walk_out : (∃ c σ', walkRun = (.ok (c, walkOut), σ')) ∧
   obtain ⟨c, σ', hr⟩ := hrun
   have hphase := (Core.NondetElim.nondetElimPipelinePhase_over.{0} (π := π)
     (s := Core.Transform.CoreTransformState.emp) (s' := σ') (changed := c)
-    (by rw [Core.NondetElim.nondetElimPipelinePhase_ok]; exact hr)
+    (Core.NondetElim.nondetElimPipelinePhase_ok_of_run hr)
     (show Core.Program.allStatements Core.Statements.noCalls walkPgmAST = true by native_decide)
     (List.mem_of_getElem? walk_decl) walk_body_eq).1
   rwa [walk_nondetElim] at hphase

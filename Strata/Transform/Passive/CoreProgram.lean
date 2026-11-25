@@ -184,7 +184,7 @@ private theorem eventsOf_scopesOf (E : List (Option Decl × String))
         | some ob => pure (lemmaUnit l.name ob :: acc)
         | none => throw s!"WP: lemma '{l.name}' has no obligation"
       | _ => pure acc
-  let out : Program := { decls := declProgram.decls ++ decls.reverse }
+  let out : Program := { program with decls := declProgram.decls ++ decls.reverse }
   if axiomScopesAgree program out then pure out
   else throw "WP: an obligation procedure's axiom scope differs from its \
     source procedure's or lemma's"

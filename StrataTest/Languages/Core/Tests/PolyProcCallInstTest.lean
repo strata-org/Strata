@@ -55,23 +55,23 @@ VCs:
 Label: assert_0
 Property: assert
 Assumptions:
-callElimPost_idp_ensures_0_2: ai@2 == 7
+$__callElimPost_idp_ensures_0_2: ai@2 == 7
 Obligation:
 ai@2 == 7
 
 Label: assert_1
 Property: assert
 Assumptions:
-callElimPost_idp_ensures_0_2: ai@2 == 7
-callElimPost_idp_ensures_0_5: bb@2 == true
+$__callElimPost_idp_ensures_0_2: ai@2 == 7
+$__callElimPost_idp_ensures_0_5: bb@2 == true
 Obligation:
 bb@2 == true
 
 Label: Test_ensures_0
 Property: assert
 Assumptions:
-callElimPost_idp_ensures_0_2: ai@2 == 7
-callElimPost_idp_ensures_0_5: bb@2 == true
+$__callElimPost_idp_ensures_0_2: ai@2 == 7
+$__callElimPost_idp_ensures_0_5: bb@2 == true
 Obligation:
 true
 
@@ -126,23 +126,23 @@ VCs:
 Label: assert_0
 Property: assert
 Assumptions:
-callElimPost_idp_ensures_0_2: ai@2 == 7
+$__callElimPost_idp_ensures_0_2: ai@2 == 7
 Obligation:
 ai@2 == 7
 
 Label: assert_1
 Property: assert
 Assumptions:
-callElimPost_idp_ensures_0_2: ai@2 == 7
-callElimPost_idp_ensures_0_5: bb@2 == true
+$__callElimPost_idp_ensures_0_2: ai@2 == 7
+$__callElimPost_idp_ensures_0_5: bb@2 == true
 Obligation:
 bb@2 == false
 
 Label: Test_ensures_0
 Property: assert
 Assumptions:
-callElimPost_idp_ensures_0_2: ai@2 == 7
-callElimPost_idp_ensures_0_5: bb@2 == true
+$__callElimPost_idp_ensures_0_2: ai@2 == 7
+$__callElimPost_idp_ensures_0_5: bb@2 == true
 Obligation:
 true
 
@@ -211,8 +211,8 @@ true
 Label: TwoInstances_ensures_0
 Property: assert
 Assumptions:
-callElimPost_idp_ensures_0_2: ai@2 == 7
-callElimPost_idp_ensures_0_5: bb@2 == true
+$__callElimPost_idp_ensures_0_2: ai@2 == 7
+$__callElimPost_idp_ensures_0_5: bb@2 == true
 Obligation:
 true
 
@@ -340,46 +340,46 @@ VCs:
 Label: assert_0
 Property: assert
 Assumptions:
-callElimPost_swap_ensures_0_4: b@2 == true
-callElimPost_swap_ensures_1_5: i@2 == 1
+$__callElimPost_swap_ensures_0_4: b@2 == true
+$__callElimPost_swap_ensures_1_5: i@2 == 1
 Obligation:
 b@2 == true
 
 Label: assert_1
 Property: assert
 Assumptions:
-callElimPost_swap_ensures_0_4: b@2 == true
-callElimPost_swap_ensures_1_5: i@2 == 1
+$__callElimPost_swap_ensures_0_4: b@2 == true
+$__callElimPost_swap_ensures_1_5: i@2 == 1
 Obligation:
 i@2 == 1
 
 Label: assert_2
 Property: assert
 Assumptions:
-callElimPost_swap_ensures_0_4: b@2 == true
-callElimPost_swap_ensures_1_5: i@2 == 1
-callElimPost_swap_ensures_0_10: i2@2 == 2
-callElimPost_swap_ensures_1_11: b2@2 == false
+$__callElimPost_swap_ensures_0_4: b@2 == true
+$__callElimPost_swap_ensures_1_5: i@2 == 1
+$__callElimPost_swap_ensures_0_10: i2@2 == 2
+$__callElimPost_swap_ensures_1_11: b2@2 == false
 Obligation:
 i2@2 == 2
 
 Label: assert_3
 Property: assert
 Assumptions:
-callElimPost_swap_ensures_0_4: b@2 == true
-callElimPost_swap_ensures_1_5: i@2 == 1
-callElimPost_swap_ensures_0_10: i2@2 == 2
-callElimPost_swap_ensures_1_11: b2@2 == false
+$__callElimPost_swap_ensures_0_4: b@2 == true
+$__callElimPost_swap_ensures_1_5: i@2 == 1
+$__callElimPost_swap_ensures_0_10: i2@2 == 2
+$__callElimPost_swap_ensures_1_11: b2@2 == false
 Obligation:
 b2@2 == false
 
 Label: Test_ensures_0
 Property: assert
 Assumptions:
-callElimPost_swap_ensures_0_4: b@2 == true
-callElimPost_swap_ensures_1_5: i@2 == 1
-callElimPost_swap_ensures_0_10: i2@2 == 2
-callElimPost_swap_ensures_1_11: b2@2 == false
+$__callElimPost_swap_ensures_0_4: b@2 == true
+$__callElimPost_swap_ensures_1_5: i@2 == 1
+$__callElimPost_swap_ensures_0_10: i2@2 == 2
+$__callElimPost_swap_ensures_1_11: b2@2 == false
 Obligation:
 true
 
@@ -443,23 +443,23 @@ VCs:
 Label: assert_0
 Property: assert
 Assumptions:
-callElimPost_pick_ensures_0_2: forall y : int :: y == 7 ==> y == ai@2
+$__callElimPost_pick_ensures_0_2: forall y : int :: y == 7 ==> y == ai@2
 Obligation:
 ai@2 == 7
 
 Label: assert_1
 Property: assert
 Assumptions:
-callElimPost_pick_ensures_0_2: forall y : int :: y == 7 ==> y == ai@2
-callElimPost_pick_ensures_0_5: forall y : bool :: y == true ==> y == bb@2
+$__callElimPost_pick_ensures_0_2: forall y : int :: y == 7 ==> y == ai@2
+$__callElimPost_pick_ensures_0_5: forall y : bool :: y == true ==> y == bb@2
 Obligation:
 bb@2 == true
 
 Label: Test_ensures_0
 Property: assert
 Assumptions:
-callElimPost_pick_ensures_0_2: forall y : int :: y == 7 ==> y == ai@2
-callElimPost_pick_ensures_0_5: forall y : bool :: y == true ==> y == bb@2
+$__callElimPost_pick_ensures_0_2: forall y : int :: y == 7 ==> y == ai@2
+$__callElimPost_pick_ensures_0_5: forall y : bool :: y == true ==> y == bb@2
 Obligation:
 true
 
@@ -487,7 +487,7 @@ end Strata.PolyProcCallInstQuantPost
 namespace Strata.PolyProcCallInstRequires
 
 -- A non-free `requires` is inlined as an assert at each call site, at two instances:
--- the labels are per site (`callElimAssert_req_requires_0_2` and `_0_6`) and so are
+-- the labels are per site (`$__callElimAssert_req_requires_0_2` and `_0_6`) and so are
 -- the binder types (`forall y : int` and `forall y : bool`).
 def reqPgm : Program :=
 #strata
@@ -513,7 +513,7 @@ info: [Strata.Core] Type checking succeeded.
 
 
 VCs:
-Label: callElimAssert_req_requires_0_2
+Label: $__callElimAssert_req_requires_0_2
 Property: assert
 Obligation:
 forall y : int :: y == 7 ==> y == 7
@@ -521,36 +521,36 @@ forall y : int :: y == 7 ==> y == 7
 Label: assert_0
 Property: assert
 Assumptions:
-callElimPost_req_ensures_1_3: ai@2 == 7
+$__callElimPost_req_ensures_1_3: ai@2 == 7
 Obligation:
 ai@2 == 7
 
-Label: callElimAssert_req_requires_0_6
+Label: $__callElimAssert_req_requires_0_6
 Property: assert
 Assumptions:
-callElimPost_req_ensures_1_3: ai@2 == 7
+$__callElimPost_req_ensures_1_3: ai@2 == 7
 Obligation:
 forall y : bool :: y == true ==> y == true
 
 Label: assert_1
 Property: assert
 Assumptions:
-callElimPost_req_ensures_1_3: ai@2 == 7
-callElimPost_req_ensures_1_7: bb@2 == true
+$__callElimPost_req_ensures_1_3: ai@2 == 7
+$__callElimPost_req_ensures_1_7: bb@2 == true
 Obligation:
 bb@2 == true
 
 Label: Test_ensures_0
 Property: assert
 Assumptions:
-callElimPost_req_ensures_1_3: ai@2 == 7
-callElimPost_req_ensures_1_7: bb@2 == true
+$__callElimPost_req_ensures_1_3: ai@2 == 7
+$__callElimPost_req_ensures_1_7: bb@2 == true
 Obligation:
 true
 
 ---
 info:
-Obligation: callElimAssert_req_requires_0_2
+Obligation: $__callElimAssert_req_requires_0_2
 Property: assert
 Result: ✅ pass
 
@@ -558,7 +558,7 @@ Obligation: assert_0
 Property: assert
 Result: ✅ pass
 
-Obligation: callElimAssert_req_requires_0_6
+Obligation: $__callElimAssert_req_requires_0_6
 Property: assert
 Result: ✅ pass
 

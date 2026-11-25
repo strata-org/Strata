@@ -504,7 +504,7 @@ public section
     properties, which the deductive verification proofs establish only for the programs
     their own restrictions admit. -/
 def Core.equalitySimplificationPhase : Core.PipelinePhase :=
-  Core.modelPreservingPipelinePhase "equalitySimplification"
+  Core.modelPreservingPipelinePhase "equalitySimplification" (maintainsIdentPrefixes := true)
     Core.EqualitySimplification.runEqualitySimplification
     (requires := factSet![.noCFGBodies, .noCalls, .noPrecondsFromFuncs,
                         .typeAnnotated])

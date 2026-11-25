@@ -980,9 +980,7 @@ Result: ✅ pass
 -- With call elimination before the cut, the call's temporaries are declared inside the loop,
 -- and the cut refuses them with a hint.
 /--
-info: error: procedure 'P': block 'body' declares 'tmp_arg_0' inside the loop at 'loop'; a local
-  must be declared before the loop; if it is a call elimination temporary, run call elimination
-  after cfgLoopElim
+info: error: procedure 'P': block 'body' declares '$__callElimTmp_arg_0' inside the loop at 'loop'; a local must be declared before the loop; if it is a call elimination temporary, run call elimination after cfgLoopElim
 -/
 #guard_msgs (whitespace := lax) in
 #eval show IO Unit from do

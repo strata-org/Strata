@@ -865,10 +865,12 @@ procedure P (x : int)
 };
 #end
 
-/-- info: symbolic: x_pos failed
+/--
+info: symbolic: x_pos failed
 wp: x_pos failed
 symexec: x_pos failed
-per-path: x_pos failed -/
+per-path: x_pos failed
+-/
 #guard_msgs in
 #eval printMarkerVerdicts markerPrefixVarPgm
 

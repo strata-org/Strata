@@ -59,11 +59,11 @@ spec {
 
 /--
 info:
-Obligation: callElimAssert_n_positive_2
+Obligation: $__callElimAssert_n_positive_2
 Property: assert
 Result: ❌ fail
 
-Obligation: callElimAssert_n_positive_6
+Obligation: $__callElimAssert_n_positive_6
 Property: assert
 Result: ❓ unknown
 
@@ -83,11 +83,11 @@ Obligation: result_correct
 Property: assert
 Result: ✅ pass
 
-Obligation: callElimAssert_n_positive_2
+Obligation: $__callElimAssert_n_positive_2
 Property: assert
 Result: ❌ fail
 
-Obligation: callElimAssert_n_positive_6
+Obligation: $__callElimAssert_n_positive_6
 Property: assert
 Result: ❓ unknown
 

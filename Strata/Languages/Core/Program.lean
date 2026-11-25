@@ -246,8 +246,8 @@ structure Program where
       without scanning the program. `none` makes a reader collect the prefixes first
       (`Program.knownIdentPrefixes`), so a program nobody scanned is never taken as free.
 
-      No pass reads or extends the record yet: a pass that generates `$__` names does not add
-      their prefixes, so after such a pass the record need not cover the program. -/
+      A pass that generates `$__` names adds their prefixes (`Transform.recordIdentPrefixes`,
+      `Transform.withClaimedPrefixes`), so the record keeps covering the program's names. -/
   usedIdentPrefixes : Option (List String) := none
   deriving DecidableEq
 

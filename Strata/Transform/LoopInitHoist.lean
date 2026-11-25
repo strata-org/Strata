@@ -174,12 +174,12 @@ def loopInitHoistDecl (d : Decl) : Except Strata.Message (Decl × Bool) :=
 returned flag is true exactly when at least one body changes. -/
 def loopInitHoist (p : Program) : Transform.CoreTransformM (Bool × Program) := do
   let results ← liftExcept (p.decls.mapM loopInitHoistDecl)
-  return (results.any (·.2), { decls := results.map (·.1) })
+  return (results.any (·.2), { p with decls := results.map (·.1) })
 
 /-- Loop-initializer-hoist pipeline phase. It requires globally unique
 initializer names and establishes that loop bodies contain no initializers. -/
 def loopInitHoistPipelinePhase : PipelinePhase :=
-  modelPreservingPipelinePhase "loopInitHoist" loopInitHoist
+  modelPreservingPipelinePhase "loopInitHoist" (maintainsIdentPrefixes := true) loopInitHoist
     (requires := factSet![.noCFGBodies, .noCalls, .uniqueInits])
     (establishes := factSet![.loopBodyNoInits])
     (preserves := factSet![.noCFGBodies, .noCalls, .noLoops,

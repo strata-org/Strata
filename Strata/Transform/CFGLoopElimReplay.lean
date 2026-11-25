@@ -42,7 +42,7 @@ that meets its preconditions. The target is marked in its own procedure only
 (`tagTargetIn`), so a check of another procedure with the same label and metadata, which
 the run may reach in a call, does not confirm it, while a recursive call of the
 procedure can. The assertion call elimination puts in place of a callee's precondition
-(`callElimAssert_`) is replayed as that precondition at the call it comes from, which a
+(`$__callElimAssert_`) is replayed as that precondition at the call it comes from, which a
 copy of the callee, with the precondition marked, takes in its place.
 
 ## What a generator's models must provide
@@ -195,7 +195,7 @@ def asCalled (q : Procedure) : Procedure :=
     { q with body := .structured ((assumes ++ rest).map .cmd) false }
 
 /-- The label `l` of `callee`'s checked precondition whose assertion call elimination labels
-    `label` (`callElimAssert_` ++ `l` ++ `_` and a number), if any. -/
+    `label` (`$__callElimAssert_` ++ `l` ++ `_` and a number), if any. -/
 def callElimPreconditionOf (callee : Procedure) (label : String) : Option String :=
   callee.spec.preconditions.toList.findSome? fun (l, c) =>
     if c.attr == .Free then none else

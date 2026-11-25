@@ -276,11 +276,11 @@ def cutLoopsCore (procName : String) (cfg : DetCFG) : Except String (Bool × Det
     -- cannot (it needs the variable unset); the CFG type checker rejects it too.
     for (l, b) in bodyBlocks do
       if let some x := (b.cmds.flatMap Command.definedVars).head? then
-        -- Call elimination names its temporaries `tmp_…` and `old_…`
+        -- Call elimination names its temporaries `$__callElimTmp_…` and `$__callElimOld_…`
         -- (`Transform.tmpVarPrefix`, `Transform.oldVarPrefix`).
         let hint :=
-          if x.name.startsWith (Transform.tmpVarPrefix "") ||
-              x.name.startsWith (Transform.oldVarPrefix "") then
+          if x.name.startsWith (Transform.tmpVarPrefix CallElim.callElimPrefix "") ||
+              x.name.startsWith (Transform.oldVarPrefix CallElim.callElimPrefix "") then
             "; if it is a call elimination temporary, run call elimination after cfgLoopElim"
           else ""
         throw s!"procedure '{procName}': block '{l}' declares '{x.name}' inside the loop \
@@ -388,7 +388,7 @@ public section
     rejects a declaration on a cycle, accepts them. A choice is unconstrained wherever it
     is declared, so the phase keeps every run, and every fact. -/
 def hoistNondetChoicesPipelinePhase : PipelinePhase :=
-  modelPreservingPipelinePhase "hoistNondetChoices"
+  modelPreservingPipelinePhase "hoistNondetChoices" (maintainsIdentPrefixes := true)
     (preserves := factSet![.wellFormedCalls, .noCFGBodies, .noCalls, .noLoops,
                           .noLoopInvariants, .noLoopMeasures, .uniqueInits,
                           .loopBodyNoInits, .noPrecondsFromFuncs, .noNondetGuards,
@@ -406,7 +406,10 @@ def hoistNondetChoicesPipelinePhase : PipelinePhase :=
     (`CFGLoopElim.replayValidates`); otherwise no model is, and such an obligation's
     failure is reported as unknown. -/
 def cfgLoopElimPipelinePhase : PipelinePhase where
-  transform p := do
+  maintainsIdentPrefixes := true
+  -- A program with a marker label is rejected; the pass's other labels are outside the `$__`
+  -- namespace. So it only records the prefix of its markers.
+  transform p := Transform.recordIdentPrefixes [CFGLoopElim.cfgLoopElimAssumePrefix] p do
     rejectMarkerLabels "CFG loop elimination" CFGLoopElim.cfgLoopElimAssumePrefix p
     CFGLoopElim.cfgLoopElim p
   phase.name := "cfgLoopElim"

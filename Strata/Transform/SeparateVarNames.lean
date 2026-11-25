@@ -37,7 +37,9 @@ public section
     the injectivity of the renaming is checked by a property test of
     `ShadowingBinders.freshRenaming`. -/
 def separateVarNamesPipelinePhase : PipelinePhase :=
-  modelPreservingPipelinePhase "separateVarNames"
+  -- A renamed variable `x` becomes `x@k`, which keeps the prefix of `x`, so the recorded `$__`
+  -- prefixes still cover the program's names.
+  modelPreservingPipelinePhase "separateVarNames" (maintainsIdentPrefixes := true)
     (establishes := factSet![.varsNotFunctions])
     (preserves := factSet![.wellFormedCalls, .noCFGBodies, .noCalls, .noLoops, .noLoopInvariants,
       .noLoopMeasures, .uniqueInits, .loopBodyNoInits, .staticSingleAssignment, .noBetaRedexes,

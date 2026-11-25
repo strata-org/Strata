@@ -152,7 +152,13 @@ def nondetElim (p : Program) : Transform.CoreTransformM (Bool × Program) := do
 def nondetElimPipelinePhase : PipelinePhase :=
   -- `staticSingleAssignment` is not claimed because the loop case `havoc`s the
   -- fresh boolean at the end of the body.
-  modelPreservingPipelinePhase "nondetElim" nondetElim
+  -- TODO: the guards are numbered from 0 without looking at the program's names, so a program
+  -- variable named like a guard (`Imperative.NondetElim.prefixesReserved`) is captured. When the
+  -- program may use the guard prefixes (`Program.identPrefixesFree`), the guards must be
+  -- generated freshly.
+  modelPreservingPipelinePhase "nondetElim" (maintainsIdentPrefixes := true)
+    (fun p => Transform.recordIdentPrefixes Imperative.NondetElim.prefixesReserved p
+      (nondetElim p))
     (requires := factSet![.noCalls, .typeAnnotated])
     (establishes := factSet![.noNondetGuards])
     (preserves := factSet![.noCFGBodies, .noCalls, .noLoops, .noLoopInvariants,

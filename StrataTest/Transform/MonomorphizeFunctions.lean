@@ -1325,7 +1325,7 @@ Obligation: keep_ensures_1
 Property: assert
 Result: ✅ pass
 
-Obligation: callElimAssert_keep_requires_0_2
+Obligation: $__callElimAssert_keep_requires_0_2
 Property: assert
 Result: ✅ pass
 

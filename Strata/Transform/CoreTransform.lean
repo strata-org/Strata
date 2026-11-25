@@ -8,6 +8,7 @@ public import Strata.Pipeline.Messages
 
 public import Strata.Languages.Core.CallGraph
 public import Strata.Languages.Core.CoreGen
+public import Strata.Languages.Core.NameSets
 public import Strata.Languages.Core.Typing.Spec.ProcedureTypeSpec
 public import Strata.DL.Lambda.LTyMatch
 public import Strata.Util.Statistics
@@ -22,8 +23,12 @@ namespace Transform
 open LabelGen
 open Strata.Util (HMap)
 
-def oldVarPrefix (id : String) : String := s!"old_{id}"
-def tmpVarPrefix (id : String) : String := s!"tmp_{id}"
+/-- Prefix of the temporary holding the value of `old id` at a call, under the prefix `pfx` of
+    the pass's names (call elimination's is `CallElim.callElimPrefix`). -/
+def oldVarPrefix (pfx id : String) : String := s!"{pfx}Old_{id}"
+/-- Prefix of the temporary holding a call's argument (`id` is `arg`) or the value of its output
+    `id` before the call, under the prefix `pfx` of the pass's names. -/
+def tmpVarPrefix (pfx id : String) : String := s!"{pfx}Tmp_{id}"
 
 def createHavoc (ident : Expression.Ident)
     (md : Imperative.MetaData Expression)
@@ -53,37 +58,37 @@ def genTempIdent (taken : Std.HashSet String) (ident : Expression.Ident)
     (pf : String → String) : CoreGenM Expression.Ident :=
   CoreGenState.genAvoiding taken ⟨pf ident.name, ()⟩
 
-/-- A fresh temporary `tmp_arg_N`, not in `taken`, to hold an argument expression. -/
-def genArgExprIdent (taken : Std.HashSet String)
+/-- A fresh temporary `<pfx>Tmp_arg_N`, not in `taken`, to hold an argument expression. -/
+def genArgExprIdent (pfx : String) (taken : Std.HashSet String)
   : CoreGenM Expression.Ident :=
-    genTempIdent taken "arg" tmpVarPrefix
+    genTempIdent taken "arg" (tmpVarPrefix pfx)
 
 /-- `n` fresh argument temporaries (`genArgExprIdent`). -/
-def genArgExprIdents (taken : Std.HashSet String) (n : Nat)
+def genArgExprIdents (pfx : String) (taken : Std.HashSet String) (n : Nat)
   : CoreGenM (List Expression.Ident) :=
-  List.mapM (fun _ => genArgExprIdent taken) (List.replicate n ())
+  List.mapM (fun _ => genArgExprIdent pfx taken) (List.replicate n ())
 
-/-- A fresh temporary `tmp_<ident>_N`, not in `taken`, to hold the value of the output
+/-- A fresh temporary `<pfx>Tmp_<ident>_N`, not in `taken`, to hold the value of the output
     variable `ident` before the call. -/
-def genOutExprIdent (taken : Std.HashSet String) (ident : Expression.Ident)
+def genOutExprIdent (pfx : String) (taken : Std.HashSet String) (ident : Expression.Ident)
   : CoreGenM Expression.Ident :=
-    genTempIdent taken ident tmpVarPrefix
+    genTempIdent taken ident (tmpVarPrefix pfx)
 
 /-- One fresh output temporary (`genOutExprIdent`) per identifier of `idents`. -/
-def genOutExprIdents (taken : Std.HashSet String) (idents : List Expression.Ident)
+def genOutExprIdents (pfx : String) (taken : Std.HashSet String) (idents : List Expression.Ident)
   : CoreGenM (List Expression.Ident)
-  := List.mapM (genOutExprIdent taken) idents
+  := List.mapM (genOutExprIdent pfx taken) idents
 
-/-- A fresh variable `old_<ident>_N`, not in `taken`, to hold the value of `ident` that
+/-- A fresh variable `<pfx>Old_<ident>_N`, not in `taken`, to hold the value of `ident` that
     `old ident` denotes. -/
-def genOldExprIdent (taken : Std.HashSet String) (ident : Expression.Ident)
+def genOldExprIdent (pfx : String) (taken : Std.HashSet String) (ident : Expression.Ident)
   : CoreGenM Expression.Ident :=
-    genTempIdent taken ident oldVarPrefix
+    genTempIdent taken ident (oldVarPrefix pfx)
 
 /-- One fresh `old` variable (`genOldExprIdent`) per identifier of `idents`. -/
-def genOldExprIdents (taken : Std.HashSet String) (idents : List Expression.Ident)
+def genOldExprIdents (pfx : String) (taken : Std.HashSet String) (idents : List Expression.Ident)
   : CoreGenM (List Expression.Ident)
-  := List.mapM (genOldExprIdent taken) idents
+  := List.mapM (genOldExprIdent pfx taken) idents
 
 /-- Generate one fresh type name (`TyIdentifier = String`) from the
     shared `CoreGenState` counter — the same monotonic counter that backs the
@@ -199,6 +204,17 @@ structure CoreTransformState where
   -- Per-transform run counters, keyed by string names. Used to generate unique
   -- fresh-name prefixes across repeated passes.
   passCounter : HMap String Nat := {}
+  -- Warnings the transformations report, in order. `runTransforms` returns them in the final
+  -- state; the caller prints them (`verifyPipeline` does unless the options are quiet).
+  warnings : Array Strata.Message := #[]
+  -- Whether the input program's recorded `$__` prefixes (`Program.usedIdentPrefixes`) may be
+  -- trusted to cover its `$__` names. `runTransformsRecording` sets it before each phase: not for
+  -- the pipeline's input, which the caller may have changed after the record was computed, nor
+  -- after a phase that does not maintain the record (`PipelinePhase.maintainsIdentPrefixes`),
+  -- until a phase's output is found covered (`Program.identPrefixesCovered`). When it is false,
+  -- `withClaimedPrefixes` collects the program's prefixes instead of reading the record. A state
+  -- built without it does not trust the record either.
+  identPrefixesTrusted : Bool := false
 
 @[simp]
 def CoreTransformState.emp : CoreTransformState :=
@@ -250,6 +266,85 @@ def setFactory (F : @Lambda.Factory CoreLParams) : CoreTransformM Unit :=
 def incrementStat (key : String) (n : Nat := 1) : CoreTransformM Unit :=
   modify fun σ => { σ with statistics := σ.statistics.increment key n }
 
+/-- The warning the pass `pass` reports when the known prefixes `known` of its input
+    (`Program.knownIdentPrefixes`) are comparable with the prefixes `pfxs` of the names it
+    generates: one message naming every such prefix of `known` and every prefix of `pfxs` it
+    overlaps. -/
+@[expose] def identPrefixConflictWarning (pass : String) (pfxs known : List String) :
+    Strata.Message :=
+  let used := known.filter fun q => pfxs.any (Strata.Name.prefixesComparable q)
+  let ours := pfxs.filter fun pfx => used.any (Strata.Name.prefixesComparable pfx)
+  let quote (l : List String) := ", ".intercalate (l.map fun x => s!"'{x}'")
+  Strata.Message.fromString (kind := .warning)
+    s!"{pass}: the program uses names starting with {quote used}, which overlaps the \
+      prefixes {quote ours} this pass generates; it checks its generated names against the \
+      program's (slower)."
+
+/-- Run `t`, a pass on `p` whose generated names have the prefixes `pfxs`, and add the known
+    prefixes of `p` (`Program.knownIdentPrefixes`) and `pfxs` to those of its output
+    (`Program.addIdentPrefixes`), so that the output's recorded prefixes keep covering its
+    internal names (`Program.identPrefixesCovered`), also when `t` builds its output from
+    scratch. It does not look at whether `p` already uses `pfxs`: a pass that numbers its names
+    without looking at the program's uses it, with a TODO saying where it must generate them
+    freshly instead. -/
+@[expose] def recordIdentPrefixes (pfxs : List String) (p : Program)
+    (t : CoreTransformM (Bool × Program)) : CoreTransformM (Bool × Program) := do
+  let (changed, p') ← t
+  return (changed, p'.addIdentPrefixes (p.knownIdentPrefixes ++ pfxs))
+
+/-- Run `t`, a pass on `p` whose output may carry internal names its own code does not choose (a
+    symbolic evaluator's, for instance), and give the output the known prefixes of `p` together
+    with the prefixes of the output's internal names (`Program.withCollectedIdentPrefixes`), which
+    costs a walk over the output. Each expression is walked as a tree into one set of names,
+    unless its tree is large (`Program.InternalNames.treeWalkFuel`); then it shares subterms, as
+    a symbolic evaluator's output may, and is walked visiting each physically distinct
+    subexpression once (`Program.InternalNames.exprNamesPtrCache`). -/
+@[expose] def recollectIdentPrefixes (p : Program) (t : CoreTransformM (Bool × Program)) :
+    CoreTransformM (Bool × Program) := do
+  let (changed, p') ← t
+  return (changed, (p'.addIdentPrefixes p.knownIdentPrefixes).withCollectedIdentPrefixes)
+
+/-- Does `p` declare, at the top level, a name starting with `pfx`? The opaque types the passes
+    generate are top-level declarations, so this tells, without walking the program, whether a
+    pass declared one. -/
+@[expose] def declaresWithPrefix (p : Program) (pfx : String) : Bool :=
+  p.decls.any (·.name.name.startsWith pfx)
+
+/-- Run the pass `pass`, `t`, on `p`, claiming the prefixes `pfxs` of the names it generates, for
+    a pass that already generates names avoiding the program's. Its output records the prefixes
+    as `recordIdentPrefixes` does.
+
+    `t` is told whether the prefixes are free in `p` (`Program.identPrefixesFree`). When they are,
+    and the known prefixes of `p` cover its internal names, no name of `p` starts with one of
+    `pfxs` (`Program.not_startsWith_of_noConflict`), so `t` may skip collecting the program's
+    names to avoid. A program that records no prefixes, or whose record the transform state does
+    not trust (`CoreTransformState.identPrefixesTrusted`), has them collected here, which covers
+    its internal names (`Program.identPrefixesCovered_of_none`), so it is taken as free only when
+    it really has no name with `pfxs`. Otherwise one warning names the conflicts, and `t` avoids
+    the program's names as before.
+
+    The output records `recorded changed out` of the prefixes, where `changed` and `out` are what
+    `t` returns; by default all of `pfxs`. A pass that may claim a prefix without generating a
+    name with it records it only when it did, so that running it again does not find its own
+    prefix recorded and warn: call elimination generates names only when it eliminates a call,
+    and procedure inlining, call elimination and `genOpaqueTypeParams` declare their opaque types
+    (`declaresWithPrefix`) only when they need them. `recorded changed out` must hold every
+    prefix of `pfxs` that a new name of `out` starts with.
+
+    The known prefixes of `p` are computed once, so a program that records none is walked once. -/
+@[expose] def withClaimedPrefixes (pass : String) (pfxs : List String) (p : Program)
+    (t : Bool → CoreTransformM (Bool × Program))
+    (recorded : Bool → Program → List String := fun _ _ => pfxs) :
+    CoreTransformM (Bool × Program) := do
+  let known := if (← get).identPrefixesTrusted then p.knownIdentPrefixes
+    else p.collectIdentPrefixes
+  let free := Strata.Name.prefixesFree known pfxs
+  unless free do
+    modify fun σ =>
+      { σ with warnings := σ.warnings.push (identPrefixConflictWarning pass pfxs known) }
+  let (changed, p') ← t free
+  return (changed, p'.addIdentPrefixes (known ++ recorded changed p'))
+
 /-- Fresh counter for `key`, starting at 1. -/
 def bumpCounter (key : String) : CoreTransformM Nat := do
   let σ ← get
@@ -273,7 +368,7 @@ def declareGeneratedTypes (prefixStr : String) (taken : Std.HashSet String)
   if names.isEmpty then
     return (changed, p)
   let p' : Program :=
-    { decls := names.map (fun n => Decl.opaqueType n.name)
+    { p with decls := names.map (fun n => Decl.opaqueType n.name)
         ++ p.decls }
   modify fun σ => { σ with currentProgram := some p' }
   return (true, p')
@@ -283,28 +378,30 @@ def declareGeneratedTypes (prefixStr : String) (taken : Std.HashSet String)
 /--
 returned list has the shape
 ((generated_name, ty), original_expr)
-Only types of the 'inputs' parameter are used. The generated names avoid `taken`.
+Only types of the 'inputs' parameter are used. The generated names start with `pfx` and avoid
+`taken`.
 -/
-def genArgExprIdentsTrip (taken : Std.HashSet String)
+def genArgExprIdentsTrip (pfx : String) (taken : Std.HashSet String)
   (inputs : @Lambda.LTySignature Visibility)
   (args : List Expression.Expr)
   : CoreTransformM (List ((Expression.Ident × Lambda.LTy) × Expression.Expr))
   := do
   if inputs.length ≠ args.length then throw (Strata.Message.fromString "input length and args length mismatch")
-  else let gen_idents ← genArgExprIdents taken args.length
+  else let gen_idents ← genArgExprIdents pfx taken args.length
        return (gen_idents.zip inputs.unzip.2).zip args
 
 /--
 returned list has the shape
 `((generated_name, ty), original_name)`
-Only types of the 'outputs' parameter are used. The generated names avoid `taken`.
+Only types of the 'outputs' parameter are used. The generated names start with `pfx` and avoid
+`taken`.
 -/
-def genOutExprIdentsTrip (taken : Std.HashSet String)
+def genOutExprIdentsTrip (pfx : String) (taken : Std.HashSet String)
   (outputs : @Lambda.LTySignature Visibility)
   (lhs : List Expression.Ident)
   : CoreTransformM (List ((Expression.Ident × Expression.Ty) × Expression.Ident)) := do
   if outputs.length ≠ lhs.length then throw (Strata.Message.fromString "output length and lhs length mismatch")
-  else let gen_idents ← genOutExprIdents taken lhs
+  else let gen_idents ← genOutExprIdents pfx taken lhs
        return (gen_idents.zip outputs.unzip.2).zip lhs
 
 /--
@@ -619,11 +716,11 @@ def runProgramTyped
           newDecls := newDecls.set i (Decl.proc { proc with body := newBody } md)
           anyChanged := true
           modify (fun σ => { σ with
-            currentProgram := .some { decls := newDecls }
+            currentProgram := .some { p with decls := newDecls }
           })
     | _ => pure ()
 
-  let newProg : Program := { decls := newDecls }
+  let newProg : Program := { p with decls := newDecls }
   modify (fun σ => { σ with
     currentProcedureName := .none
   })

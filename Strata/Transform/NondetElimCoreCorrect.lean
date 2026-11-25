@@ -16,6 +16,7 @@ public import Strata.Languages.Core.StmtExtendCallBridgeProps
 import all Strata.Transform.NondetElim
 import all Strata.Languages.Core.PipelinePhase
 import Strata.Languages.Core.ProgramFactProps
+import Strata.Transform.CoreTransformProps
 
 /-! # Core nondeterminism-elimination correctness
 
@@ -48,13 +49,26 @@ open Imperative.Specification Imperative.Specification.Transform
 
 variable (π : String → Option Procedure)
 
-/-- Running the NondetElim pipeline phase runs its program transform. -/
+/-- Running the NondetElim pipeline phase runs its program transform, recording the prefixes of
+    its guards. -/
 theorem nondetElimPipelinePhase_ok (program : Program)
     (s : Transform.CoreTransformState) :
     (nondetElimPipelinePhase.transform program).run s =
-      (nondetElim program).run s := by
+      (Transform.recordIdentPrefixes Imperative.NondetElim.prefixesReserved program
+        (nondetElim program)).run s := by
   unfold nondetElimPipelinePhase modelPreservingPipelinePhase
   rfl
+
+/-- A successful run of the program transform is a successful run of the NondetElim pipeline
+    phase, whose output also records the prefixes of the guards. -/
+theorem nondetElimPipelinePhase_ok_of_run {program out : Program}
+    {s s' : Transform.CoreTransformState} {changed : Bool}
+    (h : (nondetElim program).run s = (.ok (changed, out), s')) :
+    (nondetElimPipelinePhase.transform program).run s =
+      (.ok (changed, out.addIdentPrefixes
+        (program.knownIdentPrefixes ++ Imperative.NondetElim.prefixesReserved)), s') := by
+  rw [nondetElimPipelinePhase_ok]
+  exact Transform.recordIdentPrefixes_run_of_run h
 
 /-- A successful declaration-list rewrite contains the transformed declaration
 and change flag for every structured procedure in the source list. -/
@@ -358,10 +372,10 @@ theorem nondetElimPipelinePhase_over
           (fun (st : Statements) =>
             if st = ss then some (Imperative.Block.nondetElim ss) else none)
           (fun _ => True) (base.extend Imperative.NondetElim.prefixesReserved) base := by
-  have htransform : (nondetElim program).run s = (.ok (changed, out), s') := by
-    rw [← nondetElimPipelinePhase_ok program s]
-    exact hrun
-  refine ⟨nondetElim_proc_mem htransform hq hb, ?_⟩
+  rw [nondetElimPipelinePhase_ok program s] at hrun
+  obtain ⟨out₀, htransform, rfl⟩ := Transform.recordIdentPrefixes_run hrun
+  have hmem := nondetElim_proc_mem htransform hq hb
+  refine ⟨hmem, ?_⟩
   exact fun base hprefixes _ hstable => assertValidityPreservedWhen_single _ fun _ aid hvalid =>
     assertValid π base hprefixes hstable _ _ aid rfl
       (ProgramFact.noCalls_of_program hnoCallsProgram hq hb) hvalid

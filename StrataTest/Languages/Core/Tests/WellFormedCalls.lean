@@ -209,11 +209,11 @@ info: procedure caller ()
 {
   var a : int;
   a := 0;
-  var tmp_arg_0 : int := a;
-  var tmp_a_1 : int := a;
-  var old_a_2 : int := a;
+  var $__callElimTmp_arg_0 : int := a;
+  var $__callElimTmp_a_1 : int := a;
+  var $__callElimOld_a_2 : int := a;
   havoc a;
-  assume [$__callElimAssume_inc_ensures_0_3]: a == int.add(old_a_2, 1);
+  assume [$__callElimAssume_inc_ensures_0_3]: a == int.add($__callElimOld_a_2, 1);
   assert [a_is_1]: a == 1;
 };
 -/

@@ -62,7 +62,8 @@ end Core.FoldAxioms
     discarding check is exact needs the evaluator's properties, which the deductive
     verification proofs establish only for the programs their own restrictions admit. -/
 def Core.foldAxiomsPhase : Core.PipelinePhase :=
-  Core.modelPreservingPipelinePhase "foldAxioms" Core.FoldAxioms.runFoldAxioms
+  Core.modelPreservingPipelinePhase "foldAxioms" (maintainsIdentPrefixes := true)
+      Core.FoldAxioms.runFoldAxioms
     (requires := factSet![.noPrecondsFromFuncs, .typeAnnotated])
     (preserves := factSet![.noCFGBodies, .noCalls, .noLoops, .noLoopInvariants,
                          .noLoopMeasures, .staticSingleAssignment, .noBetaRedexes,

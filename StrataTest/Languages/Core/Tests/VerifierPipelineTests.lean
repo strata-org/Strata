@@ -197,10 +197,10 @@ spec {
 procedure caller ()
 {
   var z : int;
-  var tmp_arg_0 : int := 5;
-  var tmp_z_1 : int := z;
+  var $__callElimTmp_arg_0 : int := 5;
+  var $__callElimTmp_z_1 : int := z;
   havoc z;
-  assume [$__callElimAssume_id_ensures_0_2]: z == tmp_arg_0;
+  assume [$__callElimAssume_id_ensures_0_2]: z == $__callElimTmp_arg_0;
 };
 -/
 #guard_msgs in

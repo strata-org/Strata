@@ -308,7 +308,14 @@ def insertLoopInvariantAsserts (p : Program) : Transform.CoreTransformM (Bool ×
 /-- Pipeline phase that materializes loop invariant/measure verification
     conditions (`insertLoopInvariantAsserts`). -/
 def insertLoopInvariantAssertsPipelinePhase : PipelinePhase where
-  transform p := do
+  maintainsIdentPrefixes := true
+  -- A marker label of the program is rejected.
+  -- TODO: the measure snapshots are numbered by the shared generator without looking at the
+  -- program's names, so a program variable named like one (`InsertLoopInvAsserts.measurePrefix`)
+  -- is captured. When the program may use the prefix (`Program.identPrefixesFree`), they must be
+  -- generated freshly.
+  transform p := Transform.recordIdentPrefixes
+      [InsertLoopInvAsserts.measurePrefix, insertLoopInvAssumePrefix] p do
     rejectMarkerLabels "the insertion of loop invariant checks" insertLoopInvAssumePrefix p
     insertLoopInvariantAsserts p
   phase.name := "insertLoopInvariantAsserts"

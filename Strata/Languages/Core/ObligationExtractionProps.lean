@@ -882,7 +882,7 @@ private theorem wpFactory_ssaProgram {fac moreFns : Lambda.Factory CoreLParams}
       | d => pure (some d)) = Except.ok decls →
       (decls.filterMap id).filterMap (fun | .type (.data b) _ => some b | _ => none) =
         ds.filterMap (fun | .type (.data b) _ => some b | _ => none) by
-    have hpd : programDatatypes { decls := decls.filterMap id } = programDatatypes mid :=
+    have hpd : programDatatypes { mid with decls := decls.filterMap id } = programDatatypes mid :=
       hd _ _ hdecls
     simp only [wpFactory, hpd]
   intro ds

@@ -237,7 +237,9 @@ def transformCommand (dialects : LoadedDialects) : Command where
       -- Run all passes in a single CoreTransformM chain so fresh variable
       -- counters accumulate and cached analyses are reused across passes.
       match ← (Strata.Core.runTransforms initProgram passes).toBaseIO with
-      | .ok (program, _) => IO.print (Core.formatProgram program)
+      | .ok (program, state) =>
+        for w in state.warnings do IO.eprintln s!"[warning] {w.message}"
+        IO.print (Core.formatProgram program)
       | .error e => exitFailure s!"Transform failed: {e}"
 
 /-- A rejected `--phases` list gets a pointer to the contract table, which is where the

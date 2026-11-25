@@ -170,7 +170,7 @@ open Imperative Imperative.DeadDefElim
     cached analyses included, as it is. -/
 @[expose] def deadDefElimProgram (p : Program) : Transform.CoreTransformM (Bool × Program) :=
   let r := p.decls.map deadDefElimDecl
-  return (r.any (·.2), { decls := r.map (·.1) })
+  return (r.any (·.2), { p with decls := r.map (·.1) })
 
 end DeadDefElim
 
@@ -191,7 +191,7 @@ end DeadDefElim
 @[expose] def Program.mapStructuredBodies (f : Statements → Statements) (p : Program)
     (changed : Statements → Statements → Bool := fun ss ss' => ss' != ss) : Bool × Program :=
   let r := p.decls.map (Decl.mapStructuredBody f changed)
-  (r.any (·.2), { decls := r.map (·.1) })
+  (r.any (·.2), { p with decls := r.map (·.1) })
 
 /-- The dead-definition elimination pipeline phase: removes from each procedure body
     the `init`s whose variable no later statement mentions
@@ -205,7 +205,8 @@ end DeadDefElim
     It only deletes `init`s, so it keeps every fact of its input.  No default pipeline runs
     it; a pipeline names it (`Core.nameablePhases`). -/
 def deadDefElimPipelinePhase : PipelinePhase :=
-  modelPreservingPipelinePhase "deadDefElim" DeadDefElim.deadDefElimProgram
+  modelPreservingPipelinePhase "deadDefElim" (maintainsIdentPrefixes := true)
+      DeadDefElim.deadDefElimProgram
     (requires := factSet![.noCalls, .noLoops, .noPrecondsFromFuncs, .typeAnnotated])
     (preserves := factSet![.wellFormedCalls, .noCFGBodies, .noCalls, .noLoops,
                          .noLoopInvariants, .noLoopMeasures, .staticSingleAssignment,

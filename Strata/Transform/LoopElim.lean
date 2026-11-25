@@ -257,7 +257,13 @@ def loopElim (p : Program) : Transform.CoreTransformM (Bool × Program) :=
 /-- Loop-elimination pipeline phase: replaces each loop with an acyclic
     encoding (`loopElim`). -/
 def loopElimPipelinePhase : PipelinePhase where
-  transform p := do
+  maintainsIdentPrefixes := true
+  -- A marker label of the program is rejected, and so is an exit in a loop body to a label with
+  -- `loopElimPrefix`.
+  -- TODO: the generated labels are numbered by the shared generator without looking at the
+  -- program's other labels, so a program label with `loopElimPrefix` can be duplicated. When the
+  -- program may use the prefix (`Program.identPrefixesFree`), they must be generated freshly.
+  transform p := Transform.recordIdentPrefixes [loopElimPrefix, loopElimAssumePrefix] p do
     rejectMarkerLabels "loop elimination" loopElimAssumePrefix p
     loopElim p
   phase.name := "loopElim"

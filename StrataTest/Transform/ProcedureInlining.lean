@@ -785,7 +785,7 @@ procedure Caller<a, b> (x : a, y : b)
 /--
 info: program Core;
 
-type $__inlinety_0;
+type $__inlty_0;
 procedure q<a> ()
 {
   assume [refl]: forall y : a :: y == y;
@@ -793,7 +793,7 @@ procedure q<a> ()
 procedure Caller ()
 {
   $__inline1_q$inlined: {
-    assume [$__inline1_refl]: forall y : $__inlinety_0 :: y == y;
+    assume [$__inline1_refl]: forall y : $__inlty_0 :: y == y;
   }
 };
 -/
@@ -804,7 +804,7 @@ procedure Caller ()
 /--
 info: program Core;
 
-type $__inlinety_0;
+type $__inlty_0;
 procedure r<a, b> (x : a)
 {
   assert [refl]: x == x;
@@ -815,7 +815,7 @@ procedure Caller ()
   $__inline1_r$inlined: {
     var $__inline1_x : int := 7;
     assert [$__inline1_refl]: $__inline1_x == $__inline1_x;
-    assume [$__inline1_reflB]: forall y : $__inlinety_0 :: y == y;
+    assume [$__inline1_reflB]: forall y : $__inlty_0 :: y == y;
   }
 };
 -/
@@ -848,7 +848,7 @@ procedure Caller ()
 /--
 info: program Core;
 
-type $__inlinety_0;
+type $__inlty_0;
 procedure r<a, b> (x : a)
 {
   assert [refl]: x == x;
@@ -859,7 +859,7 @@ procedure Caller ()
   $__inline1_r$inlined: {
     var $__inline1_x : int := 7;
     assert [$__inline1_refl]: $__inline1_x == $__inline1_x;
-    assume [$__inline1_reflB]: forall y : $__inlinety_0 :: y == y;
+    assume [$__inline1_reflB]: forall y : $__inlty_0 :: y == y;
   }
 };
 -/
@@ -875,7 +875,7 @@ procedure Caller ()
 /--
 info: program Core;
 
-type $__inlinety_0;
+type $__inlty_0;
 procedure r<a, b> (x : a)
 {
   assert [refl]: x == x;
@@ -886,7 +886,7 @@ procedure Caller ()
   $__inline1_r$inlined: {
     var $__inline1_x : int := 7;
     assert [$__inline1_refl]: $__inline1_x == $__inline1_x;
-    assume [$__inline1_reflB]: forall y : $__inlinety_0 :: y == y;
+    assume [$__inline1_reflB]: forall y : $__inlty_0 :: y == y;
   }
 };
 -/
@@ -909,7 +909,7 @@ but its arguments give a = int
 /--
 info: program Core;
 
-type $__inlinety_0;
+type $__inlty_0;
 procedure r<a, b> (x : a)
 {
   assert [refl]: x == x;
@@ -920,7 +920,7 @@ procedure Caller ()
   $__inline1_r$inlined: {
     var $__inline1_x : int := 7;
     assert [$__inline1_refl]: $__inline1_x == $__inline1_x;
-    assume [$__inline1_reflB]: forall y : $__inlinety_0 :: y == y;
+    assume [$__inline1_reflB]: forall y : $__inlty_0 :: y == y;
   }
 };
 -/
@@ -934,8 +934,8 @@ procedure Caller ()
 /--
 info: program Core;
 
-type $__inlinety_0;
-type $__inlinety_1;
+type $__inlty_0;
+type $__inlty_1;
 procedure r<a, b> (x : a)
 {
   assert [refl]: x == x;
@@ -944,9 +944,9 @@ procedure r<a, b> (x : a)
 procedure Caller ()
 {
   $__inline1_r$inlined: {
-    var $__inline1_x : $__inlinety_0 := int.neg(7);
+    var $__inline1_x : $__inlty_0 := int.neg(7);
     assert [$__inline1_refl]: $__inline1_x == $__inline1_x;
-    assume [$__inline1_reflB]: forall y : $__inlinety_1 :: y == y;
+    assume [$__inline1_reflB]: forall y : $__inlty_1 :: y == y;
   }
 };
 -/
@@ -958,7 +958,7 @@ procedure Caller ()
 /--
 info: program Core;
 
-type $__inlinety_0;
+type $__inlty_0;
 procedure idp<a> (x : a, out r : a)
 {
   r := x;
@@ -967,8 +967,8 @@ procedure Caller ()
 {
   var bb : bool;
   $__inline1_idp$inlined: {
-    var $__inline1_x : $__inlinety_0 := 7;
-    var $__inline1_r : $__inlinety_0;
+    var $__inline1_x : $__inlty_0 := 7;
+    var $__inline1_r : $__inlty_0;
     $__inline1_r := $__inline1_x;
     bb := $__inline1_r;
   }
@@ -983,22 +983,22 @@ end CallInstanceTests
 /-! ## The opaque types of an inlined call avoid the program's type names
 
 A program may declare a type named like the opaque type inlining gives a callee type parameter
-that the call does not determine. Here the axiom makes `$__inlinety_0` a singleton, under which
+that the call does not determine. Here the axiom makes `$__inlty_0` a singleton, under which
 the assertion of `Q` holds, so the inlined assertion must be at another type. The checker rejects
 such a call, so the pass is run directly on the unchecked program. -/
 section InlineAvoidsTypeNames
 open Core.CallFixtures Core.TestUtil
 
 def capturedInlineTypePgm : Program :=
-  capturedTypeProg "$__inlinety_0" []
+  capturedTypeProg "$__inlty_0" []
     [Statement.assert "qa" (singletonAll (tv "a")) .empty]
 
 /--
 info: program Core;
 
-type $__inlinety_1;
-type $__inlinety_0;
-axiom [one]: forall x : $__inlinety_0 :: forall y : $__inlinety_0 :: x == y;
+type $__inlty_1;
+type $__inlty_0;
+axiom [one]: forall x : $__inlty_0 :: forall y : $__inlty_0 :: x == y;
 procedure Q<a> ()
 {
   assert [qa]: forall x : a :: forall y : a :: x == y;
@@ -1006,7 +1006,7 @@ procedure Q<a> ()
 procedure P ()
 {
   $__inline1_Q$inlined: {
-    assert [$__inline1_qa]: forall x : $__inlinety_1 :: forall y : $__inlinety_1 :: x == y;
+    assert [$__inline1_qa]: forall x : $__inlty_1 :: forall y : $__inlty_1 :: x == y;
   }
 };
 -/
@@ -1023,14 +1023,14 @@ parameters
   | .error e => IO.println e.message
 
 /-- A type declared inside a procedure body is avoided as well. Here the assumption makes the
-    local `$__inlinety_0` a singleton, so the inlined assertion must be at another type. -/
+    local `$__inlty_0` a singleton, so the inlined assertion must be at another type. -/
 def capturedLocalInlineTypePgm : Program :=
-  capturedLocalTypeProg "$__inlinety_0" []
+  capturedLocalTypeProg "$__inlty_0" []
     [Statement.assert "qa" (singletonAll (tv "a")) .empty]
 
 -- As in CallElim.lean, the printed program cannot be shown, so the output is checked directly.
 #guard ((toString (runInlineCall capturedLocalInlineTypePgm).stripMetaData).splitOn
-  "forall x : $__inlinety_1 ::").length > 1
+  "forall x : $__inlty_1 ::").length > 1
 
 /--
 info: Procedure 'P': the call to 'Q' does not determine one of its type

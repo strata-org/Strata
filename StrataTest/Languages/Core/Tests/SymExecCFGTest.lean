@@ -689,8 +689,7 @@ cfg entry {
 -- A call in a block on a cycle: the loop is cut before call elimination, so the call's `init`s
 -- are in an acyclic body, and the invariant gives the callee's precondition.
 /--
-info: "cfgLoopElimAssert_entry_loop_0: ✅ pass\ncallElimAssert_inc_pre_2:
-  ✅ pass\ncfgLoopElimAssert_maintain_loop_body_0: ✅ pass"
+info: "cfgLoopElimAssert_entry_loop_0: ✅ pass\n$__callElimAssert_inc_pre_2: ✅ pass\ncfgLoopElimAssert_maintain_loop_body_0: ✅ pass"
 -/
 #guard_msgs (whitespace := lax) in
 #eval verifyCFG <|
@@ -712,8 +711,7 @@ cfg entry {
 -- Calls in a CFG block to a procedure with a contract and no body are eliminated in place: each
 -- call's precondition is checked there and its postcondition assumed.
 /--
-info: "callElimAssert_q_pre_2: ❌ fail\ncallElimAssert_q_pre_6: ✅ pass\nr_gt_t: ✅ pass\nr_big: ✅
-  pass"
+info: "$__callElimAssert_q_pre_2: ❌ fail\n$__callElimAssert_q_pre_6: ✅ pass\nr_gt_t: ✅ pass\nr_big: ✅ pass"
 -/
 #guard_msgs (whitespace := lax) in
 #eval verifyCFG <|
