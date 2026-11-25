@@ -13,12 +13,15 @@ meta section
 
 /-! # When the sequence agreement axiom reaches the solver
 
-The axiom stating that `Sequence.select!` equals `Sequence.select` in range belongs
+The axiom stating that `Sequence.select!` equals `Sequence.select` belongs
 to `Sequence.select`, and the encoder sends a function's axioms only for a query
-that uses that function. A query written with `select!` alone therefore carries no
-agreement axiom, while a query that uses both selectors carries it. Each program
-below prints, for its one query, how many asserted formulas mention both
-selectors. -/
+that uses that function. The `SeqTotalize` phase rewrites every checked operation of the
+program to its total twin before encoding. The axioms of `append`, `build`, `update`,
+`contains`, `take` and `drop` are stated with both selectors (`withSelectBang`), though, so
+a query that uses one of those operations still declares `Sequence.select` and receives
+the agreement axiom. A query that uses none of them does not, whichever selector the
+program is written with. Each program below prints, for its one query, how many asserted
+formulas mention both selectors. -/
 
 namespace Core.SeqAgreementEmission.Tests
 
@@ -84,7 +87,8 @@ procedure P()
 #guard_msgs in
 #eval agreementAsserts uncheckedOnlyPgm
 
-/-- Both selectors appear: the agreement axiom is sent. -/
+/-- Both selectors appear in the source, but after `SeqTotalize` the query uses
+`select!` only: the agreement axiom is not sent. -/
 def bothSelectorsPgm : StrataDDM.Program :=
 #strata
 program Core;
@@ -99,16 +103,15 @@ procedure P()
 };
 #end
 
-/-- info: agreement asserts: 1 -/
+/-- info: agreement asserts: 0 -/
 #guard_msgs in
 #eval agreementAsserts bothSelectorsPgm
 
-/-- Only checked operations appear. The query receives the agreement axiom of
-`Sequence.select`, which mentions `Sequence.select!`; the other quantified formulas
-that mention an unchecked operation are the `select!` copies of the select-of-update
-and select-of-take axioms, already present without the agreement axiom. All of them
-are triggered on an unchecked term, which this query does not contain, so they never
-fire here. The counts pin both the axiom set and those triggers. -/
+/-- Only checked operations appear in the source. After `SeqTotalize` the program
+uses the unchecked operations only, so the quantified formulas that mention one are
+the axioms of those operations, each triggered on an unchecked term. Those of `update`
+and `take` are also stated with the checked `select`, so the query declares it and
+receives the agreement axiom. The counts pin the axiom set and those triggers. -/
 def checkedOnlyPgm : StrataDDM.Program :=
 #strata
 program Core;
@@ -122,9 +125,13 @@ procedure P()
 };
 #end
 
-/-- info: quantified asserts: 28, mentioning an unchecked operation: 11, of those triggered on an unchecked operation: 11 -/
+/-- info: quantified asserts: 28, mentioning an unchecked operation: 24, of those triggered on an unchecked operation: 24 -/
 #guard_msgs in
 #eval quantifiedAsserts checkedOnlyPgm
+
+/-- info: agreement asserts: 3 -/
+#guard_msgs in
+#eval agreementAsserts checkedOnlyPgm
 
 end Core.SeqAgreementEmission.Tests
 

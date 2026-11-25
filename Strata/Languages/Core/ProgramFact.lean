@@ -8,6 +8,9 @@ module
 public import Strata.Languages.Core.Program
 public import Strata.Languages.Core.CallWFProps
 public import Strata.DL.Lambda.LExprWF
+public import Strata.DL.Lambda.Preconditions
+import Strata.Util.Tactics
+import all Strata.DL.Imperative.Stmt
 public import Strata.Pipeline.FactSet
 public import Strata.Languages.Core.NameMangling
 public import Strata.Languages.Core.ShadowingBinders
@@ -138,6 +141,28 @@ inductive ProgramFact where
       encoder relies on it having been checked when it encodes `SafeDiv`,
       `SafeMod` and the safe bitvector operations as total. -/
   | noPrecondsFromFuncs
+  /-- In every procedure body, each call of a built-in operator that carries a
+      precondition, such as `Sequence.select` or `Int.SafeDiv`, is preceded in its block
+      by an `assert` of that precondition at the call's arguments
+      (`Program.builtinPrecondsAsserted`). Established by `PrecondElim`, which inserts
+      those assertions. Required by `SeqTotalize`, which rewrites each checked sequence
+      operation to its total twin: run before the assertions exist, the rewrite would
+      leave nothing for `PrecondElim` to check, and the bounds obligations would be lost.
+      `noPrecondsFromFuncs` cannot stand in for it, since `assertNoPrecondsFromFuncs`
+      also establishes that fact and checks only the functions the program declares.
+
+      Like `typeAnnotated`, this fact exposes no executable check (`check?` is `none`),
+      so it has no `assert` form and `PrecondElim` is its only source: the property
+      stated covers procedure bodies, while `PrecondElim` also checks the calls in
+      contracts, function bodies and lemmas through the well-formedness lemmas it
+      emits, which no check here recognizes.
+
+      It is a declared trust assumption: `PrecondElim`'s contract leaves it unproved, as it
+      leaves every fact it claims, and only a test (`StrataTest/Transform/PrecondElim.lean`)
+      runs `Program.builtinPrecondsAsserted` on its output. It stands in for an ordering
+      requirement ("`PrecondElim` ran earlier") that phases are meant to state directly;
+      once they can, that requirement replaces this fact. -/
+  | precondObligationsEmitted
   /-- No `ite` or `loop` guard is nondeterministic. Established by `NondetElim`,
       which replaces such a guard with a fresh boolean it initializes, and by a
       loop also havocs at the end of the body. Required by symbolic evaluation,
@@ -360,6 +385,7 @@ def ProgramFact.name : ProgramFact → String
   | .noBetaRedexes => "noBetaRedexes"
   | .noLambdas => "noLambdas"
   | .noPrecondsFromFuncs => "noPrecondsFromFuncs"
+  | .precondObligationsEmitted => "precondObligationsEmitted"
   | .noNondetGuards => "noNondetGuards"
   | .hasObligationForm => "hasObligationForm"
   | .noProcedureContracts => "noProcedureContracts"
@@ -383,7 +409,8 @@ def ProgramFact.name : ProgramFact → String
 @[expose] def ProgramFact.all : List ProgramFact :=
   [.wellFormedCalls, .noCFGBodies, .noCalls, .noLoops, .noLoopInvariants,
    .noLoopMeasures, .uniqueInits, .loopBodyNoInits, .staticSingleAssignment,
-   .noBetaRedexes, .noLambdas, .noPrecondsFromFuncs, .noNondetGuards, .hasObligationForm,
+   .noBetaRedexes, .noLambdas, .noPrecondsFromFuncs, .precondObligationsEmitted,
+   .noNondetGuards, .hasObligationForm,
    .noProcedureContracts, .noPolymorphicProcedures, .noPolymorphicFunctions,
    .typeAnnotated, .noInits, .treeForm, .exitsCovered, .armsHaveObligations,
    .noCFGCycles, .varsNotFunctions]
@@ -459,7 +486,96 @@ def ProgramFact.noLambdasOffender (p : Program) : Option String :=
   | .wellFormedCalls | .noCFGBodies | .noCalls | .noLoops | .noLoopInvariants | .noLoopMeasures
   | .uniqueInits | .loopBodyNoInits | .staticSingleAssignment | .noNondetGuards
   | .hasObligationForm | .noProcedureContracts | .noPolymorphicProcedures | .noInits
-  | .treeForm | .exitsCovered | .armsHaveObligations | .noCFGCycles => true
+  | .treeForm | .exitsCovered | .armsHaveObligations | .noCFGCycles
+  | .precondObligationsEmitted => true
+
+/-! ### Built-in precondition obligations
+
+What `precondObligationsEmitted` states: each call of a built-in operator with a
+precondition, in a procedure body, comes after an `assert` of the precondition at its
+arguments, the assertion `PrecondElim` inserts ahead of the statement. -/
+
+/-- The preconditions, at their arguments, of the calls of built-in operators in `e`. -/
+@[expose] def Expression.builtinPrecondObligations (e : Expression.Expr) :
+    List Expression.Expr :=
+  (Lambda.collectWFObligations Core.Factory e).map (·.obligation)
+
+/-- Is the obligation `o` among `prior`, or an implication `p ==> q` whose conclusion is? A
+    call on the right of a `&&` or a `==>` gets its precondition under the left side
+    (`Lambda.collectWFObligations`); an `assert` of the precondition itself discharges it. -/
+@[expose] def Expression.obligationAmong (prior : List Expression.Expr) :
+    Expression.Expr → Bool
+  | o@(.app _ (.app _ (.op _ f _) _) q) =>
+    prior.contains o || (f.name == "Bool.Implies" && Expression.obligationAmong prior q)
+  | o => prior.contains o
+
+/-- Is the precondition of every built-in call in `es` among the asserted `prior`? -/
+@[expose] def Expression.precondsAmong (prior es : List Expression.Expr) : Bool :=
+  es.all fun e => (Expression.builtinPrecondObligations e).all (Expression.obligationAmong prior)
+
+/-- The expressions of a command that `PrecondElim` checks the calls of. -/
+@[expose] def Command.precondExprs : Command → List Expression.Expr
+  | .cmd (.init _ _ (.det e) _) | .cmd (.set _ (.det e) _) => [e]
+  | .cmd (.init _ _ .nondet _) | .cmd (.set _ .nondet _) => []
+  | .cmd (.assert _ e _) | .cmd (.assume _ e _) | .cmd (.cover _ e _) => [e]
+  | .call _ _ args _ => CallArg.getInputExprs args
+
+/-- The expression a statement asserts, if it is an `assert`. -/
+@[expose] def Statement.assertedExprs : Statement → List Expression.Expr
+  | .cmd (.cmd (.assert _ e _)) => [e]
+  | _ => []
+
+mutual
+/-- Is the precondition of every built-in call in `s`, outside its nested blocks, among
+    `prior`, and does the same hold within each nested block, which also sees `prior`? -/
+@[expose] def Statement.builtinPrecondsAsserted (prior : List Expression.Expr) :
+    Statement → Bool
+  | .cmd c => Expression.precondsAmong prior c.precondExprs
+  | .block _ b _ => Statements.builtinPrecondsAsserted prior b
+  | .ite c t e _ =>
+    Expression.precondsAmong prior (match c with | .det g => [g] | .nondet => []) &&
+      Statements.builtinPrecondsAsserted prior t && Statements.builtinPrecondsAsserted prior e
+  | .loop g m inv body _ =>
+    Expression.precondsAmong prior
+        ((match g with | .det g => [g] | .nondet => []) ++ m.toList ++ inv.map (·.2)) &&
+      Statements.builtinPrecondsAsserted prior body
+  | .exit .. | .typeDecl .. => true
+  termination_by s => s.sizeOf
+  decreasing_by all_goals term_by_mem
+
+/-- `Statement.builtinPrecondsAsserted` for each statement of `ss`, where a statement also
+    sees the assertions before it in `ss`. -/
+@[expose] def Statements.builtinPrecondsAsserted (prior : List Expression.Expr) :
+    List Statement → Bool
+  | [] => true
+  | s :: rest =>
+    Statement.builtinPrecondsAsserted prior s &&
+      Statements.builtinPrecondsAsserted (prior ++ Statement.assertedExprs s) rest
+  termination_by ss => Imperative.Block.sizeOf ss
+  decreasing_by all_goals term_by_mem
+end
+
+/-- `Statements.builtinPrecondsAsserted` for a CFG block: each command sees the assertions
+    before it in the block, and the branch condition sees all of the block's. -/
+@[expose] def DetBlock.builtinPrecondsAsserted
+    (b : Imperative.DetBlock String Command Expression) : Bool :=
+  let (ok, prior) := b.cmds.foldl (init := (true, ([] : List Expression.Expr)))
+    fun (ok, prior) c =>
+      (ok && Expression.precondsAmong prior c.precondExprs,
+       prior ++ match c with | .cmd (.assert _ e _) => [e] | _ => [])
+  ok && match b.transfer with
+    | .condGoto e _ _ _ => Expression.precondsAmong prior [e]
+    | .finish _ => true
+
+/-- In every procedure body of `p`, structured or CFG, is each call of a built-in
+    operator with a precondition preceded by an assertion of that precondition? -/
+@[expose] def Program.builtinPrecondsAsserted (p : Program) : Bool :=
+  p.decls.all fun d => match d with
+    | .proc q _ => match q.body with
+      | .structured ss _ => Statements.builtinPrecondsAsserted [] ss
+      | .cfg g _ => g.blocks.all fun (_, b) => DetBlock.builtinPrecondsAsserted b
+      | .abstract => true
+    | _ => true
 
 /-- Executable check for a fact, for the facts that have one. `none` means
     the fact is still perfectly usable in a contract — it just cannot be
@@ -485,6 +601,7 @@ def ProgramFact.noLambdasOffender (p : Program) : Option String :=
     p.allExprs (fun e => !Expression.hasAbsShared e) ||
       p.liveExprs.all fun e => !Expression.hasAbsShared e
   | .noPrecondsFromFuncs => some Program.noFuncPreconditions
+  | .precondObligationsEmitted => none
   | .noNondetGuards => some (Program.allStatements Imperative.Block.noNondetGuards)
   | .hasObligationForm => some (Program.allStatements Statements.hasObligationForm)
   | .noProcedureContracts => some Program.noProcedureContracts
@@ -522,6 +639,7 @@ def ProgramFact.noLambdasOffender (p : Program) : Option String :=
     (p.allExprs (fun e => !Expression.hasAbsShared e) ||
       p.liveExprs.all fun e => !Expression.hasAbsShared e) = true
   | .noPrecondsFromFuncs => fun p => Program.noFuncPreconditions p = true
+  | .precondObligationsEmitted => fun p => Program.builtinPrecondsAsserted p = true
   | .noNondetGuards =>
     fun p => Program.allStatements Imperative.Block.noNondetGuards p = true
   | .hasObligationForm =>

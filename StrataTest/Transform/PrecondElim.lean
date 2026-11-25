@@ -1481,5 +1481,68 @@ Result: ❌ fail
 #guard_msgs in
 #eval Strata.Core.verify nestedAssertLabelClashPgm (options := .quiet)
 
+
+/-! ### `precondElim` establishes `precondObligationsEmitted`
+
+The fact has no executable check, so the pipeline's claim checks cannot see it. Here
+`Program.builtinPrecondsAsserted`, the property it states, is false before `precondElim`
+and true after, on a structured body (commands, an `ite` guard, a loop guard and
+invariant, a nested block) and on a CFG body (commands and a branch condition). -/
+
+def builtinPrecondsPgm :=
+#strata
+program Core;
+const g : Sequence int;
+procedure S(out r : int)
+{
+  r := Sequence.select(g, 0);
+  assert [a]: Sequence.length(Sequence.take(g, 1)) == 1;
+  if (Sequence.select(g, 1) == 0) { r := int.safeDiv(r, 2); } else { }
+  while (int.lt(r, Sequence.select(g, 2)))
+    invariant (Sequence.select(g, 3) == 3)
+  { r := int.add(r, 1); }
+  B: { r := Sequence.select(Sequence.drop(g, 1), 0); }
+};
+procedure C(out r : int)
+cfg entry {
+  entry: {
+    r := Sequence.select(g, 0);
+    branch (Sequence.select(g, 1) == 0) goto done else goto done;
+  }
+  done: { return; }
+};
+#end
+
+/-- info: before: false, after: true -/
+#guard_msgs in
+#eval
+  let p := translate builtinPrecondsPgm
+  match Core.Transform.run p PrecondElim.precondElim coreFactoryState with
+  | .error e => IO.println s!"precondElim failed: {e}"
+  | .ok (_, q) =>
+    IO.println s!"before: {p.builtinPrecondsAsserted}, after: {q.builtinPrecondsAsserted}"
+
+/-! Dropping any inserted assertion breaks it again: here the first check of each body. -/
+
+/-- info: [false, false] -/
+#guard_msgs in
+#eval
+  let p := translate builtinPrecondsPgm
+  match Core.Transform.run p PrecondElim.precondElim coreFactoryState with
+  | .error _ => IO.println "precondElim failed"
+  | .ok (_, q) =>
+    let dropFirst (pr : Core.Procedure) (md : Imperative.MetaData Core.Expression) :
+        Core.Program :=
+      let body : Core.Procedure.Body := match pr.body with
+        | .structured (_ :: ss) o => .structured ss o
+        | .cfg g o => .cfg { g with blocks := g.blocks.map fun
+            ((l, b) : String × Imperative.DetBlock String Core.Command Core.Expression) =>
+              (l, { b with cmds := b.cmds.drop 1 }) } o
+        | b => b
+      { decls := [Core.Decl.proc { pr with body := body } md] }
+    IO.println (q.decls.filterMap fun (d : Core.Decl) => match d with
+      | Core.Decl.proc pr md => some (dropFirst pr md).builtinPrecondsAsserted
+      | _ => none)
+
 end PrecondElimTests
 end

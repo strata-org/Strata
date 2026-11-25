@@ -32,9 +32,11 @@ whose bound has no known value is left in place.
 The rewrite preserves models in every model of Core's factory. An element fact
 resolves only the selector term it states, operator included: a fact about
 `Sequence.select` does not resolve `Sequence.select!`, nor the reverse. The factory
-equates the two only in range, through the agreement axiom `Sequence.select`
-carries, so a goal that needs the other selector in range is left to the solver,
-which can derive it, and out of range nothing relates them. -/
+equates the two at every argument, through the agreement axiom `Sequence.select`
+carries, so a goal that needs the other selector is left to the solver, which can
+derive it. In the default pipeline `seqTotalize` runs earlier and rewrites
+`Sequence.select` to `Sequence.select!`, so only a custom pipeline that skips it
+gives this pass the checked selector. -/
 
 namespace Core.UnrollBoundedQuantifiers
 

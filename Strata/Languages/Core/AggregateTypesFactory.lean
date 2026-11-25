@@ -638,8 +638,14 @@ private def mkSeqBoundsPrecond
 /- A `Sequence` selection function with type `∀a. Sequence a → int → a`.
    Partial: requires `0 <= i && i < Sequence.length(s)`.
 
-   Its one axiom states that, wherever its precondition holds,
-   `Sequence.select!` equals it. The axiom belongs to `Sequence.select`, so the
+   Its one axiom states that `Sequence.select!` equals it at every argument, out
+   of range included: Core identifies each checked sequence operation with its
+   total twin, which is what lets `SeqTotalize` rewrite one into the other
+   anywhere, in a function body, an axiom or a lemma as well as in a statement.
+   An out-of-range fact about either form is therefore a fact about the other:
+   axioms that give `select(s, i)` and `select!(s, i)` different values at the same
+   out-of-range `i` contradict each other, and `PrecondElim` checks no bounds in an
+   axiom. The axiom belongs to `Sequence.select`, so the
    encoder sends it only for a query that uses `Sequence.select`: a program
    written with `Sequence.select!` alone pays nothing for it. It mentions
    `Sequence.select!`, which carries no axioms of its own, so it pulls in nothing
@@ -650,26 +656,31 @@ def seqSelectFunc : WFLFunc CoreLParams :=
     [("s", seqTy mty[%a]), ("i", mty[int])] mty[%a]
     AggregateLitEval.seqSelect
     (axioms := [
-      -- 0 <= i < length(s) ==> select!(s, i) == select(s, i)
+      -- select!(s, i) == select(s, i)
       eb[∀ (Sequence %a): -- %1 s
           (∀ (int): -- %0 i
             {(((~Sequence.select! : (Sequence %a) → int → %a) %1) %0)}
-            if (((~Bool.And : bool → bool → bool)
-                  (((~Int.Le : int → int → bool) #0) %0))
-                  (((~Int.Lt : int → int → bool) %0)
-                    ((~Sequence.length : (Sequence %a) → int) %1)))
-            then
-              (((~Sequence.select! : (Sequence %a) → int → %a) %1) %0)
-              ==
-              (((~Sequence.select : (Sequence %a) → int → %a) %1) %0)
-            else #true)]
+            (((~Sequence.select! : (Sequence %a) → int → %a) %1) %0)
+            ==
+            (((~Sequence.select : (Sequence %a) → int → %a) %1) %0))]
     ])
     (preconditions := [mkSeqBoundsPrecond "i" .Lt])
 
+/- The total twins (`select!`, `update!`, `take!`, `drop!`) share the axioms of
+   their checked forms, renamed: `withSelectBang` states every select axiom in
+   both forms, and each twin below takes the checked list with its own name
+   substituted, all but the last axiom, which is the agreement of the checked form
+   with the twin. Keep them equivalent. After `PrecondElim` the `SeqTotalize`
+   phase rewrites every checked operation of the program to its twin. The axioms
+   stated with `withSelectBang` still mention the checked `Sequence.select`, so a
+   query that uses `append`, `build`, `update`, `contains`, `take` or `drop` also
+   declares it and receives its agreement axiom. -/
+
 /- An *unsafe* total variant of `Sequence.select`: no bounds precondition, so
-   no out-of-bounds obligation per call site; out-of-range access is
-   unconstrained. Shares `Sequence.select`'s interaction axioms (mirrored on the
-   constructor functions), so it reasons through constructors identically. -/
+   no out-of-bounds obligation per call site; out of range, its value is that of
+   `Sequence.select`, which no other axiom constrains there. Shares
+   `Sequence.select`'s interaction axioms (mirrored on the constructor functions),
+   so it reasons through constructors identically. -/
 def seqSelectUnsafeFunc : WFLFunc CoreLParams :=
   polyLitOp "Sequence.select!" ["a"]
     [("s", seqTy mty[%a]), ("i", mty[int])] mty[%a]
@@ -782,7 +793,16 @@ def seqUpdateFunc : WFLFunc CoreLParams :=
                   ==
                   (((~Sequence.select : (Sequence %a) → int → %a) %3) %0)
                 else #true)))]
-      ])
+      ]
+      -- The agreement with the total twin, last (see `seqSelectFunc`):
+      -- update!(s, i, v) == update(s, i, v)
+      ++ [ eb[∀ (Sequence %a): -- %2 s
+          (∀ (int): -- %1 i
+            (∀ (%a): -- %0 v
+              {((((~Sequence.update! : (Sequence %a) → int → %a → (Sequence %a)) %2) %1) %0)}
+              ((((~Sequence.update! : (Sequence %a) → int → %a → (Sequence %a)) %2) %1) %0)
+              ==
+              ((((~Sequence.update : (Sequence %a) → int → %a → (Sequence %a)) %2) %1) %0)))] ])
     (preconditions := [mkSeqBoundsPrecond "i" .Lt])
 
 /- An *unsafe* total variant of `Sequence.update`: no bounds precondition, so no
@@ -794,7 +814,7 @@ def seqUpdateUnsafeFunc : WFLFunc CoreLParams :=
     (seqTy mty[%a])
     AggregateLitEval.seqUpdate
     (axioms :=
-      renameOpIn "Sequence.update" "Sequence.update!" seqUpdateFunc.func.axioms)
+      renameOpIn "Sequence.update" "Sequence.update!" seqUpdateFunc.func.axioms.dropLast)
 
 /- A `Sequence` contains function with type `∀a. Sequence a → a → bool`.
    `contains(s, v)` is true iff there exists an index `i` such that `select(s, i) == v`. -/
@@ -802,7 +822,7 @@ def seqContainsFunc : WFLFunc CoreLParams :=
   polyLitOp "Sequence.contains" ["a"]
     [("s", seqTy mty[%a]), ("v", mty[%a])] mty[bool]
     AggregateLitEval.seqContains
-    (axioms := [
+    (axioms := withSelectBang [
       -- contains(s, v) <==> exists i :: 0 <= i < length(s) && select(s, i) == v
       eb[∀ (Sequence %a): -- %1 s
           (∀ (%a): -- %0 v
@@ -857,20 +877,29 @@ def seqTakeFunc : WFLFunc CoreLParams :=
                 ==
                 (((~Sequence.select : (Sequence %a) → int → %a) %2) %0)
               else #true))]
-      ])
+      ]
+      -- The agreement with the total twin, last (see `seqSelectFunc`):
+      -- take!(s, n) == take(s, n)
+      ++ [ eb[∀ (Sequence %a): -- %1 s
+          (∀ (int): -- %0 n
+            {(((~Sequence.take! : (Sequence %a) → int → (Sequence %a)) %1) %0)}
+            (((~Sequence.take! : (Sequence %a) → int → (Sequence %a)) %1) %0)
+            ==
+            (((~Sequence.take : (Sequence %a) → int → (Sequence %a)) %1) %0))] ])
     (preconditions := [mkSeqBoundsPrecond "n" .Le])
 
 /- An *unsafe* total variant of `Sequence.take`. Its length axiom keeps
    `Sequence.take`'s `0 <= n <= length(s)` guard: `Sequence.length` is axiomatised
    as non-negative, so an unguarded `length(take!(s, n)) == n` would be false for a
-   negative `n` and make every goal provable. Out of range, `take!` is unconstrained. -/
+   negative `n` and make every goal provable. Out of range, `take!` is `take`, which no
+   other axiom constrains there. -/
 def seqTakeUnsafeFunc : WFLFunc CoreLParams :=
   polyLitOp "Sequence.take!" ["a"]
     [("s", seqTy mty[%a]), ("n", mty[int])]
     (seqTy mty[%a])
     AggregateLitEval.seqTake
     (axioms :=
-      renameOpIn "Sequence.take" "Sequence.take!" seqTakeFunc.func.axioms)
+      renameOpIn "Sequence.take" "Sequence.take!" seqTakeFunc.func.axioms.dropLast)
 
 /- A `Sequence` drop function with type `∀a. Sequence a → int → Sequence a`.
    `drop(s, n)` returns the sequence with the first `n` elements removed.
@@ -918,7 +947,15 @@ def seqDropFunc : WFLFunc CoreLParams :=
                 (((~Sequence.select : (Sequence %a) → int → %a) %2)
                     (((~Int.Add : int → int → int) %0) %1))
               else #true))]
-      ])
+      ]
+      -- The agreement with the total twin, last (see `seqSelectFunc`):
+      -- drop!(s, n) == drop(s, n)
+      ++ [ eb[∀ (Sequence %a): -- %1 s
+          (∀ (int): -- %0 n
+            {(((~Sequence.drop! : (Sequence %a) → int → (Sequence %a)) %1) %0)}
+            (((~Sequence.drop! : (Sequence %a) → int → (Sequence %a)) %1) %0)
+            ==
+            (((~Sequence.drop : (Sequence %a) → int → (Sequence %a)) %1) %0))] ])
     (preconditions := [mkSeqBoundsPrecond "n" .Le])
 
 /- An *unsafe* total variant of `Sequence.drop`, keeping `Sequence.drop`'s bounds
@@ -929,7 +966,7 @@ def seqDropUnsafeFunc : WFLFunc CoreLParams :=
     (seqTy mty[%a])
     AggregateLitEval.seqDrop
     (axioms :=
-      renameOpIn "Sequence.drop" "Sequence.drop!" seqDropFunc.func.axioms)
+      renameOpIn "Sequence.drop" "Sequence.drop!" seqDropFunc.func.axioms.dropLast)
 
 end -- public section
 

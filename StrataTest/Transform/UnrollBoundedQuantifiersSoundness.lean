@@ -365,11 +365,10 @@ private def lcAtProbe : String :=
 /-! ## A fact resolves only the selector it states
 
 `Sequence.select` and `Sequence.select!` are separate functions of Core's factory,
-which equates them only in range, through the agreement axiom `Sequence.select`
+which equates them at every argument, through the agreement axiom `Sequence.select`
 carries. A fact about `select` therefore leaves an occurrence of `select!` in place,
-in range and out of range. In range the solver derives the goal from the factory
-axiom, so it is provable; out of range nothing relates the two selectors, so the goal
-is unknown. -/
+in range and out of range, and the solver derives the goal from the factory axiom, so
+it is provable in both. -/
 
 def crossSelectorInRangePgm :=
 #strata
@@ -421,13 +420,14 @@ procedure P()
 info:
 Obligation: a
 Property: assert
-Result: ❓ unknown
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval Core.verify crossSelectorOutOfRangePgm (options := opts) (pipeline := lemmaPipeline true)
 
 /-! The reverse direction out of range, as a lemma: a fact about `select!` at index 5
-leaves the lemma's `select(s, 5)` in place, and its bounds check stays unknown. -/
+leaves the lemma's `select(s, 5)` in place. The lemma is proved from the agreement
+axiom, and its bounds check stays unknown. -/
 
 def crossSelectorBangOutOfRangePgm :=
 #strata
@@ -454,7 +454,7 @@ Result: ❓ unknown
 
 Obligation: l
 Property: assert
-Result: ❓ unknown
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval Core.verify crossSelectorBangOutOfRangePgm (options := opts) (pipeline := lemmaPipeline true)
@@ -492,5 +492,43 @@ Result: ✅ pass
 -/
 #guard_msgs in
 #eval Core.verify crossSelectorBangInRangePgm (options := opts) (pipeline := lemmaPipeline true)
+
+
+/-! ## The agreement axioms do not make the factory inconsistent
+
+Each checked operation equals its total twin at every argument, out of range included,
+and lengths are non-negative. On a pipeline without `seqTotalize`, so that the checked forms
+and their agreement axioms reach the solver, out-of-range calls of all four operations
+satisfy the agreement (`agree`), yet `false` does not follow from them (`no_false`). -/
+
+def agreementOutOfRangePgm :=
+#strata
+program Core;
+
+const g : Sequence int;
+axiom [len]: Sequence.length(g) == 2;
+lemma [agree]: Sequence.select(g, 9) == Sequence.select!(g, 9) &&
+  Sequence.update(g, 7, 1) == Sequence.update!(g, 7, 1) &&
+  Sequence.take(g, int.sub(0, 1)) == Sequence.take!(g, int.sub(0, 1)) &&
+  Sequence.take(g, 5) == Sequence.take!(g, 5) &&
+  Sequence.drop(g, int.sub(0, 1)) == Sequence.drop!(g, int.sub(0, 1)) &&
+  Sequence.drop(g, 5) == Sequence.drop!(g, 5);
+lemma [no_false]: (int.ge(Sequence.length(Sequence.take!(g, int.sub(0, 1))), 0) &&
+  int.ge(Sequence.length(Sequence.drop!(g, 5)), 0) &&
+  Sequence.take(g, int.sub(0, 1)) == Sequence.take!(g, int.sub(0, 1)) &&
+  Sequence.drop(g, 5) == Sequence.drop!(g, 5) &&
+  Sequence.select(g, 9) == Sequence.select!(g, 9)) ==> false;
+#end
+
+/--
+info: agree: pass
+no_false: not proved
+-/
+#guard_msgs in
+#eval do
+  let rs ← Core.verify agreementOutOfRangePgm (options := opts) (pipeline := lemmaPipeline false)
+  for r in rs do
+    if ["agree", "no_false"].contains r.obligation.label then
+      IO.println s!"{r.obligation.label}: {if r.isSuccess then "pass" else "not proved"}"
 
 end Strata

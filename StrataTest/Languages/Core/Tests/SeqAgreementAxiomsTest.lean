@@ -5,12 +5,13 @@
 -/
 import Strata.Languages.Core.Factory
 
-/-! # The agreement axiom of `Sequence.select` and `Sequence.select!`
+/-! # The agreement axioms of the checked sequence operations
 
-`Sequence.select` carries one axiom: `Sequence.select!` equals it wherever its
-precondition holds. The axiom is written out in the factory, so these checks state
-that its guard is the declared precondition: changing a bound on one side without the
-other fails here. -/
+Each checked sequence operation (`Sequence.select`, `update`, `take`, `drop`) carries,
+as its last axiom, `∀ args. twin(args) == checked(args)` for its total twin, at every
+argument: no guard, so the two agree out of range too. The axioms are written out in
+the factory, so these checks state their shape: a guard added back, or a twin or an
+argument swapped, fails here. -/
 
 namespace Strata.SeqAgreementAxiomsTest
 
@@ -25,27 +26,47 @@ private def openBinders :
     (openBinders rest body).map (·.varOpen rest.length (⟨x, ()⟩, some ty))
   | _, _ => none
 
-/-- The guard of the agreement axiom `∀ args. {trigger} if guard then … else true`,
-the last axiom of `checked`, with its binders named as the inputs of `checked`. -/
-private def agreementGuard (checked : WFLFunc CoreLParams) :
-    List (LExpr CoreLParams.mono) :=
+/-- The operator and the free-variable arguments of a call, if `e` is one. -/
+private def callOf (e : LExpr CoreLParams.mono) : Option (String × List String) :=
+  match getLFuncCall e with
+  | (.op _ o _, args) =>
+    (args.mapM fun (a : LExpr CoreLParams.mono) => match a with
+      | .fvar _ x _ => some x.name
+      | _ => none).map (o.name, ·)
+  | _ => none
+
+/-- The two sides of the last axiom of `checked`, `∀ args. lhs == rhs`, each as the
+operator it calls and the names of its arguments, with the binders named as the inputs
+of `checked`. -/
+private def agreementSides (checked : WFLFunc CoreLParams) :
+    Option ((String × List String) × (String × List String)) :=
   match openBinders (checked.func.inputs.map (fun (n, t) => (n.name, t)))
       checked.func.axioms.getLast! with
-  | some (.ite _ g _ _) => [g]
-  | _ => []
+  | some (.eq _ l r) => do pure (← callOf l, ← callOf r)
+  | _ => none
 
-/-- The preconditions `checked` declares. -/
-private def preconds (checked : WFLFunc CoreLParams) : List (LExpr CoreLParams.mono) :=
-  checked.func.preconditions.map (·.expr)
+/-- The agreement `twin(args) == checked(args)`, over the inputs of `checked`. -/
+private def expected (checked twin : WFLFunc CoreLParams) :
+    Option ((String × List String) × (String × List String)) :=
+  let args := checked.func.inputs.map (·.1.name)
+  some ((twin.name.name, args), (checked.name.name, args))
 
-#guard agreementGuard seqSelectFunc =ₘ preconds seqSelectFunc
+#guard agreementSides seqSelectFunc == expected seqSelectFunc seqSelectUnsafeFunc
+#guard agreementSides seqUpdateFunc == expected seqUpdateFunc seqUpdateUnsafeFunc
+#guard agreementSides seqTakeFunc == expected seqTakeFunc seqTakeUnsafeFunc
+#guard agreementSides seqDropFunc == expected seqDropFunc seqDropUnsafeFunc
 
--- The check tells bounds apart: `select`'s `i < length(s)` is not `take`'s `n <= length(s)`.
-#guard !(agreementGuard seqSelectFunc =ₘ preconds seqTakeFunc)
+-- The check tells the operations apart: `take`'s agreement is not `drop`'s.
+#guard agreementSides seqTakeFunc != expected seqDropFunc seqDropUnsafeFunc
 
 -- `Sequence.select` has exactly the agreement axiom, and `Sequence.select!` none, so a
 -- query that uses `select` receives one extra axiom and pulls in nothing else.
 #guard seqSelectFunc.func.axioms.length == 1
 #guard seqSelectUnsafeFunc.func.axioms.isEmpty
+
+-- Each other twin states the axioms of its checked form but the agreement.
+#guard seqUpdateUnsafeFunc.func.axioms.length + 1 == seqUpdateFunc.func.axioms.length
+#guard seqTakeUnsafeFunc.func.axioms.length + 1 == seqTakeFunc.func.axioms.length
+#guard seqDropUnsafeFunc.func.axioms.length + 1 == seqDropFunc.func.axioms.length
 
 end Strata.SeqAgreementAxiomsTest

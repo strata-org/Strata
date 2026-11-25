@@ -23,6 +23,7 @@ import Strata.Transform.RecursiveFunctionAxiomsPhase
 import Strata.Transform.IrrelevantAxiomsPhase
 import Strata.Transform.FunctionInlining
 import Strata.Transform.PrecondElim
+import Strata.Transform.SeqTotalize
 import Strata.Transform.GenOpaqueTypeParams
 import Strata.Transform.MonomorphizeFunctions
 import Strata.Transform.NondetElim
@@ -220,6 +221,11 @@ def Core.passTermCheck : Core.PipelinePhase :=
 /-- Emit the obligations that a function's preconditions hold at each use. -/
 def Core.passPrecondElim : Core.PipelinePhase :=
   Core.precondElimPipelinePhase
+
+/-- Rewrite each checked sequence operation to its total twin, after `passPrecondElim` has
+    emitted its bounds obligation. -/
+def Core.passSeqTotalize : Core.PipelinePhase :=
+  Core.seqTotalizePipelinePhase
 
 /-- Replace the type parameters of procedures and lemmas by fresh opaque types. -/
 def Core.passGenOpaqueTypeParams : Core.PipelinePhase :=

@@ -2411,13 +2411,13 @@ procedure P ()
       assert [assume_e0_calls_Sequence.select_0]: int.lt(0, Sequence.length(s));
     } else {
       assume [ls]: Sequence.length(s) == 2;
-      assume [e0]: Sequence.select(s, 0) == 5;
+      assume [e0]: Sequence.select!(s, 0) == 5;
       assert [assert_a_calls_Sequence.select_0]: (int.lt(0, Sequence.length(s)) ==> int.lt(0, Sequence.length(s))) && (int.lt(1, Sequence.length(s)) ==> int.lt(1, Sequence.length(s)));
     }
   } else {
     assume [ls]: Sequence.length(s) == 2;
-    assume [e0]: Sequence.select(s, 0) == 5;
-    assert [a]: int.lt(1, Sequence.length(s)) ==> int.le(0, Sequence.select(s, 1));
+    assume [e0]: Sequence.select!(s, 0) == 5;
+    assert [a]: int.lt(1, Sequence.length(s)) ==> int.le(0, Sequence.select!(s, 1));
   }
 };
 -/
@@ -2460,9 +2460,10 @@ Result: ❓ unknown
 
 /-! ### A bound pinned only by a fact about the other selector
 
-The fact uses the checked selector and the bound the unchecked one. They are different
-functions of Core's factory, so the fact does not resolve the bound and the quantifier
-stays. -/
+The source fact uses the checked selector and the bound the unchecked one. `seqTotalize`
+runs earlier in the pipeline and turns the fact's `Sequence.select` into
+`Sequence.select!`, so the fact and the bound use the same selector, the bound resolves to
+`2` and the quantifier is unrolled. -/
 
 def normalizedBoundPgm :=
 #strata
@@ -2480,7 +2481,7 @@ procedure P()
 #end
 
 /--
-info: [statistics] UnrollBoundedQuantifiers.unresolved: 1
+info: [statistics] UnrollBoundedQuantifiers.unrolled: 1
 program Core;
 
 function s () : Sequence int;
@@ -2492,8 +2493,8 @@ procedure P ()
     assert [assume_i0_calls_Sequence.select_0]: int.lt(0, Sequence.length(idx));
   } else {
     assume [li]: Sequence.length(idx) == 1;
-    assume [i0]: Sequence.select(idx, 0) == 2;
-    assert [a]: forall i : int :: int.le(0, i) && int.lt(i, Sequence.select!(idx, 0)) ==> int.le(0, Sequence.select!(s, i));
+    assume [i0]: Sequence.select!(idx, 0) == 2;
+    assert [a]: int.le(0, Sequence.select!(s, 0)) && int.le(0, Sequence.select!(s, 1));
   }
 };
 -/

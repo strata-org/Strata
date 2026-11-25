@@ -10,6 +10,7 @@ import Strata.Languages.Core.ObligationExtractionProps
 import Strata.Transform.InsertLoopInvariantAsserts
 import Strata.Transform.LoopElim
 import Strata.Transform.PrecondElim
+import Strata.Transform.SeqTotalize
 import Strata.Transform.TerminationCheckPhase
 import Strata.Transform.SeparateVarNames
 public import Strata.Languages.Core.SMTEncoder
@@ -90,13 +91,15 @@ def genVCsWithError (program : Program) (options : VerifyOptions := .default) :
   -- then mirror the prefix of `transformPipelinePhases` that still applies:
   -- termination checks for recursive functions and well-formedness checks for
   -- function preconditions (both add obligations the full `Core.verify` pipeline
-  -- emits), then the loop phases, then `preSymbolicEvalPipelinePhases`.
+  -- emits), the rewrite of checked sequence operations to their total twins, then
+  -- the loop phases, then `preSymbolicEvalPipelinePhases`.
   -- Without `precondElimPipelinePhase`, any function declared with a
   -- `requires` makes `extractObligations` fail ("still carries a
   -- precondition"), so `gen_smt_vcs` silently produced no goals for such
   -- programs.
   let phases := [typeCheckPipelinePhase options, termCheckPipelinePhase,
-                 precondElimPipelinePhase, insertLoopInvariantAssertsPipelinePhase,
+                 precondElimPipelinePhase, seqTotalizePipelinePhase,
+                 insertLoopInvariantAssertsPipelinePhase,
                  loopElimPipelinePhase] ++ preSymbolicEvalPipelinePhases
   -- Validate phase composition from Boole's guaranteed invariants (structured
   -- bodies, no calls).

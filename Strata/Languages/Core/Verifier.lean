@@ -39,6 +39,7 @@ import Strata.Transform.GenOpaqueTypeParams
 import Strata.Transform.MonomorphizeFunctions
 import Strata.Transform.NondetElim
 import Strata.Transform.PrecondElim
+import Strata.Transform.SeqTotalize
 public import Strata.Transform.RecursiveFunctionAxiomsPhase
 import Strata.Transform.TerminationCheckPhase
 import Strata.Languages.Core.ObligationExtraction
@@ -2286,7 +2287,8 @@ def transformPipelinePhases (options : VerifyOptions := VerifyOptions.default)
   let cutCFGLoops := if symExecCFG then [cfgLoopElimPipelinePhase] else []
   hoistChoices ++ [typeCheckPipelinePhase options (moreFns := moreFns)] ++ filterPhases ++
     cfgCheck ++ cutCFGLoops ++
-    [callElimPipelinePhase, termCheckPipelinePhase, precondElimPipelinePhase]
+    [callElimPipelinePhase, termCheckPipelinePhase, precondElimPipelinePhase,
+      seqTotalizePipelinePhase]
     ++ postFilterPhases ++ [insertLoopInvariantAssertsPipelinePhase, loopElimPipelinePhase]
 
 /-- Symbolic-evaluation pipeline phase: partially evaluates the program into
@@ -2424,8 +2426,9 @@ def passiveVCPipelinePhase (vcMode : VCGenMode) (prefixes : List String) : Pipel
 /-- The phases `--vcgen uwp/usp` runs, in place of the whole default order: type
     checking and the procedure filters of `transformPipelinePhases` (the second filter
     after precondition elimination); CFG loop elimination, which cuts the loops of CFG
-    bodies at their headers; call elimination; the termination check and
-    precondition elimination; the invariant and measure assertions and loop
+    bodies at their headers; call elimination; the termination check,
+    precondition elimination and the rewrite of checked sequence operations to their
+    total twins; the invariant and measure assertions and loop
     elimination of structured bodies (a CFG body is left to the CFG phase); opaque
     type parameters and function monomorphization; simplification, which unfolds calls of
     recursive functions on values as in the default order (`simplifyPhase`);
@@ -2443,7 +2446,7 @@ def passiveVCGenPhases (options : VerifyOptions := VerifyOptions.default)
     -- CFG loop elimination comes before call elimination, so that the program its
     -- validation replays a model through still has its calls, whose callees replay runs.
     [cfgLoopElimPipelinePhase, callElimPipelinePhase, termCheckPipelinePhase,
-     precondElimPipelinePhase] ++ postFilterPhases ++
+     precondElimPipelinePhase, seqTotalizePipelinePhase] ++ postFilterPhases ++
     [insertLoopInvariantAssertsPipelinePhase, loopElimPipelinePhase,
      genOpaqueTypeParamsPipelinePhase,
      monomorphizeFunctionsPipelinePhase,

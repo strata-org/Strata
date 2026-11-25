@@ -583,7 +583,7 @@ def precondElimPipelinePhase : PipelinePhase :=
   -- leave a redex behind.
   modelPreservingPipelinePhase "precondElim" (maintainsIdentPrefixes := true)
     (requires := factSet![.typeAnnotated])
-    (establishes := factSet![.noPrecondsFromFuncs])
+    (establishes := factSet![.noPrecondsFromFuncs, .precondObligationsEmitted])
     (preserves := factSet![.noCFGBodies, .noCalls, .noLoops, .noLoopInvariants,
                          .noLoopMeasures, .staticSingleAssignment, .noNondetGuards,
                          .noProcedureContracts,

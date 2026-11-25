@@ -2154,7 +2154,10 @@ macro_rules
     | rw [opInterp_seqContains]
     | rw [opInterp_seqTake]
     | rw [opInterp_seqDrop]
-    | rw [opInterp_seqSelectBang])
+    | rw [opInterp_seqSelectBang]
+    | rw [opInterp_seqUpdateBang]
+    | rw [opInterp_seqTakeBang]
+    | rw [opInterp_seqDropBang])
 
 /-- Unfold the sorts in the types of the goal's binders and values. -/
 macro "ax_sorts" : tactic => `(tactic|
@@ -2280,12 +2283,11 @@ private theorem ax_seqEmpty : AxOK seqEmptyFunc.func.axioms := by
     List.not_mem_nil, or_false] at hax
   ax_cases hax
 
-/-- The only axiom of `Sequence.select`, the agreement of `Sequence.select!` with it in range,
+/-- The only axiom of `Sequence.select`, `select!(s, i) == select(s, i)` for every `s` and `i`,
 holds in the model. -/
 private theorem ax_seqSelect : AxOK seqSelectFunc.func.axioms := by
   intro ax hax
-  simp only [seqSelectFunc, polyLitOp, Int.ofNat_eq_natCast, Int.cast_ofNat_Int,
-    List.mem_cons, List.not_mem_nil, or_false] at hax
+  simp only [seqSelectFunc, polyLitOp, List.mem_cons, List.not_mem_nil, or_false] at hax
   ax_cases hax
 
 /-- The `i`-th axiom of a built-in function, used to prove a long axiom list one axiom per
@@ -2297,6 +2299,14 @@ down to the axiom itself, without computing the renamed copies. -/
 macro "ax_at" fn:ident : tactic => `(tactic| (
   simp only [axAt, $fn:ident, polyLitOp, withSelectBang, List.cons_append, List.nil_append,
     List.getElem!_cons_zero, List.getElem!_cons_succ]
+  ax_close))
+
+/-- Unfold `axAt` on the last axiom of a function whose axioms are
+`[length axiom] ++ withSelectBang [...] ++ [agreement axiom]`, stepping over the renamed copies
+without computing them. -/
+macro "ax_at_last" fn:ident : tactic => `(tactic| (
+  simp only [axAt, $fn:ident, polyLitOp, withSelectBang, renameOpIn, List.map_cons, List.map_nil,
+    List.cons_append, List.nil_append, List.getElem!_cons_zero, List.getElem!_cons_succ]
   ax_close))
 
 /-- The `Sequence.append` axiom `length(append(s, t)) == length(s) + length(t)` holds in the
@@ -2349,25 +2359,39 @@ private theorem ax_seqUpdate_1 : AxHolds (axAt seqUpdateFunc 1) := by ax_at seqU
 `update(s, i, v)` selects in `s` holds in the model. -/
 private theorem ax_seqUpdate_2 : AxHolds (axAt seqUpdateFunc 2) := by ax_at seqUpdateFunc
 
-/-- Every axiom of `Sequence.update` holds in the model. -/
-private theorem ax_seqUpdate : AxOK seqUpdateFunc.func.axioms := by
-  rw [show seqUpdateFunc.func.axioms =
+/-- The `Sequence.update` axiom `update!(s, i, v) == update(s, i, v)`, for every `s`, `i` and
+`v`, holds in the model. -/
+private theorem ax_seqUpdate_3 : AxHolds (axAt seqUpdateFunc 5) := by ax_at_last seqUpdateFunc
+
+/-- The axioms of `Sequence.update` but its agreement with `Sequence.update!` (the length of an
+update and selecting in it, in both select forms) hold in the model. -/
+private theorem ax_seqUpdate_base : AxOK seqUpdateFunc.func.axioms.dropLast := by
+  rw [show seqUpdateFunc.func.axioms.dropLast =
       [axAt seqUpdateFunc 0] ++ withSelectBang [axAt seqUpdateFunc 1, axAt seqUpdateFunc 2]
         from rfl]
   exact AxOK.append (AxOK.cons ax_seqUpdate_0 AxOK.nil)
     (AxOK.withSelectBang (AxOK.cons ax_seqUpdate_1 (AxOK.cons ax_seqUpdate_2 AxOK.nil)))
 
+/-- Every axiom of `Sequence.update` holds in the model. -/
+private theorem ax_seqUpdate : AxOK seqUpdateFunc.func.axioms := by
+  rw [show seqUpdateFunc.func.axioms =
+      seqUpdateFunc.func.axioms.dropLast ++ [axAt seqUpdateFunc 5] from rfl]
+  exact AxOK.append ax_seqUpdate_base (AxOK.cons ax_seqUpdate_3 AxOK.nil)
+
 /-- Every axiom of `Sequence.update!` holds in the model. -/
 private theorem ax_seqUpdateBang : AxOK seqUpdateUnsafeFunc.func.axioms := by
   simp only [seqUpdateUnsafeFunc, polyLitOp]
-  exact AxOK.renameOpIn opInterp_seqUpdateBang ax_seqUpdate
+  exact AxOK.renameOpIn opInterp_seqUpdateBang ax_seqUpdate_base
 
-/-- Every axiom of `Sequence.contains` holds in the model. -/
-private theorem ax_seqContains : AxOK seqContainsFunc.func.axioms := by
+/-- The `Sequence.contains` axiom, `contains(s, v)` iff some in-range index selects `v`,
+holds in the model. -/
+private theorem ax_seqContains_0 : AxOK [axAt seqContainsFunc 0] := by
   intro ax hax
-  simp only [seqContainsFunc, polyLitOp, Int.ofNat_eq_natCast, Int.cast_ofNat_Int, List.mem_cons,
-    List.not_mem_nil, or_false] at hax
-  ax_cases hax
+  simp only [List.mem_cons, List.not_mem_nil, or_false] at hax
+  subst hax
+  simp only [axAt, seqContainsFunc, polyLitOp, withSelectBang, List.cons_append,
+    List.nil_append, List.getElem!_cons_zero, Int.ofNat_eq_natCast, Int.cast_ofNat_Int]
+  ax_close
   -- The right-hand side is an existential whose body is still a `denote`: compute it
   -- under the binder.
   refine congrArg (fun p => @decide p (Classical.propDecidable p)) (propext ?_)
@@ -2379,6 +2403,12 @@ private theorem ax_seqContains : AxOK seqContainsFunc.func.axioms := by
   repeat ax_rw_op
   simp [cdec, and_assoc]
 
+/-- Every axiom of `Sequence.contains` holds in the model, stated over both `select` and
+`select!`. -/
+private theorem ax_seqContains : AxOK seqContainsFunc.func.axioms := by
+  rw [show seqContainsFunc.func.axioms = withSelectBang [axAt seqContainsFunc 0] from rfl]
+  exact AxOK.withSelectBang ax_seqContains_0
+
 /-- The `Sequence.take` axiom for `0 <= n <= length(s)`, `length(take(s, n)) == n` holds in the
 model. -/
 private theorem ax_seqTake_0 : AxHolds (axAt seqTakeFunc 0) := by ax_at seqTakeFunc
@@ -2387,17 +2417,28 @@ private theorem ax_seqTake_0 : AxHolds (axAt seqTakeFunc 0) := by ax_at seqTakeF
 `s` holds in the model. -/
 private theorem ax_seqTake_1 : AxHolds (axAt seqTakeFunc 1) := by ax_at seqTakeFunc
 
-/-- Every axiom of `Sequence.take` holds in the model. -/
-private theorem ax_seqTake : AxOK seqTakeFunc.func.axioms := by
-  rw [show seqTakeFunc.func.axioms =
+/-- The `Sequence.take` axiom `take!(s, n) == take(s, n)`, for every `s` and `n`, holds in the
+model. -/
+private theorem ax_seqTake_2 : AxHolds (axAt seqTakeFunc 3) := by ax_at_last seqTakeFunc
+
+/-- The axioms of `Sequence.take` but its agreement with `Sequence.take!` (the length of a
+`take` and selecting in it, in both select forms) hold in the model. -/
+private theorem ax_seqTake_base : AxOK seqTakeFunc.func.axioms.dropLast := by
+  rw [show seqTakeFunc.func.axioms.dropLast =
       [axAt seqTakeFunc 0] ++ withSelectBang [axAt seqTakeFunc 1] from rfl]
   exact AxOK.append (AxOK.cons ax_seqTake_0 AxOK.nil)
     (AxOK.withSelectBang (AxOK.cons ax_seqTake_1 AxOK.nil))
 
+/-- Every axiom of `Sequence.take` holds in the model. -/
+private theorem ax_seqTake : AxOK seqTakeFunc.func.axioms := by
+  rw [show seqTakeFunc.func.axioms =
+      seqTakeFunc.func.axioms.dropLast ++ [axAt seqTakeFunc 3] from rfl]
+  exact AxOK.append ax_seqTake_base (AxOK.cons ax_seqTake_2 AxOK.nil)
+
 /-- Every axiom of `Sequence.take!` holds in the model. -/
 private theorem ax_seqTakeBang : AxOK seqTakeUnsafeFunc.func.axioms := by
   simp only [seqTakeUnsafeFunc, polyLitOp]
-  exact AxOK.renameOpIn opInterp_seqTakeBang ax_seqTake
+  exact AxOK.renameOpIn opInterp_seqTakeBang ax_seqTake_base
 
 /-- The `Sequence.drop` axiom for `0 <= n <= length(s)`, `length(drop(s, n)) == length(s) - n`
 holds in the model. -/
@@ -2407,17 +2448,28 @@ private theorem ax_seqDrop_0 : AxHolds (axAt seqDropFunc 0) := by ax_at seqDropF
 `s` at `j + n` holds in the model. -/
 private theorem ax_seqDrop_1 : AxHolds (axAt seqDropFunc 1) := by ax_at seqDropFunc
 
-/-- Every axiom of `Sequence.drop` holds in the model. -/
-private theorem ax_seqDrop : AxOK seqDropFunc.func.axioms := by
-  rw [show seqDropFunc.func.axioms =
+/-- The `Sequence.drop` axiom `drop!(s, n) == drop(s, n)`, for every `s` and `n`, holds in the
+model. -/
+private theorem ax_seqDrop_2 : AxHolds (axAt seqDropFunc 3) := by ax_at_last seqDropFunc
+
+/-- The axioms of `Sequence.drop` but its agreement with `Sequence.drop!` (the length of a
+`drop` and selecting in it, in both select forms) hold in the model. -/
+private theorem ax_seqDrop_base : AxOK seqDropFunc.func.axioms.dropLast := by
+  rw [show seqDropFunc.func.axioms.dropLast =
       [axAt seqDropFunc 0] ++ withSelectBang [axAt seqDropFunc 1] from rfl]
   exact AxOK.append (AxOK.cons ax_seqDrop_0 AxOK.nil)
     (AxOK.withSelectBang (AxOK.cons ax_seqDrop_1 AxOK.nil))
 
+/-- Every axiom of `Sequence.drop` holds in the model. -/
+private theorem ax_seqDrop : AxOK seqDropFunc.func.axioms := by
+  rw [show seqDropFunc.func.axioms =
+      seqDropFunc.func.axioms.dropLast ++ [axAt seqDropFunc 3] from rfl]
+  exact AxOK.append ax_seqDrop_base (AxOK.cons ax_seqDrop_2 AxOK.nil)
+
 /-- Every axiom of `Sequence.drop!` holds in the model. -/
 private theorem ax_seqDropBang : AxOK seqDropUnsafeFunc.func.axioms := by
   simp only [seqDropUnsafeFunc, polyLitOp]
-  exact AxOK.renameOpIn opInterp_seqDropBang ax_seqDrop
+  exact AxOK.renameOpIn opInterp_seqDropBang ax_seqDrop_base
 
 /-- Every axiom of every built-in function is well typed and holds in the model. The proof
 discharges each built-in function individually, so an axiom added to the factory fails this

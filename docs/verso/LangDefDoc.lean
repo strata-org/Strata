@@ -461,12 +461,14 @@ values where a precondition would fail:
   `int.modT(a, 0)` is fixed: it is `a`.
 - *Sequence access out of bounds*: `Sequence.select`, `update`, `take` and
   `drop` and their unchecked variants (`select!` and so on) are declared
-  functions, not SMT-LIB functions. Inside the bounds, `select` and `select!`
-  are equal, and each of `update`, `take` and `drop` has the same length and
-  elements as its `!` variant (the two are not provably equal as sequences).
-  Outside the bounds, `select(s, i)` and `select!(s, i)` are unconstrained and
-  need not agree. The lengths of `take`, `drop` and their `!` variants can be
-  any non-negative value, while `update` and `update!` keep the length of `s`.
+  functions, not SMT-LIB functions. Each checked operation equals its `!`
+  variant at every argument, inside and outside the bounds: an axiom of the
+  checked operation states so, and the `seqTotalize` phase rewrites one into the
+  other once the bounds obligations are emitted. Outside the bounds,
+  `select(s, i)` is otherwise unconstrained, and a fact about it is a fact about
+  `select!(s, i)`: axioms giving the two different values contradict each other.
+  The lengths of `take`, `drop` and their `!` variants can be any non-negative
+  value, while `update` and `update!` keep the length of `s`.
   The element axioms still apply: `update(s, i, v)` keeps every element of `s`,
   `take(s, n)` keeps the element of `s` at every `0 <= j < n`, and
   `drop(s, n)` maps every index `j >= 0` to `j + n` while `j + n < length(s)`.
