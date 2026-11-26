@@ -512,6 +512,7 @@ assertNoCFGBodies: none
 callElim: all
 termCheck: typeAnnotated
 precondElim: all
+seqTotalize: all
 insertLoopInvariantAsserts: all
 loopElim: all
 genOpaqueTypeParams: all
