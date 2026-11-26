@@ -2439,7 +2439,7 @@ def passiveVCGenPhases (options : VerifyOptions := VerifyOptions.default)
     -- CFG loop elimination comes before call elimination, so that the program its
     -- validation replays a model through still has its calls, whose callees replay runs.
     [cfgLoopElimPipelinePhase, callElimPipelinePhase, termCheckPipelinePhase,
-     precondElimPipelinePhase] ++ postFilterPhases ++
+     precondElimPipelinePhase, seqTotalizePipelinePhase] ++ postFilterPhases ++
     [insertLoopInvariantAssertsPipelinePhase, loopElimPipelinePhase,
      genOpaqueTypeParamsPipelinePhase,
      monomorphizeFunctionsPipelinePhase,

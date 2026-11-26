@@ -1038,13 +1038,13 @@ private def cycleTrace (p : Core.Program) : String := Id.run do
   return out
 
 /--
-info: before: false, cfgLoopElim: true, callElim: true, termCheck: true, precondElim: true, insertLoopInvariantAsserts: true, loopElim: true, genOpaqueTypeParams: true, monomorphizeFunctions: true, simplify: true, declObligations: true
+info: before: false, cfgLoopElim: true, callElim: true, termCheck: true, precondElim: true, seqTotalize: true, insertLoopInvariantAsserts: true, loopElim: true, genOpaqueTypeParams: true, monomorphizeFunctions: true, simplify: true, declObligations: true
 -/
 #guard_msgs in
 #eval IO.println (cycleTrace loopCallProgram)
 
 /--
-info: before: false, cfgLoopElim: true, callElim: true, termCheck: true, precondElim: true, insertLoopInvariantAsserts: true, loopElim: true, genOpaqueTypeParams: true, monomorphizeFunctions: true, simplify: true, declObligations: true
+info: before: false, cfgLoopElim: true, callElim: true, termCheck: true, precondElim: true, seqTotalize: true, insertLoopInvariantAsserts: true, loopElim: true, genOpaqueTypeParams: true, monomorphizeFunctions: true, simplify: true, declObligations: true
 -/
 #guard_msgs in
 #eval IO.println (cycleTrace (TransM.run Inhabited.default (translateProgram cycleShapes.program)).fst)
