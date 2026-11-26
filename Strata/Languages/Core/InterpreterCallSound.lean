@@ -131,10 +131,10 @@ abbrev CmdCallOk (π : String → Option Procedure) : Command → Bool := Calls.
     block of a CFG body is a well-formed call site. -/
 @[expose] def ProcOk (π : String → Option Procedure) (p : Procedure) : Prop :=
   (ListMap.keys p.header.inputs ++ ListMap.keys p.header.getOutputOnlyParams).Nodup ∧
-  (∀ ss, p.body = .structured ss →
+  (∀ ss opq, p.body = .structured ss opq →
     Block.exitsCoveredByBlocks (P := Expression) (CmdT := Command) [] ss ∧
     Block.allCmds (P := Expression) (CmdCallOk π) ss = true) ∧
-  ∀ g, p.body = .cfg g → g.allCmds (CmdCallOk π)
+  ∀ g opq, p.body = .cfg g opq → g.allCmds (CmdCallOk π)
 
 /-- Flat program-level check: every procedure a call can run, `π`'s procedure instantiated at
     the call's type arguments (`Calls.typeInstantiatedCallee`), satisfies `ProcOk`. -/
@@ -222,7 +222,7 @@ theorem procOk_of_instantiateTypes {π : String → Option Procedure} {p inst : 
   generalize Lambda.LMonoTy.subst _ = f
   obtain ⟨hnodup, hstruct, hcfg⟩ := h
   have hcmd : CmdCallOk π ∘ mapCmdTys f = CmdCallOk π := funext (cmdCallOk_mapCmdTys π f)
-  refine ⟨?_, fun ss hss => ?_, fun g hg => ?_⟩
+  refine ⟨?_, fun ss _ hss => ?_, fun g _ hg => ?_⟩
   · have hin : ListMap.keys (p.mapTys f []).header.inputs = ListMap.keys p.header.inputs :=
       ListMap.keys_map_values _ _
     have hout : ListMap.keys (p.mapTys f []).header.outputs = ListMap.keys p.header.outputs :=
@@ -237,22 +237,24 @@ theorem procOk_of_instantiateTypes {π : String → Option Procedure} {p inst : 
   · cases hb : p.body with
     | structured ss₀ =>
       simp only [Procedure.mapTys, hb, Imperative.Body.structured.injEq] at hss
-      obtain ⟨hexits, hall⟩ := hstruct ss₀ hb
-      subst hss
+      obtain ⟨hexits, hall⟩ := hstruct ss₀ _ hb
+      obtain ⟨rfl, -⟩ := hss
       exact ⟨(Block.exitsCoveredByBlocks_mapExpr _ _ _ ss₀).2 hexits, by
         rw [mapStmtsTys, Block.allCmds_mapExpr, hcmd]; exact hall⟩
     | cfg g₀ => simp [Procedure.mapTys, hb] at hss
+    | abstract => simp [Procedure.mapTys, hb] at hss
   · cases hb : p.body with
     | structured ss₀ => simp [Procedure.mapTys, hb] at hg
     | cfg g₀ =>
       simp only [Procedure.mapTys, hb, Imperative.Body.cfg.injEq] at hg
-      subst hg
+      obtain ⟨rfl, -⟩ := hg
       intro t b hlk
       simp only [DetCFG.mapCmdsGuards] at hlk
       obtain ⟨b₀, hb₀, rfl⟩ := lookup_map_snd _ t _ _ hlk
       show (b₀.cmds.map (mapCmdTys f)).all (CmdCallOk π) = true
       rw [List.all_map, hcmd]
-      exact hcfg g₀ hb t b₀ hb₀
+      exact hcfg g₀ _ hb t b₀ hb₀
+    | abstract => simp [Procedure.mapTys, hb] at hg
 
 /-- A table every procedure of which meets `ProcOk` meets `ProcsOk`: a call runs an instance of
     one of its procedures. -/
@@ -287,7 +289,8 @@ abbrev CallActive :
     of steps; the other constructors cover the one interrupted call at the tail
     (inside a structured body, recursing on the callee; inside a CFG body, between its
     commands or inside one of them, recursing on the command; at the write-back;
-    mid-precondition; mid-postcondition). -/
+    mid-precondition; mid-postcondition; for an opaque callee, after havocking its
+    outputs). -/
 inductive CoreInterruptedSound (π : String → Option Procedure)
     :
     CoreConfig → Trace Expression → Prop where
@@ -302,7 +305,7 @@ inductive CoreInterruptedSound (π : String → Option Procedure)
       StepStmtStarE Expression (EvalCommandE π) start outerEvs C →
       CallActive C pn tyArgs args md env →
       Calls.typeInstantiatedCallee π pn tyArgs = some p →
-      p.body = .structured bodyStmts →
+      p.body = .structured bodyStmts false →
       CallEntry env.factory env.store p args σAO →
       CoreInterruptedSound π
         (.stmt (.block "" bodyStmts #[]) (⟨σAO, env.factory⟩ : Imperative.Env Expression))
@@ -318,7 +321,7 @@ inductive CoreInterruptedSound (π : String → Option Procedure)
       StepStmtStarE Expression (EvalCommandE π) start outerEvs C →
       CallActive C pn tyArgs args md env →
       Calls.typeInstantiatedCallee π pn tyArgs = some p →
-      p.body = .cfg g →
+      p.body = .cfg g false →
       CallEntry env.factory env.store p args σAO →
       StepCFGStarE Expression (EvalCommandE π)
         (.atBlock g g.entry (⟨σAO, env.factory⟩ : Imperative.Env Expression)) cfgEvs mid →
@@ -335,7 +338,7 @@ inductive CoreInterruptedSound (π : String → Option Procedure)
       StepStmtStarE Expression (EvalCommandE π) start outerEvs C →
       CallActive C pn tyArgs args md env →
       Calls.typeInstantiatedCallee π pn tyArgs = some p →
-      p.body = .cfg g →
+      p.body = .cfg g false →
       CallEntry env.factory env.store p args σAO →
       StepCFGStarE Expression (EvalCommandE π)
         (.atBlock g g.entry (⟨σAO, env.factory⟩ : Imperative.Env Expression)) cfgEvs
@@ -353,6 +356,7 @@ inductive CoreInterruptedSound (π : String → Option Procedure)
       StepStmtStarE Expression (EvalCommandE π) start outerEvs C →
       CallActive C pn tyArgs args md env →
       Calls.typeInstantiatedCallee π pn tyArgs = some p →
+      p.body.isOpaque = false →
       CallEntry env.factory env.store p args σAO →
       BigStepE π p.body ⟨σAO, env.factory⟩ σf bodyEvs →
       CoreInterruptedSound π start
@@ -379,6 +383,7 @@ inductive CoreInterruptedSound (π : String → Option Procedure)
       StepStmtStarE Expression (EvalCommandE π) start outerEvs C →
       CallActive C pn tyArgs args md env →
       Calls.typeInstantiatedCallee π pn tyArgs = some p →
+      p.body.isOpaque = false →
       CallEntry env.factory env.store p args σAO →
       BigStepE π p.body ⟨σAO, env.factory⟩ σf bodyEvs →
       postEvs <+: defaultAssertEvents env.factory σf p.spec.postconditions →
@@ -386,6 +391,24 @@ inductive CoreInterruptedSound (π : String → Option Procedure)
         (outerEvs ++ defaultAssertEvents env.factory σAO
             (Imperative.Calls.checksAtCall md p.spec.preconditions)
           ++ bodyEvs ++ postEvs)
+  /-- A call to an opaque callee that stops after havocking its outputs: the trace carries the
+      full pre-events and a *prefix* of the postcondition assumption events at the post-havoc
+      frame. -/
+  | inAbstractCall {start : CoreConfig} {outerEvs : Trace Expression} {C : CoreConfig}
+      {env : Imperative.Env Expression} {pn : String} {tyArgs : Option (List Expression.Ty)}
+      {args : List (Imperative.CallArg Expression)} {md : Imperative.MetaData Expression}
+      {p : Procedure} {σAO σO : CoreStore} {postEvs : Trace Expression} :
+      StepStmtStarE Expression (EvalCommandE π) start outerEvs C →
+      CallActive C pn tyArgs args md env →
+      Imperative.Calls.typeInstantiatedCallee π pn tyArgs = some p →
+      p.body.isOpaque = true →
+      CallEntry env.factory env.store p args σAO →
+      HavocVars env.factory σAO (ProcedureHeader.outputParams (P := Expression) p.header) σO →
+      postEvs <+: assumeEvents env.factory σO p.spec.postconditions →
+      CoreInterruptedSound π start
+        (outerEvs ++ defaultAssertEvents env.factory σAO
+            (Imperative.Calls.checksAtCall md p.spec.preconditions)
+          ++ postEvs)
 
 /-- A Core command that does not *reach* `target` in the sense of `targetReached`:
     it is not an `assert`/`cover` whose label and metadata both equal `target`'s
@@ -441,10 +464,12 @@ private theorem coreInterruptedSound_of_generic {start : CoreConfig} {evs : Trac
     exact .inCallCfg a b c d ((callEntry_iff ..).2 e) f
   | inCallCfgCmd a b c d e f _ ih =>
     exact .inCallCfgCmd a b c d ((callEntry_iff ..).2 e) f ih
-  | inCallExit a b c e f => exact .inCallExit a b c ((callEntry_iff ..).2 e) f
+  | inCallExit a b c h e f => exact .inCallExit a b c h ((callEntry_iff ..).2 e) f
   | preThrow a b c e f => exact .preThrow a b c ((callEntry_iff ..).2 e) f
-  | postThrow a b c e f g =>
-    exact .postThrow a b c ((callEntry_iff ..).2 e) f g
+  | postThrow a b c h e f g =>
+    exact .postThrow a b c h ((callEntry_iff ..).2 e) f g
+  | inAbstractCall a b c d e f g =>
+    exact .inAbstractCall a b c d ((callEntry_iff ..).2 e) f g
 
 /-- Core's interrupted-run certificate is a generic one at `Expression`. -/
 private theorem coreInterruptedSound_toGeneric {start : CoreConfig} {evs : Trace Expression}
@@ -458,10 +483,12 @@ private theorem coreInterruptedSound_toGeneric {start : CoreConfig} {evs : Trace
     exact .inCallCfg a b c d ((callEntry_iff ..).1 e) f
   | inCallCfgCmd a b c d e f _ ih =>
     exact .inCallCfgCmd a b c d ((callEntry_iff ..).1 e) f ih
-  | inCallExit a b c e f => exact .inCallExit a b c ((callEntry_iff ..).1 e) f
+  | inCallExit a b c h e f => exact .inCallExit a b c h ((callEntry_iff ..).1 e) f
   | preThrow a b c e f => exact .preThrow a b c ((callEntry_iff ..).1 e) f
-  | postThrow a b c e f g =>
-    exact .postThrow a b c ((callEntry_iff ..).1 e) f g
+  | postThrow a b c h e f g =>
+    exact .postThrow a b c h ((callEntry_iff ..).1 e) f g
+  | inAbstractCall a b c d e f g =>
+    exact .inAbstractCall a b c d ((callEntry_iff ..).1 e) f g
 
 /-- Core's interrupted-run certificate `CoreInterruptedSound` is the generic
     `Calls.InterruptedSound`. -/

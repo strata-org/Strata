@@ -914,6 +914,29 @@ stopped: 'defaultArray': an expression did not evaluate
      .init "x" arrA none (at_ 3), .readElem "x" (.var "aa") (.int 0) arrA (at_ 3)] ++
     storable "ok" "a" "x" 4))])
 
+/-! An `instanceOf` against a type constrained over `int` tests the constraint: 5 is an `int32` and
+2^31 is not; the assertion at 20 states the opposite of that at 10. On a reference to no object, an
+`instanceOf` against an array type stops the run. -/
+
+/--
+info: 20: assertion does not hold
+6: the interpreter fails here: an expression did not evaluate
+stopped: 'arrayDefault': an expression did not evaluate
+-/
+#guard_msgs in
+#eval interpret (refProgram [
+  entry "constrainedInt" (
+    [.init "small" .int (some (.int 5)) (at_ 4),
+     .init "big" .int (some (.int 2147483648)) (at_ 4)] ++
+    isInstance "smallIsInt32" "small" i32 4 ++ isInstance "bigIsInt32" "big" i32 4 ++ [
+    isTrue "smallIsInt32" (.var "smallIsInt32") 10,
+    isTrue "bigIsNoInt32" (.op "Bool.Not" [.var "bigIsInt32"]) 11,
+    isTrue "smallIsNoInt32" (.op "Bool.Not" [.var "smallIsInt32"]) 20]),
+  entry "arrayDefault" (refs (
+    [.init "aa" (.array arrA) none (at_ 3), .newArray "aa" arrA (.int 1) (at_ 3),
+     .init "x" arrA none (at_ 3), .readElem "x" (.var "aa") (.int 0) arrA (at_ 3)] ++
+    isInstance "ok" "x" arrA 6))])
+
 /-! ## The Ion encoding
 
 An array type is written `(array elem)`, at any depth. `covariantArrays` and `arrayParents`

@@ -645,6 +645,21 @@ theorem varOpen_eraseMetadata_congr
 
 ---------------------------------------------------------------------
 
+/-- Substituting `r` for one free variable `x` is the `substFvarsBy` that maps `x` to `r`. -/
+theorem substFvar_eq_substFvarsBy (x : Identifier T.IDMeta) (r e : LExpr T.mono) :
+    e.substFvar x r = e.substFvarsBy (fun y => if y = x then some r else none) := by
+  induction e with
+  | fvar m y ty =>
+    by_cases h : y = x
+    · simp [substFvar, substFvarsBy, h]
+    · simp [substFvar, substFvarsBy, h]
+  | app m f a ihf iha => simp only [substFvar, substFvarsBy, ihf, iha]
+  | ite m c t f ihc iht ihf => simp only [substFvar, substFvarsBy, ihc, iht, ihf]
+  | eq m a b iha ihb => simp only [substFvar, substFvarsBy, iha, ihb]
+  | abs m n ty b ih => simp only [substFvar, substFvarsBy, ih]
+  | quant m k n ty tr b ihtr ihb => simp only [substFvar, substFvarsBy, ihtr, ihb]
+  | _ => rfl
+
 end LExpr
 
 /-! ### `getVars` and `freeVars` -/

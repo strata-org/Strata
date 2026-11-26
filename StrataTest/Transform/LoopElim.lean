@@ -190,7 +190,7 @@ def cfgOnlyPgm : Core.Program :=
       { (default : Procedure) with
           header := { (default : Procedure.Header) with name := ⟨"cfgProc", ()⟩ }
           body := .cfg { entry := "entry",
-                         blocks := [("entry", { cmds := [], transfer := .finish #[] })] } }
+                         blocks := [("entry", { cmds := [], transfer := .finish #[] })] } false }
       default] }
 
 /--

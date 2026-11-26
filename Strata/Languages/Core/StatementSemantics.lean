@@ -171,6 +171,56 @@ abbrev EvalCommandE
     Expression.Factory → CoreStore → Command → CoreStore → Trace Expression → Prop :=
   EvalCmdExtE π
 
+/-- Case analysis on `EvalCommandE` by its three rules, as `EvalCmdExtE.casesOn'`. -/
+@[elab_as_elim, cases_eliminator]
+theorem EvalCommandE.casesOn' {π : String → Option Procedure}
+    {motive : ∀ fac σ c σ' evs, EvalCommandE π fac σ c σ' evs → Prop}
+    {fac : Expression.Factory} {σ : CoreStore} {c : Command} {σ' : CoreStore}
+    {evs : Trace Expression} (h : EvalCommandE π fac σ c σ' evs)
+    (cmd_sem : ∀ {fac σ c σ' emitted} (h : EvalCmdE (P := Expression) fac σ c σ' emitted),
+      motive fac σ (.cmd c) σ' emitted (EvalCmdExtE.cmd_sem h))
+    (call_sem : ∀ {σ n tyArgs p callArgs σ' σ_final bodyEvents md fac σAO}
+      (hπ : Calls.typeInstantiatedCallee π n tyArgs = .some p)
+      (hno : p.body.isOpaque = false)
+      (hentry : Calls.CallEntry fac σ p callArgs σAO)
+      (hbody : CoreBodyExecE π p.body ⟨σAO, fac⟩ σ_final bodyEvents)
+      (hexit : Calls.CallExit fac σ p callArgs σ_final σ'),
+      motive fac σ (.call n tyArgs callArgs md) σ'
+        (Calls.defaultAssertEvents fac σAO (Calls.checksAtCall md p.spec.preconditions) ++
+          bodyEvents ++
+          Calls.defaultAssertEvents fac σ_final p.spec.postconditions)
+        (EvalCmdExtE.call_sem hπ hno hentry hbody hexit))
+    (call_abstract_sem : ∀ {σ σO n tyArgs p callArgs σ' md fac σAO}
+      (hπ : Calls.typeInstantiatedCallee π n tyArgs = .some p)
+      (ho : p.body.isOpaque = true)
+      (hentry : Calls.CallEntry fac σ p callArgs σAO)
+      (hhavoc : Calls.HavocVars fac σAO (ProcedureHeader.outputParams (P := Expression) p.header)
+        σO)
+      (hexit : Calls.CallExit fac σ p callArgs σO σ'),
+      motive fac σ (.call n tyArgs callArgs md) σ'
+        (Calls.defaultAssertEvents fac σAO (Calls.checksAtCall md p.spec.preconditions) ++
+          Calls.assumeEvents fac σO p.spec.postconditions)
+        (EvalCmdExtE.call_abstract_sem hπ ho hentry hhavoc hexit)) :
+    motive fac σ c σ' evs h :=
+  EvalCmdExtE.casesOn' (motive := motive) h cmd_sem call_sem call_abstract_sem
+
+/-- Case analysis on `CoreBodyExecE` by its two rules, as `BigStepE.casesOn'`. -/
+@[elab_as_elim, cases_eliminator]
+theorem CoreBodyExecE.casesOn' {π : String → Option Procedure}
+    {motive : ∀ b ρ σ' evs, CoreBodyExecE π b ρ σ' evs → Prop}
+    {b : Procedure.Body} {ρ : Env Expression} {σ' : CoreStore} {evs : Trace Expression}
+    (h : CoreBodyExecE π b ρ σ' evs)
+    (structured : ∀ {ss opq ρ ρ' emitted}
+      (h : ReflTransTrace (StepStmtE Expression (EvalCmdExtE π)) (.stmt (Stmt.block "" ss #[]) ρ)
+        emitted (.terminal ρ')),
+      motive (.structured ss opq) ρ ρ'.store emitted (BigStepE.structured h))
+    (cfg : ∀ {g opq ρ ρ' emitted}
+      (h : ReflTransTrace (StepCFGE Expression (EvalCmdExtE π)) (.atBlock g g.entry ρ) emitted
+        (.terminal ρ')),
+      motive (.cfg g opq) ρ (projectStore ρ.store ρ'.store) emitted (BigStepE.cfg h)) :
+    motive b ρ σ' evs h :=
+  BigStepE.casesOn' (motive := motive) h structured cfg
+
 /-- Reflexive-transitive Core statement execution with chronological events. -/
 abbrev CoreStepStarE
     (π : String → Option Procedure) :=
@@ -183,14 +233,15 @@ abbrev CoreStepE
 
 /-- The configuration runs next a call that does not finish: the call, possibly inside
     sequences and blocks, is the next command to run. Its callee, the procedure of the table
-    instantiated at the call's type arguments, is found, the entry into the callee succeeds in
-    some callee store `σAO`, and no complete run of the callee body from `σAO` exists. The call
-    has no step. -/
+    instantiated at the call's type arguments, is found and is not opaque, the entry into the
+    callee succeeds in some callee store `σAO`, and no complete run of the callee body from `σAO`
+    exists. The call has no step. -/
 inductive CallDoesNotFinish (π : String → Option Procedure) : CoreConfig → Prop where
   /-- The call is the next statement to run. -/
   | call {n : String} {tyArgs : Option (List Expression.Ty)} {args : List (CallArg Expression)}
       {md : MetaData Expression} {ρ : Env Expression} {p : Procedure} {σAO : CoreStore} :
       Calls.typeInstantiatedCallee π n tyArgs = some p →
+      p.body.isOpaque = false →
       CallEntry ρ.factory ρ.store p args σAO →
       (¬ ∃ σEnd evs, CoreBodyExecE π p.body ⟨σAO, ρ.factory⟩ σEnd evs) →
       CallDoesNotFinish π (.stmt (.cmd (.call n tyArgs args md)) ρ)
@@ -203,9 +254,9 @@ inductive CallDoesNotFinish (π : String → Option Procedure) : CoreConfig → 
 
 /-- The configuration runs next a call whose callee runs on without finishing: the call, possibly
     inside sequences and blocks, is the next command to run, its callee is found, the entry into
-    the callee succeeds in some callee store `σAO`, the callee body is structured, and every
-    configuration reachable from the start of the callee body either steps or is again such a
-    configuration. The callee is never finished, since a finished configuration neither steps nor
+    the callee succeeds in some callee store `σAO`, the callee body is structured and not opaque,
+    and every configuration reachable from the start of the callee body either steps or is again
+    such a configuration. The callee is never finished, since a finished configuration neither steps nor
     runs such a call. -/
 coinductive CallRunsForever (π : String → Option Procedure) : CoreConfig → Prop where
   /-- The call is the next statement to run. -/
@@ -214,7 +265,7 @@ coinductive CallRunsForever (π : String → Option Procedure) : CoreConfig → 
       {ss : List Statement} :
       Calls.typeInstantiatedCallee π n tyArgs = some p →
       CallEntry ρ.factory ρ.store p args σAO →
-      p.body = .structured ss →
+      p.body = .structured ss false →
       (∀ evs cfg, CoreStepStarE π (.stmt (Stmt.block "" ss #[]) ⟨σAO, ρ.factory⟩) evs cfg →
         (∃ evs' cfg', CoreStepE π cfg evs' cfg') ∨ CallRunsForever π cfg) →
       CallRunsForever π (.stmt (.cmd (.call n tyArgs args md)) ρ)

@@ -151,7 +151,9 @@ macro "grows_tac" : tactic => `(tactic| repeat' (first
 /-- `TraceRel K` is reflexive when `K.ER` is. -/
 theorem TraceRel.refl_eq {K : RelCtx} (hK : ∀ ev, K.ER ev ev) :
     ∀ l : List (IEvent Expression), TraceRel K l l := fun l => by
-  induction l <;> constructor <;> simp_all
+  induction l with
+  | nil => exact .nil
+  | cons a l ih => exact .cons (hK a) ih
 
 /-- `FiredU` is preserved by trace growth. -/
 theorem FiredU.mono {K : RelCtx} {s s2 : ReplayState Expression} (h : FiredU K s)
@@ -371,6 +373,42 @@ private theorem stepBaseCmdStore_dom {K : RelCtx} (hK : K.EqCompat) {k k' : Nat}
       (stepBaseCmdStore (m := ReplayM Expression) k' factory store c) Eq := by
   cases c <;> simp only [stepBaseCmdStore, InterpLang.boundedEval] <;> repeat' dom_step hK, hle
 
+/-- Havocking a list of names (`Calls.havocVarList`) grows the trace. -/
+theorem havocVarList_grows (cfg : ReplayCfg Expression) (k : Nat)
+    (factory : Lambda.Factory CoreLParams) :
+    ∀ (names : List Expression.Ident) (store : IStore Expression),
+      Grows cfg (Calls.havocVarList (m := ReplayM Expression) k factory names store)
+  | [], _ => .pure _ _
+  | _ :: names, _ =>
+    .bind (stepBaseCmdStore_grows _ _ _ _ _) fun _ => havocVarList_grows cfg k factory names _
+
+/-- The contract run of a callee (`Calls.runAbstractCallee`) grows the trace. -/
+theorem runAbstractCallee_grows (cfg : ReplayCfg Expression) (k : Nat)
+    (factory : Lambda.Factory CoreLParams) (outs : List Expression.Ident)
+    (post : ListMap String (Imperative.Check Expression)) (σ : RStore Expression) :
+    Grows cfg (Calls.runAbstractCallee (m := ReplayM Expression) k factory outs post σ) :=
+  .bind (havocVarList_grows _ _ _ _ _) fun _ => by grows_tac
+
+/-- Havocking a list of names at downstream fuel `k` is dominated by the same havoc at any
+    upstream fuel `k' ≥ k`. -/
+private theorem havocVarList_dom {K : RelCtx} (hK : K.EqCompat) {k k' : Nat} (hle : k ≤ k')
+    (factory : Lambda.Factory CoreLParams) :
+    ∀ (names : List Expression.Ident) (store : IStore Expression),
+      RelDom K (Calls.havocVarList (m := ReplayM Expression) k factory names store)
+        (Calls.havocVarList (m := ReplayM Expression) k' factory names store) Eq
+  | [], _ => .pure rfl
+  | _ :: names, _ => .bind_eq (stepBaseCmdStore_dom hK hle _ _ _) fun _ =>
+    havocVarList_dom hK hle factory names _
+
+/-- The contract run of a callee at downstream fuel `k` is dominated by the same run at any
+    upstream fuel `k' ≥ k`. -/
+private theorem runAbstractCallee_dom {K : RelCtx} (hK : K.EqCompat) {k k' : Nat} (hle : k ≤ k')
+    (factory : Lambda.Factory CoreLParams) (outs : List Expression.Ident)
+    (post : ListMap String (Imperative.Check Expression)) (σ : RStore Expression) :
+    RelDom K (Calls.runAbstractCallee (m := ReplayM Expression) k factory outs post σ)
+      (Calls.runAbstractCallee (m := ReplayM Expression) k' factory outs post σ) Eq :=
+  .bind_eq (havocVarList_dom hK hle _ _ _) fun _ => by repeat' cel_dstep hK
+
 /-! ## The whole run, from a per-command obligation -/
 
 /-- The upstream stepper of a `StepDom` grows the trace. -/
@@ -485,6 +523,7 @@ theorem runCallee_grows {cfg : ReplayCfg Expression}
   · exact .bind (runInterp_grows h _ _) fun _ => by grows_tac
   · exact .bind (runInterpCFG_grows (fun _ _ _ _ => .bind (h _ _ _) fun _ => .pure _ _) _ _)
       fun _ => by grows_tac
+  · exact .throw _ _
 
 /-- **Callee body run domination**: under the per-command obligation `StepDom`, a callee body
     run (`Calls.runCallee`) at downstream fuel `n` is dominated by the same body's run at upstream
@@ -500,6 +539,7 @@ theorem runCallee_dom {K : RelCtx} (hK : K.EqCompat)
   · exact .bind_eq (runInterpCFG_dom hK (fun k k' f σ c hk =>
       .bind_eq (h k k' ⟨σ, f⟩ c hk) fun r => .pure (a := r.getEnv.store) rfl) _ _ hle _) fun _ => by
         repeat' cel_dstep hK
+  · exact .throw hK.compat _ _
 
 /-! ## The Core command stepper -/
 
@@ -509,14 +549,14 @@ theorem runCallee_dom {K : RelCtx} (hK : K.EqCompat)
 local macro "cel_unfold_step" : tactic =>
   `(tactic| (unfold replayStepCmd Calls.stepCmd
              (try unfold Calls.stepCmdWith)
-             (try dsimp only [Calls.CmdExt.view])
+             (try dsimp only [Calls.CmdExt.view, Calls.dispatchCall, Calls.callBody])
              (try dsimp only)))
 
 /-- `cel_unfold_step` at the hypothesis `h` and at the goal. -/
 local macro "cel_unfold_step" h:ident : tactic =>
   `(tactic| (unfold replayStepCmd Calls.stepCmd at $h:ident ⊢
              (try unfold Calls.stepCmdWith at $h:ident ⊢)
-             (try dsimp only [Calls.CmdExt.view] at $h:ident ⊢)
+             (try dsimp only [Calls.CmdExt.view, Calls.dispatchCall, Calls.callBody] at $h:ident ⊢)
              (try dsimp only at $h:ident ⊢)))
 
 /-- Every run of Core's command stepper grows the trace (any procedure table, any
@@ -529,6 +569,7 @@ theorem replayStepCmd_grows (cfg : ReplayCfg Expression) (π : String → Option
     | (with_reducible refine Grows.bind ?_ (fun _ => ?_)) | with_reducible exact Grows.pure _ _
     | split | with_reducible exact Grows.throw _ _ | with_reducible exact Grows.forM_emit _ _
     | with_reducible exact stepBaseCmdStore_grows _ _ _ _ _
+    | with_reducible exact runAbstractCallee_grows _ _ _ _ _ _
     | (with_reducible refine runCallee_grows ?_ _ _ _ _ _) | exact fun _ => ‹∀ d, StepGrows _ _› _ 0
 
 /-- `evalBoundedList` is upward-monotone in fuel. -/
@@ -579,7 +620,10 @@ private theorem replayStepCmd_dom {K : RelCtx} (hK : K.EqCompat) (π' π : Strin
   have hev' : Calls.evalBoundedList (k' + 1) env.factory env.store.get (Calls.getInputExprs args)
     = some _ := evalBoundedList_mono (by omega) _ _ _ _ hev
   rw [hev']
-  repeat' (first | with_reducible exact runCallee_dom hK hS _ _ _ (by omega) _ | cel_dstep hK)
+  repeat' (first
+    | with_reducible exact runCallee_dom hK hS _ _ _ (by omega) _
+    | with_reducible exact runAbstractCallee_dom hK (by omega) _ _ _ _
+    | cel_dstep hK)
 
 /-! ## Claim transport, proved once -/
 

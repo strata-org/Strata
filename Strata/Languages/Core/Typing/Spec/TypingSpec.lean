@@ -221,10 +221,11 @@ end
 inductive ProcBodyWellTyped (P : Program) (C : LContext CoreLParams) (ts : TypeScopes) :
     Procedure.Body → Prop where
   /-- A structured body is a statement list typed with no enclosing block. -/
-  | structured : ∀ ss C' ts',
+  | structured : ∀ ss C' ts' opq,
       StatementsWellTyped P C ts [] ss C' ts' →
-      ProcBodyWellTyped P C ts (.structured ss)
-  | cfg : ∀ c, ProcBodyWellTyped P C ts (.cfg c)
+      ProcBodyWellTyped P C ts (.structured ss opq)
+  | cfg : ∀ c opq, ProcBodyWellTyped P C ts (.cfg c opq)
+  | abstract : ProcBodyWellTyped P C ts .abstract
 
 /-- Well-typedness of a procedure under program `P`, in context `C` and variable scopes
     `ts`. -/
@@ -239,6 +240,12 @@ structure ProcWellTyped (P : Program) (C : LContext CoreLParams) (ts : TypeScope
   noUndeclaredVars : ∀ v,
     v ∈ LMonoTys.freeVars proc.header.inputs.values ++
         LMonoTys.freeVars proc.header.outputs.values →
+    v ∈ proc.header.typeArgs
+  /-- Every type variable in the declared type of a local variable, and in a type argument
+      stored on a call, anywhere in the body (structured or control-flow graph), is one of the
+      procedure's type parameters. Type variables in operator and binder annotations are not
+      constrained. -/
+  declTyVarsBound : ∀ v ∈ bodyCollect (fun _ => []) LMonoTy.freeVars proc.body,
     v ∈ proc.header.typeArgs
   signatureWellKinded : ∀ ty ∈ proc.header.inputs.values ++ proc.header.outputs.values,
     C.WellKindedTy ty

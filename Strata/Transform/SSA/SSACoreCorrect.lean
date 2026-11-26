@@ -58,7 +58,7 @@ with the parameter types, the parameters and the `old` aliases of `q`
 TODO: state the soundness of `ssaPipelinePhase` as `OverapproximatesTracesUptoWhen` on each
 procedure body it rewrites.
 
-Assertion validity on completed runs, as a Core Hoare triple with the postcondition `True`,
+Assertion validity on every finite execution, as a Core Hoare triple with the postcondition `True`,
 transports back from the output to the input (`ssa_triple`), from entries related by the entry
 renaming; the final stores are not related, so no postcondition transports.
 
@@ -264,7 +264,7 @@ theorem ssaLoopFree_overapproximatesTraces (π : String → Option Procedure)
     `ssaEntry fac G tys xs al` succeeds with the output `so.out`, every reserved prefix of `params`
     being free of `@` and every alias of `al` denoting a parameter of `xs`, and a precondition
     admitting only entry environments over `F`: a Core triple `{Pre'} so.out {True}` over `F`
-    at `params`, saying every assertion of `so.out` holds on its completed runs from entries
+    at `params`, saying every assertion of `so.out` holds on its finite executions from entries
     satisfying `Pre'`, gives the triple `{Pre} ss₀ {True}`, when each entry of `ss₀` satisfying
     `Pre` and the gate has an entry of `so.out` related to it by the entry renaming
     (`SSAEntryRel`) that satisfies `Pre'`.  The final stores of the two are not related: the
@@ -297,10 +297,10 @@ theorem ssa_triple (π : String → Option Procedure) (params : InitEnvWFParams)
     (fun tr => ∀ ev ∈ tr, ev.condition.factory.factory = F) ?_ ?_ hin ?_ ?_
     (fun _ _ _ _ _ _ _ _ _ => trivial)
   · intro ρ₀ ρ' trace hp _ hrun ev hev
-    rw [Core.Logic.coreBlock_terminatesAt_events_factory hnc hrun ev hev]
+    rw [Core.Logic.coreBlock_events_factory hnc hrun ev hev]
     exact hpin ρ₀ hp
   · intro ρ₀ ρ₀' ρ'' trace hp hrel _ hrun ev hev
-    rw [Core.Logic.coreBlock_terminatesAt_events_factory hnc' hrun ev hev, hrel.factory]
+    rw [Core.Logic.coreBlock_events_factory hnc' hrun ev hev, hrel.factory]
     exact hpin ρ₀ hp
   · intro _ _ hs ht hrel hv
     exact (Core.Logic.weakensAssumes_denoteBasedInterp hrel hs ht).assertionsValid_reflect hv

@@ -86,10 +86,11 @@ open Core.Transform
     structured body and `Statement.DetBlock.subst` for each block of a CFG body. -/
 def substProc (S : Subst) (proc : Procedure) : Procedure :=
   let body := match proc.body with
-    | .structured ss => Procedure.Body.structured (ss.map (Core.Statement.Statement.subst S))
-    | .cfg g =>
+    | .structured ss o => Procedure.Body.structured (ss.map (Core.Statement.Statement.subst S)) o
+    | .cfg g o =>
       Procedure.Body.cfg
-        { g with blocks := g.blocks.map fun (l, b) => (l, Core.Statement.DetBlock.subst S b) }
+        { g with blocks := g.blocks.map fun (l, b) => (l, Core.Statement.DetBlock.subst S b) } o
+    | .abstract => .abstract
   { proc with
     header := { proc.header with
       typeArgs := [],

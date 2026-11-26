@@ -66,7 +66,7 @@ private def runMarkedEntries (laurel : Laurel.LaurelProgram) (fuel : Nat := 1000
         -- counter during translation, so we report `assert failed` rather than
         -- the volatile label; the command itself maps these back to source
         -- ranges instead of printing the raw label.
-        match (Core.Program.runEntry E p fuel).error with
+        match (Core.Program.runEntry .execute E p fuel).error with
         | none => IO.println s!"{name}: ok"
         | some (.AssertFail ..) => IO.println s!"{name}: assert failed"
         | some e => IO.println s!"{name}: {format (Imperative.EvalError.toFormat e)}"

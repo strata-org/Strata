@@ -105,7 +105,7 @@ private def badArityProc : Core.Procedure :=
                 inputs := [(⟨"x", ()⟩, .tcons "Sequence" [.ftvar "a", .ftvar "a"])],
                 outputs := [] },
     spec := { preconditions := [], postconditions := [] },
-    body := .structured [] }
+    body := .structured [] false }
 
 private def badArityProcPgm : Core.Program :=
   { decls := [.proc badArityProc .empty] }
@@ -126,7 +126,7 @@ private def badArityVarProc : Core.Procedure :=
     spec := { preconditions := [], postconditions := [] },
     body := .structured [
       Statement.init "y" (.forAll [] (.tcons "Sequence" [.ftvar "a", .ftvar "a"])) .nondet .empty
-    ] }
+    ] false }
 
 private def badArityVarPgm : Core.Program :=
   { decls := [.proc badArityVarProc .empty] }
@@ -196,7 +196,7 @@ private def assertPgm (pre : List Core.Decl) (typeArgs : List String)
   { decls := pre ++ [.proc
       { header := { name := ⟨"p", ()⟩, typeArgs := typeArgs, inputs := inputs, outputs := [] },
         spec := { preconditions := [], postconditions := [] },
-        body := .structured [Statement.assert "a" e .empty] } .empty] }
+        body := .structured [Statement.assert "a" e .empty] false } .empty] }
 
 /-- `forall x : ty :: true`. -/
 private def forallTrue (ty : LMonoTy) : Core.Expression.Expr :=
@@ -261,7 +261,7 @@ private def varPgm (pre : List Core.Decl) (ty : LMonoTy) : Core.Program :=
   { decls := pre ++ [.proc
       { header := { name := ⟨"p", ()⟩, typeArgs := [], inputs := [], outputs := [] },
         spec := { preconditions := [], postconditions := [] },
-        body := .structured [Statement.init "y" (.forAll [] ty) .nondet .empty] } .empty] }
+        body := .structured [Statement.init "y" (.forAll [] ty) .nondet .empty] false } .empty] }
 
 -- A local variable type applying `Map` to one argument is rejected.
 /-- info: REJECTED: Procedure 'p': Type (Map int) is not an instance of a previously registered type: Type constructor 'Map' expects 2 type argument(s) but was given 1 -/

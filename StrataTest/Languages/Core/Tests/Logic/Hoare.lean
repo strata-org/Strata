@@ -452,13 +452,14 @@ private def keepProc : Core.Procedure :=
   (keepPgmAST.findProcByString? "Keep").get!
 
 /-- The body really is empty. -/
-example : keepProc.body = .structured [] := by native_decide
+example : keepProc.body = .structured [] false := by native_decide
 
 /-- **Valid.**  Every non-`free` `ensures` expression is literally one of the
     `requires`, so the contract holds of the empty body. -/
 theorem keep_meets_contract :
     Core.Logic.Hoare.Procedure.contractTriple keepPgmAST testParams "Keep" :=
-  Core.Logic.Hoare.Procedure.contractTriple_nil_of_ensuresAmongRequires (hmono := by native_decide)
+  Core.Logic.Hoare.Procedure.contractTriple_nil_of_ensuresAmongRequires (opq := false)
+    (hmono := by native_decide)
     keepPgmAST testParams "Keep" keepProc (by native_decide) (by native_decide)
     (by native_decide) (by native_decide)
 
@@ -530,7 +531,8 @@ example (model : Lambda.Interp Core.Factory) :
 /-- **Valid.**  The one non-`free` `ensures` is among the `requires`. -/
 theorem freeOk_meets_contract :
     Core.Logic.Hoare.Procedure.contractTriple freeOkPgmAST testParams "FreeOk" :=
-  Core.Logic.Hoare.Procedure.contractTriple_nil_of_ensuresAmongRequires (hmono := by native_decide)
+  Core.Logic.Hoare.Procedure.contractTriple_nil_of_ensuresAmongRequires (opq := false)
+    (hmono := by native_decide)
     freeOkPgmAST testParams "FreeOk" freeOkProc (by native_decide) (by native_decide)
     (by native_decide) (by native_decide)
 
@@ -583,10 +585,11 @@ theorem noReq_violates_contract :
   subst hp
   obtain ⟨_htyped, htb⟩ := hinsts [] _
     ((Core.Procedure.instantiateTypes_of_typeArgs_nil (by native_decide)).2 ⟨rfl, rfl⟩)
-  have hbody : noReqProc.body = .structured [] := by native_decide
+  have hbody : noReqProc.body = .structured [] false := by native_decide
   have htbm := htb
   rw [hbody] at htbm
-  have ⟨_hvalid, hpostF⟩ := htbm (xIs1Env model) (xIs1Env model) []
+  have ⟨_hvalid, hpostF⟩ := Strata.Logic.Hoare.TripleWith.run htbm (xIs1Env model)
+    (xIs1Env model) []
     ⟨⟨preAsPredicate_of_no_pre _ noReqProc (xIs1Env model) (by native_decide), rfl,
       oldInoutAsPredicate_of_no_inout noReqProc (xIs1Env model) (by native_decide),
       inputAsPredicate_xIs1 model noReqProc (by native_decide),
@@ -653,10 +656,11 @@ theorem offByOne_violates_contract :
   subst hp
   obtain ⟨_htyped, htb⟩ := hinsts [] _
     ((Core.Procedure.instantiateTypes_of_typeArgs_nil (by native_decide)).2 ⟨rfl, rfl⟩)
-  have hbody : offByOneProc.body = .structured [] := by native_decide
+  have hbody : offByOneProc.body = .structured [] false := by native_decide
   have htbm := htb
   rw [hbody] at htbm
-  have ⟨_hvalid, hpostF⟩ := htbm (xIs1Env model) (xIs1Env model) []
+  have ⟨_hvalid, hpostF⟩ := Strata.Logic.Hoare.TripleWith.run htbm (xIs1Env model)
+    (xIs1Env model) []
     ⟨⟨preAsPredicate_of_binds _ offByOneProc (xIs1Env model)
         [(⟨"x", ()⟩, some (Lambda.LMonoTy.tcons "int" []), Lambda.LConst.intConst 1)] rfl
         (by native_decide)
@@ -850,7 +854,8 @@ private theorem contractTriple_set_const (p : Core.Program)
     (hproc : p.findProcByString? procName = some proc)
     (x : Core.Expression.Ident) (ty : Option Lambda.LMonoTy)
     (κ : Lambda.LConst) (md : Imperative.MetaData Core.Expression)
-    (hbody : proc.body = .structured [Core.Statement.set x (Lambda.LExpr.const Core.valueLoc κ) md])
+    (hbody : proc.body = .structured [Core.Statement.set x (Lambda.LExpr.const Core.valueLoc κ) md]
+        false)
     (hChecksTyped : Core.Logic.Hoare.Procedure.contractChecksTyped proc)
     (hsyn : ensuresAllEqConst proc [(x, ty, κ)] = Bool.true) (hκ : κ.wt = true := by rfl)
     (hmono : proc.header.typeArgs = [] := by native_decide) :
@@ -919,7 +924,7 @@ private def set1Proc : Core.Procedure :=
     is projected back out of the AST rather than written down here. -/
 private def set1Md : Imperative.MetaData Core.Expression :=
   match set1Proc.body with
-  | .structured [Imperative.Stmt.cmd (Imperative.CmdExt.cmd (Imperative.Cmd.set _ _ md))] => md
+  | .structured [Imperative.Stmt.cmd (Imperative.CmdExt.cmd (Imperative.Cmd.set _ _ md))] _ => md
   | _ => #[]
 
 /-- The assigned variable. -/
@@ -928,7 +933,7 @@ private def set1Y : Core.Expression.Ident := ⟨"y", ()⟩
 /-- The translated body really is the single assignment `y := 1`. -/
 private theorem set1_body_eq :
     set1Proc.body = .structured
-      [Core.Statement.set set1Y (Lambda.LExpr.const Core.valueLoc (.intConst 1)) set1Md] := by
+      [Core.Statement.set set1Y (Lambda.LExpr.const Core.valueLoc (.intConst 1)) set1Md] false := by
   native_decide
 
 /-- **Valid, and fully proved.**  `Set1` meets its contract: for every initial
@@ -1002,7 +1007,7 @@ private def set2Z : Core.Expression.Ident := ⟨"z", ()⟩
     source span, so it is not something to write down here). -/
 private def set2Md (i : Nat) : Imperative.MetaData Core.Expression :=
   match set2Proc.body with
-  | .structured ss =>
+  | .structured ss _ =>
     match ss[i]? with
     | some (Imperative.Stmt.cmd (Imperative.CmdExt.cmd (Imperative.Cmd.set _ _ md))) => md
     | _ => #[]
@@ -1012,7 +1017,8 @@ private def set2Md (i : Nat) : Imperative.MetaData Core.Expression :=
 private theorem set2_body_eq :
     set2Proc.body = .structured
       ([Core.Statement.set set2Y (Lambda.LExpr.const Core.valueLoc (.intConst 1)) (set2Md 0)] ++
-       [Core.Statement.set set2Z (Lambda.LExpr.const Core.valueLoc (.intConst 2)) (set2Md 1)]) := by
+       [Core.Statement.set set2Z (Lambda.LExpr.const Core.valueLoc (.intConst 2)) (set2Md 1)]) false
+           := by
   native_decide
 
 /-- **Valid, and fully proved.**  `Set2` meets its contract: the body leaves both
@@ -1106,7 +1112,7 @@ private def initVarParts :
   match initVarProc.body with
   | .structured [Imperative.Stmt.cmd (Imperative.CmdExt.cmd (Imperative.Cmd.init _ ty _ md0)),
                  Imperative.Stmt.cmd (Imperative.CmdExt.cmd
-                   (Imperative.Cmd.set _ (.det (Lambda.LExpr.fvar _ _ sty)) md1))] =>
+                   (Imperative.Cmd.set _ (.det (Lambda.LExpr.fvar _ _ sty)) md1))] _ =>
       (ty, md0, sty, md1)
   | _ => default
 
@@ -1117,7 +1123,8 @@ private def initVarBody : Core.Statements :=
      initVarParts.2.2.2]
 
 /-- The translated body really is the declaration followed by the assignment. -/
-private theorem initVar_body_eq : initVarProc.body = .structured initVarBody := by native_decide
+private theorem initVar_body_eq : initVarProc.body = .structured initVarBody false := by
+    native_decide
 
 /-- **Valid, and fully proved.**  `var t : int := 3; y := t` leaves `y == 3` true: the
     declaration is carried as a store fact about `t`, which the assignment copies to
@@ -1213,14 +1220,14 @@ private def ite1Parts :
     Core.Expression.Expr × Core.Statements × Core.Statements ×
       Imperative.MetaData Core.Expression :=
   match ite1Proc.body with
-  | .structured [Imperative.Stmt.ite (.det c) tss ess md] => (c, tss, ess, md)
+  | .structured [Imperative.Stmt.ite (.det c) tss ess md] _ => (c, tss, ess, md)
   | _ => default
 
 private def ite1Stmt : Core.Statement :=
   Imperative.Stmt.ite (.det ite1Parts.1) ite1Parts.2.1 ite1Parts.2.2.1 ite1Parts.2.2.2
 
 /-- The translated body really is the single if-then-else. -/
-private theorem ite1_body_eq : ite1Proc.body = .structured [ite1Stmt] := by native_decide
+private theorem ite1_body_eq : ite1Proc.body = .structured [ite1Stmt] false := by native_decide
 
 /-- The *then* branch really is the single assignment `z := 1`. -/
 private theorem ite1Then_eq :
@@ -1311,14 +1318,14 @@ private def blk1Y : Core.Expression.Ident := ⟨"y", ()⟩
 
 private def blk1Parts : String × Core.Statements × Imperative.MetaData Core.Expression :=
   match blk1Proc.body with
-  | .structured [Imperative.Stmt.block l ss md] => (l, ss, md)
+  | .structured [Imperative.Stmt.block l ss md] _ => (l, ss, md)
   | _ => default
 
 private def blk1Stmt : Core.Statement :=
   Imperative.Stmt.block blk1Parts.1 blk1Parts.2.1 blk1Parts.2.2
 
 /-- The translated body really is the single labelled block. -/
-private theorem blk1_body_eq : blk1Proc.body = .structured [blk1Stmt] := by native_decide
+private theorem blk1_body_eq : blk1Proc.body = .structured [blk1Stmt] false := by native_decide
 
 /-- The block's body really is the single assignment `y := 5`. -/
 private theorem blk1Inner_eq :
@@ -1389,7 +1396,7 @@ private def exitBlkY : Core.Expression.Ident := ⟨"y", ()⟩
 
 private def exitBlkParts : String × Core.Statements × Imperative.MetaData Core.Expression :=
   match exitBlkProc.body with
-  | .structured [Imperative.Stmt.block l ss md] => (l, ss, md)
+  | .structured [Imperative.Stmt.block l ss md] _ => (l, ss, md)
   | _ => default
 
 private def exitBlkStmt : Core.Statement :=
@@ -1397,7 +1404,7 @@ private def exitBlkStmt : Core.Statement :=
 
 /-- The translated body really is the single labelled block. -/
 private theorem exitBlk_body_eq :
-    exitBlkProc.body = .structured [exitBlkStmt] := by native_decide
+    exitBlkProc.body = .structured [exitBlkStmt] false := by native_decide
 
 /-- The exit's target label and the three source-span metadata records. -/
 private def exitBlkInnerParts :
@@ -1530,7 +1537,7 @@ private def chkParts : Core.Expression.Expr × Imperative.MetaData Core.Expressi
     Imperative.MetaData Core.Expression :=
   match chkProc.body with
   | .structured [Imperative.Stmt.cmd (Imperative.CmdExt.cmd (Imperative.Cmd.assume _ e md0)),
-                 Imperative.Stmt.cmd (Imperative.CmdExt.cmd (Imperative.Cmd.assert _ _ md1))] =>
+                 Imperative.Stmt.cmd (Imperative.CmdExt.cmd (Imperative.Cmd.assert _ _ md1))] _ =>
       (e, md0, md1)
   | _ => default
 
@@ -1539,7 +1546,7 @@ private def chkBody : Core.Statements :=
   [Core.Statement.assert "b" chkParts.1 chkParts.2.2]
 
 /-- The translated body really is the `assume` then the `assert`, on the same expression. -/
-private theorem chk_body_eq : chkProc.body = .structured chkBody := by native_decide
+private theorem chk_body_eq : chkProc.body = .structured chkBody false := by native_decide
 
 /-- Every `ensures` of `Chk` is the expression captured by the two commands. -/
 private theorem chk_ensures_expr :
@@ -1560,6 +1567,34 @@ private theorem chk_input_mem :
     (chkX, Lambda.LMonoTy.int) ∈ chkProc.header.inputs.toList := by
   native_decide
 
+/-- Every finite execution of `[assume la e mda, assert lb e mdb]` emits a prefix of the trace
+    of its run: nothing, the assumption, or both events. -/
+private theorem assume_assert_prefix_inv (π : String → Option Core.Procedure)
+    {la lb : String} {e : Core.Expression.Expr}
+    {mda mdb : Imperative.MetaData Core.Expression}
+    {ρ : Imperative.Env Core.Expression} {cfg : Config Core.Expression Core.Command}
+    {trace : List (Event Core.Expression)}
+    (h : StepStmtStarE Core.Expression (Core.EvalCommandE π)
+        (.stmts [Core.Statement.assume la e mda, Core.Statement.assert lb e mdb] ρ) trace cfg) :
+    ∃ suffix, trace ++ suffix =
+      [Event.assume ⟨ρ.factory, ρ.store, la, e, mda⟩,
+       Event.assert ⟨ρ.factory, ρ.store, lb, e, mdb⟩] := by
+  rcases stmts_append_prefixE (EvalCmd := Core.EvalCommandE π)
+      [Core.Statement.assume la e mda] [Core.Statement.assert lb e mdb] ρ h with
+    ⟨_, h₁⟩ | ⟨ρ₁, tr₁, tr₂, rfl, hterm₁, _, h₂⟩
+  · obtain ⟨_, h₁⟩ := singleton_prefixE h₁
+    rcases cmd_prefixE h₁ with ⟨_, rfl⟩ | ⟨_, rfl⟩
+    · exact ⟨_, rfl⟩
+    · obtain ⟨rfl, _⟩ := EvalCmdExtE.assumeRun_inv (π := π) (.inl h₁)
+      exact ⟨_, rfl⟩
+  · obtain ⟨rfl, rfl⟩ := EvalCmdExtE.assumeRun_inv (π := π)
+      (singletonRun_to_stmtRunE (Core.EvalCommandE π) (.inl hterm₁))
+    obtain ⟨_, h₂⟩ := singleton_prefixE h₂
+    rcases cmd_prefixE h₂ with ⟨_, rfl⟩ | ⟨_, rfl⟩
+    · exact ⟨_, rfl⟩
+    · obtain ⟨rfl, _⟩ := EvalCmdExtE.assertRun_inv (π := π) (.inl h₂)
+      exact ⟨[], rfl⟩
+
 /-- **Valid, and fully proved.**  The `assume` supplies the very fact the `ensures`
     asserts, and the `assert` on the same expression is valid because that fact
     precedes it. -/
@@ -1571,24 +1606,28 @@ theorem chk_meets_contract :
   refine (Core.Logic.Hoare.block chkPgmAST.findProcByString? testParams
     ?_
     (Imperative.Logic.Hoare.postWF_of_definedVars_nil _ (by native_decide)))
-  -- The inner body `[assume x==1, assert x==1]`, proved directly from the event run.
-  intro ρ₀ ρ' trace hpre hwf hrun
-  obtain ⟨hρ', htr⟩ := assume_assert_run_inv chkPgmAST.findProcByString? hrun
-  subst ρ'
-  subst htr
+  -- The inner body `[assume x==1, assert x==1]`, proved directly from the event runs.
+  intro ρ₀ hpre hwf
   obtain ⟨_hpre, hfac, _hold, hinput, -⟩ := hpre
   obtain ⟨v, hx, hv⟩ := hinput chkX Lambda.LMonoTy.int chk_input_mem
   obtain ⟨i, hvi⟩ := Lambda.SemValue.exists_ofInt hv
   have htc : v.tc = ρ₀.factory.model.tcInterp := hwf.storeWellDefined chkX v hx
   rw [hvi, htc] at hx
-  refine ⟨?_, fun hreach => ?_⟩
-  · -- The assertion is discharged by the preceding assumption on the same expression.
+  refine ⟨fun cfg trace hrun => ?_, fun ρ' trace hrun hreach => ?_⟩
+  · -- A finite execution emits a prefix of the run's trace, whose assertion is discharged by
+    -- the preceding assumption on the same expression.
+    obtain ⟨suffix, hsuffix⟩ := assume_assert_prefix_inv chkPgmAST.findProcByString? hrun
+    refine Trace.AssertionsValid.left_of_append _ (right := suffix) ?_
+    rw [hsuffix]
     refine ⟨fun _ world hassum => ?_, trivial⟩
     have ha := hassum ⟨ρ₀.factory, ρ₀.store, "a", chkParts.1, chkParts.2.1⟩ (by simp)
     rcases ha with ⟨_, hex⟩ | ⟨hne, _⟩
     · exact .inl ⟨hfac, hex⟩
     · exact absurd hfac hne
   · -- Reachability forces the input to be `1`, giving the semantic postcondition.
+    obtain ⟨hρ', htr⟩ := assume_assert_run_inv chkPgmAST.findProcByString? hrun
+    subst ρ'
+    subst htr
     obtain ⟨world, hassum⟩ := hreach
     have ha := hassum ⟨ρ₀.factory, ρ₀.store, "a", chkParts.1, chkParts.2.1⟩ (by simp)
     rcases ha with ⟨_, hex⟩ | ⟨hne, _⟩
@@ -1683,7 +1722,7 @@ private def freshParts :
                  Imperative.Stmt.cmd (Imperative.CmdExt.cmd
                    (Imperative.Cmd.set _ .nondet md1)),
                  Imperative.Stmt.cmd (Imperative.CmdExt.cmd
-                   (Imperative.Cmd.set _ (.det _) md2))] =>
+                   (Imperative.Cmd.set _ (.det _) md2))] false =>
       (ty, md0, md1, md2)
   | _ => default
 
@@ -1693,7 +1732,7 @@ private def freshBody : Core.Statements :=
    [Core.Statement.set freshY (Lambda.LExpr.const Core.valueLoc (.intConst 3)) freshParts.2.2.2])
 
 /-- The translated body really is the declaration, the havoc and the assignment. -/
-private theorem fresh_body_eq : freshProc.body = .structured freshBody := by native_decide
+private theorem fresh_body_eq : freshProc.body = .structured freshBody false := by native_decide
 
 /-- **Valid, and fully proved.**  Whatever `t` and `y` are bound to by the declaration
     and the havoc, the assignment leaves `y == 3`. -/
@@ -1791,7 +1830,7 @@ private def loopTermParts :
       Core.Statements × Imperative.MetaData Core.Expression :=
   match loopTermProc.body with
   | .structured [Imperative.Stmt.cmd (Imperative.CmdExt.cmd (Imperative.Cmd.set _ _ md0)),
-                 Imperative.Stmt.loop (.det g) m inv body md1] => (md0, g, m, inv, body, md1)
+                 Imperative.Stmt.loop (.det g) m inv body md1] _ => (md0, g, m, inv, body, md1)
   | _ => default
 
 private def loopTermStmt : Core.Statement :=
@@ -1803,7 +1842,7 @@ private def loopTermBody : Core.Statements :=
     [loopTermStmt]
 
 /-- The translated body really is the initialisation followed by the loop. -/
-private theorem loopTerm_body_eq : loopTermProc.body = .structured loopTermBody := by
+private theorem loopTerm_body_eq : loopTermProc.body = .structured loopTermBody false := by
   native_decide
 
 /-- The right-hand side and metadata of the loop body's single assignment `y := y + 1`,
@@ -1975,7 +2014,7 @@ private def loopForeverParts :
       Core.Statements × Imperative.MetaData Core.Expression :=
   match loopForeverProc.body with
   | .structured [Imperative.Stmt.cmd (Imperative.CmdExt.cmd (Imperative.Cmd.set _ _ md0)),
-                 Imperative.Stmt.loop (.det g) m inv body md1] => (md0, g, m, inv, body, md1)
+                 Imperative.Stmt.loop (.det g) m inv body md1] _ => (md0, g, m, inv, body, md1)
   | _ => default
 
 private def loopForeverStmt : Core.Statement :=
@@ -1987,7 +2026,7 @@ private def loopForeverBody : Core.Statements :=
     [loopForeverStmt]
 
 /-- The translated body really is the assignment followed by the loop. -/
-private theorem loopForever_body_eq : loopForeverProc.body = .structured loopForeverBody := by
+private theorem loopForever_body_eq : loopForeverProc.body = .structured loopForeverBody false := by
   native_decide
 
 /-- The loop body really is the single assignment `y := 7`. -/
@@ -2068,6 +2107,141 @@ example (x : Core.Expression.Ident) (ty : Core.Expression.Ty)
   simp [Imperative.dropVars, Imperative.Block.definedVars,
     Imperative.Stmt.definedVars, Imperative.HasVarsImp.definedVars,
     Imperative.CmdExt.definedVars, Imperative.Cmd.definedVars] at hbad
+
+
+/-! ## A failing assertion before a loop that never terminates
+
+`procedure Spin() { assert [a]: false; while (true) {} }`
+
+No run of the body finishes, yet it does not meet its contract: the partial triple checks
+the assertions of every finite execution, and the execution that has just run the `assert`
+fails it.  This is what `ProcedureAssertsValidOnTraces` asks for too. -/
+
+private def spinPgm : Program :=
+#strata
+program Core;
+
+procedure Spin()
+{
+  assert [a]: false;
+  while (true) {
+  }
+};
+#end
+
+private def spinPgmAST : Core.Program := cstToAST spinPgm
+
+private def spinProc : Core.Procedure :=
+  (spinPgmAST.findProcByString? "Spin").get!
+
+/-- The asserted expression and its metadata, and the statements after the `assert`. -/
+private def spinParts : Core.Expression.Expr × Imperative.MetaData Core.Expression ×
+    Core.Statements :=
+  match spinProc.body with
+  | .structured (Imperative.Stmt.cmd (Imperative.CmdExt.cmd (Imperative.Cmd.assert _ e md)) ::
+      rest) _ => (e, md, rest)
+  | _ => default
+
+/-- The translated body is the `assert` followed by the loop. -/
+private theorem spin_body_eq :
+    spinProc.body = .structured (Core.Statement.assert "a" spinParts.1 spinParts.2.1 ::
+      spinParts.2.2) false := by
+  native_decide
+
+/-- The asserted expression is the literal `false`. -/
+private theorem spin_expr_eq :
+    spinParts.1 = Lambda.LExpr.boolConst Core.valueLoc false := by
+  native_decide
+
+/-- The environment with an empty store over the runtime factory of `model`. -/
+private def spinEnv (model : Lambda.Interp Core.Factory) : Imperative.Env Core.Expression :=
+  { store := fun _ => none, factory := boolFactory model }
+
+/-- The body's gate admits `spinEnv`: the body names no variable. -/
+private theorem spinEnv_blockWF (model : Lambda.Interp Core.Factory) :
+    Core.Logic.BlockInitEnvWF testParams
+      [Stmt.block "" (Core.Statement.assert "a" spinParts.1 spinParts.2.1 :: spinParts.2.2) #[]]
+      (spinEnv model) :=
+  Core.Logic.BlockInitEnvWF.of_defUseOk
+    (Core.coreFactory_WellFormedSemanticEval _ rfl)
+    (fun _ _ hn => by cases hn)
+    (by intro n hn
+        rw [show Block.definedVars (P := Core.Expression) (C := Core.Command)
+          [Stmt.block "" (Core.Statement.assert "a" spinParts.1 spinParts.2.1 :: spinParts.2.2)
+            #[]] false = [] from by native_decide] at hn
+        simp at hn)
+    (by intro n hn p hp; simp [testParams] at hp)
+    (by intro n hn p hp; simp [testParams] at hp)
+    (by intro l hl p hp; simp [testParams] at hp)
+    (by
+      show Block.defUseWellFormed (fun _ => false) testParams.declaredFuncs _ = true
+      native_decide)
+    (by intro nm _; rfl)
+    (by intro f _; rfl)
+    (by
+      intro ty hty
+      rw [show Block.initTypes (P := Core.Expression) (C := Core.Command)
+        [Stmt.block "" (Core.Statement.assert "a" spinParts.1 spinParts.2.1 :: spinParts.2.2)
+          #[]] = [] from by native_decide] at hty
+      simp at hty)
+    ⟨(fun _ => none : VarTyping Core.Expression), ⟨(fun _ _ hty => nomatch hty),
+      (Block.fvarTypesWellAnnotatedB_iff (P := Core.Expression) (C := Core.Command) _ _).1
+        (by native_decide)⟩⟩
+    (by
+      intro m hm
+      rw [show Block.measures (P := Core.Expression) (C := Core.Command)
+        [Stmt.block "" (Core.Statement.assert "a" spinParts.1 spinParts.2.1 :: spinParts.2.2)
+          #[]] = [] from by native_decide] at hm
+      simp at hm)
+
+/-- From `spinEnv`, the body's procedure block runs into the `assert`, emitting it. -/
+private theorem spin_prefix (model : Lambda.Interp Core.Factory)
+    (π : String → Option Core.Procedure) :
+    StepStmtStarE Core.Expression (Core.EvalCommandE π)
+      (.stmts [Stmt.block "" (Core.Statement.assert "a" spinParts.1 spinParts.2.1 ::
+        spinParts.2.2) #[]] (spinEnv model))
+      [Event.assert ⟨(spinEnv model).factory, (spinEnv model).store, "a", spinParts.1,
+        spinParts.2.1⟩]
+      (.seq (.block (some "") (spinEnv model).store
+        (.seq (.terminal (spinEnv model)) spinParts.2.2)) []) := by
+  refine .step _ [] _ _ _ .step_stmts_cons ?_
+  refine .step _ [] _ _ _ (.step_seq_inner .step_block) ?_
+  refine .step _ [] _ _ _ (.step_seq_inner (.step_block_body .step_stmts_cons)) ?_
+  exact .step _ _ _ [] _ (.step_seq_inner (.step_block_body (.step_seq_inner
+    (.step_cmd (Core.EvalCommandE.cmd_sem Imperative.EvalCmdE.eval_assert)))) :
+      StepStmtE Core.Expression (Core.EvalCommandE π) _ _ _) (.refl _)
+
+/-- **Invalid, although no run finishes.**  `assert false; while (true) {}` does not meet its
+    (empty) contract: the execution that has just run the `assert` emits an assertion that
+    holds in no world. -/
+theorem spin_violates_contract :
+    ¬ Core.Logic.Hoare.Procedure.contractTriple spinPgmAST testParams "Spin" := by
+  have hfactory : spinPgmAST.factoryBeforeProcedure "Spin" = Core.Factory :=
+    Core.Program.factoryBeforeProcedure_eq_core_of_noFunctions (by decide +kernel)
+  obtain ⟨model⟩ := Core.factoryInterp_nonempty
+  intro h
+  rw [Core.Logic.Hoare.Procedure.contractTriple, hfactory] at h
+  obtain ⟨proc, hproc, hinsts⟩ := h
+  obtain rfl : proc = spinProc := (procOf_eq hproc).symm
+  obtain ⟨_htyped, htb⟩ := hinsts [] _
+    ((Core.Procedure.instantiateTypes_of_typeArgs_nil (by native_decide)).2 ⟨rfl, rfl⟩)
+  rw [spin_body_eq] at htb
+  have hvalid := (htb (spinEnv model)
+    ⟨⟨preAsPredicate_of_no_pre _ spinProc (spinEnv model) (by native_decide), rfl,
+      oldInoutAsPredicate_of_no_inout spinProc (spinEnv model) (by native_decide),
+      (fun id ty hmem => by
+        rw [show spinProc.header.inputs.toList = [] from by native_decide] at hmem
+        cases hmem),
+      Core.Logic.Hoare.Procedure.outputAsPredicate_of_no_outputs _ (by native_decide)⟩,
+      Core.Specification.axiomsBeforeProcedureDecl_of_noAxioms (by decide +kernel) _⟩
+    (spinEnv_blockWF model)).1 _ _ (spin_prefix model spinPgmAST.findProcByString?)
+  rcases hvalid.1 trivial (someValuation _) (fun _ hc => by simp at hc) with
+    ⟨_, hex⟩ | ⟨hne, _⟩
+  · change Core.Expression.eval (spinEnv model).factory (spinEnv model).store spinParts.1 =
+      some (HasBool.ttVal (spinEnv model).factory) at hex
+    rw [spin_expr_eq, Core.eval_boolConst] at hex
+    exact HasBool.ttVal_ne_ffVal _ (Option.some.inj hex).symm
+  · exact hne rfl
 
 
 end Strata

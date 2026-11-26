@@ -239,8 +239,8 @@ run InsertLoopInvariantAsserts first (or use the built-in verify pipeline)")
 def numLoops (p : Program) : Nat :=
   p.decls.foldl (fun n d => match d with
     | .proc proc _ => match proc.body with
-      | .structured ss => n + Block.numLoops ss
-      | .cfg _ => n
+      | .structured ss _ => n + Block.numLoops ss
+      | .cfg _ _ | .abstract => n
     | _ => n) 0
 
 /-- Loop-elimination pass: replace every loop in the structured procedure bodies of the
@@ -261,9 +261,10 @@ def loopElimPipelinePhase : PipelinePhase where
     rejectMarkerLabels "loop elimination" loopElimAssumePrefix p
     loopElim p
   phase.name := "loopElim"
+  phase.validationPrefixes := [loopElimAssumePrefix]
   phase.getValidation obligation :=
     if obligationHasLabelPrefix obligation loopElimAssumePrefix then
-      .modelToValidate (fun _ => /- TODO -/ false)
+      .modelToValidate (fun _ _ => /- TODO -/ none)
     else .modelPreserving
   -- Iterating to a fixed point dissolves nested loops as well, so a successful
   -- run leaves none; what replaces them havocs, which is why

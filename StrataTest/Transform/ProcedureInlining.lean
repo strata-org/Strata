@@ -222,7 +222,7 @@ end
 
 private def alphaEquiv (p1 p2:Core.Procedure):Except Format Bool := do
   match p1.body, p2.body with
-  | .structured ss1, .structured ss2 =>
+  | .structured ss1 _, .structured ss2 _ =>
     if ss1.length ≠ ss2.length then
       .error (s!"# statements do not match: in {p1.header.name}, "
           ++ s!"inlined fn one has {ss1.length}"
@@ -581,6 +581,55 @@ info: error: runProgram: cannot apply statement-level transform to CFG body
 #guard_msgs (whitespace := lax) in
 #eval IO.println (inlineShown (translate TestCFGCaller) ["top"])
 
+/-- `p` with the body of its procedure `name` marked opaque (`Body.isOpaque`). -/
+private def markOpaque (name : String) (p : Core.Program) : Core.Program :=
+  { p with decls := p.decls.map fun
+    | .proc q md =>
+      if q.header.name.name == name then
+        .proc { q with body := match q.body with
+          | .structured ss _ => .structured ss true
+          | b => b } md
+      else .proc q md
+    | d => d }
+
+/-- A caller of a callee with a body and a postcondition. -/
+private def TestOpaqueCallee :=
+#strata
+program Core;
+procedure leaf(x : int, out y : int)
+spec { ensures int.gt(y, x); }
+{
+  y := int.add(x, 1);
+};
+procedure top(n : int, out r : int) {
+  call leaf(n, out r);
+};
+#end
+
+-- An opaque callee is inlined as its contract: its postcondition is assumed after the havoc of
+-- its output, and its body is not inlined.
+/--
+info: program Core;
+
+procedure leaf (x : int, out y : int)
+spec {
+  ensures [leaf_ensures_0]: int.gt(y, x);
+  } opaque {
+  y := int.add(x, 1);
+};
+procedure top (n : int, out r : int)
+{
+  $__inline1_leaf$inlined: {
+    var $__inline1_x : int := n;
+    var $__inline1_y : int;
+    assume [$__inline1_leaf_ensures_0]: int.gt($__inline1_y, $__inline1_x);
+    r := $__inline1_y;
+  }
+};
+-/
+#guard_msgs in
+#eval IO.println (inlineShown (markOpaque "leaf" (translate TestOpaqueCallee)) ["top"])
+
 end ProcedureInliningExamples
 
 /-! ## Inlining at the call's type instance
@@ -935,7 +984,8 @@ end CallInstanceTests
 
 A program may declare a type named like the opaque type inlining gives a callee type parameter
 that the call does not determine. Here the axiom makes `$__inlinety_0` a singleton, under which
-the assertion of `Q` holds, so the inlined assertion must be at another type. -/
+the assertion of `Q` holds, so the inlined assertion must be at another type. The checker rejects
+such a call, so the pass is run directly on the unchecked program. -/
 section InlineAvoidsTypeNames
 open Core.CallFixtures Core.TestUtil
 
@@ -961,6 +1011,13 @@ procedure P ()
 };
 -/
 #guard_msgs in
+#eval IO.println (toString (runInlineCall capturedInlineTypePgm).stripMetaData)
+
+/--
+info: Procedure 'P': the call to 'Q' does not determine one of its type
+parameters
+-/
+#guard_msgs (whitespace := lax) in
 #eval match Core.typeCheck .quiet capturedInlineTypePgm with
   | .ok p => IO.println (toString (runInlineCall p).stripMetaData)
   | .error e => IO.println e.message
@@ -971,22 +1028,18 @@ def capturedLocalInlineTypePgm : Program :=
   capturedLocalTypeProg "$__inlinety_0" []
     [Statement.assert "qa" (singletonAll (tv "a")) .empty]
 
-/--
-info:
-Obligation: qa
-Property: assert
-Result: ❌ fail
+-- As in CallElim.lean, the printed program cannot be shown, so the output is checked directly.
+#guard ((toString (runInlineCall capturedLocalInlineTypePgm).stripMetaData).splitOn
+  "forall x : $__inlinety_1 ::").length > 1
 
-Obligation: $__inline1_qa
-Property: assert
-Result: ❓ unknown
+/--
+info: Procedure 'P': the call to 'Q' does not determine one of its type
+parameters
 -/
-#guard_msgs in
+#guard_msgs (whitespace := lax) in
 #eval match Core.typeCheck .quiet capturedLocalInlineTypePgm with
-  | .ok p =>
-    EIO.toIO (fun s => IO.userError s)
-      (Core.verifyProgram (runInlineCall p) { Core.VerifyOptions.default with verbose := .quiet })
-  | .error e => throw (IO.userError e.message)
+  | .ok p => IO.println (toString (runInlineCall p).stripMetaData)
+  | .error e => IO.println e.message
 
 end InlineAvoidsTypeNames
 end

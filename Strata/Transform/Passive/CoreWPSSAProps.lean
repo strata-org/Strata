@@ -221,7 +221,10 @@ theorem wpSSAProgramWith_contractFree {fac : Lambda.Factory CoreLParams}
   suffices ∀ q md, d' = .proc q md → q.spec.preconditions = [] ∧ q.spec.postconditions = [] by
     cases d' <;> simp_all [ListMap.isEmpty]
   rintro q md rfl
-  obtain ⟨d, -, hd⟩ := mapM_except_mem_right _ _ _ hm _ hd'
+  obtain ⟨od, hod, hsome⟩ := List.mem_filterMap.1 hd'
+  obtain ⟨d, -, hd⟩ := mapM_except_mem_right _ _ _ hm _ hod
+  simp only [id] at hsome
+  subst hsome
   split at hd <;> grind [ssaProc, Decl.obligationProc, Except.bind_is_ok, Except.pure_is_ok,
     Except.throw_is_ok]
 
@@ -245,8 +248,7 @@ theorem wpSSAProgramWith_lemma {fac : Lambda.Factory CoreLParams}
   obtain ⟨ob, hob, hlb, hu⟩ := declObligationsProgramWith_lemma hd l md hl
   have hu' := wpProcsProgram_unit hw _ _ hu
     (by unfold ProofObligation.toCheckCmd; split <;> simp [isObligationUnit])
-  obtain ⟨d, hd, hdo⟩ := ssaProgram_mem hs _ _ hu'
-  exact ⟨ob, hob, hlb, Except.ok.inj ((ssaProc_lemmaUnit _ _ _ rfl).symm.trans hd) ▸ hdo⟩
+  exact ⟨ob, hob, hlb, ssaProgram_mem hs _ _ hu' _ (ssaProc_lemmaUnit _ _ _ rfl)⟩
 
 end -- public section
 end WP

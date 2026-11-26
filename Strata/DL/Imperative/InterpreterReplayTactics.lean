@@ -22,7 +22,8 @@ namespace Imperative
 set_option hygiene false in
 /-- `bridge_close X` (`X` = `dBridge`, `feasBridge`, `stopBridge` or `coBridge`, the lemma
     prefix of a bridge predicate): close the bridge goal for a `ReplayM` program by the `X_…`
-    lemmas and the local hypotheses, at reducible transparency, unfolding `resolveGuard`. -/
+    lemmas and the local hypotheses, at reducible transparency, unfolding `resolveGuard` and
+    `Calls.runAbstractCallee`. -/
 macro "bridge_close " b:ident : tactic => do
   let n (s : String) := Lean.mkIdent (b.getId.appendAfter s)
   `(tactic| repeat' with_reducible first
@@ -36,6 +37,7 @@ macro "bridge_close " b:ident : tactic => do
     | split
     | dsimp only
     | unfold resolveGuard
+    | unfold Calls.runAbstractCallee
     | apply $(n "_stepBaseCmdStore")
     | (apply $(n "_runInterp")
        exact fun _ => by assumption)
@@ -44,6 +46,7 @@ macro "bridge_close " b:ident : tactic => do
     | (apply $(n "_runInterpCFG")
        intro _ _ _ _ _ _
        apply $(n "_bind'") (hg := fun _ _ => ?_))
+    | apply $(n "_havocVarList")
     | apply_assumption
     | apply $(n "_stepInterp")
     | apply $(n "_stepInterpCFG"))
@@ -75,14 +78,22 @@ macro "bridge_ind " b:ident : tactic => `(tactic| first
      done)
   | (intro k
      induction k with
-     | zero => intro _ _ c _ _; cases c <;> (rw [stepCmd, stepCmdWith]; simp only [CmdExt.view]) <;> bridge_close $b
+     | zero =>
+       intro _ _ c _ _
+       cases c <;> (rw [stepCmd, stepCmdWith]; simp only [CmdExt.view, dispatchCall, callBody]) <;>
+         bridge_close $b
      | succ k ih =>
        intro d _ c _ _
        cases c
-       · (rw [stepCmd, stepCmdWith]; simp only [CmdExt.view]); bridge_close $b
+       · (rw [stepCmd, stepCmdWith]; simp only [CmdExt.view, dispatchCall, callBody])
+         bridge_close $b
        · cases d
-         · (rw [stepCmd, stepCmdWith]; simp only [CmdExt.view]); bridge_close $b
-         · rename_i d; (rw [stepCmd, stepCmdWith]; simp only [CmdExt.view]); have ih := ih d; bridge_close $b))
+         · (rw [stepCmd, stepCmdWith]; simp only [CmdExt.view, dispatchCall, callBody])
+           bridge_close $b
+         · rename_i d
+           (rw [stepCmd, stepCmdWith]; simp only [CmdExt.view, dispatchCall, callBody])
+           have ih := ih d
+           bridge_close $b))
 
 set_option hygiene false in
 /-- `eff_simp [l] at loc`: `simp` unfolding `choose`/`emit`/`branch` and the `replayRun`

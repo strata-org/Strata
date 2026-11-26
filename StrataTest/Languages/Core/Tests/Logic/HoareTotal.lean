@@ -117,7 +117,7 @@ abbrev upBody : Core.Statements :=
 
 /-- The translated body of `CountUp` is `upBody`: `y := 0` followed by the loop that adds
     `1` to `y` while `y <= 9`. -/
-theorem up_body_eq : (procOf countPgmAST "CountUp").body = .structured upBody := by
+theorem up_body_eq : (procOf countPgmAST "CountUp").body = .structured upBody false := by
   native_decide
 
 /-- Every postcondition clause of `CountUp` is `y == 10`. -/
@@ -209,7 +209,8 @@ private abbrev downBody : Core.Statements :=
 
 /-- The translated body of `CountDown` is `downBody`: `r := n` followed by the loop that
     decreases `r` while `r > 0`. -/
-private theorem down_body_eq : (procOf countPgmAST "CountDown").body = .structured downBody := by
+private theorem down_body_eq : (procOf countPgmAST "CountDown").body = .structured downBody false :=
+    by
   native_decide
 
 /-- Every precondition clause of `CountDown` is `int.ge(n, 0)`. -/

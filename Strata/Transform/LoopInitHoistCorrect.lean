@@ -2105,54 +2105,6 @@ private theorem loopTraceSim_exiting {P : PureExpr}
     (reflTransTrace_to_T hrun).len source target finalEnv label sourceTrace hrel
     (reflTransTrace_to_T hrun) (Nat.le_refl _)
 
-private theorem seqT_run_decomposeE {P : PureExpr}
-    [HasFvar P] [HasBoolOps P]
-    {inner : Config P (Cmd P)} {rest : List (Stmt P (Cmd P))}
-    {final : Config P (Cmd P)} {trace : Trace P}
-    (hrun : ReflTransTraceT (StepStmtE P (EvalCmdE P))
-      (.seq inner rest) trace final) :
-    (∃ inner', final = .seq inner' rest ∧
-      ∃ hinner : ReflTransTraceT (StepStmtE P (EvalCmdE P)) inner trace inner',
-        hinner.len ≤ hrun.len) ∨
-    (∃ middleEnv headTrace tailTrace,
-      trace = headTrace ++ tailTrace ∧
-      ∃ hhead : ReflTransTraceT (StepStmtE P (EvalCmdE P))
-          inner headTrace (.terminal middleEnv),
-      ∃ htail : ReflTransTraceT (StepStmtE P (EvalCmdE P))
-          (.stmts rest middleEnv) tailTrace final,
-      hhead.len < hrun.len ∧ htail.len < hrun.len) ∨
-    (∃ exitLabel exitEnv, final = .exiting exitLabel exitEnv ∧
-      ∃ hexit : ReflTransTraceT (StepStmtE P (EvalCmdE P))
-          inner trace (.exiting exitLabel exitEnv),
-        hexit.len < hrun.len) := by
-  match hrun with
-  | .refl _ => exact .inl ⟨inner, rfl, .refl _, Nat.le_refl _⟩
-  | .step _ emitted _ restTrace _ (.step_seq_inner hstep) htail =>
-      rcases seqT_run_decomposeE htail with
-        ⟨inner', hfinal, hinner, hlen⟩ |
-        ⟨middleEnv, headTrace, tailTrace, htrace, hhead, hrest, hlen⟩ |
-        ⟨exitLabel, exitEnv, hfinal, hexit, hlen⟩
-      · exact .inl ⟨inner', hfinal, .step _ _ _ _ _ hstep hinner,
-          by simp only [ReflTransTraceT.len]; omega⟩
-      · exact .inr (.inl ⟨middleEnv, emitted ++ headTrace, tailTrace,
-          by rw [htrace]; simp [List.append_assoc],
-          .step _ _ _ _ _ hstep hhead, hrest,
-          ⟨by simp only [ReflTransTraceT.len]; omega,
-           by simp only [ReflTransTraceT.len]; omega⟩⟩)
-      · exact .inr (.inr ⟨exitLabel, exitEnv, hfinal,
-          .step _ _ _ _ _ hstep hexit,
-          by simp only [ReflTransTraceT.len]; omega⟩)
-  | .step _ _ _ restTrace _ .step_seq_done htail =>
-      exact .inr (.inl ⟨_, [], restTrace, by simp, .refl _, htail,
-        ⟨by simpa [ReflTransTraceT.len, Nat.add_comm] using Nat.zero_lt_succ htail.len,
-         by simp [ReflTransTraceT.len]⟩⟩)
-  | .step _ _ _ _ _ .step_seq_exit htail =>
-      match htail with
-      | .refl _ => exact .inr (.inr ⟨_, _, rfl, .refl _, by simp [ReflTransTraceT.len]⟩)
-      | .step _ _ _ _ _ hstep _ => exact (Imperative.StepStmtE.exiting_false hstep).elim
-termination_by hrun.len
-decreasing_by all_goals simp only [ReflTransTraceT.len]; omega
-
 private theorem loopTraceSim_prefix_fuel {P : PureExpr}
     [HasFvar P] [HasBoolOps P]
     {R B : Env P → Env P → Prop}

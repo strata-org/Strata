@@ -135,11 +135,11 @@ end
 theorem betaReduceProgram_proc {p : Program} {q' : Procedure} {md : MetaData Expression}
     (h : Decl.proc q' md ∈ (betaReduceProgram p).decls) :
     ∃ q, Decl.proc q md ∈ p.decls ∧ q'.header = q.header ∧
-      ∀ ss', q'.body = .structured ss' → ∃ ss, q.body = .structured ss ∧
+      ∀ ss' o, q'.body = .structured ss' o → ∃ ss, q.body = .structured ss o ∧
         ∀ D df, Block.defUseWellFormed D df ss = true →
           Block.defUseWellFormed D df ss' = true := by
   obtain ⟨_ | _ | _ | _ | _ | _ | _, hd, ⟨⟩⟩ := List.mem_map.1 h
-  refine ⟨_, hd, rfl, fun ss' hb => ?_⟩
+  refine ⟨_, hd, rfl, fun ss' _ hb => ?_⟩
   split at hb <;> cases hb
   exact ⟨_, ‹_›, fun D df => reduceBlock_defUse D df _⟩
 

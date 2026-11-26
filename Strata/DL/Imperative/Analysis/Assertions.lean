@@ -30,15 +30,15 @@ This module provides two related formulations:
    `AllAssertsValidOnTraces` cover whole-trace validity.
 
 2. **`Hoare.TripleWith`.** A partial-correctness triple `{Pre} s {Post}` requires
-   every terminating or exiting `EventLang` run to emit an assertion-valid
-   trace, and requires `Post` whenever that trace is `Trace.Reachable`.
-   Conditions are interpreted by a supplied `ConditionInterp P`.
+   every finite `EventLang` execution, finished or not, to emit an assertion-valid
+   trace, and requires `Post` at the end of every terminating or exiting run whose
+   trace is `Trace.Reachable`. Conditions are interpreted by a supplied
+   `ConditionInterp P`.
 
 The Hoare-triple definitions and structural rules live in
-`Strata.DL.Imperative.Logic.HoareTemplate`. A triple validates completed traces;
-`AllAssertsValidOnTracesWhen` quantifies over every finite prefix, so the two
-notions are intentionally distinct without an additional progress or extension
-hypothesis.
+`Strata.DL.Imperative.Logic.HoareTemplate`. With the trivial postcondition, a triple is
+`AllAssertsValidOnTracesWhen` over the entries its precondition and the language's gate
+admit (`Strata.Logic.Hoare.TripleWith.true_iff_allAssertsValidOnTracesWhen`).
 
 It also defines `Analysis.ValidOnTracesVerifier`, a verifier that passes only
 statements whose traces have every assertion valid.

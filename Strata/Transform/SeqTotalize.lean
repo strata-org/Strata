@@ -66,8 +66,8 @@ private def totalizeCFG (g : DetCFG) : DetCFG :=
 private def totalizeProcedure (proc : Procedure) : Procedure :=
   let proc := proc.mapExprs totalize
   match proc.body with
-  | .cfg g => { proc with body := .cfg (totalizeCFG g) }
-  | .structured _ => proc
+  | .cfg g o => { proc with body := .cfg (totalizeCFG g) o }
+  | _ => proc
 
 /-- Rewrite every expression of the program, and report whether anything changed.
     It leaves the transform state, cached analyses included, as it is: renaming an

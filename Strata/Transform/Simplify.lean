@@ -523,8 +523,8 @@ def simplifySpec (base : Ctx) (proc : Procedure) : Procedure :=
 def simplifyProcedure (base : Ctx) (proc : Procedure) : Procedure :=
   let proc := simplifySpec base proc
   match proc.body with
-  | .cfg _ => proc
-  | .structured ss => { proc with body := .structured (checkedBody base proc ss) }
+  | .cfg _ _ | .abstract => proc
+  | .structured ss o => { proc with body := .structured (checkedBody base proc ss) o }
 
 /-- Whether Simplify keeps a procedure's original body: its simplified body, swept with the
     liveness of the simplified specification as `simplifyProcedure` sweeps it, fails the
@@ -532,8 +532,8 @@ def simplifyProcedure (base : Ctx) (proc : Procedure) : Procedure :=
 def bodyFallsBack (base : Ctx) (proc : Procedure) : Bool :=
   let proc := simplifySpec base proc
   match proc.body with
-  | .cfg _ => false
-  | .structured ss => !gateOK base.factory ss (sweptBody base proc ss)
+  | .cfg _ _ | .abstract => false
+  | .structured ss _ => !gateOK base.factory ss (sweptBody base proc ss)
 
 /-- Simplify a lemma's formula under its outer universal quantifiers.
 
@@ -578,7 +578,8 @@ end Core.Simplify
     over-approximated, so no obligation becomes easier than it was.
 
     It requires bodies without calls; every pipeline that runs it eliminates them first.
-    It keeps a CFG body as it is and simplifies its procedure's contract.
+    It keeps a CFG body as it is and simplifies its procedure's contract, so it preserves
+    `noCFGCycles`.
     It accepts loops: a loop body is simplified knowing nothing about the variables it
     writes, and the unit tests pin that behavior. Its correctness theorem covers
     loop-free bodies only, and states that as a hypothesis. It also requires that

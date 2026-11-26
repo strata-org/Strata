@@ -118,14 +118,14 @@ private def handMarkedPgm : Core.Program :=
 #guard_msgs in
 #eval runVerify copyNamedTruePgm withoutMono
 
-/-! ## The default order rejects the name
+/-! ## The default order verifies the user's function
 
-Monomorphization rejects every input name containing `#`, so the default order refuses the
-user's name instead of verifying the program. -/
+Monomorphization keeps the user's name and names its own copies apart from it
+(`NameMangling.choosePrefix`), and the user's function carries no copy mark, so the default
+order encodes it from its own declaration: the postcondition that is false under the user's
+body fails. -/
 
-/--
-info: verify error: MonomorphizeFunctions: the name '$__mono#Int.Add#int' contains '#', which is reserved for monomorphized copies; if it is a copy, monomorphizeFunctions ran on its own output, and it must run once per pipeline
--/
+/-- info: falseUnderUser: ❌ fail -/
 #guard_msgs in
 #eval runVerify copyNamedPgm
 
@@ -237,7 +237,8 @@ private def unrollingWithoutMono : Option (Core.ValidatedPipeline Core.ProgramFa
   (Core.ValidatedPipeline.ofList
     (replaceMono ((Core.corePipelinePhases Core.VerifyOptions.quiet).filter
         fun p => p.phase.name != "commonSubexprElim") assertNoPoly
-      ++ [Core.passFunctionInlining, Core.passBetaReduce, Core.passUnrollBoundedQuantifiers])
+      ++ [Core.passFunctionInlining, Core.passBetaReduce, Core.passUnrollBoundedQuantifiers,
+          Core.passLambdaLift])
     ).toOption
 
 #guard unrollingWithoutMono.isSome

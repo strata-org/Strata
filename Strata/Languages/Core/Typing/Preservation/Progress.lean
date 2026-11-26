@@ -36,9 +36,11 @@ output formal at the value of the caller variable it returns to, and a run keeps
 its type.
 
 Key results:
-* `CalleesStructured`: every procedure of the program has a structured body.
-* `CalleesTyVarsScoped`: no undeclared type variables. Every type variable in a structured
-  body's local declarations and call type arguments is a type parameter of its procedure.
+* `CalleesStructured`: every procedure of the program has a structured body or no body. A call to
+  an opaque procedure (`Body.isOpaque`) runs its contract and steps.
+* `ProgramWellTyped.calleesTyVarsScoped`: no undeclared type variables. Every type variable in a
+  structured body's local declarations and call type arguments is a type parameter of its
+  procedure; the typing relation of a procedure requires this.
 * `CallDoesNotFinish`: a call is next to run, its entry succeeds, and its callee body has no
   complete run.
 * `callExit_check_holds`: the values a well-typed call returns pass the call's check against the
@@ -52,8 +54,6 @@ Key results:
   scopes. The procedures may have type parameters: a call runs an instance of its callee at
   ground type arguments, and `reachable_configs_progress_forever` starts a procedure at any
   ground instance.
-
-These results hold for programs with no undeclared type variables (`CalleesTyVarsScoped`).
 -/
 
 namespace Core
@@ -216,8 +216,7 @@ private theorem call_proc_wellTyped {C0 : LContext CoreLParams} {ts0 : TypeScope
     (hP : ProgramWellTyped C0 ts0 P) (hfind : Program.Procedure.find? P n = some proc)
     (hπ : ∀ q, Program.Procedure.find? P n = some q → π n = some q) :
     π n = some proc ∧ ∃ C1, ProcWellTyped P C1 ts0 proc := by
-  obtain ⟨md0, hmem, -⟩ := Program.Procedure.find?_mem_decls P _ _ hfind
-  exact ⟨hπ proc hfind, hP.procWellTyped hmem⟩
+  exact ⟨hπ proc hfind, hP.procWellTyped_of_find? hfind⟩
 
 /-- The callee of a call, found in a procedure table that contains the procedures of a well-typed
     program, is an instance of the named procedure that keeps the names of its formals. -/
@@ -236,7 +235,8 @@ private theorem call_callee_instance {C0 : LContext CoreLParams} {ts0 : TypeScop
   exact ⟨hπ0, hproc, hinst, Procedure.instantiateTypes_keys hinst⟩
 
 /-- The callee of a well-typed call, instantiated at the call's type arguments with a
-    substitution `S` applied, exists and has a structured body. -/
+    substitution `S` applied, exists, and has a structured body that is not opaque or is opaque
+    (`Body.isOpaque`). -/
 private theorem call_instance {C0 : LContext CoreLParams} {ts0 : TypeScopes} {P : Program}
     {C : LContext CoreLParams} {S : Subst} {ts ts' : TypeScopes}
     {π : String → Option Procedure} {n : String} {tyArgs tyArgs' : Option (List Expression.Ty)}
@@ -245,11 +245,10 @@ private theorem call_instance {C0 : LContext CoreLParams} {ts0 : TypeScopes} {P 
     (htyArgs : tyArgs' = tyArgs.map (·.map (mapLTyTys (LMonoTy.subst S))))
     (hπ : ∀ q, Program.Procedure.find? P n = some q → π n = some q)
     (hstruct : CalleesStructured P) :
-    ∃ p ss, Calls.typeInstantiatedCallee π n tyArgs' = some p ∧ p.body = .structured ss := by
+    ∃ p, Calls.typeInstantiatedCallee π n tyArgs' = some p ∧
+      ((∃ ss, p.body = .structured ss false) ∨ p.body.isOpaque = true) := by
   obtain ⟨proc, σ, hfind, -, -, -, -, htyArgs0⟩ := hc.call_inv
   obtain ⟨hπ0, C1, hproc⟩ := call_proc_wellTyped hP hfind hπ
-  obtain ⟨ss, hss⟩ := hstruct n proc hfind
-  have hinits : proc.initTypesMono = true := hproc.initTypesMono hss
   have htyArgs' := mapped_tyArgs htyArgs0 htyArgs
   subst htyArgs'
   have hlen : (proc.header.typeArgs.map (fun a => LTy.forAll []
@@ -261,9 +260,18 @@ private theorem call_instance {C0 : LContext CoreLParams} {ts0 : TypeScopes} {P 
     intro ty hty
     obtain ⟨a, -, rfl⟩ := List.mem_map.1 hty
     exact ⟨_, rfl⟩
-  obtain ⟨inst, ss', hinst, hbody⟩ :=
-    Procedure.instantiateTypes_structured hlen htysMono hinits hss
-  refine ⟨inst, ss', (Procedure.typeInstantiatedCallee_eq_some_iff hπ0).2 ?_, hbody⟩
+  obtain ⟨inst, hinst, hbody⟩ : ∃ inst, proc.instantiateTypes _ = some inst ∧
+      ((∃ ss, inst.body = .structured ss false) ∨ inst.body.isOpaque = true) := by
+    rcases hstruct n proc hfind with ⟨ss, opq, hss⟩ | habs
+    · obtain ⟨inst, ss', hinst, hbody⟩ :=
+        Procedure.instantiateTypes_structured hlen htysMono (hproc.initTypesMono hss) hss
+      refine ⟨inst, hinst, ?_⟩
+      cases opq
+      · exact .inl ⟨ss', hbody⟩
+      · exact .inr (by rw [hbody]; rfl)
+    · obtain ⟨inst, hinst, hbody⟩ := Procedure.instantiateTypes_abstract hlen htysMono habs
+      exact ⟨inst, hinst, .inr (by rw [hbody]; rfl)⟩
+  refine ⟨inst, (Procedure.typeInstantiatedCallee_eq_some_iff hπ0).2 ?_, hbody⟩
   rw [Option.getD_some]
   exact hinst
 
@@ -287,7 +295,8 @@ private theorem call_typeParams_ground {proc : Procedure} {σ : List (TyIdentifi
 private theorem structured_run_slot {π : String → Option Procedure} {p : Procedure}
     {ss : List Statement} {f : Expression.Factory} {σAO σEnd : CoreStore}
     {evs : Trace Expression} {z : Expression.Ident} {pc : Expression.Val}
-    (hbody : p.body = .structured ss) (hrun : CoreBodyExecE π p.body ⟨σAO, f⟩ σEnd evs)
+    {opq : Bool} (hbody : p.body = .structured ss opq)
+    (hrun : CoreBodyExecE π p.body ⟨σAO, f⟩ σEnd evs)
     (hσAO : σAO z = some pc) (hpcv : HasVal.value f pc) :
     ∃ v ty, σEnd z = some v ∧ HasVal.valueOfTy f pc ty ∧ HasVal.valueOfTy f v ty := by
   obtain ⟨ρ', hstar, hρ', hfac⟩ := CoreBodyExecE.structured_terminal hbody hrun
@@ -298,20 +307,31 @@ private theorem structured_run_slot {π : String → Option Procedure} {p : Proc
   rw [hfac] at hvty
   exact ⟨v, ty, hv, hpcty, hvty⟩
 
+/-- A well-typed program has no undeclared type variables: in every procedure with a structured
+    body, each type variable in a local declaration's type, or in a type argument of a call, is a
+    type parameter of the procedure. The typing relation of a procedure requires this of the
+    declarations and call type arguments of its body. -/
+theorem ProgramWellTyped.calleesTyVarsScoped {C0 : LContext CoreLParams} {ts0 : TypeScopes}
+    {P : Program} (h : ProgramWellTyped C0 ts0 P) : CalleesTyVarsScoped P := by
+  intro n p ss opq hfind hbody
+  obtain ⟨C, hproc⟩ := h.procWellTyped_of_find? hfind
+  exact hproc.declTysScoped hbody
+
 /-- The body of a callee, with a substitution that sends each type parameter of its procedure to
     a ground type applied, is ground: its declarations are at monotypes whose type variables are
     type parameters. -/
-private theorem body_ground {P : Program}
+private theorem body_ground {C0 : LContext CoreLParams} {ts0 : TypeScopes} {P : Program}
     {C C' : LContext CoreLParams} {ts ts' : TypeScopes} {n : String} {proc : Procedure}
-    {ss : List Statement} {S1 : Subst} (hscoped : CalleesTyVarsScoped P)
-    (hfind : Program.Procedure.find? P n = some proc) (hbody : proc.body = .structured ss)
+    {ss : List Statement} {S1 : Subst} (hP : ProgramWellTyped C0 ts0 P)
+    (hfind : Program.Procedure.find? P n = some proc) {opq : Bool}
+    (hbody : proc.body = .structured ss opq)
     (hss : StatementsWellTyped P C ts [] ss C' ts')
     (hS1 : ∀ a ∈ proc.header.typeArgs, (LMonoTy.subst S1 (.ftvar a)).IsGround) :
     Statements.Ground (mapStmtsTys (LMonoTy.subst S1) ss) := by
   have hscopedTys : Statements.AllDeclTys (fun ty => ∃ τ, ty = .forAll [] τ ∧
       ∀ a ∈ LMonoTy.freeVars τ, a ∈ proc.header.typeArgs) ss := by
     refine Statements.AllDeclTys.and_imp (fun ty hscope hm => ?_) ss
-      (hscoped n proc ss hfind hbody) (StatementsWellTyped.allDeclTys_mono hss)
+      (hP.calleesTyVarsScoped n proc ss opq hfind hbody) (StatementsWellTyped.allDeclTys_mono hss)
     obtain ⟨τ, rfl⟩ := hm
     exact ⟨τ, rfl, hscope τ rfl⟩
   exact Statements.ground_mapStmtsTys hS1 ss hscopedTys
@@ -625,28 +645,29 @@ private theorem callEntry_exists {C0 : LContext CoreLParams} {ts0 : TypeScopes} 
       exact hpc
     exact ⟨pc, hAO', hpcv⟩
 
-/-- The values a call returns pass the call's check against the caller's variables. The call is
-    of the program's procedure `n` (the procedure table contains the program's procedure `n`),
-    instantiated at the call's type arguments, with a structured body. If the body runs from the
-    call frame to the end store `σEnd`, then the values read from the output formals there each
-    have the type of the value the corresponding caller variable holds.
+/-- The values a call returns pass the call's check against the caller's variables, for an end
+    store `σEnd` that keeps each slot of the call frame `σAO` at the type of the value it held.
+    The call is of the program's procedure `n` (the procedure table contains the program's
+    procedure `n`), instantiated at the call's type arguments. The values read from the output
+    formals in `σEnd` each have the type of the value the corresponding caller variable holds.
 
     The program being well typed ensures that the callee's output names are distinct and that
     none is named like the saved copy of an `inout` formal. -/
-theorem callExit_check_holds {C0 : LContext CoreLParams} {ts0 : TypeScopes} {P : Program}
+private theorem callExit_check_holds_of_slots {C0 : LContext CoreLParams} {ts0 : TypeScopes}
+    {P : Program}
     {π : String → Option Procedure}
     {n : String} {tyArgs : Option (List Expression.Ty)} {callArgs : List (CallArg Expression)}
-    {p : Procedure} {ss : List Statement}
-    {f : Expression.Factory} {σ σAO σEnd : CoreStore} {evs : Trace Expression}
+    {p : Procedure}
+    {f : Expression.Factory} {σ σAO σEnd : CoreStore}
     {outputVals : List Expression.Val}
     (hP : ProgramWellTyped C0 ts0 P)
     {proc₀ : Procedure} (hfind : Program.Procedure.find? P n = some proc₀)
     (hmatch : WF.ArgsMatchSignature proc₀ callArgs)
     (hπ : ∀ q, Program.Procedure.find? P n = some q → π n = some q)
     (hcallee : Calls.typeInstantiatedCallee π n tyArgs = some p)
-    (hbody : p.body = .structured ss)
     (hentry : CallEntry f σ p callArgs σAO)
-    (hrun : CoreBodyExecE π p.body ⟨σAO, f⟩ σEnd evs)
+    (hslots : ∀ z pc, σAO z = some pc → HasVal.value f pc →
+      ∃ v ty, σEnd z = some v ∧ HasVal.valueOfTy f pc ty ∧ HasVal.valueOfTy f v ty)
     (hread : ReadValues f σEnd p.header.outputs.keys outputVals) :
     List.Rel₂ (HasVal.valueOfStoredTy (P := Expression) f σ) (CallArg.getLhs callArgs)
       outputVals := by
@@ -750,9 +771,37 @@ theorem callExit_check_holds {C0 : LContext CoreLParams} {ts0 : TypeScopes} {P :
           exact InitStatesSomeMonotone hσAz hinitIO
         exact ⟨v1, hσw, hpval, hAO'⟩
   obtain ⟨pc, hσw, hpcval, hσAOz⟩ := hslot
-  obtain ⟨v2, ty, hv2, hpcty, hv2ty⟩ := structured_run_slot hbody hrun hσAOz hpcval
+  obtain ⟨v2, ty, hv2, hpcty, hv2ty⟩ := hslots z pc hσAOz hpcval
   obtain rfl : v2 = v' := Option.some.inj (hv2.symm.trans hzEnd)
   exact ⟨pc, ty, hσw, hpcty, hv2ty⟩
+
+/-- The values a call returns pass the call's check against the caller's variables. The call is
+    of the program's procedure `n` (the procedure table contains the program's procedure `n`),
+    instantiated at the call's type arguments, with a structured body. If the body runs from the
+    call frame to the end store `σEnd`, then the values read from the output formals there each
+    have the type of the value the corresponding caller variable holds.
+
+    The program being well typed ensures that the callee's output names are distinct and that
+    none is named like the saved copy of an `inout` formal. -/
+theorem callExit_check_holds {C0 : LContext CoreLParams} {ts0 : TypeScopes} {P : Program}
+    {π : String → Option Procedure}
+    {n : String} {tyArgs : Option (List Expression.Ty)} {callArgs : List (CallArg Expression)}
+    {p : Procedure} {ss : List Statement}
+    {f : Expression.Factory} {σ σAO σEnd : CoreStore} {evs : Trace Expression}
+    {outputVals : List Expression.Val}
+    (hP : ProgramWellTyped C0 ts0 P)
+    {proc₀ : Procedure} (hfind : Program.Procedure.find? P n = some proc₀)
+    (hmatch : WF.ArgsMatchSignature proc₀ callArgs)
+    (hπ : ∀ q, Program.Procedure.find? P n = some q → π n = some q)
+    (hcallee : Calls.typeInstantiatedCallee π n tyArgs = some p)
+    {opq : Bool} (hbody : p.body = .structured ss opq)
+    (hentry : CallEntry f σ p callArgs σAO)
+    (hrun : CoreBodyExecE π p.body ⟨σAO, f⟩ σEnd evs)
+    (hread : ReadValues f σEnd p.header.outputs.keys outputVals) :
+    List.Rel₂ (HasVal.valueOfStoredTy (P := Expression) f σ) (CallArg.getLhs callArgs)
+      outputVals :=
+  callExit_check_holds_of_slots hP hfind hmatch hπ hcallee hentry
+    (fun _ _ hσAO hpcv => structured_run_slot hbody hrun hσAO hpcv) hread
 
 /-- A complete run of the callee body of a well-typed call can be written back: the callee's
     final store binds every output formal, and the caller's result variables are distinct and
@@ -761,18 +810,18 @@ private theorem callExit_exists {C0 : LContext CoreLParams} {ts0 : TypeScopes} {
     {C : LContext CoreLParams} {S : Subst} {ts ts' : TypeScopes} {π : String → Option Procedure}
     {n : String} {tyArgs0 tyArgs : Option (List Expression.Ty)}
     {callArgs0 callArgs : List (CallArg Expression)} {md : MetaData Expression} {p : Procedure}
-    {ss : List Statement} {f : Expression.Factory} {σ σAO σEnd : CoreStore}
-    {evs : Trace Expression}
+    {f : Expression.Factory} {σ σAO σEnd : CoreStore}
     (hP : ProgramWellTyped C0 ts0 P)
     (hc : CmdExtWellTyped C P ts (.call n tyArgs0 callArgs0 md) ts')
     (htyArgs : tyArgs = tyArgs0.map (·.map (mapLTyTys (LMonoTy.subst S))))
     (hargs : callArgs = callArgs0.map (CallArg.mapInput (mapExprTys (LMonoTy.subst S))))
     (hπ : ∀ q, Program.Procedure.find? P n = some q → π n = some q)
     (hcallee : Calls.typeInstantiatedCallee π n tyArgs = some p)
-    (hbody : p.body = .structured ss) (hentry : CallEntry f σ p callArgs σAO)
+    (hentry : CallEntry f σ p callArgs σAO)
     (hbound : ∀ z ∈ p.header.outputs.keys, ∃ v, σAO z = some v ∧ HasVal.value f v)
     (hs : StoreHasTyping f σ (ts.instVarTyping S))
-    (hrun : CoreBodyExecE π p.body ⟨σAO, f⟩ σEnd evs) :
+    (hslots : ∀ z pc, σAO z = some pc → HasVal.value f pc →
+      ∃ v ty, σEnd z = some v ∧ HasVal.valueOfTy f pc ty ∧ HasVal.valueOfTy f v ty) :
     ∃ σ', CallExit f σ p callArgs σEnd σ' := by
   obtain ⟨proc, σ0, hfind, hmatch, hnodup, hlhs, -, -, -⟩ := hc.call_inv_inst htyArgs hargs
   obtain ⟨-, -, -, -, houtK⟩ := call_callee_instance hP hfind hπ hcallee
@@ -780,9 +829,9 @@ private theorem callExit_exists {C0 : LContext CoreLParams} {ts0 : TypeScopes} {
     apply ReadValues.exists_of_bound
     intro z hz
     obtain ⟨pc, hσAO, hpcv⟩ := hbound z hz
-    obtain ⟨v2, ty, hv2, -, hv2ty⟩ := structured_run_slot hbody hrun hσAO hpcv
+    obtain ⟨v2, ty, hv2, -, hv2ty⟩ := hslots z pc hσAO hpcv
     exact ⟨v2, hv2, LawfulHasVal.valueOfTy_isVal f v2 ty hv2ty⟩
-  have hrel := callExit_check_holds hP hfind hmatch hπ hcallee hbody hentry hrun hread
+  have hrel := callExit_check_holds_of_slots hP hfind hmatch hπ hcallee hentry hslots hread
   have hlen : (CallArg.getLhs callArgs).length = outputVals.length := by
     rw [← ReadValuesLength hread, houtK, hmatch.resultCount, ListMap.keys.length]
   have hlhsDef : SemanticStore.varsDefined (· ∈ CallArg.getLhs callArgs) σ := by
@@ -795,7 +844,8 @@ private theorem callExit_exists {C0 : LContext CoreLParams} {ts0 : TypeScopes} {
     Calls.updateStates_bindPositional σ _ outputVals hlen hlhsDef, hrel⟩
 
 /-- A well-typed call, in a program whose procedure table contains the program's callee
-    and holds only structured bodies, either steps or runs a callee that does not finish. The
+    and holds only structured bodies or none, either steps or runs a callee that does not finish:
+    a call to an opaque callee steps by its contract (`call_abstract_sem`). The
     call carries ground type arguments and runs in a store that conforms to its scopes. -/
 private theorem CmdExtWellTyped.call_progress {C0 : LContext CoreLParams} {ts0 : TypeScopes}
     {P : Program} {C : LContext CoreLParams} {S : Subst} {ts ts' : TypeScopes}
@@ -811,14 +861,31 @@ private theorem CmdExtWellTyped.call_progress {C0 : LContext CoreLParams} {ts0 :
     (hs : StoreHasTyping ρ.factory ρ.store (ts.instVarTyping S)) :
     (∃ evs cfg', CoreStepE π (.stmt (.cmd (.call n tyArgs callArgs md)) ρ) evs cfg') ∨
       CallDoesNotFinish π (.stmt (.cmd (.call n tyArgs callArgs md)) ρ) := by
-  obtain ⟨p, ss, hcallee, hbody⟩ := call_instance hP hc htyArgs hπ hstruct
+  obtain ⟨p, hcallee, hbody⟩ := call_instance hP hc htyArgs hπ hstruct
   obtain ⟨σAO, hentry, hbound⟩ := callEntry_exists hP hc htyArgs hargs hπ hcallee hground hs
-  by_cases hrun : ∃ σEnd evs, CoreBodyExecE π p.body ⟨σAO, ρ.factory⟩ σEnd evs
-  · obtain ⟨σEnd, evs, hrun⟩ := hrun
+  rcases hbody with ⟨ss, hbody⟩ | ho
+  · have hno : p.body.isOpaque = false := by rw [hbody]; rfl
+    by_cases hrun : ∃ σEnd evs, CoreBodyExecE π p.body ⟨σAO, ρ.factory⟩ σEnd evs
+    · obtain ⟨σEnd, evs, hrun⟩ := hrun
+      obtain ⟨σ', hexit⟩ := callExit_exists hP hc htyArgs hargs hπ hcallee hentry hbound hs
+        (fun _ _ hσAO hpcv => structured_run_slot hbody hrun hσAO hpcv)
+      exact .inl ⟨_, _, .step_cmd (.call_sem hcallee hno hentry hrun hexit)⟩
+    · exact .inr (.call hcallee hno hentry hrun)
+  · -- An opaque callee runs its contract: the havoc of the outputs keeps their entry values,
+    -- and the call frame itself is written back.
+    have htyped (z) (pc) (hσAO : σAO z = some pc) (hpcv : HasVal.value ρ.factory pc) :
+        ∃ v ty, σAO z = some v ∧ HasVal.valueOfTy ρ.factory pc ty ∧
+          HasVal.valueOfTy ρ.factory v ty :=
+      (LawfulHasVal.value_typed ρ.factory pc hpcv).elim fun ty hty => ⟨pc, ty, hσAO, hty, hty⟩
+    have hhavoc : HavocVars ρ.factory σAO
+        (ProcedureHeader.outputParams (P := Expression) p.header) σAO :=
+      HavocVarsId fun z hz => by
+        obtain ⟨pc, hσAO, hpcv⟩ := hbound z hz
+        obtain ⟨v, ty, hv, hty, -⟩ := htyped z pc hσAO hpcv
+        exact ⟨v, ty, hv, (Option.some.inj (hσAO.symm.trans hv)) ▸ hty⟩
     obtain ⟨σ', hexit⟩ :=
-      callExit_exists hP hc htyArgs hargs hπ hcallee hbody hentry hbound hs hrun
-    exact .inl ⟨_, _, .step_cmd (.call_sem hcallee hentry hrun hexit)⟩
-  · exact .inr (.call hcallee hentry hrun)
+      callExit_exists hP hc htyArgs hargs hπ hcallee hentry hbound hs htyped
+    exact .inl ⟨_, _, .step_cmd (.call_abstract_sem hcallee ho hentry hhavoc hexit)⟩
 
 /-- The body of the callee of a call, started in the frame the call builds, runs through
     well-typed configurations. The call is well typed, with a type substitution `S` applied, in
@@ -840,19 +907,24 @@ private theorem call_callee_reachable {C0 : LContext CoreLParams} {ts0 : TypeSco
     (htyArgs : tyArgs = tyArgs0.map (·.map (mapLTyTys (LMonoTy.subst S))))
     (hargs : callArgs = callArgs0.map (CallArg.mapInput (mapExprTys (LMonoTy.subst S))))
     (hπ : ∀ q, Program.Procedure.find? P n = some q → π n = some q) (hstruct : CalleesStructured P)
-    (hscoped : CalleesTyVarsScoped P)
     (hground : ∀ tys, tyArgs = some tys → ∀ ty ∈ tys, LTy.GroundMono ty)
-    (hcallee : Calls.typeInstantiatedCallee π n tyArgs = some p)
+    (hcallee : Calls.typeInstantiatedCallee π n tyArgs = some p) (hno : p.body.isOpaque = false)
     (hentry : CallEntry ρ.factory ρ.store p callArgs σAO)
     (hs : StoreHasTyping ρ.factory ρ.store (ts.instVarTyping S)) :
-    ∃ ss C1 S1 tsr, p.body = .structured ss ∧ ∀ evs cfg,
+    ∃ ss C1 S1 tsr, p.body = .structured ss false ∧ ∀ evs cfg,
       CoreStepStarE π (.stmt (Stmt.block "" ss #[]) ⟨σAO, ρ.factory⟩) evs cfg →
       cfg = .stmt (Stmt.block "" ss #[]) ⟨σAO, ρ.factory⟩ ∨
         ConfigWellTyped P ρ.factory S1 [] cfg C1 tsr tsr := by
   obtain ⟨proc, σ0, hfind, hmatch, -, -, hin, hout, htyArgs'⟩ := hc.call_inv_inst htyArgs hargs
   obtain ⟨-, ⟨C1, hproc⟩, hinst, hinK, houtK⟩ := call_callee_instance hP hfind hπ hcallee
   obtain ⟨ms, hms, hinp, houtp, hbodyp⟩ := Procedure.instantiateTypes_spec hinst
-  obtain ⟨ss, hbody⟩ := hstruct n proc hfind
+  obtain ⟨ss, hbody⟩ : ∃ ss, proc.body = .structured ss false := by
+    rcases hstruct n proc hfind with ⟨ss, opq, hss⟩ | habs
+    · rw [hbodyp ss opq hss] at hno
+      cases hno
+      exact ⟨ss, hss⟩
+    · rw [Procedure.instantiateTypes_body_abstract hinst habs] at hno
+      cases hno
   have hmsEq : ms = proc.header.typeArgs.map (fun a => LMonoTy.subst S
       (LMonoTy.subst (Strata.Util.HMaps.ofScopes [σ0]) (.ftvar a))) := by
     have hmapM : (tyArgs.getD []).mapM LTy.toMonoType? = some (proc.header.typeArgs.map
@@ -922,19 +994,20 @@ private theorem call_callee_reachable {C0 : LContext CoreLParams} {ts0 : TypeSco
   have hbt := hproc.bodyTyped
   rw [hbody] at hbt
   cases hbt with
-  | structured _ C2 ts2 hss =>
+  | structured _ C2 ts2 _ hss =>
     have hS1ground : ∀ a ∈ proc.header.typeArgs, (LMonoTy.subst S1 (.ftvar a)).IsGround := by
       intro a ha
       rw [hS1g, LMonoTy.subst_ofScopes_zip_map_ftvar (fun b => LMonoTy.subst S
         (LMonoTy.subst (Strata.Util.HMaps.ofScopes [σ0]) (.ftvar b))) hproc.typeArgsNodup ha]
       exact hparams a ha
-    exact ⟨mapStmtsTys (LMonoTy.subst S1) ss, C1, S1, procBodyScopes ts0 proc, hbodyp ss hbody,
+    exact ⟨mapStmtsTys (LMonoTy.subst S1) ss, C1, S1, procBodyScopes ts0 proc,
+      hbodyp ss false hbody,
       reachable_configs_wellTyped_of_typed S1 hss rfl
-        (body_ground hscoped hfind hbody hss hS1ground) hstoreR hfreshR⟩
+        (body_ground hP hfind hbody hss hS1ground) hstoreR hfreshR⟩
 
 /-- One step of progress. A well-typed configuration, in a program whose procedure table contains
-    the program's procedures and whose procedures have structured bodies, is finished, is exiting,
-    steps, or runs next a call that does not finish. -/
+    the program's procedures and whose procedures have structured bodies or none, is finished, is
+    exiting, steps, or runs next a call that does not finish. -/
 theorem coreStep_progress {C0 : LContext CoreLParams} {ts0 : TypeScopes} {P : Program}
     {π : String → Option Procedure} {F : Expression.Factory} {S : Subst} {L : List String}
     {cfg : CoreConfig} {C' : LContext CoreLParams} {ts' tsf : TypeScopes}
@@ -1043,7 +1116,6 @@ private theorem callRunsForever_of_wellTyped {C0 : LContext CoreLParams} {ts0 : 
     (hP : ProgramWellTyped C0 ts0 P) (ht0 : ∀ x, ts0.find? x = none)
     (hπ : ∀ (n : String) p, Program.Procedure.find? P n = some p → π n = some p)
     (hstruct : CalleesStructured P)
-    (hscoped : CalleesTyVarsScoped P)
     (hty : ConfigWellTyped P F S L cfg C' ts' tsf) (hcall : CallDoesNotFinish π cfg) :
     CallRunsForever π cfg := by
   refine CallRunsForever.coinduct π
@@ -1051,7 +1123,7 @@ private theorem callRunsForever_of_wellTyped {C0 : LContext CoreLParams} {ts0 : 
     ?_ cfg ⟨⟨F, S, L, C', ts', tsf, hty⟩, hcall⟩
   rintro a ⟨⟨F, S, L, C', ts', tsf, hty⟩, hcdnf⟩
   cases hcdnf with
-  | @call n tyArgs' callArgs' md ρ p σAO hcallee hentry hrun =>
+  | @call n tyArgs' callArgs' md ρ p σAO hcallee hno hentry hrun =>
     cases hty with
     | stmt hfac hmap hstore hfresh hfloor hgr hstmt =>
       subst hfac
@@ -1061,7 +1133,7 @@ private theorem callRunsForever_of_wellTyped {C0 : LContext CoreLParams} {ts0 : 
       | cmd =>
         rename_i hcmd
         obtain ⟨ss, C1, S1, tsr, hbody, hreach⟩ := call_callee_reachable hP ht0 hcmd htyArgs
-          hargs (hπ n) hstruct hscoped hgr hcallee hentry hstore
+          hargs (hπ n) hstruct hgr hcallee hno hentry hstore
         refine .inl ⟨n, tyArgs', callArgs', md, ρ, p, σAO, ss, hcallee, hentry, hbody, ?_, rfl⟩
         intro evs cfg' hstar
         rcases hreach evs cfg' hstar with rfl | hty'
@@ -1093,19 +1165,19 @@ private theorem callRunsForever_of_wellTyped {C0 : LContext CoreLParams} {ts0 : 
       a variable of the ambient scopes would be unbound in it: for `q() { assert g == 0 }` with
       `g` in the ambient scopes, the callee gets stuck.
     * The procedure table contains the program's procedures.
-    * The program's procedures have structured bodies (`CalleesStructured`), since a
-      control-flow-graph body carries no typing.
-    * The program has no undeclared type variables (`CalleesTyVarsScoped`): every type variable
-      in a body's local declarations and call type arguments is a type parameter of its
-      procedure. Otherwise progress fails: a body that declares a local at another type
-      variable blocks at that declaration. -/
+    * The program's procedures have structured bodies or none (`CalleesStructured`), since a
+      control-flow-graph body carries no typing. A call to an opaque procedure (`Body.isOpaque`)
+      runs its contract: it havocs the outputs, which may keep their entry values, and writes
+      them back, so it steps.
+    A well-typed program also guarantees that every type variable in a body's local declarations
+    and call type arguments is a type parameter of its procedure
+    (`ProgramWellTyped.calleesTyVarsScoped`). -/
 theorem coreStep_progress_forever {C0 : LContext CoreLParams} {ts0 : TypeScopes} {P : Program}
     {π : String → Option Procedure} {F : Expression.Factory} {S : Subst} {L : List String}
     {cfg : CoreConfig} {C' : LContext CoreLParams} {ts' tsf : TypeScopes}
     (hP : ProgramWellTyped C0 ts0 P) (ht0 : ∀ x, ts0.find? x = none)
     (hπ : ∀ (n : String) p, Program.Procedure.find? P n = some p → π n = some p)
     (hstruct : CalleesStructured P)
-    (hscoped : CalleesTyVarsScoped P)
     (hty : ConfigWellTyped P F S L cfg C' ts' tsf) :
     (∃ ρ, cfg = .terminal ρ) ∨ (∃ l ρ, cfg = .exiting l ρ) ∨
       (∃ evs cfg', CoreStepE π cfg evs cfg') ∨ CallRunsForever π cfg := by
@@ -1114,7 +1186,7 @@ theorem coreStep_progress_forever {C0 : LContext CoreLParams} {ts0 : TypeScopes}
   · exact .inr (.inl hexit)
   · exact .inr (.inr (.inl hstep))
   · exact .inr (.inr (.inr
-      (callRunsForever_of_wellTyped hP ht0 hπ hstruct hscoped hty hcall)))
+      (callRunsForever_of_wellTyped hP ht0 hπ hstruct hty hcall)))
 
 /-- The start of a structured procedure body, a block labeled `""` around the body, steps. -/
 private theorem start_steps {π : String → Option Procedure} {ss : List Statement}
@@ -1160,9 +1232,9 @@ private theorem reachable_progress {π : String → Option Procedure} {ss : List
     replaced by `tys`. Every configuration reached is terminal, steps, or runs next a call whose
     callee runs on without finishing. As `coreStep_progress_forever` does, and for the reasons
     given there, it assumes empty ambient scopes, a procedure table that contains the
-    program's procedures, structured bodies, and no undeclared type variables
-    (`CalleesTyVarsScoped`). It also assumes that the type arguments are ground, since no value
-    has a type with a type variable.
+    program's procedures, and structured bodies or none.
+    It also assumes that the type arguments are ground, since no value has a type with a type
+    variable.
     A procedure without type parameters is its own instance at `tys = []`. -/
 theorem reachable_configs_progress_forever {C0 : LContext CoreLParams} {ts0 : TypeScopes}
     {P : Program} {proc : Procedure} {md : MetaData Expression} {ss : List Statement}
@@ -1170,11 +1242,11 @@ theorem reachable_configs_progress_forever {C0 : LContext CoreLParams} {ts0 : Ty
     {inst : Procedure} {ssI : List Statement}
     (hP : ProgramWellTyped C0 ts0 P) (ht0 : ∀ x, ts0.find? x = none)
     (hmem : Decl.proc proc md ∈ P.decls)
-    (hbody : proc.body = .structured ss)
+    {opq : Bool} (hbody : proc.body = .structured ss opq)
     (hπ : ∀ (n : String) p, Program.Procedure.find? P n = some p → π n = some p)
-    (hstruct : CalleesStructured P) (hscoped : CalleesTyVarsScoped P)
+    (hstruct : CalleesStructured P)
     (htys : ∀ ty ∈ tys, LTy.GroundMono ty) (hinst : proc.instantiateTypes tys = some inst)
-    (hbodyI : inst.body = .structured ssI)
+    (hbodyI : inst.body = .structured ssI opq)
     (hρ : StoreHasTyping ρ.factory ρ.store (procBodyScopes ts0 inst).find?)
     (hfresh : StoreFresh ρ.store (procBodyScopes ts0 inst).find?) :
     ∀ evs cfg, CoreStepStarE π (.stmt (Stmt.block "" ssI #[]) ρ) evs cfg →
@@ -1187,7 +1259,7 @@ theorem reachable_configs_progress_forever {C0 : LContext CoreLParams} {ts0 : Ty
       S1 = Strata.Util.HMaps.ofScopes [proc.header.typeArgs.zip ms] := ⟨_, rfl⟩
   rw [← hS1] at hbodyp
   have hmap : ssI = mapStmtsTys (LMonoTy.subst S1) ss :=
-    (Imperative.Body.structured.inj (hbodyI.symm.trans (hbodyp ss hbody)))
+    (Imperative.Body.structured.inj (hbodyI.symm.trans (hbodyp ss opq hbody))).1
   obtain ⟨C, hproc⟩ := hP.procWellTyped hmem
   obtain ⟨hρR, hfreshR⟩ := instStore_conforms ht0 hinst hms hρ hfresh
   rw [← hS1] at hρR
@@ -1209,13 +1281,13 @@ theorem reachable_configs_progress_forever {C0 : LContext CoreLParams} {ts0 : Ty
   have hbt := hproc.bodyTyped
   rw [hbody] at hbt
   cases hbt with
-  | structured _ C2 ts2 hss =>
+  | structured _ C2 ts2 _ hss =>
     have hground : Statements.Ground ssI := by
       rw [hmap]
-      exact body_ground hscoped hfindP hbody hss hS1ground
+      exact body_ground hP hfindP hbody hss hS1ground
     have hreach := reachable_configs_wellTyped_of_typed (π := π) S1 hss hmap hground hρR hfreshR
     exact reachable_progress hreach
-      (fun _ hty => coreStep_progress_forever hP ht0 hπ hstruct hscoped hty)
+      (fun _ hty => coreStep_progress_forever hP ht0 hπ hstruct hty)
       (fun _ _ hty => hty.not_exiting_nil)
 
 end -- public section

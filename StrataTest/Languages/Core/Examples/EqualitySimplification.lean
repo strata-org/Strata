@@ -81,7 +81,7 @@ procedure P(n : int, s : string)
 private def literalBodyExprs : Option (List Core.Expression.Expr) := do
   let p ← (Core.typeCheck .quiet (parse literalPgm)).toOption
   let q ← p.decls.findSome? fun | .proc q _ => some q | _ => none
-  let .structured ss := q.body | none
+  let .structured ss _ := q.body | none
   ss.mapM fun
     | .cmd (.cmd (.assume _ e _)) | .cmd (.cmd (.assert _ e _)) => some e
     | _ => none
@@ -577,7 +577,7 @@ private def shadowProg : Core.Program := { decls := [
           spec := { preconditions := [], postconditions := [] },
           body := .structured
             [Core.Statement.assert "paramNotGlobal"
-              (.eq Core.coreLoc gInt (.intConst Core.coreLoc 1)) .empty] }
+              (.eq Core.coreLoc gInt (.intConst Core.coreLoc 1)) .empty] false }
     .empty] }
 
 /--
@@ -592,7 +592,7 @@ info: {
   | .error e => IO.println s!"failed: {e}"
   | .ok (_, q) =>
     for d in q.decls do
-      if let .proc { body := .structured ss, .. } _ := d then IO.println (Std.format ss)
+      if let .proc { body := .structured ss _, .. } _ := d then IO.println (Std.format ss)
 
 /-! ## An axiom declared after the procedure
 
@@ -2970,7 +2970,7 @@ private def stmtGoals : Core.Statement → List Core.Expression.Expr := stmtExpr
 private def programGoals (p : Core.Program) : List Core.Expression.Expr :=
   p.decls.flatMap fun
     | .proc q _ => match q.body with
-      | .structured ss => ss.flatMap stmtGoals
+      | .structured ss _ => ss.flatMap stmtGoals
       | _ => []
     | .ax a _ => [a.e]
     | .lemma l _ => [l.e]
@@ -3080,7 +3080,7 @@ private def stmtCmdExprs : Core.Statement → List Core.Expression.Expr := stmtE
 private def premiseExprs (p : Core.Program) : List Core.Expression.Expr :=
   p.decls.flatMap fun
     | .proc q _ => match q.body with
-      | .structured ss => ss.flatMap stmtCmdExprs
+      | .structured ss _ => ss.flatMap stmtCmdExprs
       | _ => []
     | .ax a _ => if a.e.hasBVar then [] else [a.e]
     | _ => []
@@ -3239,7 +3239,7 @@ private def stmtAssumes : Core.Statement → List Core.Expression.Expr := stmtEx
 private def learnedExprs (p : Core.Program) : List Core.Expression.Expr :=
   p.decls.flatMap fun
     | .proc q _ => match q.body with
-      | .structured ss => ss.flatMap stmtAssumes
+      | .structured ss _ => ss.flatMap stmtAssumes
       | _ => []
     | .ax a _ => if a.e.hasBVar then [] else [a.e]
     | _ => []

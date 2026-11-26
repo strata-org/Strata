@@ -8,6 +8,7 @@ module
 import all Strata.DL.Util.Counter
 public import Strata.DL.Util.StringGen
 import all Strata.DL.Util.StringGen
+public import Strata.DL.Util.StringGenProps
 namespace LabelGen
 
 public section

@@ -37,7 +37,7 @@ def bad_prog : Program := { decls := [
                   postconditions := [] },
               body := .structured [
                 Statement.assert "test" eb[(~fooAliasVal == ~fooVal)] .empty
-              ]
+              ] false
       } .empty
 ]}
 
@@ -68,7 +68,7 @@ def good_prog : Program := { decls := [
                   postconditions := [] },
               body := .structured [
                 Statement.assert "test" eb[(~fooAliasVal == ~fooVal)] .empty
-              ]
+              ] false
       } .empty
 ]}
 
@@ -110,7 +110,7 @@ def paramAliasMatch : Program := { decls := [
               spec := { preconditions := [], postconditions := [] },
               body := .structured [
                 Statement.assert "test" eb[(~p1 == ~p2)] .empty
-              ] } .empty
+              ] false } .empty
 ]}
 
 /--
@@ -148,7 +148,7 @@ def paramAliasMismatch : Program := { decls := [
               spec := { preconditions := [], postconditions := [] },
               body := .structured [
                 Statement.assert "test" eb[(~p1 == ~p2)] .empty
-              ] } .empty
+              ] false } .empty
 ]}
 
 /--
@@ -181,7 +181,7 @@ def outOfScopeVarProg : Program := { decls := [
                   .empty,
                 Statement.assert "y_check" eb[y == #true] .empty,
                 Statement.assert "q_check" eb[q == #1] .empty
-              ]
+              ] false
       } .empty
 ]}
 
@@ -197,7 +197,7 @@ Free Variables: [q]
 private def assertProg (e : Expression.Expr) : Program :=
   { decls := [.proc { header := { name := "P", typeArgs := [], inputs := [], outputs := [] },
                       spec := { preconditions := [], postconditions := [] },
-                      body := .structured [Statement.assert "a" e .empty] } .empty] }
+                      body := .structured [Statement.assert "a" e .empty] false } .empty] }
 
 -- An unbound variable is reported before a type error to its left.
 /--
@@ -243,7 +243,7 @@ def polyFuncProg : Program := { decls := [
             Statement.init "m" (.forAll [] (.tcons "Map" [.tcons "int" [], .tcons "bool" []])) Imperative.ExprOrNondet.nondet .empty,
             -- m := makePair(identity(42), identity(true));
             Statement.set "m" eb[((~makePair (~identity #42)) (~identity #true))] .empty
-          ]
+          ] false
   } .empty
 ]}
 
@@ -471,7 +471,7 @@ private def rigidAnnotationBodyPgm : Program := { decls := [
             Statement.assert "eq"
               (.eq Core.coreLoc (.fvar Core.coreLoc "x" (some (.tcons "$__rigid_a" [])))
                       (.fvar Core.coreLoc "x" (some (.tcons "$__rigid_a" [])))) .empty
-          ] } .empty
+          ] false } .empty
 ]}
 
 /-- info: error: Procedure 'P': Type $__rigid_a is not an instance of a previously registered type! -/
@@ -487,7 +487,7 @@ private def ordinaryAnnotationPgm : Program := { decls := [
             Statement.assert "eq"
               (.eq Core.coreLoc (.fvar Core.coreLoc "x" (some mty[int]))
                 (.fvar Core.coreLoc "x" (some mty[int]))) .empty
-          ] } .empty
+          ] false } .empty
 ]}
 
 /--
@@ -513,7 +513,7 @@ private def transformPrefixVarNamePgm : Program := { decls := [
             Statement.assert "eq"
               (.eq Core.coreLoc (.fvar Core.coreLoc "$__liftfncl_x" (some mty[int]))
                       (.fvar Core.coreLoc "$__liftfncl_x" (some mty[int]))) .empty
-          ] } .empty
+          ] false } .empty
 ]}
 
 /--
@@ -540,12 +540,12 @@ private def bodyLocalTypeShadowsLaterSynonymPgm : Program := { decls := [
             .typeDecl { name := "MyInt", params := [] } .empty,
             Statement.init "x" (.forAll [] (.tcons "MyInt" [])) .nondet .empty,
             .cmd (.call "callee" none [.inArg (.fvar Core.coreLoc "x" none)] .empty)
-          ] } .empty,
+          ] false } .empty,
   .type (.syn { name := "MyInt", typeArgs := [], type := mty[int] }) .empty,
   .proc { header := { name := "callee", typeArgs := [],
                       inputs := [("y", .tcons "MyInt" [])], outputs := [] },
           spec := { preconditions := [], postconditions := [] },
-          body := .structured [] } .empty
+          body := .structured [] false } .empty
 ]}
 
 /--
@@ -561,7 +561,7 @@ private def bodyLocalTypeShadowsEarlierSynonymPgm : Program := { decls := [
           spec := { preconditions := [], postconditions := [] },
           body := .structured [
             .typeDecl { name := "MyInt", params := [] } .empty
-          ] } .empty
+          ] false } .empty
 ]}
 
 /--
@@ -577,7 +577,7 @@ private def bodyLocalTypeFreshNamePgm : Program := { decls := [
           body := .structured [
             .typeDecl { name := "LocalOnly", params := [] } .empty,
             Statement.init "x" (.forAll [] (.tcons "LocalOnly" [])) .nondet .empty
-          ] } .empty,
+          ] false } .empty,
   .type (.syn { name := "MyInt", typeArgs := [], type := mty[int] }) .empty
 ]}
 
@@ -592,7 +592,7 @@ private def bodyLocalTypeSiblingBlocksPgm : Program := { decls := [
           body := .structured [
             .block "b1" [ .typeDecl { name := "LocalOnly", params := [] } .empty ] .empty,
             .block "b2" [ .typeDecl { name := "LocalOnly", params := [] } .empty ] .empty
-          ] } .empty
+          ] false } .empty
 ]}
 
 /--
@@ -900,7 +900,7 @@ private def firstStoredTypeVars : List String :=
     [.fvar Core.coreLoc ⟨"y", ()⟩ none,
      .const Core.coreLoc (.intConst 1)]
   match Core.Program.typeCheck initTyContext openScopeEnv program with
-  | .ok ({ decls := [.distinct _ (e :: _) _] }, _) => (annotTyVars e).eraseDups
+  | .ok ({ decls := [.distinct _ (e :: _) _], .. }, _) => (annotTyVars e).eraseDups
   | _ => ["rejected"]
 
 -- A distinct group whose free variable has the generated binder's name is rejected.
@@ -1077,7 +1077,7 @@ Cons : some (arrow int (arrow (List int) (List int))), Nil : some (List int)
   let prog : Core.Program :=
     { decls := listDecls ++ [.distinct ⟨"d", ()⟩ nilConsGroup .empty] }
   match Core.Program.typeCheck initTyContext Lambda.TEnv.default prog with
-  | .ok ({ decls := ds }, _) =>
+  | .ok ({ decls := ds, .. }, _) =>
     match ds.getLast? with
     | some (.distinct _ es _) =>
       printEach (es.map fun e => Std.format (", ".intercalate (opAnnotations e)))

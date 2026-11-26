@@ -139,8 +139,8 @@ private theorem Procedure.typeCheckCore_eraseAnnots_eq
     unfold Procedure.Spec.eraseTypes
     rw [hpre, hpost]
   cases hb : q.body with
-  | structured ss =>
-    obtain ⟨ssOut, EnvX, hB, -, hbody'⟩ := run.bodyStructured ss hb
+  | structured ss o =>
+    obtain ⟨ssOut, EnvX, hB, -, hbody'⟩ := run.bodyStructured ss o hb
     have hstmts : Statements.eraseAnnots
         (mapStmtsTys (deskolemizeTy (Procedure.rigidNames sc ps C q tn)) ssOut)
         = Statements.eraseAnnots ss := by
@@ -152,8 +152,8 @@ private theorem Procedure.typeCheckCore_eraseAnnots_eq
     rw [hstmts]
     congr 1
     congr 1 <;> first | exact hin | exact hout
-  | cfg c =>
-    obtain ⟨loc, cOut, EnvX, hrunC, hbody'⟩ := run.bodyCfg c hb
+  | cfg c o =>
+    obtain ⟨loc, cOut, EnvX, hrunC, hbody'⟩ := run.bodyCfg c o hb
     have hcfg : DetCFG.eraseAnnots (DetCFG.mapCmdsGuards cOut
         (mapCmdTys (deskolemizeTy (Procedure.rigidNames sc ps C q tn)))
         (mapExprTys (deskolemizeTy (Procedure.rigidNames sc ps C q tn))))
@@ -166,6 +166,12 @@ private theorem Procedure.typeCheckCore_eraseAnnots_eq
     rw [hbody', hb, hspec, run.header]
     dsimp only
     rw [hcfg]
+    congr 1
+    congr 1 <;> first | exact hin | exact hout
+  | abstract =>
+    unfold Procedure.eraseAnnots
+    rw [run.bodyAbstract hb, hb, hspec, run.header]
+    dsimp only
     congr 1
     congr 1 <;> first | exact hin | exact hout
 
@@ -182,13 +188,13 @@ private theorem Procedure.typeCheckCore_signature
     hres.outputsVals⟩
 
 /-- The declared types of a procedure with a structured body are those of its statements. -/
-private theorem Procedure.initTys_structured {q : Procedure} {ss : List Statement}
-    (hb : q.body = .structured ss) : q.initTys = Statements.initTys ss := by
+private theorem Procedure.initTys_structured {q : Procedure} {ss : List Statement} {o : Bool}
+    (hb : q.body = .structured ss o) : q.initTys = Statements.initTys ss := by
   simp only [Procedure.initTys, hb]
 
 /-- The declared types of a procedure with a control flow graph body are those of its blocks. -/
-private theorem Procedure.initTys_cfg {q : Procedure} {c : DetCFG}
-    (hb : q.body = .cfg c) : q.initTys = DetCFG.initTys c := by
+private theorem Procedure.initTys_cfg {q : Procedure} {c : DetCFG} {o : Bool}
+    (hb : q.body = .cfg c o) : q.initTys = DetCFG.initTys c := by
   simp only [Procedure.initTys, hb]
 
 /-- Skolemizing a statement list skolemizes each declared type. -/
@@ -309,10 +315,12 @@ private theorem Procedure.initTys_subset_annotTys (q : Procedure) :
   unfold procAnnotTys
   refine List.mem_append_right _ ?_
   cases hb : q.body with
-  | structured ss =>
+  | structured ss o =>
     rw [Procedure.initTys_structured hb] at ht
     exact Statements.initTys_subset_annotTys ss t ht
-  | cfg c =>
+  | abstract =>
+    simp only [Procedure.initTys, hb, List.not_mem_nil] at ht
+  | cfg c o =>
     rw [Procedure.initTys_cfg hb] at ht
     simp only [DetCFG.initTys_eq, List.mem_flatMap] at ht
     obtain ⟨lb, hlb, cmd, hcmd, ht⟩ := ht
@@ -400,16 +408,16 @@ private theorem Procedure.typeCheckCore_initTyRel
       Procedure.rigidNames_not_procAnnotTys sc ps C q tn htn pr hpr t
         (Procedure.initTys_subset_annotTys q t ht)
   cases hb : q.body with
-  | structured ss =>
-    obtain ⟨ssOut, EnvX, hB, -, hbody'⟩ := run.bodyStructured ss hb
+  | structured ss o =>
+    obtain ⟨ssOut, EnvX, hB, -, hbody'⟩ := run.bodyStructured ss o hb
     have hrel := Statement.typeCheck_initTyRel _ _ _ p (some q) _ ssOut hB hwf hfac' hne
     rw [haliases, Statements.initTys_skolemizeStmts] at hrel
     rw [Procedure.initTys_structured hb] at hnot
     rw [Procedure.initTys_structured hb, Procedure.initTys_structured hbody',
       Statements.initTys_mapStmtsTys]
     exact rel₂_initTyRel_deskolemizeTy hnd hns hnot hrel
-  | cfg c =>
-    obtain ⟨loc, cOut, EnvX, hrunC, hbody'⟩ := run.bodyCfg c hb
+  | cfg c o =>
+    obtain ⟨loc, cOut, EnvX, hrunC, hbody'⟩ := run.bodyCfg c o hb
     have hrel := CFG.typeCheck_initTys hwf.aliasesWF hrunC
     rw [haliases, DetCFG.initTys_mapCmdsGuards c _ _
       (skolemizeTy (Procedure.rigidNames sc ps C q tn))
@@ -419,6 +427,9 @@ private theorem Procedure.typeCheckCore_initTyRel
       DetCFG.initTys_mapCmdsGuards cOut _ _ (deskolemizeTy (Procedure.rigidNames sc ps C q tn))
         (fun cmd => cmdInitTys_mapCmdTys _ cmd)]
     exact rel₂_initTyRel_deskolemizeTy hnd hns hnot hrel
+  | abstract =>
+    simp only [Procedure.initTys, hb, run.bodyAbstract hb]
+    exact .nil
 
 /-- The erasure of a signature list with renamed types is that of the original. -/
 private theorem erase_sig_rename (ren : List (String × String))
@@ -452,18 +463,20 @@ private theorem Procedure.eraseAnnots_renameTypeArgs (q : Procedure)
   · rw [erase_checks_rename ren q.spec.preconditions,
       erase_checks_rename ren q.spec.postconditions]
   · cases q.body with
-    | structured ss => simp only [Statements.eraseAnnots_mapStmtsTys]
-    | cfg c =>
+    | structured ss o => simp only [Statements.eraseAnnots_mapStmtsTys]
+    | cfg c o =>
       simp only [DetCFG.eraseAnnots_mapCmdsGuards c _ _ (Command.eraseAnnots_mapCmdTys _)
         (LExpr.eraseTypes_mapExprTys _)]
+    | abstract => rfl
 
 /-- Renaming the type parameters of a procedure renames each declared type. -/
 private theorem Procedure.initTys_renameTypeArgs (q : Procedure) (ren : List (String × String)) :
     (q.renameTypeArgs ren).initTys = q.initTys.map (renamedTy ren) := by
   unfold Procedure.initTys Procedure.renameTypeArgs Procedure.mapTys
   cases q.body with
-  | structured ss => exact Statements.initTys_mapStmtsTys _ ss
-  | cfg c => exact DetCFG.initTys_mapCmdsGuards c _ _ _ (cmdInitTys_mapCmdTys _)
+  | structured ss o => exact Statements.initTys_mapStmtsTys _ ss
+  | cfg c o => exact DetCFG.initTys_mapCmdsGuards c _ _ _ (cmdInitTys_mapCmdTys _)
+  | abstract => rfl
 
 /-- A procedure `Procedure.typeCheckIn` accepts is returned as its written form with the
     reserved type parameters renamed, the signature types alias-resolved, the declared types

@@ -732,10 +732,10 @@ private theorem equalitySimplificationPhase_body {program out : Program}
     {s s' : Transform.CoreTransformState} {b : Bool}
     (h : (Core.equalitySimplificationPhase.transform program).run s = (.ok (b, out), s'))
     {q : Procedure} {md : Imperative.MetaData Expression} {ss : Statements}
-    (hq : Decl.proc q md ∈ program.decls) (hb : q.body = .structured ss) :
+    (hq : Decl.proc q md ∈ program.decls) (hb : q.body = .structured ss opq) :
     ∃ F0 s1, (Simplify.programFactory program).run s = (.ok F0, s1) ∧
     ∃ pre, (∃ post, program.decls = pre ++ Decl.proc q md :: post) ∧
-      Decl.proc { q with body := .structured (rewriteBody (runCtx program F0) pre q ss) } md ∈
+      Decl.proc { q with body := .structured (rewriteBody (runCtx program F0) pre q ss) opq } md ∈
         out.decls := by
   change (runEqualitySimplification program).run s = _ at h
   simp only [runEqualitySimplification, ExceptT.run_bind] at h
@@ -814,10 +814,10 @@ theorem equalitySimplificationPhase_failsE {program out : Program}
     {s s' : Transform.CoreTransformState} {b : Bool}
     (h : (Core.equalitySimplificationPhase.transform program).run s = (.ok (b, out), s'))
     {q : Procedure} {md : Imperative.MetaData Expression} {ss : Statements}
-    (hq : Decl.proc q md ∈ program.decls) (hb : q.body = .structured ss) :
+    (hq : Decl.proc q md ∈ program.decls) (hb : q.body = .structured ss opq) :
     ∃ F0 s1, (Simplify.programFactory program).run s = (.ok F0, s1) ∧
     ∃ pre, (∃ post, program.decls = pre ++ Decl.proc q md :: post) ∧
-      Decl.proc { q with body := .structured (rewriteBody (runCtx program F0) pre q ss) } md ∈
+      Decl.proc { q with body := .structured (rewriteBody (runCtx program F0) pre q ss) opq } md ∈
         out.decls ∧
       ∀ {Fs : Expression.Factory}, WellFormedSemanticEvalBool (P := Expression) Fs →
         RewriteSound (runCtx program F0).foldFactory Fs (runCtx program F0).evalFuel →
@@ -869,12 +869,12 @@ theorem foldAxioms_equalitySimplification_failsE {program mid out : Program}
     (h1 : (Core.foldAxiomsPhase.transform program).run s = (.ok (b1, mid), s1))
     (h2 : (Core.equalitySimplificationPhase.transform mid).run s1 = (.ok (b, out), s'))
     {q : Procedure} {md : Imperative.MetaData Expression} {ss : Statements}
-    (hq : Decl.proc q md ∈ program.decls) (hb : q.body = .structured ss) :
+    (hq : Decl.proc q md ∈ program.decls) (hb : q.body = .structured ss opq) :
     ∃ F₁ s₁, (Simplify.programFactory program).run s = (.ok F₁, s₁) ∧
     ∃ F₂ s₂, (Simplify.programFactory mid).run s1 = (.ok F₂, s₂) ∧
     ∃ pre₀, (∃ post, program.decls = pre₀ ++ Decl.proc q md :: post) ∧
       let pre := pre₀.map (foldDecl (runCtx program F₁))
-      Decl.proc { q with body := .structured (rewriteBody (runCtx mid F₂) pre q ss) } md ∈
+      Decl.proc { q with body := .structured (rewriteBody (runCtx mid F₂) pre q ss) opq } md ∈
         out.decls ∧
       ∀ {Fs : Expression.Factory}, WellFormedSemanticEvalBool (P := Expression) Fs →
         AxiomFoldSound (runCtx program F₁).foldFactory Fs (runCtx program F₁).evalFuel →

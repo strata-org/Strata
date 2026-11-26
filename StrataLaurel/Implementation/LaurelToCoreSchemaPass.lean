@@ -1397,21 +1397,19 @@ def translateProcedure (proc : Procedure) : TranslateM Core.Procedure := do
         translateChecks postconds s!"postcondition"
           (defaultSummary := "postcondition")
     | _ => pure []
-  let body : List Core.Statement :=
+  -- A bodiless procedure (e.g. a generated `$hole`, or any opaque/abstract declaration) is an
+  -- abstract Core procedure: a call to it havocs its outputs and assumes its postconditions. An
+  -- opaque procedure with a body is an opaque Core procedure (`Body.isOpaque`): its callers know
+  -- it only through its contract, and its body is still verified and executed.
+  let isOpaque := match proc.body with
+    | .Opaque .. => true
+    | _ => false
+  let body : Core.Procedure.Body :=
     match bodyStmts with
-    | some ss => ss
-    | none =>
-      -- A bodiless procedure (e.g. a generated `$hole`, or any opaque/abstract
-      -- declaration) would otherwise produce an empty structured body, which the
-      -- Core interpreter rejects when called ("has no body"). Emit a single
-      -- `assume true` so the body is non-empty. This is a no-op for both
-      -- verification (such a procedure's postconditions are already marked
-      -- `free`, so there is nothing to check against the body) and concrete
-      -- execution (the outputs stay havoc'd), but it lets the interpreter step
-      -- through the call instead of erroring.
-      [Core.Statement.assume "assume_true" (.true laurelLoc) Imperative.MetaData.empty]
+    | some ss => .structured ss isOpaque
+    | none => .abstract
   let spec : Core.Procedure.Spec := { preconditions, postconditions }
-  return { header, spec, body := .structured body }
+  return { header, spec, body }
 
 structure LaurelVerifyOptions where
   translateOptions : LaurelTranslateOptions := {}

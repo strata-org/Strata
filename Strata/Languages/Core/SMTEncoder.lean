@@ -292,6 +292,9 @@ def lMonoTyToTermType (useArrayTheory : Bool := false) (ty : LMonoTy) : TermType
       .constr "Array" [lMonoTyToTermType useArrayTheory elem, .bool]
     else
       .constr (smtSortName "Set") [lMonoTyToTermType useArrayTheory elem]
+  -- A function value is total and extensional, as is an SMT array.
+  | .tcons "arrow" [dom, cod] =>
+    .constr "Array" [lMonoTyToTermType useArrayTheory dom, lMonoTyToTermType useArrayTheory cod]
   | .tcons name args =>
     if name == "Map" && useArrayTheory then
       .constr "Array" (args.map $ lMonoTyToTermType useArrayTheory)
@@ -308,19 +311,69 @@ def datatypeConstructorsToSMT (d : LDatatype CoreLParams.IDMeta) (useArrayTheory
       (Lambda.destructorFuncName d name, lMonoTyToTermType useArrayTheory fieldTy)
     { name := c.name.name, args := fields }
 
-/-- Ensures that all datatypes in the SMT encoding do not have arrow-typed
-  constructor arguments-/
+/-- Does a datatype of `names` occur in the argument or the result of a function
+    type within `ty`? Such a datatype, e.g. `Tree { Node(kids: int -> Tree) }` or
+    `Tree { Node(f: Tree -> int) }`, recurses through an SMT array, which cvc5
+    rejects as a nested-recursive datatype and z3 as not co-variant. -/
+def recursesThroughFunction (names : List String) : LMonoTy → Bool
+  | .tcons "arrow" [dom, cod] =>
+    (Lambda.getTypeRefs dom ++ Lambda.getTypeRefs cod).any (names.contains ·) ||
+      recursesThroughFunction names dom || recursesThroughFunction names cod
+  | .tcons _ args => args.attach.any fun x => recursesThroughFunction names x.1
+  | _ => false
+termination_by ty => sizeOf ty
+decreasing_by all_goals (try cases x); all_goals (simp_wf; try omega); all_goals term_by_mem
+
+/-- Is `ty` a function type? -/
+def isFunctionType : LMonoTy → Bool
+  | .tcons "arrow" [_, _] => true
+  | _ => false
+
+/-- Is `ty` a map or a set, an SMT array under array theory? -/
+def isMapOrSet : LMonoTy → Bool
+  | .tcons "Map" [_, _] | .tcons "Set" [_] => true
+  | _ => false
+
+/-- Does `ty` contain an array sort indexed by an array sort: a function whose argument is a
+    function, and under array theory a function whose argument is a map or a set, a map
+    keyed by a function or a set of functions? Its
+    SMT sort is an array indexed by an array, which cvc5 rejects. A map or a set keyed by a
+    map or a set is left alone: programs with one verify today. -/
+def hasArrayIndexedByArray (useArrayTheory : Bool) : LMonoTy → Bool
+  | .tcons "arrow" [dom, cod] =>
+    isFunctionType dom || (useArrayTheory && isMapOrSet dom) ||
+      hasArrayIndexedByArray useArrayTheory dom ||
+      hasArrayIndexedByArray useArrayTheory cod
+  | .tcons "Map" [k, v] =>
+    (useArrayTheory && isFunctionType k) || hasArrayIndexedByArray useArrayTheory k ||
+      hasArrayIndexedByArray useArrayTheory v
+  | .tcons "Set" [e] =>
+    (useArrayTheory && isFunctionType e) || hasArrayIndexedByArray useArrayTheory e
+  | .tcons _ args => args.attach.any fun x => hasArrayIndexedByArray useArrayTheory x.1
+  | _ => false
+termination_by ty => sizeOf ty
+decreasing_by all_goals (try cases x); all_goals (simp_wf; try omega); all_goals term_by_mem
+
+/-- Ensures that no datatype in the SMT encoding recurses through the argument or
+    the result of a function-typed constructor argument. -/
 def validateDatatypesForSMT (typeFactory : @Lambda.TypeFactory CoreLParams.IDMeta)
-    (seenDatatypes : Std.HashSet String) : Except Format Unit := do
+    (seenDatatypes : Std.HashSet String) (useArrayTheory : Bool := false) :
+    Except Format Unit := do
   for block in typeFactory.toList do
+    let names := block.map (·.name)
     for d in block do
       if !seenDatatypes.contains d.name then continue
       for c in d.constrs do
         for (fieldName, fieldTy) in c.args do
-          if fieldTy.containsArrow then
+          if recursesThroughFunction names fieldTy then
             throw f!"Cannot encode datatype '{d.name}' to SMT: \
-                     constructor '{c.name.name}' has function-typed field '{fieldName.name}' of type '{fieldTy}'. \
-                     Function types cannot be represented in SMT-LIB datatypes."
+                     constructor '{c.name.name}' has field '{fieldName.name}' of type \
+                     '{fieldTy}', which recurses through a function type."
+          if hasArrayIndexedByArray useArrayTheory fieldTy then
+            throw f!"Cannot encode datatype '{d.name}' to SMT: \
+                     constructor '{c.name.name}' has field '{fieldName.name}' of type \
+                     '{fieldTy}', whose SMT sort is an array indexed by an array, which \
+                     cvc5 rejects."
 
 /--
 Emit datatype declarations to the solver.
@@ -329,7 +382,7 @@ Only emits datatypes that have been seen (added via addDatatype).
 Single-element blocks use declare-datatype, multi-element blocks use declare-datatypes.
 -/
 def SMT.Context.emitDatatypes (ctx : SMT.Context) : Strata.SMT.SolverEncodingM Unit := do
-  match validateDatatypesForSMT ctx.datatypes.factory ctx.seenDatatypes with
+  match validateDatatypesForSMT ctx.datatypes.factory ctx.seenDatatypes ctx.useArrayTheory with
   | .error msg => throw (IO.userError (toString msg))
   | .ok () => pure ()
   for block in ctx.datatypes.factory.toList do
@@ -384,6 +437,9 @@ partial def SMT.Context.addType (id: String) (args: List LMonoTy) (ctx: SMT.Cont
   -- declare-datatype), never for the opaque sorts (declare-sort) the `none`
   -- branch handles.
   if ctx.hasDatatype id then ctx
+  -- A function type is the native SMT array sort; only its argument types
+  -- (registered above) need declaring.
+  else if id == "arrow" then ctx
   else match ctx.datatypes.getType id with
   | some d =>
     let ctx := ctx.addDatatype d
@@ -399,6 +455,14 @@ partial def SMT.Context.addType (id: String) (args: List LMonoTy) (ctx: SMT.Cont
     ctx.addSort { name := smtSortName id, arity := args.length }
 
 mutual
+/-- The error for a type whose SMT sort is an array indexed by an array. With
+    `arrayTheory`, the array comes from array theory and the message says to run without
+    it. -/
+def arrayIndexedByArrayError (ty : LMonoTy) (arrayTheory : Bool := false) : Format :=
+  let hint := if arrayTheory then "; run without --use-array-theory" else ""
+  f!"Cannot encode the type '{ty}' to SMT: its sort is an array indexed by an array, \
+    which cvc5 rejects{hint}."
+
 def LMonoTy.toSMTType (ty : LMonoTy) (ctx : SMT.Context) :
   Except Format (TermType × SMT.Context) := do
   match ty with
@@ -409,6 +473,8 @@ def LMonoTy.toSMTType (ty : LMonoTy) (ctx : SMT.Context) :
   | .tcons "string"  [] => .ok (.string, ctx)
   | .tcons "regex" [] => .ok (.regex, ctx)
   | .tcons "Map" args =>
+    if hasArrayIndexedByArray ctx.useArrayTheory ty then
+      throw (arrayIndexedByArrayError ty (!hasArrayIndexedByArray false ty))
     -- When using Array theory, convert Map to Array
     let id := if ctx.useArrayTheory then "Array" else "Map"
     let ctx := if ctx.useArrayTheory then ctx
@@ -417,6 +483,8 @@ def LMonoTy.toSMTType (ty : LMonoTy) (ctx : SMT.Context) :
     -- `id` is `Array` (the theory's own sort) or `Map`, which no solver defines.
     .ok ((.constr id args'), ctx)
   | .tcons "Set" [elem] =>
+    if hasArrayIndexedByArray ctx.useArrayTheory ty then
+      throw (arrayIndexedByArrayError ty (!hasArrayIndexedByArray false ty))
     -- Under array theory the sort is native, so it needs no `declare-sort` (and gains
     -- extensionality: two sets with equal membership are the same term). Without array
     -- theory it stays an uninterpreted sort constrained by the `Set.*` axioms.
@@ -427,6 +495,14 @@ def LMonoTy.toSMTType (ty : LMonoTy) (ctx : SMT.Context) :
       let ctx := SMT.Context.addType "Set" [elem] ctx
       let (elem', ctx) ← LMonoTy.toSMTType elem ctx
       .ok (.constr (smtSortName "Set") [elem'], ctx)
+  | .tcons "arrow" [dom, cod] =>
+    if isFunctionType dom then
+      throw (arrayIndexedByArrayError ty)
+    if ctx.useArrayTheory && isMapOrSet dom then
+      throw (arrayIndexedByArrayError ty true)
+    let (dom', ctx) ← LMonoTy.toSMTType dom ctx
+    let (cod', ctx) ← LMonoTy.toSMTType cod ctx
+    .ok (.constr "Array" [dom', cod'], ctx)
   | .tcons id args =>
     let ctx := SMT.Context.addType id args ctx
     let (args', ctx) ← LMonoTys.toSMTType args ctx
@@ -650,6 +726,27 @@ def corePredefinedOpToSMTOp (op : CoreOp) (ctx : SMT.Context) :
 
   | _ => none
 
+/-- The name `fn` is encoded as: for a monomorphized copy, the function its factory entry's
+    mark records (`FuncAttr.monoCopyOf`), not one read off its name; otherwise `fn` itself.
+    A copy that lost its mark is encoded as an uninterpreted function: weaker, never
+    unsound. -/
+def SMT.encodedOpName (factory : @Lambda.Factory CoreLParams) (fn : CoreIdent) : String :=
+  ((factory[fn.name]?).bind (Strata.DL.Util.FuncAttr.findMonoCopyOf ·.attr)).getD fn.name
+
+/-- The number of arguments the SMT encoding of operator `fn` takes. Arguments
+    beyond it are applications of the function value it returns, encoded as
+    array `select`s. Datatype constructors take one argument per field, testers
+    and selectors take one; other operators take their declared inputs. -/
+def SMT.Context.opArity (factory : @Lambda.Factory CoreLParams) (ctx : SMT.Context)
+    (fn : CoreIdent) (fnty : LMonoTy) : Nat :=
+  match ctx.datatypeFuns.get? (SMT.encodedOpName factory fn) with
+  | some (.constructor, c) => c.args.length
+  | some _ => 1
+  | none =>
+    match factory[fn.name]? with
+    | some func => func.inputs.length
+    | none => (LMonoTy.destructArrow fnty).length - 1
+
 /-- Resolve a Core operator `fn` (of monomorphic type `fnty`) to its SMT builder.
 
     Returns the updated `SMT.Context` and pending-definition queue `pending`:
@@ -668,12 +765,13 @@ def toSMTOp (factory : @Lambda.Factory CoreLParams) (fn : CoreIdent) (fnty : LMo
   let ctx := match LMonoTys.toSMTType intys ctx with
     | .ok (_, ctx') => ctx'
     | .error _ => ctx
+  let (_, ctx) ← LMonoTy.toSMTType outty ctx
+  -- The result after the operator's own arguments, which is a function value
+  -- (an SMT array) when the operator returns one, e.g. a function-typed field.
+  let (intys, outty) := LMonoTy.splitArrows (ctx.opArity factory fn fnty) fnty
   let (smt_outty, ctx) ← LMonoTy.toSMTType outty ctx
 
-  -- A monomorphized copy is encoded as the function its factory entry's mark records
-  -- (`FuncAttr.monoCopyOf`), not one read off its name. A copy that lost its mark is encoded
-  -- as an uninterpreted function: weaker, never unsound.
-  let baseFn := ((factory[fn.name]?).bind (Strata.DL.Util.FuncAttr.findMonoCopyOf ·.attr)).getD fn.name
+  let baseFn := SMT.encodedOpName factory fn
   match ctx.datatypeFuns.get? baseFn with
   | some (kind, c) =>
     let adtApp := fun (args : List Term) (retty : TermType) =>
@@ -714,30 +812,17 @@ def toSMTOp (factory : @Lambda.Factory CoreLParams) (fn : CoreIdent) (fnty : LMo
       else
         let formals := func.inputs.keys
         let formalStrs := formals.map (toString ∘ format)
-        let tys := LMonoTy.destructArrow fnty
-        let intys := tys.take (tys.length - 1)
+        let (intys, outty) := LMonoTy.splitArrows func.inputs.length fnty
         let (smt_intys, ctx) ← LMonoTys.toSMTType intys ctx
         let bvs := formalStrs.zip smt_intys
-        let outty := tys.getLast (by exact @LMonoTy.destructArrow_non_empty fnty)
         let (smt_outty, ctx) ← LMonoTy.toSMTType outty ctx
         let uf : UF := { id := (toString $ format fn), args := smt_intys, out := smt_outty }
-        let arrowParams := func.inputs.toList.filter (fun (_, ty) => ty.containsArrow)
-        if !arrowParams.isEmpty then
-          let names := arrowParams.map (fun (n, _) => toString (format n))
-          .error f!"Cannot encode function '{func.name}' to SMT: \
-                    it has function-typed parameter(s) {names}. \
-                    Higher-order functions cannot be encoded to SMT. \
-                    Consider marking the function as `inline`."
-        else if func.output.containsArrow then
-          .error f!"Cannot encode function '{func.name}' to SMT: \
-                    it returns a function type '{func.output}'. \
-                    Higher-order functions cannot be encoded to SMT. \
-                    Consider marking the function as `inline`."
         -- Lambda redexes (let-alias bindings such as Core's `have`; see
         -- `Strata/Transform/BetaReduce.lean`) are contracted by the
-        -- `betaReduce` pipeline phase before encoding, so an abstraction here
-        -- is a genuine higher-order body and is correctly rejected.
-        else if func.body.any LExpr.hasAbs then
+        -- `betaReduce` pipeline phase, and every other abstraction is lifted
+        -- by `lambdaLift`, before encoding, so an abstraction here means a
+        -- pipeline that skipped those phases.
+        if func.body.any LExpr.hasAbs then
           .error f!"Cannot encode function '{func.name}' to SMT: \
                     its body contains a lambda expression. \
                     Lambda abstractions cannot be encoded to SMT. \
@@ -770,11 +855,82 @@ def isCoreTriggerListExpr (tr : LExpr CoreLParams.mono) : Bool :=
 
 /-- The function of `factory` that implements the built-in collection operator `base` at type
     instantiation `tys`: `base` itself, or, once functions are monomorphized, its specialized
-    copy. -/
+    copy. Fails if neither is in the factory: the literal's operator has no copy at `tys`. -/
 def collectionOpIdent (factory : @Lambda.Factory CoreLParams) (base : String)
-    (tys : List LMonoTy) : CoreIdent :=
-  if (factory[base]?).isSome then ⟨base, ()⟩
-  else (Core.NameMangling.mangleFuncName Strata.PtrCache.PtrCache.empty base tys).1
+    (tys : List LMonoTy) : Except Format CoreIdent :=
+  if (factory[base]?).isSome then .ok ⟨base, ()⟩
+  else
+    -- The mark (`FuncAttr.monoCopyOf`) decides that a function is `base`'s copy; it does not
+    -- record the instantiation, so the copy at `tys` is picked out by the name monomorphization
+    -- built for it (`copyName`), under the prefix it chose. No name is decoded here.
+    let isCopy (f : Lambda.LFunc CoreLParams) :=
+      Strata.DL.Util.FuncAttr.findMonoCopyOf f.attr == some base
+    let plain := Core.NameMangling.copyName Core.NameMangling.monoPrefix base tys
+    -- Under a padded prefix: the marked copy whose name is the copy's name at `tys` under
+    -- its own prefix.
+    let scan (_ : Unit) : Except Format CoreIdent :=
+      let atTys (n : String) := (Core.NameMangling.copyPrefixOf? n).any fun pfx =>
+        n == Core.NameMangling.copyName pfx base tys
+      match factory.toArray.find? fun f => isCopy f && atTys f.name.name with
+      | some f => .ok f.name
+      | none => .error f!"collection literal: the factory has no copy of {base} marked at {tys}"
+    match factory[plain]? with
+    | some f => if isCopy f then .ok f.name else scan ()
+    | none => scan ()
+
+/-- Apply the function value `f` (an SMT array) to `args`, one `select` each. -/
+def selectAll (f : Term) (args : List Term) : Term :=
+  args.foldl (init := f) fun t a =>
+    let codTy := match t.typeOf with
+      | .constr "Array" [_, cod] => cod
+      | ty => ty
+    Term.app Op.select [t, a] codTy
+
+/-- The uninterpreted function a free variable `f` of type `ty` denotes, with
+    the argument types it takes: none for a first-order variable, every arrow
+    argument for a function-typed one, which is applied as an SMT function. -/
+def fvarToUF (f : CoreIdent) (ty : LMonoTy) (ctx : SMT.Context) :
+    Except Format (UF × SMT.Context) := do
+  let id := if (LMonoTy.destructArrow ty).length == 1 then f.name else toString (format f)
+  if hasArrayIndexedByArray ctx.useArrayTheory ty then
+    -- Its array sort would be indexed by an array, which cvc5 rejects: it is an
+    -- uninterpreted function of its arguments instead, which can only be applied.
+    let tys := LMonoTy.destructArrow ty
+    let (smtIntys, ctx) ← LMonoTys.toSMTType tys.dropLast ctx
+    let (smtOut, ctx) ← LMonoTy.toSMTType (tys.getLastD ty) ctx
+    return ({ id, args := smtIntys, out := smtOut }, ctx)
+  -- A function-typed free variable is one constant of its array sort: applied, partly or
+  -- fully, it is `select`ed, and unapplied it is that array. So it needs no defining
+  -- axiom, and a query that compares two of them has only arrays to reason about.
+  let (smtTy, ctx) ← LMonoTy.toSMTType ty ctx
+  return ({ id, args := [], out := smtTy }, ctx)
+
+/-- Is `e` a free variable whose function value is an opaque constant (`fvarToUF`), or a
+    conditional with such a branch? Decided from the types, without encoding `e`. -/
+def hasOpaqueFunctionValue (useArrayTheory : Bool) : LExpr CoreLParams.mono → Bool
+  | .fvar _ _ (some ty) => isFunctionType ty && hasArrayIndexedByArray useArrayTheory ty
+  | .ite _ _ t f => hasOpaqueFunctionValue useArrayTheory t ||
+      hasOpaqueFunctionValue useArrayTheory f
+  | _ => false
+
+/-- Encode operator `fn` used as a function value, i.e. not applied to the
+    arguments `intys` it takes. `op` builds its application and `retty` is the
+    type of that application. The value is a constant array `$__fn#<fn>`
+    (`Core.NameMangling.fnValuePrefix`) that an axiom makes agree with `fn` at every
+    argument. -/
+def functionValueToSMT (fn : CoreIdent) (intys : LMonoTys) (op : List Term → TermType → Term)
+    (retty : TermType) (ctx : SMT.Context) : Except Format (Term × SMT.Context) := do
+  let (smtIntys, ctx) ← LMonoTys.toSMTType intys ctx
+  let arrTy := smtIntys.foldr (fun dom cod => .constr "Array" [dom, cod]) retty
+  let id := s!"{Core.NameMangling.fnValuePrefix}{Core.NameMangling.monoDelim}{toString $ format fn}"
+  let uf : UF := { id, args := [], out := arrTy }
+  let fnVal := Term.app (.uf uf) [] arrTy
+  if ctx.ufs.contains uf then return (fnVal, ctx)
+  let vars := smtIntys.mapIdx fun i ty => ({ id := s!"$__x{i}", ty } : TermVar)
+  let varTerms := vars.map Term.var
+  let lhs := selectAll fnVal varTerms
+  let axm := Term.quant .all vars [[lhs]] (Factory.eq lhs (op varTerms retty))
+  return (fnVal, (ctx.addUF uf).addAxiom axm)
 
 mutual
 /-- Encode a constant. A collection literal is encoded as the applications of the operators
@@ -802,13 +958,13 @@ def litToSMTTerm (factory : @Lambda.Factory CoreLParams) (c : LConst) (ctx : SMT
     let vt := v.toMonoTy
     let (dT, ctx, pending) ← litToSMTTerm factory d ctx pending
     let (mk, mty, ctx, pending) ←
-      toSMTOp factory (collectionOpIdent factory "mapConst" [kt, vt])
+      toSMTOp factory (← collectionOpIdent factory "mapConst" [kt, vt])
         (.arrow vt (mapTy kt vt)) ctx pending
     litEntriesToSMTTerm factory kt vt (mk [dT] mty) xs ctx pending
   | .sequenceConst a ⟨xs⟩ => do
     let et := a.toMonoTy
     let (mk, sty, ctx, pending) ←
-      toSMTOp factory (collectionOpIdent factory "Sequence.empty" [et]) (seqTy et) ctx pending
+      toSMTOp factory (← collectionOpIdent factory "Sequence.empty" [et]) (seqTy et) ctx pending
     litElemsToSMTTerm factory et (mk [] sty) xs ctx pending
 /-- Encode `base` updated with map entries, the first one outermost. -/
 def litEntriesToSMTTerm (factory : @Lambda.Factory CoreLParams) (kt vt : LMonoTy) (base : Term) :
@@ -820,7 +976,7 @@ def litEntriesToSMTTerm (factory : @Lambda.Factory CoreLParams) (kt vt : LMonoTy
     let (keyT, ctx, pending) ← litToSMTTerm factory key ctx pending
     let (xT, ctx, pending) ← litToSMTTerm factory x ctx pending
     let (upd, uty, ctx, pending) ←
-      toSMTOp factory (collectionOpIdent factory "update" [kt, vt])
+      toSMTOp factory (← collectionOpIdent factory "update" [kt, vt])
         (.arrow (mapTy kt vt) (.arrow kt (.arrow vt (mapTy kt vt)))) ctx pending
     .ok (upd [restT, keyT, xT] uty, ctx, pending)
 /-- Encode `acc` with sequence elements appended in order. -/
@@ -831,7 +987,7 @@ def litElemsToSMTTerm (factory : @Lambda.Factory CoreLParams) (et : LMonoTy) (ac
   | x :: rest, ctx, pending => do
     let (xT, ctx, pending) ← litToSMTTerm factory x ctx pending
     let (bld, bty, ctx, pending) ←
-      toSMTOp factory (collectionOpIdent factory "Sequence.build" [et])
+      toSMTOp factory (← collectionOpIdent factory "Sequence.build" [et])
         (.arrow (seqTy et) (.arrow et (seqTy et))) ctx pending
     litElemsToSMTTerm factory et (bld [acc, xT] bty) rest ctx pending
 end
@@ -852,9 +1008,16 @@ def toSMTTerm (factory : @Lambda.Factory CoreLParams) (bvs : BoundVars) (e : LEx
     match fnty with
     | none => .error f!"Cannot encode unannotated operation {fn}."
     | some fnty =>
-      -- 0-ary Operation.
       let (op, retty, ctx, pending) ← toSMTOp factory fn fnty ctx pending
-      .ok (op [] retty, ctx, pending)
+      match LMonoTy.splitArrows (ctx.opArity factory fn fnty) fnty with
+      | ([], _) => .ok (op [] retty, ctx, pending)
+      | (intys, _) =>
+        -- The value's array sort would be indexed by an array: refuse it here rather
+        -- than emit a sort the solver rejects.
+        if hasArrayIndexedByArray ctx.useArrayTheory fnty then
+          throw (arrayIndexedByArrayError fnty (!hasArrayIndexedByArray false fnty))
+        let (t, ctx) ← functionValueToSMT fn intys op retty ctx
+        .ok (t, ctx, pending)
 
   | .bvar _ i =>
     if h: i < bvs.length
@@ -867,13 +1030,23 @@ def toSMTTerm (factory : @Lambda.Factory CoreLParams) (bvs : BoundVars) (e : LEx
     match ty with
     | none => .error f!"Cannot encode unannotated free variable {e}"
     | some ty =>
-      let (tty, ctx) ← LMonoTy.toSMTType ty ctx
-      let uf := { id := f.name, args := [], out := tty }
-      .ok (.app (.uf uf) [] tty, ctx.addUF uf, pending)
+      let (uf, ctx) ← fvarToUF f ty ctx
+      if !uf.args.isEmpty then
+        -- A variable whose array sort would be indexed by an array is applied as an
+        -- uninterpreted function; used as a value, it is a constant of an opaque sort,
+        -- unrelated to its applications. Every model of the program extends to one of
+        -- the query, as when every function type was an opaque sort: comparing two such
+        -- values gets a verdict, and an `unsat` answer stays sound.
+        let sortName := "$__FunctionValue"
+        let ctx := ctx.addSort { name := sortName, arity := 0 }
+        let srt : TermType := .constr sortName []
+        let cst : UF := { id := s!"{uf.id}$value", args := [], out := srt }
+        return (.app (.uf cst) [] srt, ctx.addUF cst, pending)
+      .ok (.app (.uf uf) [] uf.out, ctx.addUF uf, pending)
 
   | .abs _ _ _ _ =>
     .error f!"Cannot encode lambda expression to SMT. \
-              Lambda abstractions must be eliminated (e.g., by beta-reduction) \
+              Lambda abstractions must be eliminated (by the `lambdaLift` phase) \
               before SMT encoding.\n\
               Lambda: {e}"
 
@@ -969,23 +1142,54 @@ def appToSMTTerm (factory : @Lambda.Factory CoreLParams) (bvs : BoundVars) (fn a
     | some fnty =>
       let (op, retty, ctx, pending) ← toSMTOp factory fn fnty ctx pending
       let (e1t, ctx, pending) ← toSMTTerm factory bvs e1 ctx pending
-      .ok (op (e1t :: acc) retty, ctx, pending)
+      let args := e1t :: acc
+      let arity := ctx.opArity factory fn fnty
+      if args.length < arity then
+        .error f!"Cannot encode partial application of {fn} to SMT: \
+                  it takes {arity} arguments but is applied to {args.length}. \n\
+                  Appears in expression: \
+                  {LExpr.app smtEncodingLoc (LExpr.op smtEncodingLoc fn fnty) e1}"
+      else
+        let (direct, extra) := args.splitAt arity
+        .ok (selectAll (op direct retty) extra, ctx, pending)
   | .fvar _ fn (.some fnty), e1 => do
-    let tys := LMonoTy.destructArrow fnty
-    let outty := tys.getLast (by exact @LMonoTy.destructArrow_non_empty fnty)
-    let intys := tys.take (tys.length - 1)
-    let (smt_outty, ctx) ← LMonoTy.toSMTType outty ctx
+    let (uf, ctx) ← fvarToUF fn fnty ctx
     let (e1t, ctx, pending) ← toSMTTerm factory bvs e1 ctx pending
     let allArgs := e1t :: acc
-    let mut argTysRev : List TermType := []
-    let mut ctx := ctx
-    for inty in intys do
-      let (smt_inty, ctx') ← LMonoTy.toSMTType inty ctx
-      ctx := ctx'
-      argTysRev := smt_inty :: argTysRev
-    let argTys := argTysRev.reverse
-    let uf := UF.mk (id := (toString $ format fn)) (args := argTys) (out := smt_outty)
-    .ok (Term.app (.uf uf) allArgs smt_outty, ctx, pending)
+    if allArgs.length < uf.args.length then
+      -- Its function value is opaque (`fvarToUF`), so a partial application has no array to
+      -- select from.
+      throw f!"Cannot encode partial application of {fn} to SMT: its type '{fnty}' would be \
+               an array indexed by an array, so it is encoded as an uninterpreted function \
+               of its {uf.args.length} arguments, but is applied to {allArgs.length}."
+    let (direct, extra) := allArgs.splitAt uf.args.length
+    .ok (selectAll (Term.app (.uf uf) direct uf.out) extra, ctx.addUF uf, pending)
+  -- A bound variable or a conditional of function type is a function value (an SMT
+  -- array): apply it by `select`.
+  | .bvar _ i, a => do
+    let fnt ← if h : i < bvs.length then
+        let var := bvs[i]
+        pure (Term.var (TermVar.mk var.fst var.snd))
+      else .error f!"Bound variable index is out of bounds: {i}"
+    let (argt, ctx, pending) ← toSMTTerm factory bvs a ctx pending
+    .ok (selectAll fnt (argt :: acc), ctx, pending)
+  | .ite _ c t f, a => do
+    let (ct, ctx, pending) ← toSMTTerm factory bvs c ctx pending
+    if hasOpaqueFunctionValue ctx.useArrayTheory t ||
+        hasOpaqueFunctionValue ctx.useArrayTheory f then
+      -- A branch is a variable whose function value is an opaque constant, which can only
+      -- be applied as its uninterpreted function: the application is pushed into the
+      -- branches, `(if c then t else f)(a)` being `if c then t(a) else f(a)`.
+      let (tt, ctx, pending) ← appToSMTTerm factory bvs t a acc ctx pending
+      let (ft, ctx, pending) ← appToSMTTerm factory bvs f a acc ctx pending
+      .ok (Factory.ite ct tt ft, ctx, pending)
+    else
+      -- Both branches are arrays: the conditional is one, applied once by `select`, with
+      -- the argument encoded once.
+      let (tt, ctx, pending) ← toSMTTerm factory bvs t ctx pending
+      let (ft, ctx, pending) ← toSMTTerm factory bvs f ctx pending
+      let (argt, ctx, pending) ← toSMTTerm factory bvs a ctx pending
+      .ok (selectAll (Factory.ite ct tt ft) (argt :: acc), ctx, pending)
   | _, _ =>
     .error f!"Cannot encode .app expression {LExpr.app smtEncodingLoc fn arg}"
 termination_by (sizeOf fn + sizeOf arg, 0)
@@ -1060,9 +1264,7 @@ def resolveOnePendingFnDef (factory : @Lambda.Factory CoreLParams)
   let some func := factory[p.fn.name]?
     | .error f!"Cannot find function {p.fn} in Strata Core's Factory!"
 
-  let tys := LMonoTy.destructArrow p.fnty
-  let outty := tys.getLast (by exact @LMonoTy.destructArrow_non_empty p.fnty)
-  let intys := tys.take (tys.length - 1)
+  let (intys, _) := LMonoTy.splitArrows func.inputs.length p.fnty
   let formals := func.inputs.keys
   let formalStrs := formals.map (toString ∘ format)
 

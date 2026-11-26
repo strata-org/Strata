@@ -235,14 +235,14 @@ private def procRigidInput : Procedure :=
   { header := { name := ⟨"q", ()⟩, typeArgs := ["a"], inputs := [(⟨"x", ()⟩, rigidA)],
                 outputs := [] },
     spec := { preconditions := [], postconditions := [] },
-    body := .structured [] }
+    body := .structured [] false }
 
 /-- A procedure whose output names a reserved rigid constructor. -/
 private def procRigidOutput : Procedure :=
   { header := { name := ⟨"r", ()⟩, typeArgs := ["a"], inputs := [],
                 outputs := [(⟨"y", ()⟩, rigidA)] },
     spec := { preconditions := [], postconditions := [] },
-    body := .structured [] }
+    body := .structured [] false }
 
 /-- info: REJECTED: Procedure 'q': signature type $__rigid_a is not a registered type -/
 #guard_msgs in
@@ -265,7 +265,7 @@ private def procPolyOk : Procedure :=
   { header := { name := ⟨"s", ()⟩, typeArgs := ["a"], inputs := [(⟨"x", ()⟩, .ftvar "a")],
                 outputs := [(⟨"y", ()⟩, .ftvar "a")] },
     spec := { preconditions := [], postconditions := [] },
-    body := .structured [] }
+    body := .structured [] false }
 
 /-- info: ACCEPTED -/
 #guard_msgs in
@@ -386,14 +386,15 @@ private def procConReservedParam : Procedure :=
     spec := { preconditions := [], postconditions := [] },
     body := .structured
       [@Imperative.Stmt.typeDecl Expression Command
-        { name := "MyV", params := [Core.skolemName "a"] } .empty] }
+        { name := "MyV", params := [Core.skolemName "a"] } .empty] false }
 
 /-- A body-local opaque type with an ordinary parameter name. -/
 private def procConGoodParam : Procedure :=
   { header := { name := ⟨"p", ()⟩, typeArgs := [], inputs := [], outputs := [] },
     spec := { preconditions := [], postconditions := [] },
     body := .structured
-      [@Imperative.Stmt.typeDecl Expression Command { name := "MyV", params := ["a"] } .empty] }
+      [@Imperative.Stmt.typeDecl Expression Command { name := "MyV", params := ["a"] } .empty] false
+          }
 
 /-- info: ACCEPTED -/
 #guard_msgs in
@@ -507,7 +508,7 @@ private def chainedSynonymProcPgm : Program :=
       .proc { header := { name := "p", typeArgs := [], inputs := [("x", .tcons "B" [])],
                           outputs := [] },
               spec := { preconditions := [], postconditions := [] },
-              body := .structured [] } .empty
+              body := .structured [] false } .empty
   ]}
 
 /--
@@ -601,7 +602,7 @@ private def bodyLocalRigidPrefixTypePgm : Program := { decls := [
           spec := { preconditions := [], postconditions := [] },
           body := .structured [
             .typeDecl { name := "$__rigid_a", params := [] } .empty
-          ] } .empty
+          ] false } .empty
 ]}
 
 /--
@@ -624,7 +625,7 @@ private def bodyLocalRigidPrefixTypeArityPgm : Program := { decls := [
           spec := { preconditions := [], postconditions := [] },
           body := .structured [
             .typeDecl { name := "$__rigid_a", params := ["T"] } .empty
-          ] } .empty
+          ] false } .empty
 ]}
 
 /--
@@ -647,7 +648,7 @@ private def bodyLocalGenPrefixTypePgm : Program := { decls := [
           spec := { preconditions := [], postconditions := [] },
           body := .structured [
             .typeDecl { name := "$__ty0", params := [] } .empty
-          ] } .empty
+          ] false } .empty
 ]}
 
 /--
@@ -671,7 +672,7 @@ private def bodyLocalOpaqueTypePgm : Program := { decls := [
           body := .structured [
             .typeDecl { name := "T", params := [] } .empty,
             Statement.init "x" (.forAll [] (.tcons "T" [])) .nondet .empty
-          ] } .empty
+          ] false } .empty
 ]}
 
 /-- info: ACCEPTED -/
@@ -685,7 +686,7 @@ private def bodyLocalNearMissTypePgm : Program := { decls := [
           body := .structured [
             .typeDecl { name := "$__rigi", params := [] } .empty,
             .typeDecl { name := "rigid_a", params := [] } .empty
-          ] } .empty
+          ] false } .empty
 ]}
 
 /--

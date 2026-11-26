@@ -513,13 +513,13 @@ abbrev BlockConfig (scfg : ExploreCfg) : Type :=
     declares) that no block dominating block `j` declares, given the dominators `dom`
     (`computeDominators`). A local declared both in a block that dominates `j` and in one that
     does not is still in scope at `j`. -/
-private def localsOutOfScope (dom : Std.HashMap String (List String))
+private def localsOutOfScope (dom : CFG.Dom.DomMap)
     (decls : List (String × List CoreIdent)) (j : String) : List CoreIdent :=
   if decls.isEmpty then [] else
-  let doms : Std.HashSet String := .ofList (dom.getD j [])
   let kept : Std.HashSet CoreIdent :=
-    .ofList (decls.flatMap fun p => bif doms.contains p.1 then p.2 else [])
-  decls.flatMap fun p => bif doms.contains p.1 then [] else p.2.filter (!kept.contains ·)
+    .ofList (decls.flatMap fun p => bif CFG.Dom.dominates dom p.1 j then p.2 else [])
+  decls.flatMap fun p =>
+    bif CFG.Dom.dominates dom p.1 j then [] else p.2.filter (!kept.contains ·)
 
 /-- Where the branches of a fork to `t` and `e` first meet: with `R` the blocks both reach
     (each counting as reaching itself), the one block of `R` none of whose predecessors (`preds`)
@@ -1167,8 +1167,10 @@ private def wrapCFG (g : Core.DetCFG) (pre post : List Command) : Core.DetCFG :=
 /-- Set up a procedure: choose a symbol prefix no name of the procedure starts with; bind every
     input and output to a fresh symbol of its declared type; bind `old x` to `x`'s entry symbol
     for in-out parameters. Then run, for a structured body, `precondition assumes ++ body ++
-    checked-postcondition asserts`, and for a CFG body, the CFG with an entry block assuming
-    the preconditions and an exit block asserting the checked postconditions (`wrapCFG`).
+    postcondition asserts`, for a CFG body, the CFG with an entry block assuming the
+    preconditions and an exit block asserting the postconditions (`wrapCFG`). A free
+    postcondition is not checked: it becomes `assume true` (`Imperative.Check.asserts`). An
+    abstract procedure has no body to check against its contract, so its result is empty.
 
     Assumes what the pipeline establishes before VC generation (`symExecRequires`): no calls,
     no nondeterministic guards, monomorphic procedures, type-annotated expressions.  A
@@ -1201,12 +1203,8 @@ def exploreProc (cfg : ExploreCfg) (maxSteps runFuel : Nat) (F : Lambda.Factory 
       | some v => σ.update (CoreIdent.mkOld x.name) v
       | none => σ
     else σ) σ
-  let pre := p.spec.preconditions.toList.map fun (label, check) =>
-    Imperative.Cmd.assume label check.expr check.md
-  let post := p.spec.postconditions.toList.filterMap fun (label, check) =>
-    match check.attr with
-    | .Free => none
-    | _ => some (Imperative.Cmd.assert label check.expr check.md)
+  let pre : List (Imperative.Cmd Expression) := Imperative.Check.assumes p.spec.preconditions
+  let post : List (Imperative.Cmd Expression) := Imperative.Check.asserts p.spec.postconditions
   let env : IEnv Expression := { store := σ, factory := F }
   -- The declared types of the formals and their `old` names (`PathState.types`).
   let types : Std.TreeMap CoreIdent LMonoTy identCmp := formals.foldl (fun t (x, ty) =>
@@ -1214,19 +1212,22 @@ def exploreProc (cfg : ExploreCfg) (maxSteps runFuel : Nat) (F : Lambda.Factory 
   let names := formals.map (·.1) ++ formals.map (fun (x, _) => CoreIdent.mkOld x.name)
   let entry := names.filterMap fun x => (σ.get x).map (x, ·)
   match p.body with
-  | .structured body =>
+  | .structured body _ =>
     let stmt (c : Imperative.Cmd Expression) : Statement := .cmd (.cmd c)
     let stmts := pre.map stmt ++ body ++ post.map stmt
     let r := explore (structuredShape cfg) maxSteps
       { cfg := .stmts stmts env, st := { next := n, types }, node := 0, budget := runFuel }
       pol p.header.name.name
     { r.addUnreached (stmtCheckObls stmts) with entry, stmts }
-  | .cfg g =>
+  | .cfg g _ =>
     let g := wrapCFG g (pre.map CmdExt.cmd) (post.map CmdExt.cmd)
     let r := explore (cfgShape cfg g) maxSteps
       { cfg := .atBlock g g.entry env, st := { next := n, types }, node := 0, budget := runFuel }
       pol p.header.name.name
     { r.addUnreached (blockCheckObls g) with entry, graph := some g }
+  -- An abstract procedure has no body to explore: its result is empty. The program-level folds
+  -- skip abstract procedures, so they do not reach this arm.
+  | .abstract => { nodes := #[], steps := 0, entry }
 
 /-! ## Programs -/
 
@@ -1256,7 +1257,11 @@ def symExecProgram (cfg : ExploreCfg) (maxSteps runFuel : Nat) (F : Lambda.Facto
   let fnNames := F.toArray.toList.map (·.name.name)
   match failedRequires prog with
   | [] => .ok <| prog.decls.filterMap fun
-    | .proc p _ => some (p.header.name.name, exploreProc cfg maxSteps runFuel F p fnNames)
+    | .proc p _ =>
+      -- An abstract procedure has no body to check, and call elimination has removed every
+      -- call to it, so it is skipped.
+      if p.body.isAbstract then none
+      else some (p.header.name.name, exploreProc cfg maxSteps runFuel F p fnNames)
     | _ => none
   | fs => .error fs
 

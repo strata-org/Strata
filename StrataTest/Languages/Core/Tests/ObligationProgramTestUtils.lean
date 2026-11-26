@@ -45,7 +45,7 @@ def proc (params : List String) (ss : Statements) : Procedure := {
     header := { name := id' "P", typeArgs := [],
                 inputs := params.map (fun x => (id' x, (.int : LMonoTy))), outputs := [] }
     spec := { preconditions := [], postconditions := [] }
-    body := .structured ss }
+    body := .structured ss false }
 
 /-- The output of the WP and SSA phases on `ss`, the empty list on error. -/
 def obligations (params : List String) (ss : Statements) : Statements :=

@@ -13,6 +13,7 @@ public import Strata.Init
 /-- Embedded example files for use by downstream test suites. -/
 public def embeddedExampleFiles : Array (String × String) := #[
   ("AxiomRelevancePaths.core.st", include_str "../../Examples/AxiomRelevancePaths.core.st"),
+  ("CFGLoopFree.core.st", include_str "../../Examples/CFGLoopFree.core.st"),
   ("CFGNondet.core.st", include_str "../../Examples/CFGNondet.core.st"),
   ("CFGSimple.core.st", include_str "../../Examples/CFGSimple.core.st"),
   ("CSEPathSplits.core.st", include_str "../../Examples/CSEPathSplits.core.st"),

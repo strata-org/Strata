@@ -121,7 +121,7 @@ private abbrev sumBody : Core.Statements :=
     (Core.Statement.init sqId intLTy (.det mulE) mdSq :: bodyTail) mdL])
 
 /-- The translated body really is the prelude followed by the loop. -/
-private theorem sum_body_eq : sumProc.body = .structured sumBody := by native_decide
+private theorem sum_body_eq : sumProc.body = .structured sumBody false := by native_decide
 
 /-! ## The hoisted body -/
 
@@ -161,7 +161,7 @@ private def sumOut : Core.Program := match sumRun.1 with
     on the program succeeds, and the program it returns has the procedure with the body
     `sumTgt`. -/
 theorem sum_out : (∃ c σ', sumRun = (.ok (c, sumOut), σ')) ∧
-    Core.Decl.proc { sumProc with body := .structured sumTgt } sumDeclMd ∈ sumOut.decls := by
+    Core.Decl.proc { sumProc with body := .structured sumTgt false } sumDeclMd ∈ sumOut.decls := by
   have h : (match sumRun.1 with | .ok _ => true | .error _ => false) = true := by
     native_decide
   have hrun : ∃ c σ', sumRun = (.ok (c, sumOut), σ') := by
@@ -337,7 +337,7 @@ theorem sum_meets_contract :
     Core.LoopInitHoist.triple π testParams sum_hoist
       ⟨by decide +kernel, show List.Nodup _ by decide +kernel⟩
       (fun _ h => h.1.2.1) (fun _ _ _ hp hwf hf hd hag hx => done_transport hp.2 hwf hf hd hag hx)
-      (fun ρ₀ ρ' tr hpre hinit hrun => sumTgt_triple hE ρ₀ ρ' tr hpre.2 hinit hrun)
+      (fun ρ₀ hpre hinit => sumTgt_triple hE ρ₀ hpre.2 hinit)
   have hpost : Imperative.Logic.Hoare.PostWF sumBody (Done E) := by
     intro ρ ⟨hf, a, hs, ha⟩
     have hnd : sId ∉ Block.definedVars (P := Core.Expression) (C := Core.Command) sumBody true := by

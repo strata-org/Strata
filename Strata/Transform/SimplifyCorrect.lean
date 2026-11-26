@@ -326,10 +326,10 @@ theorem checkedBody_triple (π : String → Option Procedure)
     (fun ρ₀ hp hg => ⟨ρ₀, ⟨rfl, hpin ρ₀ hp, htyped ρ₀ hp hg⟩, hp⟩) ?_ ?_
     (fun _ ρ' ρ'' _ _ _ _ hR hp => hpost ρ' ρ'' hR hp)
   · intro ρ₀ ρ' trace hp _ hrun ev hev
-    rw [coreBlock_terminatesAt_events_factory hnc hrun ev hev]
+    rw [coreBlock_events_factory hnc hrun ev hev]
     exact hpin ρ₀ hp
   · intro ρ₀ ρ₀' ρ'' trace hp hrel _ hrun ev hev
-    rw [coreBlock_terminatesAt_events_factory hnc' hrun ev hev, hrel.1]
+    rw [coreBlock_events_factory hnc' hrun ev hev, hrel.1]
     exact hpin ρ₀ hp
   · intro _ _ hs ht hrel hv
     exact (weakensAssumes_denoteBasedInterp hrel hs ht).assertionsValid_reflect hv
@@ -341,9 +341,10 @@ theorem checkedBody_triple (π : String → Option Procedure)
 /-- A procedure's structured body is replaced by `checkedBody` of it, for the procedure with
     its contract simplified. -/
 private theorem simplifyProcedure_body (base : Ctx) (q : Procedure) {ss : List Statement}
-    (hb : q.body = .structured ss) :
-    (simplifyProcedure base q).body = .structured (checkedBody base (simplifySpec base q) ss) := by
-  have hb' : (simplifySpec base q).body = .structured ss := hb
+    (hb : q.body = .structured ss opq) :
+    (simplifyProcedure base q).body =
+      .structured (checkedBody base (simplifySpec base q) ss) opq := by
+  have hb' : (simplifySpec base q).body = .structured ss opq := hb
   unfold simplifyProcedure
   simp only [hb']
 
@@ -376,11 +377,11 @@ private theorem simplifyPhase_ok (program : Program) (s : Transform.CoreTransfor
     the body and its entry typing. -/
 theorem simplifyPhase_over {program out : Program} {s s' : Transform.CoreTransformState}
     {b : Bool} (h : (Core.simplifyPhase.transform program).run s = (.ok (b, out), s')) :
-    ∃ base : Ctx, base.Fresh ∧ ∀ q md ss, Decl.proc q md ∈ program.decls →
-      q.body = .structured ss →
+    ∃ base : Ctx, base.Fresh ∧ ∀ q md ss opq, Decl.proc q md ∈ program.decls →
+      q.body = .structured ss opq →
         Decl.proc (simplifyProcedure base q) md ∈ out.decls ∧
         (simplifyProcedure base q).body =
-          .structured (checkedBody base (simplifySpec base q) ss) ∧
+          .structured (checkedBody base (simplifySpec base q) ss) opq ∧
         ∀ (π : String → Option Procedure) (params : Core.Logic.InitEnvWFParams)
           (Γ : VarTyping Expression), Lambda.Factory.EvalSoundWF base.factory →
           OverapproximatesTracesUptoWhen (Trace.WeakensAssumes Imperative.BigStep.evalInterp)
@@ -389,7 +390,7 @@ theorem simplifyPhase_over {program out : Program} {s s' : Transform.CoreTransfo
             (fun ss' => some (checkedBody base (simplifySpec base q) ss'))
             (fun ss' => ss' = ss ∧ BodyWF base.factory Γ ss') params params := by
   obtain ⟨base, hfresh, hmem⟩ := runSimplify_ok (simplifyPhase_ok program s ▸ h)
-  refine ⟨base, hfresh, fun q md ss hq hb => ?_⟩
+  refine ⟨base, hfresh, fun q md ss _ hq hb => ?_⟩
   exact ⟨hmem q md hq, simplifyProcedure_body base q hb, fun π params Γ hlaws =>
     checkedBody_overapproximatesTraces π params base (simplifySpec base q) Γ hfresh hlaws ss⟩
 

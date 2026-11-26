@@ -160,7 +160,8 @@ procedure f() opaque {
 #end
 
 -- Hole of a constrained type: bound to a fresh local whose constraint is assumed, so the
--- declaration's check holds.
+-- declaration's check holds. The deterministic hole yields its value through `$fromHole_posint`,
+-- whose values are those of `posint`.
 /--
 info: procedure posint$constraint(x: int): bool
 {
@@ -171,7 +172,7 @@ procedure f()
   opaque
 {
   var x: int := {
-    var $constrainedHole0: int := <?>;
+    var $constrainedHole0: int := $fromHole_posint(<?>);
     assume posint$constraint($constrainedHole0);
     $constrainedHole0
   };
@@ -183,6 +184,13 @@ procedure $witness_posint()
 {
   var $witness: int := 1;
   assert posint$constraint($witness)
+};
+procedure $fromHole_posint(x: int)
+  returns (r: int)
+{
+  if posint$constraint(x)
+    then r := x
+    else r := 1
 };
 -/
 #guard_msgs in

@@ -87,8 +87,8 @@ namespace Strata.HoareUtils
 /-- The body of the procedure of `p` named `n`. -/
 @[expose] def bodyOf (p : Core.Program) (n : String) : Core.Statements :=
   match (procOf p n).body with
-  | .structured ss => ss
-  | .cfg _ => []
+  | .structured ss _ => ss
+  | .cfg _ _ | .abstract => []
 
 /-- Fuel for the concrete evaluator, ample for the tests' bodies. -/
 @[expose] def fuel : Nat := 200
@@ -134,7 +134,8 @@ theorem bodyTerminates_of_progresses {p : Core.Program} {n : String}
     of procedure `n` with `Core.runLits`, deciding each premise of
     `Procedure.contractTriple_of_meetsContractOnLits` by `native_decide`. -/
 macro "contract_by_run " p:term:max n:term:max : term =>
-  `(Core.Logic.Hoare.Procedure.contractTriple_of_meetsContractOnLits (hmono := by native_decide) $p
+  `(Core.Logic.Hoare.Procedure.contractTriple_of_meetsContractOnLits (opq := false)
+      (hmono := by native_decide) $p
       Strata.HoareUtils.testParams $n (Strata.HoareUtils.procOf $p $n)
       (Strata.HoareUtils.bodyOf $p $n) Strata.HoareUtils.fuel
       (by native_decide) (by native_decide) (by native_decide)

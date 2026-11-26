@@ -397,6 +397,8 @@ local macro "w_ok" : tactic => `(tactic| repeat' first
   | apply wOpsIn_not
   | unfold kAnd
   | unfold kImp
+  | unfold kMarkImp
+  | (unfold kAssume; split)
   | unfold WExpr.and
   | unfold WExpr.or
   | refine ⟨?_, ?_, ?_⟩)

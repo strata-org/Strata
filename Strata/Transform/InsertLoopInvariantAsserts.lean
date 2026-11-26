@@ -303,9 +303,10 @@ def insertLoopInvariantAssertsPipelinePhase : PipelinePhase where
     rejectMarkerLabels "the insertion of loop invariant checks" insertLoopInvAssumePrefix p
     insertLoopInvariantAsserts p
   phase.name := "insertLoopInvariantAsserts"
+  phase.validationPrefixes := [insertLoopInvAssumePrefix]
   phase.getValidation obligation :=
     if obligationHasLabelPrefix obligation insertLoopInvAssumePrefix then
-      .modelToValidate (fun _ => /- TODO -/ false)
+      .modelToValidate (fun _ _ => /- TODO -/ none)
     else .modelPreserving
   -- The measure snapshot is an `init`, which declares rather than reassigns, so
   -- `staticSingleAssignment` survives; the invariants, measure and guard are

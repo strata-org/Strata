@@ -26,10 +26,12 @@ import Strata.Transform.GenOpaqueTypeParams
 import Strata.Transform.MonomorphizeFunctions
 import Strata.Transform.NondetElim
 import Strata.Transform.BetaReduce
+import Strata.Transform.LambdaLift
 import Strata.Transform.CommonSubexprElim
 import Strata.Transform.DeadDefElim
 import Strata.Transform.Simplify
 import Strata.Transform.EqualitySimplification
+import Strata.Transform.ContextualRewrite
 import Strata.Transform.FoldAxioms
 
 /-! ## Strata Core Transform & Verification API
@@ -237,6 +239,12 @@ def Core.passSimplify : Core.PipelinePhase :=
 def Core.passEqualitySimplification : Core.PipelinePhase :=
   _root_.Core.equalitySimplificationPhase
 
+/-- Rewrite each `assert` goal under the facts on its path, and replace it by `true` when it
+    rewrites to `true`. No default order lists it; a phase list runs it after `betaReduce` in
+    the order of `--vcgen symexec` or `--vcgen wp`. -/
+def Core.passContextualRewrite : Core.PipelinePhase :=
+  _root_.Core.contextualRewritePhase
+
 /-- Fold every axiom without quantifiers, so that a later phase reads values that
     only appear once a field of a constructor application is selected. No default
     pipeline lists it. -/
@@ -258,6 +266,15 @@ def Core.passNondetElim : Core.PipelinePhase :=
 /-- Reduce beta redexes, leaving terms in normal form. -/
 def Core.passBetaReduce : Core.PipelinePhase :=
   Core.betaReducePipelinePhase
+
+/-- Replace every abstraction by a function applied to what it captures. -/
+def Core.passLambdaLift : Core.PipelinePhase :=
+  Core.lambdaLiftPipelinePhase
+
+/-- `passLambdaLift`, run only on a program it has work to do on; every other program is
+    returned unchanged. -/
+def Core.passLambdaLiftIfNeeded : Core.PipelinePhase :=
+  Core.lambdaLiftIfNeededPipelinePhase
 
 /-- Type check the program, annotating expressions with their types. -/
 def Core.passTypeCheck (options : Core.VerifyOptions := Core.VerifyOptions.default) :
@@ -368,20 +385,30 @@ def Core.passUnrollBoundedQuantifiers : Core.PipelinePhase :=
     The same phases are nameable in every mode (`options.vcgen`, `options.symExec`): the
     default order, then each phase in `others` it leaves out, each name once. Among these are
     `assertNoCFGBodies`, which `--vcgen symexec` drops, the CFG loop phases
-    (`hoistNondetChoices`, `cfgLoopElim`), which only `--vcgen symexec` runs, the VC generation
-    phases outside the mode's order, and the components of `passWPLoop` other than beta reduction
-    (`passGuardFwd`, `passDefInline`, `passDeadDefElim`, `passGuardProp`, `passCtorFold`), which
-    are in no default order. -/
+    (`hoistNondetChoices`, `cfgLoopElim`), which only `--vcgen symexec` and `--vcgen usp/uwp`
+    run, the VC generation phases outside the mode's order, the passive one (`--vcgen usp/uwp`)
+    included, and the components of `passWPLoop` other than beta reduction (`passGuardFwd`,
+    `passDefInline`, `passDeadDefElim`, `passGuardProp`, `passCtorFold`), which are in no
+    default order. -/
 def Core.nameablePhases (options : Core.VerifyOptions := Core.VerifyOptions.default) :
     List Core.PipelinePhase :=
   let defaults := Core.corePipelinePhases options
   let others := [Core.passInlineAll, Core.passUnrollBoundedQuantifiers, Core.passFunctionInlining,
-      Core.passFoldAxioms, Core.passEqualitySimplification, Core.passDeclObligations options,
+      Core.passFoldAxioms, Core.passEqualitySimplification, Core.passContextualRewrite,
+      Core.passDeclObligations options,
       _root_.Core.ProgramFact.assertPhase .noCFGBodies,
       Core.passWP, Core.passSSA, Core.passGuardFwd, Core.passDefInline, Core.passDeadDefElim,
       Core.passWPLoop, Core.passGuardProp, Core.passCtorFold, Core.passSymbolicEval options,
       Core.passSymExec options, Core.passCommonSubexprElim,
-      _root_.Core.hoistNondetChoicesPipelinePhase, Core.passCFGLoopElim]
+      _root_.Core.hoistNondetChoicesPipelinePhase, Core.passCFGLoopElim,
+      -- In the default orders of symbolic evaluation and WP, but not of `usp`/`uwp`.
+      Core.passNondetElim] ++
+    -- The passive VC phase, from the order of `--vcgen usp` (`uwp` when that is the mode),
+    -- which knows the validation prefixes of the phases before it.
+    ((Core.passiveVCGenPhases
+        { options with vcgen := if options.vcgen == .uwp then .uwp else .usp }).filter
+      fun p => p.phase.name == "passiveVC") ++
+    [Core.passLambdaLiftIfNeeded]
   defaults ++ others.filter fun p => !defaults.any (·.phase.name == p.phase.name)
 
 /-! ### Standard Core verification pipeline phases
@@ -517,7 +544,7 @@ def Core.displayPhasesText (flags : Core.PhaseFlagNames)
     to unknown. -/
 def frontEndPhase : Core.AbstractedPhase where
   name := "FrontEnd"
-  getValidation _ := .modelToValidate (fun _ => /- TODO -/ false)
+  getValidation _ := .modelToValidate (fun _ _ => /- TODO -/ none)
 
 /-! ### Analysis of Core programs -/
 
@@ -549,6 +576,9 @@ def Core.verifyProgram
     (solver : Option Core.CoreSMTSolver := none)
     (mkSession : Option Core.IncrementalSolve.SessionFactory := none)
     : EIO String Core.VCResults := do
+  -- `--vcgen` dispatch: `Core.corePipelinePhases` returns the phases of the
+  -- chosen generator, and all generators reach the same back end.
+
   let runVerification (tempDir : System.FilePath) : IO Core.VCResults :=
     EIO.toIO (fun dm => IO.Error.userError (toString (dm.format fileMap)))
       (_root_.Core.verify program tempDir options moreFns externalPhases

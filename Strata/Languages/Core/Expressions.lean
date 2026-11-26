@@ -283,6 +283,8 @@ instance : HasBoolOps Core.Expression where
   | e => Lambda.LExpr.app coreLoc (Lambda.boolNotFunc (T:=CoreLParams)).opExpr e
   and e1 e2 := Lambda.LExpr.app coreLoc (Lambda.LExpr.app coreLoc
     (Lambda.boolAndFunc (T:=CoreLParams)).opExpr e1) e2
+  or e1 e2 := Lambda.LExpr.app coreLoc (Lambda.LExpr.app coreLoc
+    (Lambda.boolOrFunc (T:=CoreLParams)).opExpr e1) e2
   imp e1 e2 := Lambda.LExpr.app coreLoc (Lambda.LExpr.app coreLoc
     (Lambda.boolImpliesFunc (T:=CoreLParams)).opExpr e1) e2
 

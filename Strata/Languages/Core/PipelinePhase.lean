@@ -28,9 +28,19 @@ public section
 inductive ModelValidation where
   /-- The phase preserves models — sat results are sound. -/
   | modelPreserving
-  /-- The phase may introduce spurious models. The function returns true
-      when the model is valid. -/
-  | modelToValidate (validate : Imperative.SMT.Model Expression.Ident → Bool)
+  /-- The phase may introduce spurious models. The function returns the model to
+      report when the model is valid (the model itself, or one the validation
+      refined, such as with the values of a run it found), and `none` when it is not.
+      `holds` says which query the model is of: the check holding (the
+      satisfiability query, `P ∧ Q`) or failing (the validity query, `P ∧ ¬Q`). -/
+  | modelToValidate (validate : (holds : Bool) → Imperative.SMT.Model Expression.Ident →
+      Option (Imperative.SMT.Model Expression.Ident))
+  /-- The obligation's path carries markers of the phase, each placed under the branch guards
+      `guards` lists for it (`markerGuards`; an empty list for a marker on every path). A model
+      can reach a marker unless it falsifies one of the marker's guards; a `sat` result whose
+      model can reach one of the markers is not sound. A model that reaches none of them is
+      passed through, never promoted. -/
+  | markersOnPath (guards : List (List Expression.Expr))
 
 /-- A phase in the verification pipeline. Each phase determines per-obligation
     whether its models need validation, based on whether the obligation is
@@ -43,10 +53,34 @@ structure AbstractedPhase where
   name : String
   /-- Given an obligation, determine the model validation for this phase. -/
   getValidation : ProofObligation Expression → ModelValidation := fun _ => .modelPreserving
+  /-- A validation that also reads the program the phase was given, for a phase that
+      checks a model against that program (by replaying it, say). When the pipeline
+      records the phase's input (`runTransformsRecording`), the verifier uses it in place
+      of `getValidation` (`AbstractedPhase.onInput`); `getValidation` serves the callers
+      that do not record inputs. -/
+  getValidationOn : Option (Program → ProofObligation Expression → ModelValidation) := none
+  /-- The phase, when it changes the program, may abstract some code without a
+      labelled assumption on its paths (call elimination, whose call to a callee without
+      postconditions is a bare `havoc`). A later phase's `getValidationOn` would run that
+      abstraction as if it were the program, so after such a phase has changed the
+      program `runTransformsRecording` records no input, and the later phase validates
+      with `getValidation`. -/
+  leavesUnmarkedAbstractions : Bool := false
+  /-- The label prefixes of the assumptions `getValidation` looks for
+      (`obligationHasLabelPrefix`), for a phase that rebuilds obligations and must
+      keep those labels on their paths (the passive VC phase). -/
+  validationPrefixes : List String := []
   /-- Given an obligation label, return a human-readable description for
       diagnostics (e.g. "precondition 'nat'"). Returns `none` when the
       label does not belong to this phase. -/
   getAssertDescription : String → Option String := fun _ => none
+
+/-- The phase, validating models against `input`, the program it was given, when it has
+    such a validation (`getValidationOn`). -/
+def AbstractedPhase.onInput (p : AbstractedPhase) (input : Program) : AbstractedPhase :=
+  match p.getValidationOn with
+  | some f => { p with getValidation := f input }
+  | none => p
 
 /-- True when the label of an assumption in the obligation's path conditions
     starts with the given string, indicating the obligation went through that
@@ -59,6 +93,62 @@ def obligationHasLabelPrefix (obligation : ProofObligation Expression)
       | .assumption l _ => l.startsWith pfx
       | _ => false
 
+/-- The reach condition under which `--vcgen wp` keeps a marker whose condition is `true`, when
+    `e` is that marker's condition as WP keeps it: `if c then true else ¬c`, `c` being the reach
+    condition (`WP.kMarkImp`). `some []` for the condition `true`, and `none` for any other
+    condition. Symbolic evaluation and symbolic execution never give a marker the first form:
+    every leaf of their markers' conditions is `true`. -/
+def markerGuards : Expression.Expr → Option (List Expression.Expr)
+  | .ite _ c (.const _ (.boolConst true))
+      (.ite _ c' (.const _ (.boolConst false)) (.const _ (.boolConst true))) =>
+    if c == c' then some [c] else none
+  | .const _ (.boolConst true) => some []
+  | _ => none
+
+/-- The model validation of an abstraction phase whose markers are the assumptions of the
+    obligation's path condition with a label that starts with one of `pfxs`. Without such an
+    assumption, `modelPreserving`. Otherwise `markersOnPath` with, for each, its branch guards
+    (`markerGuards`) when its label starts with one of `guarded`, whose markers have the
+    condition `true`, and no guards (the marker is on every path) for any other. -/
+def markerValidation (obligation : ProofObligation Expression) (pfxs : List String)
+    (guarded : List String := []) : ModelValidation :=
+  let guards := obligation.assumptions.flatMap fun pc => pc.filterMap fun
+    | .assumption l e =>
+      if !pfxs.any (l.startsWith ·) then none
+      else if guarded.any (l.startsWith ·) then some ((markerGuards e).getD [])
+      else some []
+    | _ => none
+  if guards.isEmpty then .modelPreserving else .markersOnPath guards
+
+
+/-- The label of the assumption a phase places on the path of an obligation whose
+    models may be spurious: a phase whose output over-approximates what the
+    solver's models can represent, so that a model of the output's query need not
+    be one of the input. Like every name starting with `$__`, it cannot be written
+    in a user's program. The SMT back end reports a satisfiable query for a marked
+    obligation as unknown, not as a counterexample. -/
+def spuriousModelsLabel : String := "$__spuriousModels"
+
+/-- The metadata field that marks a lemma, an obligation of its own with no statement to
+    place a marker before: a lemma's obligation carries the lemma's metadata, so the field
+    marks that obligation alone. -/
+@[match_pattern]
+abbrev spuriousModelsField : Imperative.MetaDataElem.Field Expression := .label spuriousModelsLabel
+
+/-- The assumption `assume [spuriousModelsLabel]: true` that marks an obligation
+    whose models may be spurious; `e` is its `true`, carrying the marking phase's
+    location. -/
+def spuriousModelsMarker (e : Expression.Expr) : Statement :=
+  Statement.assume spuriousModelsLabel e .empty
+
+/-- The model validation of a phase that marks obligations with
+    `spuriousModelsMarker`: a model of a marked obligation is reported as unknown,
+    never as a counterexample; any other obligation is unaffected. -/
+def spuriousModelsValidation (obligation : ProofObligation Expression) : ModelValidation :=
+  let marked := obligationHasLabelPrefix obligation spuriousModelsLabel ||
+    (obligation.metadata.findElem spuriousModelsField).isSome
+  if marked then .modelToValidate (fun _ _ => none)
+  else .modelPreserving
 
 /-! ## Proof obligations, deferred
 
@@ -197,7 +287,8 @@ def ProgramFact.assertPhaseName (f : ProgramFact) : String :=
 /-- What the `assert` phase for `f` reports about a program `f`'s check rejects. For
     `wellFormedCalls`, the first ill-formed call, located at the call; there is one,
     since that check is `(illFormedCalls p).isEmpty`. For `noCFGBodies`, the first
-    procedure with a CFG body, located at its declaration. For the other facts, a
+    procedure with a CFG body, located at its declaration. For `noLambdas`, the first
+    lambda, located where it was written, with the remedy. For the other facts, a
     message naming what is expected. -/
 private def assertFailure (f : ProgramFact) (p : Program) : Strata.Message :=
   let generic :=
@@ -210,7 +301,18 @@ private def assertFailure (f : ProgramFact) (p : Program) : Strata.Message :=
       | _ => none
     match cfgProc with
     | some (name, md) => md.toDiagnostic s!"❌ Expected every procedure body to be \
-        structured, but found procedure {name} with a CFG body."
+        structured, but found procedure {name} with a CFG body. To verify it, pass \
+        --vcgen symexec (for an acyclic one) or --vcgen usp (or uwp)."
+    | none => generic
+  | .noLambdas =>
+    match p.firstLiveLambda? with
+    | some e =>
+      let msg := f!"❌ Expected no lambda, since the verification back end has no term for \
+        one, but found the lambda `{Program.showLambda e}`. Run `lambdaLift` before the back end."
+      match (Lambda.LExpr.metadata e).uri with
+      | some uri =>
+        Strata.Message.withRange { file := uri, range := (Lambda.LExpr.metadata e).range } msg
+      | none => Strata.Message.fromFormat msg
     | none => generic
   | _ => generic
 
@@ -350,12 +452,17 @@ abbrev ValidatedPipeline.ofListFromDelivering (σ₀ : ProgramFactSet) (consumer
       `withRepeatedPhasePure` for telemetry.
     * `keepAllFilesPrefix` — when provided, the program after each phase is
       written to `{prefix}.{n}.{phaseName}.core.st` (1-indexed). Creates the
-      parent directory if needed. -/
-def runTransforms (p : Program) (phases : List PipelinePhase)
+      parent directory if needed.
+
+    Also returns the input of each phase that validates models against its input
+    (`AbstractedPhase.getValidationOn`), by position in `phases`, unless an earlier
+    phase changed the program and may leave abstractions unmarked
+    (`AbstractedPhase.leavesUnmarkedAbstractions`). -/
+def runTransformsRecording (p : Program) (phases : List PipelinePhase)
     (initState : Transform.CoreTransformState := .emp)
     (pipelineCtx : Option Strata.Pipeline.PipelineContext := none)
     (keepAllFilesPrefix : Option String := none)
-    : EIO Transform.Err (Program × Transform.CoreTransformState) := do
+    : EIO Transform.Err (Program × Transform.CoreTransformState × List (Nat × Program)) := do
   let initState := { initState with currentProgram := .some p }
   if let some pfx := keepAllFilesPrefix then
     if let some parent := (System.FilePath.mk pfx).parent then
@@ -364,19 +471,21 @@ def runTransforms (p : Program) (phases : List PipelinePhase)
   let mut current := p
   let mut state := initState
   let mut step := 0
-  have : Inhabited (Except Transform.Err Program × Transform.CoreTransformState) :=
+  let mut inputs : Array (Nat × Program) := #[]
+  let mut unmarked := false
+  have : Inhabited (Except Transform.Err (Bool × Program) × Transform.CoreTransformState) :=
     ⟨(.error default, Transform.CoreTransformState.emp)⟩
-  for pp in phases do
-    let runPhase : Unit → Except Transform.Err Program × Transform.CoreTransformState :=
-      fun () =>
-        Transform.runWith current (fun prog => do
-          let (_, next) ← pp.transform prog
-          return next) state
+  for (pp, i) in phases.zipIdx do
+    if pp.phase.getValidationOn.isSome && !unmarked then
+      inputs := inputs.push (i, current)
+    let runPhase : Unit → Except Transform.Err (Bool × Program) × Transform.CoreTransformState :=
+      fun () => Transform.runWith current pp.transform state
     let (result, newState) ← match pipelineCtx with
       | some pctx => pctx.withRepeatedPhasePure pp.phase.name runPhase
       | none => pure (runPhase ())
     match result with
-    | .ok next =>
+    | .ok (changed, next) =>
+      unmarked := unmarked || (changed && pp.phase.leavesUnmarkedAbstractions)
       current := next
       state := newState
       step := step + 1
@@ -385,7 +494,16 @@ def runTransforms (p : Program) (phases : List PipelinePhase)
         IO.toEIO (fun e => Strata.Message.fromFormat f!"{e}")
           (IO.FS.writeFile path (toString current ++ "\n"))
     | .error e => throw e
-  pure (current, state)
+  pure (current, state, inputs.toList)
+
+/-- `runTransformsRecording` without the recorded inputs. -/
+def runTransforms (p : Program) (phases : List PipelinePhase)
+    (initState : Transform.CoreTransformState := .emp)
+    (pipelineCtx : Option Strata.Pipeline.PipelineContext := none)
+    (keepAllFilesPrefix : Option String := none)
+    : EIO Transform.Err (Program × Transform.CoreTransformState) := do
+  let (p, s, _) ← runTransformsRecording p phases initState pipelineCtx keepAllFilesPrefix
+  pure (p, s)
 
 /-- `phase` turns `p` into `p'`, from transform state `s` to state `s'`. -/
 @[expose] def PipelinePhase.Runs (phase : PipelinePhase)

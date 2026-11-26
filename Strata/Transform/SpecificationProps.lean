@@ -32,8 +32,10 @@ The Hoare-logic definitions and structural rules themselves live in
 `Strata.DL.Imperative.Logic.HoareTemplate`; event-trace Hoare transport across
 trace overapproximations lives in `Strata.Transform.SpecHoareConnection`:
 
-- `sound_assertValid` / `sound_allAsserts` — `Sound` transports
-  `AssertValidOnTracesWhen` and `AllAssertsValidOnTracesWhen`.
+- `assertValidityPreservedWhen_assertValid` / `assertValidityPreservedWhen_allAsserts` —
+  `AssertValidityPreservedWhen` transports `AssertValidOnTracesWhen` and
+  `AllAssertsValidOnTracesWhen`; `assertValidityPreservedWhen_single` builds it for the
+  transformation sending one statement to another.
 
 Canonical event-trace overapproximation properties.  Each is proved for
 `OverapproximatesTraces2UptoWhen`, which relates finite prefixes by `Rtrace` and completed runs
@@ -71,7 +73,9 @@ by `Rtrace_full`, and the one-relation members (`OverapproximatesTracesUptoWhen`
 - `overapproximatesTraces2UptoWhen_assertValid` / `overapproximatesTracesUptoWhen_assertValid`
   / `overapproximatesTraces_assertValid` and `overapproximatesTraces2UptoWhen_allAsserts` /
   `overapproximatesTraces_allAsserts` — transport per-identifier or whole-trace assertion
-  validity when the (prefix) trace relation reflects the corresponding predicate.
+  validity when the (prefix) trace relation reflects the corresponding predicate;
+  `overapproximatesTraces2UptoWhen_assertValidityPreservedWhen` states the per-identifier
+  transport as `AssertValidityPreservedWhen`.
 - `overapproximatesTraces2UptoWhen_stmts` / `overapproximatesTraces_stmts` — lift
   per-statement trace overapproximation to statement lists when the trace relations relate
   `[]` and respect append (the prefix relation extending on the left by the run relation).
@@ -119,48 +123,54 @@ variable {P : PureExpr} [HasFvar P] [HasFvars P] [HasOps P] [HasBool P] [HasBool
 
 namespace Transform
 
-/-! ## Connection between `Sound` and trace-native assertion validity -/
+/-! ## Connection between `AssertValidityPreservedWhen` and trace-native assertion validity -/
 
 section Connection
 omit [HasOps P] [HasBool P] [HasBoolOps P] [HasFvar P] [HasFvars P] [HasInt P] [HasIntOps P] [HasSubstFvar P]
 
-/-- Composing two sound transformations yields a sound composite under the same
-condition interpretation. -/
-theorem sound_comp (I : ConditionInterp P)
+/-- Composing two transformations that preserve assertion validity preserves it, under the same
+condition interpretation, when the first sends statements meeting its precondition to statements
+meeting the second's. -/
+theorem assertValidityPreservedWhen_comp (I : ConditionInterp P)
     (L₁ L₂ L₃ : EventLang P (Event P))
     (T₁ : L₁.StmtT → Option L₂.StmtT) (T₂ : L₂.StmtT → Option L₃.StmtT)
+    (pre₁ : L₁.StmtT → Prop) (pre₂ : L₂.StmtT → Prop)
     (params₁ : L₁.InitEnvWFParamsTy) (params₂ : L₂.InitEnvWFParamsTy)
     (params₃ : L₃.InitEnvWFParamsTy)
-    (h₁ : Sound I L₁ L₂ T₁ params₁ params₂)
-    (h₂ : Sound I L₂ L₃ T₂ params₂ params₃) :
-    Sound I L₁ L₃ (fun s => T₁ s >>= T₂) params₁ params₃ := by
-  intro s s'' a hrun hvalid
+    (hpre : ∀ s s', T₁ s = some s' → pre₁ s → pre₂ s')
+    (h₁ : AssertValidityPreservedWhen I L₁ L₂ T₁ pre₁ params₁ params₂)
+    (h₂ : AssertValidityPreservedWhen I L₂ L₃ T₂ pre₂ params₂ params₃) :
+    AssertValidityPreservedWhen I L₁ L₃ (fun s => T₁ s >>= T₂) pre₁ params₁ params₃ := by
+  intro s s'' a hrun hpre₁ hvalid
   simp only [bind, Option.bind] at hrun
   match h1 : T₁ s with
-  | some s' => rw [h1] at hrun; exact h₁ s s' a h1 (h₂ s' s'' a hrun hvalid)
+  | some s' =>
+    rw [h1] at hrun
+    exact h₁ s s' a h1 hpre₁ (h₂ s' s'' a hrun (hpre s s' h1 hpre₁) hvalid)
   | none => rw [h1] at hrun; exact absurd hrun (by nofun)
 
-/-- If `T` maps `s` to `s'`, soundness transports trace-native validity of an
-assertion identifier from `s'` back to `s`. -/
-theorem sound_assertValid (I : ConditionInterp P)
+/-- If `T` maps `s`, which satisfies `pre`, to `s'`, a transformation preserving assertion
+validity transports trace-native validity of an assertion identifier from `s'` back to `s`. -/
+theorem assertValidityPreservedWhen_assertValid (I : ConditionInterp P)
     (L₁ L₂ : EventLang P (Event P))
-    (T : L₁.StmtT → Option L₂.StmtT) (a : AssertId P)
+    (T : L₁.StmtT → Option L₂.StmtT) (pre : L₁.StmtT → Prop) (a : AssertId P)
     (params₁ : L₁.InitEnvWFParamsTy) (params₂ : L₂.InitEnvWFParamsTy)
     (s : L₁.StmtT) (s' : L₂.StmtT)
-    (ht : T s = some s') (hsound : Sound I L₁ L₂ T params₁ params₂)
+    (ht : T s = some s') (hpre : pre s)
+    (hsound : AssertValidityPreservedWhen I L₁ L₂ T pre params₁ params₂)
     (hvalid : AssertValidOnTracesWhen L₂ I
       (L₂.initEnvWF params₂ s') s' a) :
     AssertValidOnTracesWhen L₁ I (L₁.initEnvWF params₁ s) s a :=
-  hsound s s' a ht hvalid
+  hsound s s' a ht hpre hvalid
 
-/-- A sound transformation transports whole-trace validity of every assertion
-from the target statement back to the source statement. -/
-theorem sound_allAsserts (I : ConditionInterp P)
+/-- A transformation preserving assertion validity transports whole-trace validity of every
+assertion from the target statement back to a source statement satisfying its precondition. -/
+theorem assertValidityPreservedWhen_allAsserts (I : ConditionInterp P)
     (L₁ L₂ : EventLang P (Event P))
-    (T : L₁.StmtT → Option L₂.StmtT)
+    (T : L₁.StmtT → Option L₂.StmtT) (pre : L₁.StmtT → Prop)
     (params₁ : L₁.InitEnvWFParamsTy) (params₂ : L₂.InitEnvWFParamsTy)
-    (s : L₁.StmtT) (s' : L₂.StmtT) (ht : T s = some s')
-    (hsound : Sound I L₁ L₂ T params₁ params₂)
+    (s : L₁.StmtT) (s' : L₂.StmtT) (ht : T s = some s') (hpre : pre s)
+    (hsound : AssertValidityPreservedWhen I L₁ L₂ T pre params₁ params₂)
     (hvalid : AllAssertsValidOnTracesWhen L₂ I
       (L₂.initEnvWF params₂ s') s') :
     AllAssertsValidOnTracesWhen L₁ I
@@ -168,16 +178,38 @@ theorem sound_allAsserts (I : ConditionInterp P)
   intro ρ₀ cfg trace hinit htrace
   apply Trace.AssertionsValid.of_all_assertionValid I
   intro aid
-  have ha := hsound s s' aid ht (fun ρ₀' cfg' trace' hinit' htrace' =>
+  have ha := hsound s s' aid ht hpre (fun ρ₀' cfg' trace' hinit' htrace' =>
     Trace.AssertionValid.of_assertionsValid I aid
       (hvalid ρ₀' cfg' trace' hinit' htrace'))
   exact ha ρ₀ cfg trace hinit htrace
 
-/-- The identity transformation is sound for every event language and condition
-interpretation. -/
-theorem sound_id (I : ConditionInterp P) (L : EventLang P (Event P))
-    (params : L.InitEnvWFParamsTy) : Sound I L L some params params := by
-  intro s s' a ht hvalid; simp only [Option.some.injEq] at ht; subst ht; exact hvalid
+/-- The identity transformation preserves assertion validity for every event language,
+condition interpretation and precondition. -/
+theorem assertValidityPreservedWhen_id (I : ConditionInterp P) (L : EventLang P (Event P))
+    (pre : L.StmtT → Prop) (params : L.InitEnvWFParamsTy) :
+    AssertValidityPreservedWhen I L L some pre params params := by
+  intro s s' a ht _ hvalid; simp only [Option.some.injEq] at ht; subst ht; exact hvalid
+
+/-- The transformation sending only `s₀`, to `s₀'`, preserves assertion validity under `pre`
+when, for `s₀` satisfying `pre`, each assertion identifier valid on `s₀'` is valid on `s₀`.
+The equality test on statements is implicit, so that it unifies with the one a caller's
+`if s = s₀` elaborates to. -/
+theorem assertValidityPreservedWhen_single (I : ConditionInterp P)
+    {L₁ L₂ : EventLang P (Event P)} {_ : DecidableEq L₁.StmtT} {pre : L₁.StmtT → Prop}
+    {params₁ : L₁.InitEnvWFParamsTy} {params₂ : L₂.InitEnvWFParamsTy}
+    {s₀ : L₁.StmtT} {s₀' : L₂.StmtT}
+    (h : pre s₀ → ∀ a, AssertValidOnTracesWhen L₂ I (L₂.initEnvWF params₂ s₀') s₀' a →
+      AssertValidOnTracesWhen L₁ I (L₁.initEnvWF params₁ s₀) s₀ a) :
+    AssertValidityPreservedWhen I L₁ L₂ (fun s => if s = s₀ then some s₀' else none)
+      pre params₁ params₂ := by
+  intro s s' a ht hpre hvalid
+  dsimp only at ht
+  split at ht
+  · rename_i hs
+    subst hs
+    cases ht
+    exact h hpre a hvalid
+  · cases ht
 
 end Connection
 
@@ -454,6 +486,26 @@ theorem overapproximatesTraces2UptoWhen_assertValid
   have hr := hover st st' ht hpre ρ₀ ρ₀ rfl hinit
   obtain ⟨cfg', trace', htrace', hrel⟩ := hr.1 cfg trace htrace
   exact hreflect trace trace' hrel aid (hvalid ρ₀ cfg' trace' hr.2.2.2 htrace')
+
+omit [HasFvar P] [HasFvars P] [HasOps P] [HasBool P] [HasBoolOps P]
+  [HasSubstFvar P] [HasInt P] [HasIntOps P] in
+/-- A trace overapproximation with two trace relations, equal initial environments and any
+relation `Rout` between final environments preserves assertion validity
+(`AssertValidityPreservedWhen`) under its precondition when its prefix relation reflects
+assertion validity. -/
+theorem overapproximatesTraces2UptoWhen_assertValidityPreservedWhen
+    (I : ConditionInterp P) {Rtrace Rtrace_full : Relation (Trace P)}
+    {Rout : Relation (Env P)}
+    {L₁ L₂ : EventLang P (Event P)} {T : L₁.StmtT → Option L₂.StmtT}
+    {pre : L₁.StmtT → Prop}
+    {params₁ : L₁.InitEnvWFParamsTy} {params₂ : L₂.InitEnvWFParamsTy}
+    (hreflect : ∀ trace trace', Rtrace trace trace' → ∀ aid,
+      Trace.AssertionValid P I aid trace' → Trace.AssertionValid P I aid trace)
+    (hover : OverapproximatesTraces2UptoWhen Rtrace Rtrace_full (· = ·) Rout L₁ L₂ T pre
+      params₁ params₂) :
+    AssertValidityPreservedWhen I L₁ L₂ T pre params₁ params₂ :=
+  fun _ _ _ ht hpre hvalid =>
+    overapproximatesTraces2UptoWhen_assertValid I hreflect hover ht hpre hvalid
 
 omit [HasFvar P] [HasFvars P] [HasOps P] [HasBool P] [HasBoolOps P]
   [HasSubstFvar P] [HasInt P] [HasIntOps P] in

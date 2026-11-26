@@ -10,6 +10,8 @@ public import Strata.Languages.Core.PipelinePhase
 public import Strata.Languages.Core.MarkerLabels
 public import Strata.Transform.CoreTransform
 public import Strata.DL.Imperative.CFGDominators
+import Strata.Transform.CFGLoopElimReplay
+import Strata.Transform.CallElim
 
 /-! # Loop elimination for unstructured (CFG) procedure bodies
 
@@ -398,16 +400,27 @@ def hoistNondetChoicesPipelinePhase : PipelinePhase :=
 /-- CFG loop-elimination pipeline phase: cuts the loops of CFG bodies using the
     invariants on their loop headers. The `assume`s it adds over-approximate the
     loop (an arbitrary iteration satisfying the invariant), so a model of an
-    obligation that depends on them is not validated, and such an obligation's
+    obligation that depends on them must be validated: given the program the phase
+    was given, a model is valid when replaying it through that program reaches the
+    obligation's check with the value the model gives it
+    (`CFGLoopElim.replayValidates`); otherwise no model is, and such an obligation's
     failure is reported as unknown. -/
 def cfgLoopElimPipelinePhase : PipelinePhase where
   transform p := do
     rejectMarkerLabels "CFG loop elimination" CFGLoopElim.cfgLoopElimAssumePrefix p
     CFGLoopElim.cfgLoopElim p
   phase.name := "cfgLoopElim"
+  phase.validationPrefixes := [CFGLoopElim.cfgLoopElimAssumePrefix]
   phase.getValidation obligation :=
     if obligationHasLabelPrefix obligation CFGLoopElim.cfgLoopElimAssumePrefix then
-      .modelToValidate (fun _ => false)
+      .modelToValidate (fun _ _ => none)
+    else .modelPreserving
+  phase.getValidationOn := some fun input obligation =>
+    if obligationHasLabelPrefix obligation CFGLoopElim.cfgLoopElimAssumePrefix then
+      -- A run through a callee's contract (call elimination's assumptions) is not one
+      -- of the program.
+      .modelToValidate (CFGLoopElim.replayValidates
+        (·.startsWith CallElim.callElimAssumePrefix) input obligation)
     else .modelPreserving
   -- The invariant's index is the label's last `_`-separated part (`<tag>_<i>`).
   phase.getAssertDescription label :=

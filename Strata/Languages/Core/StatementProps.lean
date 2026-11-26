@@ -31,7 +31,9 @@ call type arguments makes it ground.
 Key theorems: `Statements.calledProcedureNames_cons`, `Statement.calledProcedureNames_ite`,
 `CallArg.getInputExprs_cons_*` and `CallArg.getLhs_cons_*`. `Statement.AllDeclTys.and_imp`
 combines two properties of every declared type; `Statement.AllDeclTys.of_mem_initTypes` carries
-a property of every declared type to the list `initTypes`. -/
+a property of every declared type to the list `initTypes`. `Statement.AllDeclTys.of_stmtCollect`
+derives a property of every declared type from a property of everything a collector gathers from
+the declared types and call type arguments. -/
 
 namespace Core
 
@@ -1117,6 +1119,108 @@ theorem stmtsCollect_cons (s : Statement) (ss : List Statement) :
   simp only [stmtsCollect]
 
 end CollectStructure
+
+section CollectCmds
+
+variable {β : Type} (ft : LMonoTy → List β)
+
+/-- A function that always returns the empty list collects nothing from any list. -/
+theorem flatMap_const_nil {α : Type} (l : List α) :
+    l.flatMap (fun _ => ([] : List β)) = [] :=
+  List.flatMap_eq_nil_iff.mpr fun _ _ => rfl
+
+mutual
+/-- When the expression collector returns nothing, a statement collects exactly what its commands
+    collect. -/
+theorem stmtCollect_noExprs_eq_cmds (s : Statement) :
+    stmtCollect (fun _ => []) ft s = (stmtCmds s).flatMap (cmdCollect (fun _ => []) ft) := by
+  match s with
+  | .cmd c =>
+    simp only [stmtCollect_cmd, stmtCmds, List.flatMap_cons, List.flatMap_nil, List.append_nil]
+  | .block _ bss _ =>
+    simp only [stmtCollect_block, stmtCmds, stmtsCollect_noExprs_eq_cmds bss]
+  | .ite _ tss ess _ =>
+    simp only [stmtCollect_ite, stmtCmds, stmtsCollect_noExprs_eq_cmds tss,
+      stmtsCollect_noExprs_eq_cmds ess, List.flatMap_append, flatMap_const_nil,
+      List.nil_append]
+  | .loop _ _ _ body _ =>
+    simp only [stmtCollect_loop, stmtCmds, stmtsCollect_noExprs_eq_cmds body,
+      flatMap_const_nil, List.nil_append]
+  | .exit _ _ | .typeDecl _ _ =>
+    simp only [stmtCollect, stmtOwnCollect, stmtCmds, List.flatMap_nil, List.append_nil]
+/-- When the expression collector returns nothing, a statement list collects exactly what its
+    commands collect. -/
+theorem stmtsCollect_noExprs_eq_cmds (ss : List Statement) :
+    stmtsCollect (fun _ => []) ft ss = (stmtsCmds ss).flatMap (cmdCollect (fun _ => []) ft) := by
+  match ss with
+  | [] => simp only [stmtsCollect_nil, stmtsCmds, List.flatMap_nil]
+  | s :: rest =>
+    simp only [stmtsCollect_cons, stmtsCmds, stmtCollect_noExprs_eq_cmds s,
+      stmtsCollect_noExprs_eq_cmds rest, List.flatMap_append]
+end
+
+end CollectCmds
+
+section DeclTysOfCollect
+
+variable {β : Type} {fe : Expression.Expr → List β} {ft : LMonoTy → List β} {Q : β → Prop}
+  {p : LTy → Prop}
+
+mutual
+/-- If everything a collector gathers (`ft` from types, `fe` from expressions) from a statement
+    satisfies `Q`, and `Q` on what `ft` collects from a type implies `p` of that type, then every
+    declared type of the statement satisfies `p`. -/
+theorem Statement.AllDeclTys.of_stmtCollect
+    (hp : ∀ ty, (∀ v ∈ ft ty.toMonoTypeUnsafe, Q v) → p ty) :
+    ∀ s : Statement, (∀ v ∈ stmtCollect fe ft s, Q v) → Statement.AllDeclTys p s
+  | .cmd (.cmd (.init _ ty _ _)), h => by
+    apply hp ty
+    intro v hv
+    apply h v
+    simp only [stmtCollect_cmd, cmdCollect, List.mem_append, List.mem_flatMap,
+      CmdExt.initTypes, Cmd.initTypes, List.mem_singleton]
+    exact Or.inl (Or.inl ⟨ty, rfl, hv⟩)
+  | .cmd (.cmd (.set ..)), _ | .cmd (.cmd (.assert ..)), _
+  | .cmd (.cmd (.assume ..)), _ | .cmd (.cmd (.cover ..)), _ => trivial
+  | .cmd (.call _ tyArgs _ _), h => by
+    intro tys htys ty hty
+    apply hp ty
+    intro v hv
+    apply h v
+    simp only [stmtCollect_cmd, cmdCollect, List.mem_append, List.mem_flatMap,
+      Statement.cmdTyArgs, htys, Option.getD_some]
+    exact Or.inl (Or.inr ⟨ty, hty, hv⟩)
+  | .block _ body _, h => by
+    rw [stmtCollect_block] at h
+    exact Statements.AllDeclTys.of_stmtCollect hp body h
+  | .ite _ thenb elseb _, h => by
+    rw [stmtCollect_ite] at h
+    exact ⟨Statements.AllDeclTys.of_stmtCollect hp thenb
+        (fun v hv => h v (List.mem_append_right _ (List.mem_append_left _ hv))),
+      Statements.AllDeclTys.of_stmtCollect hp elseb
+        (fun v hv => h v (List.mem_append_right _ (List.mem_append_right _ hv)))⟩
+  | .loop _ _ _ body _, h => by
+    rw [stmtCollect_loop] at h
+    exact Statements.AllDeclTys.of_stmtCollect hp body
+      (fun v hv => h v (List.mem_append_right _ hv))
+  | .exit _ _, _ | .typeDecl _ _, _ => trivial
+
+/-- The list version of `Statement.AllDeclTys.of_stmtCollect`. -/
+theorem Statements.AllDeclTys.of_stmtCollect
+    (hp : ∀ ty, (∀ v ∈ ft ty.toMonoTypeUnsafe, Q v) → p ty) :
+    ∀ ss : List Statement, (∀ v ∈ stmtsCollect fe ft ss, Q v) →
+      Statements.AllDeclTys p ss
+  | [], _ => trivial
+  | s :: ss, h => by
+    rw [stmtsCollect_cons] at h
+    exact ⟨Statement.AllDeclTys.of_stmtCollect hp s
+        (fun v hv => h v (List.mem_append_left _ hv)),
+      Statements.AllDeclTys.of_stmtCollect hp ss
+        (fun v hv => h v (List.mem_append_right _ hv))⟩
+
+end
+
+end DeclTysOfCollect
 
 end
 

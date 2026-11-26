@@ -43,7 +43,7 @@ info: "; x\n(declare-const x Int)\n(assert (exists ((i Int)) (= i x)))\n"
    (.eq testLoc (.bvar testLoc 0) (.fvar testLoc "x" (.some .int))))
 
 /--
-info: "; f\n(declare-fun f (Int) Int)\n; x\n(declare-const x Int)\n(assert (exists ((i Int)) (! (= i x) :pattern ((f i)))))\n"
+info: "; f\n(declare-const f (Array Int Int))\n; x\n(declare-const x Int)\n(assert (exists ((i Int)) (! (= i x) :pattern ((select f i)))))\n"
 -/
 #guard_msgs in
 #eval toSMTCommandsWithAssert
@@ -53,7 +53,7 @@ info: "; f\n(declare-fun f (Int) Int)\n; x\n(declare-const x Int)\n(assert (exis
 
 
 /--
-info: "; f\n(declare-fun f (Int) Int)\n; x\n(declare-const x Int)\n(assert (exists ((i Int)) (! (= (f i) x) :pattern ((f i)))))\n"
+info: "; f\n(declare-const f (Array Int Int))\n; x\n(declare-const x Int)\n(assert (exists ((i Int)) (! (= (select f i) x) :pattern ((select f i)))))\n"
 -/
 #guard_msgs in
 #eval toSMTCommandsWithAssert
@@ -71,7 +71,7 @@ info: "; f\n(declare-fun f (Int) Int)\n; x\n(declare-const x Int)\n(assert (exis
        (.fvar testLoc "x" (.some .int))))
 
 /--
-info: "; f\n(declare-const f (arrow Int Int))\n; f\n(declare-fun f@1 (Int) Int)\n; x\n(declare-const x Int)\n(assert (exists ((i Int)) (! (= (f@1 i) x) :pattern (f))))\n"
+info: "; f\n(declare-const f (Array Int Int))\n; x\n(declare-const x Int)\n(assert (exists ((i Int)) (! (= (select f i) x) :pattern (f))))\n"
 -/
 #guard_msgs in
 #eval toSMTCommandsWithAssert
@@ -689,7 +689,7 @@ private def redexTestPgm : Program :=
           body := .structured [
             Statement.assume "arg_precondition" constLambdaRedex #[],
             Statement.init ⟨"v", ()⟩ (.forAll [] (.tcons "bool" [])) (.det constLambdaRedex) #[],
-            Statement.assert "goal" constLambdaRedex #[]] } #[]] }
+            Statement.assert "goal" constLambdaRedex #[]] false } #[]] }
 
 -- The `betaReduce` phase contracts the redex in all four positions: the
 -- assumption, the variable definition's RHS, the goal, and both distinctness
@@ -710,7 +710,7 @@ assert goal: true
     | .structured [
         Statement.assume _ a _,
         Statement.init _ _ (.det rhs) _,
-        Statement.assert _ g _] => do
+        Statement.assert _ g _] false => do
       IO.println s!"assume: {f!"{a}".pretty}"
       IO.println s!"init rhs: {f!"{rhs}".pretty}"
       IO.println s!"assert goal: {f!"{g}".pretty}"

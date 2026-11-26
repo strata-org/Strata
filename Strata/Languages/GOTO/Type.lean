@@ -63,6 +63,19 @@ inductive Function where
   | code
   deriving Repr, Inhabited, DecidableEq
 
+/-- The size of an array type (CBMC `array_typet::size`). -/
+inductive ArraySize where
+  /-- A fixed number of elements. -/
+  | constant (n : Nat)
+  /-- An unbounded array (CBMC `infinity`). -/
+  | infinity
+  deriving Repr, Inhabited, DecidableEq
+
+instance : ToFormat ArraySize where
+  format s := match s with
+    | .constant n => f!"{n}"
+    | .infinity => "infinity"
+
 end Identifier
 
 inductive Identifier where
@@ -72,9 +85,12 @@ inductive Identifier where
   | bitVector (bv : Identifier.BitVector)
   /-- A reference to a named struct type (like CBMC's `struct_tag`). -/
   | structTag (name : String)
-  /-- Array type with element type -/
-  | array
-  /-- Code (function) type -/
+  /-- Array type with an optional size. `subtypes = [element]`, or
+      `[element, index]` when the array has an explicit index type. -/
+  | array (size : Option Identifier.ArraySize)
+  /-- Code (function) type; `subtypes = returnType :: parameterTypes`. Each
+      parameter is written as a CBMC `parameter` irep, as in a function's
+      symbol table entry. -/
   | code
   /-- Pointer type (CBMC `pointer_typet`); `subtypes = [pointee]`, width fixed at 64. -/
   | pointer
@@ -85,7 +101,8 @@ instance : ToFormat Identifier where
     | .primitive p => f!"{p}"
     | .bitVector bv => f!"{bv}"
     | .structTag name => f!"struct_tag({name})"
-    | .array => f!"array"
+    | .array none => f!"array"
+    | .array (some size) => f!"array[{size}]"
     | .code => f!"code"
     | .pointer => f!"pointer"
 
@@ -185,20 +202,44 @@ def StructTag (name : _root_.String) : Ty :=
 /-- Array type with element type -/
 @[expose, match_pattern]
 def Array (elemTy : Ty) : Ty :=
-  { id := .array, subtypes := [elemTy] }
+  { id := .array none, subtypes := [elemTy] }
+
+/-- Array type with element type `elemTy`, an optional `size` and an optional
+    index type (CBMC's `#index_type`; without it CBMC indexes with
+    `signedbv 64`). -/
+def mkArray (elemTy : Ty) (size : Option Identifier.ArraySize)
+    (indexTy : Option Ty := none) : Ty :=
+  { id := .array size, subtypes := elemTy :: indexTy.toList }
 
 /-- Pointer type to `pointee` (CBMC `pointer_typet`, width 64). -/
 @[expose, match_pattern]
 def Pointer (pointee : Ty) : Ty :=
   { id := .pointer, subtypes := [pointee] }
 
-/-- Code (function) type with parameter types and return type.
-    Used for FUNCTION_CALL callee symbols.
-    Encodes as subtypes = [returnType] ++ paramTypes. -/
-def mkCode (paramTypes : List Ty) (returnType : Ty) : Ty :=
+/-- The type of a function with parameter types `paramTypes` and return type
+    `returnType`, equal (up to parameter names) to the type in the function's
+    symbol table entry written by `createFunctionSymbol`; the type of a
+    `FUNCTION_CALL` callee symbol, which `cbmc --validate-goto-model` checks
+    against the symbol table. -/
+def mkFunctionType (paramTypes : List Ty) (returnType : Ty) : Ty :=
   { id := .code, subtypes := returnType :: paramTypes }
 
 end Ty
+
+/--
+A struct type definition (CBMC `struct_typet`): the struct's name and its
+components, in order, as `(name, type)` pairs. It is declared in the symbol
+table as the type symbol `tag-<name>`; expressions of the struct have the type
+`Ty.StructTag name`.
+-/
+structure StructDef where
+  name       : String
+  components : List (String × Ty)
+  deriving Repr, Inhabited
+
+/-- The type of the values of the struct `s`. -/
+def StructDef.ty (s : StructDef) : Ty :=
+  .StructTag s.name
 
 -------------------------------------------------------------------------------
 

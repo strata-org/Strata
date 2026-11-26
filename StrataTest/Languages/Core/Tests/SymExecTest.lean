@@ -46,7 +46,7 @@ private def proc (body : List Statement) : Option Procedure :=
   some { header := { name := id "P", typeArgs := [], inputs := [(id "x", .int)],
                      outputs := [(id "r", .int)] }
          spec := { preconditions := [], postconditions := [] }
-         body := .structured body }
+         body := .structured body false }
 
 /-- A run's counts: paths finished, paths stopped, unmatched exits, obligations. -/
 private structure Summary where
@@ -234,7 +234,7 @@ procedure P(x : int, out r : int) {
 /-- The guards of the top-level `if`s of `p`'s body. -/
 private def topGuards (p : Option Procedure) : List Expression.Expr :=
   match (p.map (·.body) : Option Procedure.Body) with
-  | some (.structured ss) => ss.filterMap fun | .ite (.det g) _ _ _ => some g | _ => none
+  | some (.structured ss _) => ss.filterMap fun | .ite (.det g) _ _ _ => some g | _ => none
   | _ => []
 -- The two guards differ in their source locations only.
 #guard match topGuards sameGuard with
@@ -725,7 +725,7 @@ procedure P(x : int, out r : int) {
 -- The two assigned values differ in their source locations only.
 #guard match (sameValue.map (·.body) : Option Procedure.Body) with
   | some (.structured (.ite _ [.cmd (.cmd (.set _ (.det a) _))]
-      [.cmd (.cmd (.set _ (.det b) _))] _ :: _)) => a != b && a.beqIgnoringMetadata b
+      [.cmd (.cmd (.set _ (.det b) _))] _ :: _) false) => a != b && a.beqIgnoringMetadata b
   | _ => false
 /--
 info: some { finished := 1, stopped := 0, unmatchedExits := 0, obligations := 1, merges := 1 }
@@ -1374,14 +1374,14 @@ private def runShapeResult (sh : ProcBodyShape {} (StmtConfig {}))
     (pc : List (String × Expression.Expr) := []) (pol : MergePolicy := .always) : Option Result :=
   letI := symLang {}
   twoBranches.bind fun p => match p.body with
-    | .structured ss =>
+    | .structured ss _ =>
       let σ := (IStore.ofStore (fun _ => none)).update (⟨"x", ()⟩ : CoreIdent)
         (mkSym "$__s" 0 .int "x") |>.update (⟨"r", ()⟩ : CoreIdent) (mkSym "$__s" 1 .int "r")
       let env : IEnv Expression := { store := σ, factory := Core.Factory }
       let start : Entry (StmtConfig {}) :=
         { cfg := .stmts ss env, st := { next := 2, pc }, node := 0, budget := 1000 }
       some (explore sh 10000 start pol)
-    | .cfg _ => none
+    | .cfg _ _ | .abstract => none
 
 /-- `runShapeResult`'s paths finished and merges. -/
 private def runShape (sh : ProcBodyShape {} (StmtConfig {}))

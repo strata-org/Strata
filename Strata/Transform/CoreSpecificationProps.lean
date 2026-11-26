@@ -111,9 +111,9 @@ theorem ProcEnvWF.oldInoutTyped {params : InitEnvWFParams} {proc : Procedure}
 theorem ProcEnvWF.of_sameSignature {params : InitEnvWFParams} {proc proc' : Procedure}
     {ρ : Imperative.Env Expression} (h : ProcEnvWF params proc ρ)
     (h_header : proc'.header = proc.header) (h_spec : proc'.spec = proc.spec)
-    (h_structured : ∀ ss, proc'.body = .structured ss →
+    (h_structured : ∀ ss opq, proc'.body = .structured ss opq →
       Core.Logic.BlockInitEnvWF params [Stmt.block "" ss #[]] ρ)
-    (h_cfg : ∀ cfg, proc'.body = .cfg cfg → Core.Logic.CFGInitEnvWF params cfg ρ) :
+    (h_cfg : ∀ cfg opq, proc'.body = .cfg cfg opq → Core.Logic.CFGInitEnvWF params cfg ρ) :
     ProcEnvWF params proc' ρ where
   toWellFormedSemanticEval := h.toWellFormedSemanticEval
   storeValues := h.storeValues

@@ -510,7 +510,7 @@ int.lt(int.neg(x@1), 0)
                     postconditions := [("ret_y_lt_0", ⟨eb[((~Int.Lt y) #0)], .Default, #[]⟩)] },
                 body := .structured [
                   Statement.set "y" eb[(~Int.Neg x)] .empty
-                ]
+                ] false
               }
           return format E
 
@@ -527,16 +527,31 @@ section ConcreteInterpretation
 open Strata Lambda.LTy.Syntax
 open Std (ToFormat Format format)
 
-private def parseAndTypeCheck (pgm : StrataDDM.Program) : Except Message Core.Program := do
+private def parseAndTypeCheck (pgm : StrataDDM.Program) (typeCheck : Bool := true) :
+    Except Message Core.Program := do
   let (cst, _errs) := TransM.run Inhabited.default (translateProgram pgm)
-  Core.typeCheck { VerifyOptions.default with verbose := .quiet } cst
+  if typeCheck then Core.typeCheck { VerifyOptions.default with verbose := .quiet } cst
+  else pure cst
+
+/-- `p` with the bodies of the procedures named in `names` marked opaque (`Body.isOpaque`). -/
+private def markOpaque (names : List String) (p : Core.Program) : Core.Program :=
+  { p with decls := p.decls.map fun
+    | .proc q md =>
+      if names.contains q.header.name.name then
+        .proc { q with body := match q.body with
+          | .structured ss _ => .structured ss true
+          | b => b } md
+      else .proc q md
+    | d => d }
 
 private def runProc (pgm : StrataDDM.Program) (procName : String)
     (args : List Expression.Expr := [])
-    (fuel : Nat := 10000) : IO Unit := do
-  match parseAndTypeCheck pgm with
+    (fuel : Nat := 10000) (ignoreAssumes : Bool := false) (typeCheck : Bool := true)
+    (mode : Imperative.CallMode := .execute) (opaqueProcs : List String := []) : IO Unit := do
+  match parseAndTypeCheck pgm typeCheck with
   | .error e => IO.println s!"type error: {e.message}"
   | .ok prog =>
+    let prog := markOpaque opaqueProcs prog
     match prog.run with
     | .ok E =>
       let proc := Core.Program.Procedure.find? prog ⟨procName, ()⟩
@@ -544,7 +559,7 @@ private def runProc (pgm : StrataDDM.Program) (procName : String)
       | none => IO.println "procedure not found"
       | some p =>
         let lhs := p.header.outputs.keys
-        let E := Core.Statement.Command.runCall lhs procName args fuel E
+        let E := Core.Statement.Command.runCall mode lhs procName args fuel { E with ignoreAssumes }
         match E.error with
         | none =>
           let outputs := lhs.map fun name =>
@@ -797,6 +812,246 @@ New Function:func Int.Add :  ((x : int)) → int;
 -/
 #guard_msgs in
 #eval moreFnsFolds (.ofArray #[{ dummyDouble with name := "Int.Add" }])
+
+-- An abstract procedure runs its contract. With `x = 5` the non-free precondition holds, the free
+-- one (`x > 10`) is not checked, and the postcondition is assumed.
+private def abstractPgm : StrataDDM.Program :=
+#strata
+program Core;
+procedure Abs(x : int)
+spec {
+  requires [pre]: int.gt(x, 0);
+  free requires [freePre]: int.gt(x, 10);
+  ensures [post]: int.gt(x, 0);
+};
+#end
+
+/-- info:  -/
+#guard_msgs in
+#eval runProc abstractPgm "Abs" [.intConst testLoc 5]
+
+-- With `x = 0` the precondition fails at the call.
+/--
+info: error: [ASSERT ERROR] Assertion pre failed!
+false
+-/
+#guard_msgs in
+#eval runProc abstractPgm "Abs" [.intConst testLoc 0]
+
+-- An abstract procedure whose postcondition reads its inout parameter stops the run after its
+-- preconditions: its contract havocs the parameter, and the concrete evaluator chooses no value
+-- for it that satisfies the postcondition.
+private def abstractOutPgm : StrataDDM.Program :=
+#strata
+program Core;
+procedure AbsOut(inout X : int)
+spec {
+  requires [pre]: int.gt(X, 0);
+  ensures [post]: int.gt(X, old X);
+};
+#end
+
+/--
+info: error: [ERROR] cannot concretely execute the call to the abstract procedure 'AbsOut': its postcondition constrains the havocked output 'X'
+-/
+#guard_msgs in
+#eval runProc abstractOutPgm "AbsOut" [.intConst testLoc 5]
+
+-- With `X = 0` the precondition fails first.
+/--
+info: error: [ASSERT ERROR] Assertion pre failed!
+false
+-/
+#guard_msgs in
+#eval runProc abstractOutPgm "AbsOut" [.intConst testLoc 0]
+
+-- Each call to an abstract procedure gives each of its output-only parameters a fresh value, so
+-- two calls need not return the same value. The postcondition, over the input, reduces and is
+-- assumed.
+private def abstractFreshPgm : StrataDDM.Program :=
+#strata
+program Core;
+procedure Any(x : int, out r : int)
+spec {
+  ensures [post]: int.gt(x, 0);
+};
+procedure TwoCalls(out a : int, out b : int)
+{
+  call Any(1, out a);
+  call Any(1, out b);
+};
+procedure Distinct()
+{
+  var a : int;
+  var b : int;
+  call Any(1, out a);
+  call Any(1, out b);
+  assert [aNeB]: a != b;
+};
+#end
+
+/-- info: a = (some r@1), b = (some r@2) -/
+#guard_msgs in
+#eval runProc abstractFreshPgm "TwoCalls"
+
+-- A call to an opaque procedure with a body runs its body under `CallMode.execute`, and its
+-- contract under `CallMode.contract`, which gives the output a fresh value as for an abstract
+-- procedure.
+private def opaqueBodyPgm : StrataDDM.Program :=
+#strata
+program Core;
+procedure Inc(x : int, out r : int)
+spec {
+  ensures [post]: int.gt(x, 0);
+}
+{
+  r := int.add(x, 1);
+};
+procedure Caller(out a : int)
+{
+  call Inc(1, out a);
+};
+#end
+
+/-- info: a = (some 2) -/
+#guard_msgs in
+#eval runProc opaqueBodyPgm "Caller" (opaqueProcs := ["Inc"])
+
+/-- info: a = (some r@1) -/
+#guard_msgs in
+#eval runProc opaqueBodyPgm "Caller" (opaqueProcs := ["Inc"]) (mode := .contract)
+
+-- An assertion on the output of an opaque procedure run as its contract does not evaluate, and the
+-- message names the call whose havocked output it reads.
+private def opaqueAssertPgm : StrataDDM.Program :=
+#strata
+program Core;
+procedure Inc(x : int, out r : int)
+{
+  r := int.add(x, 1);
+};
+procedure Caller(out a : int)
+{
+  call Inc(1, out a);
+  assert [aIs2]: a == 2;
+};
+#end
+
+/--
+info: error: [ERROR] assert (aIs2) condition did not reduce to bool: it reads the value of 'r' that the call to the opaque procedure 'Inc' havocked, which a concrete run does not choose
+-/
+#guard_msgs in
+#eval runProc opaqueAssertPgm "Caller" (opaqueProcs := ["Inc"]) (mode := .contract)
+
+-- A procedure with a body that is not opaque runs its body in both modes.
+/-- info: a = (some 2) -/
+#guard_msgs in
+#eval runProc opaqueBodyPgm "Caller" (mode := .contract)
+
+-- An abstract procedure runs its contract in both modes.
+/-- info: a = (some r@1), b = (some r@2) -/
+#guard_msgs in
+#eval runProc abstractFreshPgm "TwoCalls" (mode := .contract)
+
+-- `a != b` holds for some results of the two calls and not for others, so it is not evaluated,
+-- and the message names the call whose havocked output it reads.
+/--
+info: error: [ERROR] assert (aNeB) condition did not reduce to bool: it reads the value of 'r' that the call to the abstract procedure 'Any' havocked, which a concrete run does not choose
+-/
+#guard_msgs in
+#eval runProc abstractFreshPgm "Distinct"
+
+-- `old p` of an input parameter `p` in a postcondition denotes the value of `p` at the call, as in
+-- call elimination: the postcondition reduces, and is assumed. Core's type checker rejects `old`
+-- of an input-only parameter, so these runs skip it and check the evaluator alone.
+private def abstractOldInputPgm : StrataDDM.Program :=
+#strata
+program Core;
+procedure Pos(p : int, out r : int)
+spec {
+  ensures [post]: int.gt(old p, 0);
+};
+procedure Caller(x : int, out a : int)
+{
+  call Pos(x, out a);
+};
+#end
+
+/-- info: a = (some r@1) -/
+#guard_msgs in
+#eval runProc abstractOldInputPgm "Caller" [.intConst testLoc 1] (typeCheck := false)
+
+-- With `p = 0` the assumed postcondition is false.
+/-- info: error: [ERROR] assume (post) condition is false -/
+#guard_msgs in
+#eval runProc abstractOldInputPgm "Caller" [.intConst testLoc 0] (typeCheck := false)
+
+-- The same calls with assumptions ignored, as the Laurel command line runs them.
+/-- info: a = (some r@1), b = (some r@2) -/
+#guard_msgs in
+#eval runProc abstractFreshPgm "TwoCalls" (ignoreAssumes := true)
+
+-- A postcondition that constrains a havocked output stops the run, whether or not assumptions
+-- are ignored: the run chooses no value for the output, and the contract is not dropped.
+private def abstractPostOutPgm : StrataDDM.Program :=
+#strata
+program Core;
+procedure Seven(out result : int)
+spec {
+  ensures [post]: result == 7;
+};
+#end
+
+/--
+info: error: [ERROR] cannot concretely execute the call to the abstract procedure 'Seven': its postcondition constrains the havocked output 'result'
+-/
+#guard_msgs in
+#eval runProc abstractPostOutPgm "Seven"
+
+/--
+info: error: [ERROR] cannot concretely execute the call to the abstract procedure 'Seven': its postcondition constrains the havocked output 'result'
+-/
+#guard_msgs in
+#eval runProc abstractPostOutPgm "Seven" (ignoreAssumes := true)
+
+-- A procedure with the body `{ }` does nothing: as in the reference call rule
+-- (`Imperative.CallEntry`), its output starts from the caller's current value of the variable it
+-- is written back to, so each call leaves that variable unchanged.
+private def emptyBodyPgm : StrataDDM.Program :=
+#strata
+program Core;
+procedure Nop(out r : int)
+{
+};
+procedure TwoNops(out a : int, out b : int)
+{
+  a := 1;
+  b := 2;
+  call Nop(out a);
+  call Nop(out b);
+  assert [aNeB]: a != b;
+};
+#end
+
+/-- info: a = (some 1), b = (some 2) -/
+#guard_msgs in
+#eval runProc emptyBodyPgm "TwoNops"
+
+-- An abstract procedure with an inout parameter that no postcondition reads runs: the parameter
+-- gets a fresh value, and the postcondition, over the call-time value `old X`, is assumed.
+private def abstractInoutPgm : StrataDDM.Program :=
+#strata
+program Core;
+procedure Bump(inout X : int)
+spec {
+  requires [pre]: int.gt(X, 0);
+  ensures [post]: int.gt(old X, 0);
+};
+#end
+
+/-- info: X = (some X@1) -/
+#guard_msgs in
+#eval runProc abstractInoutPgm "Bump" [.intConst testLoc 5]
 
 end ConcreteInterpretation
 

@@ -148,10 +148,10 @@ private abbrev testIteOut : Core.Statements :=
   [.ite (.det (.boolConst Core.valueLoc true)) (thenArm (cI 3)) elseArm (mdAt testIteSrc 1)]
 
 /-- The translated body of `Test` really is `testBody`. -/
-private theorem test_body_eq : testProc.body = .structured testBody := by native_decide
+private theorem test_body_eq : testProc.body = .structured testBody false := by native_decide
 
 /-- The translated body of `TestIte` really is `testIteBody`. -/
-private theorem testIte_body_eq : testIteProc.body = .structured testIteBody := by
+private theorem testIte_body_eq : testIteProc.body = .structured testIteBody false := by
   native_decide
 
 /-- **Simplify installs `testOut`.** -/
@@ -382,7 +382,7 @@ private theorem meets_contract {name : String} {proc : Core.Procedure} {ss : Cor
     (hfactory : simpPgmAST.factoryBeforeProcedure name = Core.Factory)
     (hfind : π name = some proc) (htargs : proc.header.typeArgs = [])
     (hchecks : Core.Logic.Hoare.Procedure.contractChecksTyped proc)
-    (hbody : proc.body = .structured ss)
+    (hbody : proc.body = .structured ss false)
     (ha : (aId, Lambda.LMonoTy.int) ∈ proc.header.inputs.toList)
     (hm : (mId, Lambda.LMonoTy.int) ∈ proc.header.outputs.toList)
     (hpost : ∀ lc ∈ proc.spec.postconditions.toList, lc.2.expr = ltE (v aId) (v mId))

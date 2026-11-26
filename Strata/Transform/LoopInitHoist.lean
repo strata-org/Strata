@@ -154,19 +154,20 @@ def loopInitHoistDecl (d : Decl) : Except Strata.Message (Decl × Bool) :=
   match d with
   | .proc proc md =>
     match proc.body with
-    | .structured ss =>
+    | .structured ss o =>
       match hoistLoopPrefixInits ss with
       | some ss' =>
-        pure (Decl.proc { proc with body := .structured ss' } md, ss' != ss)
+        pure (Decl.proc { proc with body := .structured ss' o } md, ss' != ss)
       | none =>
         throw (Strata.Message.fromString
           s!"loopInitHoist: procedure '{proc.header.name.1}' contains a call; \
              loopInitHoist expects call-free structured bodies.")
-    | .cfg _ =>
+    | .cfg _ _ =>
       throw (Strata.Message.fromString
         s!"loopInitHoist: CFG procedure bodies are not supported \
            (procedure '{proc.header.name.1}'); \
            loopInitHoist expects structured bodies.")
+    | .abstract => pure (d, false)
   | _ => pure (d, false)
 
 /-- Hoist loop-body initializers in every structured Core procedure. The

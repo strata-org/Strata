@@ -197,8 +197,6 @@ private theorem Term.denoteTyped_not {ctx : TypedContext}
       = cast (by rw [(Term.typeCheck_not_inv htc).2])
           (! Term.denoteTyped ufInterp env dz mz t .bool (Term.typeCheck_not_inv htc).1) := by
   simp only [Term.denoteTyped]
-  obtain ⟨ht', heq'⟩ := Term.typeCheck_not_inv htc
-  rfl
 
 /-- Unfolding lemma for `Term.denoteTyped` on `none`. -/
 private theorem Term.denoteTyped_none {ctx : TypedContext}
@@ -218,8 +216,6 @@ private theorem Term.denoteTyped_some {ctx : TypedContext}
                   (Term.typeCheck_some_inv htc).2.1)
             : TermType.denoteTyped σ 𝒜 (.option (Term.typeCheck_some_inv htc).1)) := by
   simp only [Term.denoteTyped]
-  obtain ⟨τ', ht, heq⟩ := Term.typeCheck_some_inv htc
-  rfl
 
 /-- Unfolding lemma for `Term.denoteTyped` on array `select`. -/
 private theorem Term.denoteTyped_select {ctx : TypedContext}
@@ -297,7 +293,7 @@ private theorem Term.denoteTyped_eq {ctx : TypedContext}
           (@decide (Term.denoteTyped ufInterp env dz mz t1 (Term.typeCheck_eq_inv htc).1 (Term.typeCheck_eq_inv htc).2.1
                      = Term.denoteTyped ufInterp env dz mz t2 (Term.typeCheck_eq_inv htc).1 (Term.typeCheck_eq_inv htc).2.2.1)
             (Classical.propDecidable _)) := by
-  simp only [Term.denoteTyped]; obtain ⟨τ', h1, h2, heq⟩ := Term.typeCheck_eq_inv htc; rfl
+  simp only [Term.denoteTyped]
 
 /-- Unfolding lemma for `Term.denoteTyped` on `ite`, exposing the boolean `bif`. -/
 private theorem Term.denoteTyped_ite {ctx : TypedContext}
@@ -308,7 +304,7 @@ private theorem Term.denoteTyped_ite {ctx : TypedContext}
       = bif Term.denoteTyped ufInterp env dz mz c .bool (Term.typeCheck_ite_inv htc).1
         then Term.denoteTyped ufInterp env dz mz t τ (Term.typeCheck_ite_inv htc).2.1
         else Term.denoteTyped ufInterp env dz mz e τ (Term.typeCheck_ite_inv htc).2.2 := by
-  simp only [Term.denoteTyped]; obtain ⟨hc, ht, he⟩ := Term.typeCheck_ite_inv htc; rfl
+  simp only [Term.denoteTyped]
 
 /-- Unfolding lemma for `Term.denoteTyped` on `and`, exposing `&&`. -/
 private theorem Term.denoteTyped_and {ctx : TypedContext}
@@ -319,7 +315,7 @@ private theorem Term.denoteTyped_and {ctx : TypedContext}
       = cast (by rw [(Term.typeCheck_boolBin_inv htc (.inl rfl)).2.2])
           ((Term.denoteTyped ufInterp env dz mz t1 .bool (Term.typeCheck_boolBin_inv htc (.inl rfl)).1) &&
            (Term.denoteTyped ufInterp env dz mz t2 .bool (Term.typeCheck_boolBin_inv htc (.inl rfl)).2.1)) := by
-  simp only [Term.denoteTyped]; split; rfl
+  simp only [Term.denoteTyped]
 
 /-- Unfolding lemma for `Term.denoteTyped` on `or`, exposing `||`. -/
 private theorem Term.denoteTyped_or {ctx : TypedContext}
@@ -330,7 +326,7 @@ private theorem Term.denoteTyped_or {ctx : TypedContext}
       = cast (by rw [(Term.typeCheck_boolBin_inv htc (.inr (.inl rfl))).2.2])
           ((Term.denoteTyped ufInterp env dz mz t1 .bool (Term.typeCheck_boolBin_inv htc (.inr (.inl rfl))).1) ||
            (Term.denoteTyped ufInterp env dz mz t2 .bool (Term.typeCheck_boolBin_inv htc (.inr (.inl rfl))).2.1)) := by
-  simp only [Term.denoteTyped]; split; rfl
+  simp only [Term.denoteTyped]
 
 /-- Unfolding lemma for `Term.denoteTyped` on `implies`, exposing `!… || …`. -/
 private theorem Term.denoteTyped_implies {ctx : TypedContext}
@@ -341,7 +337,7 @@ private theorem Term.denoteTyped_implies {ctx : TypedContext}
       = cast (by rw [(Term.typeCheck_boolBin_inv htc (.inr (.inr rfl))).2.2])
           ((!(Term.denoteTyped ufInterp env dz mz t1 .bool (Term.typeCheck_boolBin_inv htc (.inr (.inr rfl))).1)) ||
            (Term.denoteTyped ufInterp env dz mz t2 .bool (Term.typeCheck_boolBin_inv htc (.inr (.inr rfl))).2.1)) := by
-  simp only [Term.denoteTyped]; split; rfl
+  simp only [Term.denoteTyped]
 
 /-- Unfolding lemma for `Term.denoteTyped` on int `add`. -/
 private theorem Term.denoteTyped_add {ctx : TypedContext}
@@ -351,7 +347,7 @@ private theorem Term.denoteTyped_add {ctx : TypedContext}
       = cast (by rw [(Term.typeCheck_intBin_inv htc (.inl rfl)).2.2])
           ((Term.denoteTyped ufInterp env dz mz t1 .int (Term.typeCheck_intBin_inv htc (.inl rfl)).1) +
            (Term.denoteTyped ufInterp env dz mz t2 .int (Term.typeCheck_intBin_inv htc (.inl rfl)).2.1)) := by
-  simp only [Term.denoteTyped]; split; rfl
+  simp only [Term.denoteTyped]
 
 /-- Unfolding lemma for `Term.denoteTyped` on int `sub`. -/
 private theorem Term.denoteTyped_sub {ctx : TypedContext}
@@ -361,7 +357,7 @@ private theorem Term.denoteTyped_sub {ctx : TypedContext}
       = cast (by rw [(Term.typeCheck_intBin_inv htc (.inr (.inl rfl))).2.2])
           ((Term.denoteTyped ufInterp env dz mz t1 .int (Term.typeCheck_intBin_inv htc (.inr (.inl rfl))).1) -
            (Term.denoteTyped ufInterp env dz mz t2 .int (Term.typeCheck_intBin_inv htc (.inr (.inl rfl))).2.1)) := by
-  simp only [Term.denoteTyped]; split; rfl
+  simp only [Term.denoteTyped]
 
 /-- Unfolding lemma for `Term.denoteTyped` on int `mul`. -/
 private theorem Term.denoteTyped_mul {ctx : TypedContext}
@@ -371,7 +367,7 @@ private theorem Term.denoteTyped_mul {ctx : TypedContext}
       = cast (by rw [(Term.typeCheck_intBin_inv htc (.inr (.inr (.inl rfl)))).2.2])
           ((Term.denoteTyped ufInterp env dz mz t1 .int (Term.typeCheck_intBin_inv htc (.inr (.inr (.inl rfl)))).1) *
            (Term.denoteTyped ufInterp env dz mz t2 .int (Term.typeCheck_intBin_inv htc (.inr (.inr (.inl rfl)))).2.1)) := by
-  simp only [Term.denoteTyped]; split; rfl
+  simp only [Term.denoteTyped]
 
 /-- Unfolding lemma for `Term.denoteTyped` on int `le`. -/
 private theorem Term.denoteTyped_le {ctx : TypedContext}
@@ -381,7 +377,7 @@ private theorem Term.denoteTyped_le {ctx : TypedContext}
       = cast (by rw [(Term.typeCheck_intCmp_inv htc (.inl rfl)).2.2])
           (decide ((Term.denoteTyped ufInterp env dz mz t1 .int (Term.typeCheck_intCmp_inv htc (.inl rfl)).1) ≤
             (Term.denoteTyped ufInterp env dz mz t2 .int (Term.typeCheck_intCmp_inv htc (.inl rfl)).2.1))) := by
-  simp only [Term.denoteTyped]; split; rfl
+  simp only [Term.denoteTyped]
 
 /-- Unfolding lemma for `Term.denoteTyped` on int `lt`. -/
 private theorem Term.denoteTyped_lt {ctx : TypedContext}
@@ -391,7 +387,7 @@ private theorem Term.denoteTyped_lt {ctx : TypedContext}
       = cast (by rw [(Term.typeCheck_intCmp_inv htc (.inr (.inl rfl))).2.2])
           (decide ((Term.denoteTyped ufInterp env dz mz t1 .int (Term.typeCheck_intCmp_inv htc (.inr (.inl rfl))).1) <
             (Term.denoteTyped ufInterp env dz mz t2 .int (Term.typeCheck_intCmp_inv htc (.inr (.inl rfl))).2.1))) := by
-  simp only [Term.denoteTyped]; split; rfl
+  simp only [Term.denoteTyped]
 
 /-- Unfolding lemma for `Term.denoteTyped` on int `ge`. -/
 private theorem Term.denoteTyped_ge {ctx : TypedContext}
@@ -401,7 +397,7 @@ private theorem Term.denoteTyped_ge {ctx : TypedContext}
       = cast (by rw [(Term.typeCheck_intCmp_inv htc (.inr (.inr (.inl rfl)))).2.2])
           (decide ((Term.denoteTyped ufInterp env dz mz t1 .int (Term.typeCheck_intCmp_inv htc (.inr (.inr (.inl rfl)))).1) ≥
             (Term.denoteTyped ufInterp env dz mz t2 .int (Term.typeCheck_intCmp_inv htc (.inr (.inr (.inl rfl)))).2.1))) := by
-  simp only [Term.denoteTyped]; split; rfl
+  simp only [Term.denoteTyped]
 
 /-- Unfolding lemma for `Term.denoteTyped` on int `gt`. -/
 private theorem Term.denoteTyped_gt {ctx : TypedContext}
@@ -411,7 +407,7 @@ private theorem Term.denoteTyped_gt {ctx : TypedContext}
       = cast (by rw [(Term.typeCheck_intCmp_inv htc (.inr (.inr (.inr rfl)))).2.2])
           (decide ((Term.denoteTyped ufInterp env dz mz t1 .int (Term.typeCheck_intCmp_inv htc (.inr (.inr (.inr rfl)))).1) >
             (Term.denoteTyped ufInterp env dz mz t2 .int (Term.typeCheck_intCmp_inv htc (.inr (.inr (.inr rfl)))).2.1))) := by
-  simp only [Term.denoteTyped]; split; rfl
+  simp only [Term.denoteTyped]
 
 /-- Unfolding lemma for `Term.denoteTyped` on int `div`. -/
 private theorem Term.denoteTyped_div {ctx : TypedContext}
@@ -422,7 +418,7 @@ private theorem Term.denoteTyped_div {ctx : TypedContext}
           (let v1 := Term.denoteTyped ufInterp env dz mz t1 .int (Term.typeCheck_intBin_inv htc (.inr (.inr (.inr (.inl rfl))))).1
            let v2 := Term.denoteTyped ufInterp env dz mz t2 .int (Term.typeCheck_intBin_inv htc (.inr (.inr (.inr (.inl rfl))))).2.1
            if v2 = 0 then dz v1 else v1 / v2) := by
-  simp only [Term.denoteTyped]; split; rfl
+  simp only [Term.denoteTyped]
 
 /-- Unfolding lemma for `Term.denoteTyped` on int `mod`. -/
 private theorem Term.denoteTyped_mod {ctx : TypedContext}
@@ -433,7 +429,7 @@ private theorem Term.denoteTyped_mod {ctx : TypedContext}
           (let v1 := Term.denoteTyped ufInterp env dz mz t1 .int (Term.typeCheck_intBin_inv htc (.inr (.inr (.inr (.inr rfl))))).1
            let v2 := Term.denoteTyped ufInterp env dz mz t2 .int (Term.typeCheck_intBin_inv htc (.inr (.inr (.inr (.inr rfl))))).2.1
            if v2 = 0 then mz v1 else v1 % v2) := by
-  simp only [Term.denoteTyped]; split; rfl
+  simp only [Term.denoteTyped]
 
 /-- Unfolding lemma for `Term.denoteTyped` on int negation. -/
 private theorem Term.denoteTyped_neg {ctx : TypedContext}
@@ -441,7 +437,7 @@ private theorem Term.denoteTyped_neg {ctx : TypedContext}
     (htc : Term.typeCheck ctx (.app (.num .neg) [t] rty) = .ok τ) :
     Term.denoteTyped ufInterp env dz mz (.app (.num .neg) [t] rty) τ htc
       = cast (by rw [(Term.typeCheck_intUn_inv htc).2]) (-(Term.denoteTyped ufInterp env dz mz t .int (Term.typeCheck_intUn_inv htc).1)) := by
-  simp only [Term.denoteTyped]; obtain ⟨ht, heq⟩ := Term.typeCheck_intUn_inv htc; rfl
+  simp only [Term.denoteTyped]
 
 /-- `Term.denoteTyped` depends on its `env` argument only up to function equality. -/
 private theorem Term.denoteTyped_env_congr {ctx : TypedContext}

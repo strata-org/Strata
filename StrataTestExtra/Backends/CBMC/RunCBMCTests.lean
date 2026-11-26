@@ -7,9 +7,10 @@
 /-! ## CBMC tests under `lake test`
 
 Runs `StrataTest/Backends/CBMC/run_cbmc_tests.sh` and fails if any suite
-fails. With `CBMC_TESTS_REQUIRED` set (the Brazil build sets it, since its
-`Config` declares CBMC) a missing CBMC tool fails the test; otherwise the
-script prints `SKIP` and this test passes. See `StrataTest/Backends/CBMC/README.md`.
+fails. With `CBMC_TESTS_REQUIRED` set, a missing CBMC tool or a `cbmc` of the
+wrong version fails the test; otherwise the script prints `SKIP` and this test
+passes. See
+`StrataTest/Backends/CBMC/README.md`.
 -/
 
 #eval show IO Unit from do

@@ -228,6 +228,33 @@ info: translation error: procedure 'skipped' assigns its input 'x': the CopyAssi
 #eval report <| mkProg "skipped" [("x", .int)] [("r", .int)] "E"
   [("E", blk [setI "x" 1, setV "r" "x"] fin)]
 
+/-! A postcondition reads the assigned input `x` at entry, so it names `x$in`. -/
+
+/--
+info: program Core;
+
+procedure post (x$in : int, out r : int)
+spec {
+  ensures [rx]: r == x$in;
+  } cfg E {
+  E: {
+    var x : int := x$in;
+    x := 1;
+    r := x;
+    return;
+  }
+};
+
+type check ok
+-/
+#guard_msgs in
+#eval reportCopied
+  { composites := [], procedures := [
+      { name := "post", inputs := [(idn "x", mono .int)], outputs := [(idn "r", mono .int)],
+        throws := none, ensures := [{ label := "rx", cond := .eq Core.coreLoc (mkFvar "r") (mkFvar "x") }],
+        body := some { handlers := [], cfg := { entry := "E", blocks :=
+          [("E", blk [setI "x" 1, setV "r" "x"] fin)] } } }] }
+
 end Cortex.CopyAssignedInputsTest
 
 end

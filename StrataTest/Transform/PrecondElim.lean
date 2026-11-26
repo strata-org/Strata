@@ -606,7 +606,7 @@ private def polyCallerPgm (tv : String) (body : List Core.Statement) :
                            (⟨"x", ()⟩, .ftvar tv)]
                         outputs := [] }
             spec := { preconditions := [], postconditions := [] }
-            body := .structured body }
+            body := .structured body false }
       .empty] }
 
 /-- Run `precondElim` and `genOpaqueTypeParams`, then type check; show the
@@ -711,7 +711,7 @@ private def forallHPgm (tv : String) : Core.Program :=
             spec := { preconditions := [], postconditions := [] }
             body := .structured
               [Core.Statement.assert "forallH" (LExpr.all Core.coreLoc "y" (some .int) callH)
-                .empty] }
+                .empty] false }
       .empty] }
 
 -- `h(x, y)` in `P<b>` with `y : int` bound by the quantifier: `h`'s `b` is
@@ -779,7 +779,7 @@ private def fResPgm (tv : String) : Core.Program :=
             body := .structured
               [Core.Statement.init ⟨"t", ()⟩ (.forAll [] (.ftvar tv))
                 (.det (.app Core.coreLoc (.op Core.coreLoc ⟨"f", ()⟩ none)
-                       (.intConst Core.coreLoc 0))) .empty] }
+                       (.intConst Core.coreLoc 0))) .empty] false }
       .empty] }
 
 /-- Type check, then run `precondElim`; show the program or the error. -/

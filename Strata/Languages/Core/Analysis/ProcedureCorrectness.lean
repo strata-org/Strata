@@ -80,9 +80,9 @@ program. -/
 @[expose] def AssertSpecInProcedure (params : InitEnvWFParams)
     (Spec : (Imperative.Env Expression → Prop) → Statements → Statement → Prop)
     (entryProcName : String) (p : Program) : Prop :=
-  ∃ proc ss,
+  ∃ proc ss opq,
     p.findProcByString? entryProcName = some proc ∧
-    proc.body = .structured ss ∧
+    proc.body = .structured ss opq ∧
     Spec (ProcEntryEnv params entryProcName p proc) ss (Stmt.block "" ss #[])
 
 /-! ## Procedure correctness on event traces
@@ -146,8 +146,8 @@ variable (I : ConditionInterp Expression)
     meets the procedure's contract.
 
     The two parts differ in which runs they read. The first quantifies over every
-    finite prefix of the body's runs, so it covers runs that never finish; a
-    partial-correctness contract says nothing about those. The prefixes are those
+    finite prefix of the body's runs, so it covers runs that never finish, as
+    `Procedure.contractTriple` does. The prefixes are those
     of `EventLang.core`, where a call runs its callee to completion in one step,
     so they do not include prefixes inside a callee that never finishes (see the
     section comment above). The second is the contract: from an entry
@@ -166,8 +166,8 @@ structure ProcedureAssertsValidOnTraces (params : InitEnvWFParams)
   /-- The procedure name resolves in `p`. -/
   procedureExists : ∃ proc, p.findProcByString? entryProcName = some proc
   assertsValid : ∀ a, AssertValidOnTracesInProcedure I params entryProcName p a
-  contract : ∀ proc ss, p.findProcByString? entryProcName = some proc →
-    proc.body = .structured ss →
+  contract : ∀ proc ss opq, p.findProcByString? entryProcName = some proc →
+    proc.body = .structured ss opq →
     ∀ (ρ₀ ρ' : Imperative.Env Expression) (trace : Trace Expression),
       ProcEntryEnv params entryProcName p proc ρ₀ →
       (Core.Logic.EventLang.coreBlock p.findProcByString?).TerminatesAt
@@ -183,8 +183,8 @@ structure ProcedureAssertsSatisfiableOnTraces (params : InitEnvWFParams)
   /-- The procedure name resolves in `p`. -/
   procedureExists : ∃ proc, p.findProcByString? entryProcName = some proc
   assertsSatisfiable : ∀ a, AssertSatisfiableOnTracesInProcedure I params entryProcName p a
-  postconditionsSatisfiable : ∀ proc ss, p.findProcByString? entryProcName = some proc →
-    proc.body = .structured ss →
+  postconditionsSatisfiable : ∀ proc ss opq, p.findProcByString? entryProcName = some proc →
+    proc.body = .structured ss opq →
     ∃ (ρ₀ ρ' : Imperative.Env Expression) (trace : Trace Expression) (world : I.World),
       ProcEntryEnv params entryProcName p proc ρ₀ ∧
       CoreStepStarE p.findProcByString? (.stmt (Stmt.block "" ss #[]) ρ₀) trace

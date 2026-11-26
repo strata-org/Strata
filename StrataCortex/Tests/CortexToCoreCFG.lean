@@ -777,13 +777,11 @@ procedure main()
 };
 #end
 
--- A procedure without a body keeps its structured body, next to a procedure
--- with a CFG body that calls it.
+-- A procedure without a body is an abstract Core procedure, printed without a body, next to a
+-- procedure with a CFG body that calls it.
 /--
 info: procedure declared (x : int, inout $heap : $Heap, out r : int)
-{
-  assume [assume_true]: true;
-};
+;
 procedure callsDeclared (x : int, inout $heap : $Heap, out r : int)
 cfg $heapEntry {
   $heapEntry: {

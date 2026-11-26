@@ -116,33 +116,23 @@ theorem evalInterp_stableUnder :
       (EventArg.WithWF (P := Expression) (EventArg.ExtendsEnv (fun _ => True))) :=
   Imperative.BigStep.evalInterp_stableUnder
 
-/-- Assertion validity for a successfully hoisted Core block reflects to its
-source when condition truth is stable under loop-init-hoist event matching.
+/-- `Core.hoistLoopPrefixInits` preserves assertion validity on call-free Core blocks with
+unique `init`s, when condition truth is stable under loop-init-hoist event matching.
 `evalInterp_stableUnder` supplies this for `evalInterp`. -/
 theorem assertValid (params : InitEnvWFParams)
-    {ss out : Statements}
-    (htransform : Core.hoistLoopPrefixInits ss = some out)
-    (hpre :
-      Statements.noCalls ss = Bool.true
-      ∧ Block.uniqueInits (C := Command) ss)
     {I : ConditionInterp Expression}
     (hstable : I.StableUnder
-      (EventArg.WithWF (P := Expression) (EventArg.ExtendsEnv (fun _ => True))))
-    {aid : AssertId Expression}
-    (hvalid : AssertValidOnTracesWhen (EventLang.coreBlock π) I
-      (Core.Logic.BlockInitEnvWF params out) out aid) :
-    AssertValidOnTracesWhen (EventLang.coreBlock π) I
-      (Core.Logic.BlockInitEnvWF params ss) ss aid :=
-  overapproximatesTracesUptoWhen_assertValid I _ _
-    (EventLang.coreBlock π) (EventLang.coreBlock π)
-    Core.hoistLoopPrefixInits
-    (fun block =>
-      Statements.noCalls block = Bool.true
-      ∧ Block.uniqueInits (C := Command) block)
-    params params
+      (EventArg.WithWF (P := Expression) (EventArg.ExtendsEnv (fun _ => True)))) :
+    AssertValidityPreservedWhen I (EventLang.coreBlock π) (EventLang.coreBlock π)
+      Core.hoistLoopPrefixInits
+      (fun block =>
+        Statements.noCalls block = Bool.true
+        ∧ Block.uniqueInits (C := Command) block)
+      params params :=
+  overapproximatesTraces2UptoWhen_assertValidityPreservedWhen I
     (fun _ _ htrace aid =>
       Trace.WithWF.assertionValidFrom_reflect hstable htrace aid)
-    (overapproximatesTraces π params) htransform hpre hvalid
+    (overapproximatesTraces π params)
 
 /-- **A Hoare triple transported back through loop-init hoisting.**  For a call-free Core
     statement list `ss` with unique `init`s that `Core.hoistLoopPrefixInits` hoists into `out`,
@@ -188,9 +178,9 @@ private theorem loopInitHoistDecls_proc_mem
     {decls : List Decl} {results : List (Decl × Bool)}
     {q : Procedure} {md : MetaData Expression} {ss ss' : Statements}
     (h : decls.mapM loopInitHoistDecl = .ok results)
-    (hq : Decl.proc q md ∈ decls) (hb : q.body = .structured ss)
+    (hq : Decl.proc q md ∈ decls) (hb : q.body = .structured ss opq)
     (hss : Core.hoistLoopPrefixInits ss = some ss') :
-    (Decl.proc { q with body := .structured ss' } md, ss' != ss) ∈ results := by
+    (Decl.proc { q with body := .structured ss' opq } md, ss' != ss) ∈ results := by
   induction decls generalizing results with
   | nil => simp at hq
   | cons d rest ih =>
@@ -216,9 +206,9 @@ private theorem loopInitHoist_proc_mem
     {program out : Program} {s s' : Transform.CoreTransformState} {changed : Bool}
     {q : Procedure} {md : MetaData Expression} {ss ss' : Statements}
     (h : (loopInitHoist program).run s = (.ok (changed, out), s'))
-    (hq : Decl.proc q md ∈ program.decls) (hb : q.body = .structured ss)
+    (hq : Decl.proc q md ∈ program.decls) (hb : q.body = .structured ss opq)
     (hss : Core.hoistLoopPrefixInits ss = some ss') :
-    Decl.proc { q with body := .structured ss' } md ∈ out.decls := by
+    Decl.proc { q with body := .structured ss' opq } md ∈ out.decls := by
   cases hmap : program.decls.mapM loopInitHoistDecl with
   | error error =>
       simp only [loopInitHoist, hmap, liftExcept, pure] at h
@@ -243,17 +233,15 @@ theorem loopInitHoistPipelinePhase_over
     (hnoCallsProgram : ProgramFact.noCalls.holds program)
     (huniqProgram : ProgramFact.uniqueInits.holds program)
     {q : Procedure} {md : MetaData Expression} {ss : Statements}
-    (hq : Decl.proc q md ∈ program.decls) (hb : q.body = .structured ss) :
+    (hq : Decl.proc q md ∈ program.decls) (hb : q.body = .structured ss opq) :
     ∃ ss', Core.hoistLoopPrefixInits ss = some ss'
-      ∧ Decl.proc { q with body := .structured ss' } md ∈ out.decls
+      ∧ Decl.proc { q with body := .structured ss' opq } md ∈ out.decls
       ∧ ∀ (params : InitEnvWFParams) {I : ConditionInterp Expression},
         I.StableUnder
           (EventArg.WithWF (P := Expression) (EventArg.ExtendsEnv (fun _ => True))) →
-      ∀ {aid : AssertId Expression},
-        AssertValidOnTracesWhen (EventLang.coreBlock π) I
-          (Core.Logic.BlockInitEnvWF params ss') ss' aid →
-        AssertValidOnTracesWhen (EventLang.coreBlock π) I
-          (Core.Logic.BlockInitEnvWF params ss) ss aid := by
+        AssertValidityPreservedWhen I (EventLang.coreBlock π) (EventLang.coreBlock π)
+          (fun (st : Statements) => if st = ss then some ss' else none) (fun _ => True)
+          params params := by
   have htransform : (loopInitHoist program).run s = (.ok (changed, out), s') := by
     rw [← loopInitHoistPipelinePhase_ok program s]
     exact hrun
@@ -261,9 +249,9 @@ theorem loopInitHoistPipelinePhase_over
   obtain ⟨bs, hproj, _⟩ := Core.noCalls_projectStmts hnc
   have hss := Core.hoistLoopPrefixInits_eq_some hproj
   refine ⟨_, hss, loopInitHoist_proc_mem htransform hq hb hss, ?_⟩
-  intro params I hstable aid hvalid
-  exact assertValid π params hss
-    ⟨hnc, ProgramFact.uniqueInits_of_program huniqProgram hq hb⟩ hstable hvalid
+  exact fun params _ hstable => assertValidityPreservedWhen_single _ fun _ aid hvalid =>
+    assertValid π params hstable _ _ aid hss
+      ⟨hnc, ProgramFact.uniqueInits_of_program huniqProgram hq hb⟩ hvalid
 
 end Core.LoopInitHoist
 

@@ -72,7 +72,7 @@ theorem Program.allStatements_of_proc
     {f : Statements → Bool} {program : Program} {q : Procedure}
     {md : Imperative.MetaData Expression} {ss : Statements}
     (h : Program.allStatements f program = true)
-    (hq : Decl.proc q md ∈ program.decls) (hb : q.body = .structured ss) :
+    (hq : Decl.proc q md ∈ program.decls) (hb : q.body = .structured ss opq) :
     f ss = true := by
   simp only [Program.allStatements, List.all_eq_true] at h
   simpa [Decl.allStatements, Imperative.Body.allStatements,
@@ -83,7 +83,7 @@ theorem Program.allStatements_of_proc
 theorem ProgramFact.noCalls_of_program
     {program : Program} {q : Procedure} {md : Imperative.MetaData Expression}
     {ss : Statements} (h : ProgramFact.noCalls.holds program)
-    (hq : Decl.proc q md ∈ program.decls) (hb : q.body = .structured ss) :
+    (hq : Decl.proc q md ∈ program.decls) (hb : q.body = .structured ss opq) :
     Statements.noCalls ss = Bool.true :=
   Program.allStatements_of_proc h hq hb
 
@@ -92,7 +92,7 @@ theorem ProgramFact.noCalls_of_program
 theorem ProgramFact.uniqueInits_of_program
     {program : Program} {q : Procedure} {md : Imperative.MetaData Expression}
     {ss : Statements} (h : ProgramFact.uniqueInits.holds program)
-    (hq : Decl.proc q md ∈ program.decls) (hb : q.body = .structured ss) :
+    (hq : Decl.proc q md ∈ program.decls) (hb : q.body = .structured ss opq) :
     Imperative.Block.uniqueInits (C := Command) ss := by
   have heq : (Imperative.Block.initVars (C := Command) ss).eraseDups =
       Imperative.Block.initVars (C := Command) ss := by
@@ -106,7 +106,7 @@ theorem ProgramFact.uniqueInits_of_program
 theorem ProgramFact.loopBodyNoInits_of_program
     {program : Program} {q : Procedure} {md : Imperative.MetaData Expression}
     {ss : Statements} (h : ProgramFact.loopBodyNoInits.holds program)
-    (hq : Decl.proc q md ∈ program.decls) (hb : q.body = .structured ss) :
+    (hq : Decl.proc q md ∈ program.decls) (hb : q.body = .structured ss opq) :
     Imperative.Block.loopBodyNoInits ss = Bool.true :=
   Program.allStatements_of_proc h hq hb
 
@@ -115,7 +115,7 @@ theorem ProgramFact.loopBodyNoInits_of_program
 theorem ProgramFact.noNondetGuards_of_program
     {program : Program} {q : Procedure} {md : Imperative.MetaData Expression}
     {ss : Statements} (h : ProgramFact.noNondetGuards.holds program)
-    (hq : Decl.proc q md ∈ program.decls) (hb : q.body = .structured ss) :
+    (hq : Decl.proc q md ∈ program.decls) (hb : q.body = .structured ss opq) :
     Imperative.Block.noNondetGuards ss = Bool.true :=
   Program.allStatements_of_proc h hq hb
 
@@ -124,7 +124,7 @@ theorem ProgramFact.noNondetGuards_of_program
 theorem ProgramFact.noLoopInvariants_of_program
     {program : Program} {q : Procedure} {md : Imperative.MetaData Expression}
     {ss : Statements} (h : ProgramFact.noLoopInvariants.holds program)
-    (hq : Decl.proc q md ∈ program.decls) (hb : q.body = .structured ss) :
+    (hq : Decl.proc q md ∈ program.decls) (hb : q.body = .structured ss opq) :
     Imperative.Block.loopHasNoInvariants ss = Bool.true :=
   Program.allStatements_of_proc h hq hb
 
@@ -133,7 +133,7 @@ theorem ProgramFact.noLoopInvariants_of_program
 theorem ProgramFact.noLoopMeasures_of_program
     {program : Program} {q : Procedure} {md : Imperative.MetaData Expression}
     {ss : Statements} (h : ProgramFact.noLoopMeasures.holds program)
-    (hq : Decl.proc q md ∈ program.decls) (hb : q.body = .structured ss) :
+    (hq : Decl.proc q md ∈ program.decls) (hb : q.body = .structured ss opq) :
     Imperative.Block.noMeasureLoops ss = Bool.true :=
   Program.allStatements_of_proc h hq hb
 

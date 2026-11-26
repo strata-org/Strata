@@ -198,48 +198,32 @@ theorem evalInterp_stableUnder :
         (P := Expression)) :=
   Imperative.BigStep.evalInterp_stableUnder
 
-/-- Assertion validity for the CFG produced by the composed structured pipeline
-reflects to its source block when condition truth is stable under pipeline
+/-- The composed structured pipeline `s2uPipeline` preserves assertion validity, from the CFG
+at `base` to its source block at `base` with the generated prefixes of both lowering passes
+reserved, under the pipeline's shape conditions, when condition truth is stable under pipeline
 event matching. `evalInterp_stableUnder` supplies this for `evalInterp`. -/
 theorem assertValid (base : InitEnvWFParams)
     (hbase : prefixesDisjoint base.prefixIdents
       Imperative.NondetElim.isGeneratedName)
-    {ss : Statements} {out : CFG String (DetBlock String Command Expression)}
-    (htransform : s2uPipeline ss = some out)
-    (hpre :
-      Statements.noCalls ss = Bool.true
-      ∧ Block.loopHasNoInvariants ss = Bool.true
-      ∧ Block.noMeasureLoops ss = Bool.true
-      ∧ Block.uniqueInits (C := Command) ss
-      ∧ Block.exitsCoveredByBlocks (CmdT := Command) [] ss
-      ∧ Block.userLabelsShapeNodup (C := Command) ss)
     {I : ConditionInterp Expression}
     (hstable : I.StableUnder
       (EventArg.WithWF (EventArg.ExtendsEnv (fun _ => True))
-        (P := Expression)))
-    {aid : AssertId Expression}
-    (hvalid : AssertValidOnTracesWhen (EventLang.coreCFG π) I
-      (Core.Logic.CFGInitEnvWF base out) out aid) :
-    AssertValidOnTracesWhen (EventLang.coreBlock π) I
-      (Core.Logic.BlockInitEnvWF
-        ((base.extend Imperative.StructuredToUnstructured.prefixesReserved).extend
-          Imperative.NondetElim.prefixesReserved) ss) ss aid :=
-  overapproximatesTracesUptoWhen_assertValid I _ _
-    (EventLang.coreBlock π) (EventLang.coreCFG π)
-    s2uPipeline
-    (fun block =>
-      Statements.noCalls block = Bool.true
-      ∧ Block.loopHasNoInvariants block = Bool.true
-      ∧ Block.noMeasureLoops block = Bool.true
-      ∧ Block.uniqueInits (C := Command) block
-      ∧ Block.exitsCoveredByBlocks (CmdT := Command) [] block
-      ∧ Block.userLabelsShapeNodup (C := Command) block)
-    ((base.extend Imperative.StructuredToUnstructured.prefixesReserved).extend
-        Imperative.NondetElim.prefixesReserved) base
+        (P := Expression))) :
+    AssertValidityPreservedWhen I (EventLang.coreBlock π) (EventLang.coreCFG π)
+      s2uPipeline
+      (fun block =>
+        Statements.noCalls block = Bool.true
+        ∧ Block.loopHasNoInvariants block = Bool.true
+        ∧ Block.noMeasureLoops block = Bool.true
+        ∧ Block.uniqueInits (C := Command) block
+        ∧ Block.exitsCoveredByBlocks (CmdT := Command) [] block
+        ∧ Block.userLabelsShapeNodup (C := Command) block)
+      ((base.extend Imperative.StructuredToUnstructured.prefixesReserved).extend
+          Imperative.NondetElim.prefixesReserved) base :=
+  overapproximatesTraces2UptoWhen_assertValidityPreservedWhen I
     (fun _ _ htrace aid =>
       Trace.WithWF.assertionValidFrom_reflect hstable htrace aid)
     (overapproximatesTraces π base hbase)
-    htransform hpre hvalid
 
 /-- **A Hoare triple transported back from the CFG of the composed pipeline.**  For a
     call-free structured Core statement list `ss` that `s2uPipeline` lowers to the CFG `out`,

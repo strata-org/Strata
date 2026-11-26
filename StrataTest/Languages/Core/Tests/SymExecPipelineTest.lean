@@ -69,9 +69,9 @@ private def runPhases (prog : Core.Program) (phases : List Core.PipelinePhase) :
 private def vcPhases (mode : Core.MergeMode) : List String :=
   ((Core.corePipelinePhases (symOpts mode)).map Core.phaseName).dropWhile (· != "symExec")
 
-#guard vcPhases .never == ["symExec", "betaReduce", "commonSubexprElim"]
-#guard vcPhases (.pathsAbove 2) == ["symExec", "betaReduce"]
-#guard vcPhases .always == ["symExec", "betaReduce"]
+#guard vcPhases .never == ["symExec", "betaReduce", "commonSubexprElim", "lambdaLift"]
+#guard vcPhases (.pathsAbove 2) == ["symExec", "betaReduce", "lambdaLift"]
+#guard vcPhases .always == ["symExec", "betaReduce", "lambdaLift"]
 
 /-- Two branches; `pos` fails on the else branch; `big` is reachable. -/
 private def branchPgm :=
@@ -555,7 +555,7 @@ private def rproc (name : String) (body : List Statement) : Decl :=
   .proc { header := { name := ⟨name, ()⟩, typeArgs := [], inputs := [(⟨"x", ()⟩, .int)],
                       outputs := [(⟨"r", ()⟩, .int)] }
           spec := { preconditions := [], postconditions := [] }
-          body := .structured body } #[]
+          body := .structured body false } #[]
 
 open _root_.Core Imperative in
 /-- `P1 { assume x > 0; cover [c]: x < 0 }` and `P2 { cover [c]: x > 0 }`. -/
@@ -774,7 +774,10 @@ all claims hold
 -- Common subexpression elimination after symbolic execution, under each mode that merges.
 /--
 info: noCFGBodies required: holds
+noCalls required: holds
+noLoops required: holds
 staticSingleAssignment required: holds
+noPrecondsFromFuncs required: holds
 typeAnnotated required: no check
 noInits required: holds
 noCFGBodies preserved: holds -> holds
@@ -864,6 +867,7 @@ nondetElim: all claims hold
 symExec: all claims hold
 betaReduce: all claims hold
 commonSubexprElim: all claims hold
+lambdaLift: all claims hold
 -/
 #guard_msgs in
 #eval allClaims (parse cfgFactsPgm) .never
@@ -884,6 +888,7 @@ simplify: all claims hold
 nondetElim: all claims hold
 symExec: all claims hold
 betaReduce: all claims hold
+lambdaLift: all claims hold
 -/
 #guard_msgs in
 #eval allClaims (parse cfgFactsPgm) .always
@@ -904,6 +909,7 @@ simplify: all claims hold
 nondetElim: all claims hold
 symExec: all claims hold
 betaReduce: all claims hold
+lambdaLift: all claims hold
 -/
 #guard_msgs in
 #eval allClaims (parse cfgFactsPgm) (.pathsAbove 2)

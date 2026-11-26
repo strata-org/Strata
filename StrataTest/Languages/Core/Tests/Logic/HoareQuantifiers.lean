@@ -141,15 +141,15 @@ private def pReqProc : Core.Procedure :=
 
 /-- The inferred (metadata-carrying) structured body of `pAssume`. -/
 private def pAssumeBody : Core.Statements :=
-  match pAssumeProc.body with | .structured b => b | _ => []
+  match pAssumeProc.body with | .structured b false => b | _ => []
 
 /-- The inferred (metadata-carrying) structured body of `pNoAssume`. -/
 private def pNoAssumeBody : Core.Statements :=
-  match pNoAssumeProc.body with | .structured b => b | _ => []
+  match pNoAssumeProc.body with | .structured b false => b | _ => []
 
 /-- The inferred (metadata-carrying) structured body of `pReq`. -/
 private def pReqBody : Core.Statements :=
-  match pReqProc.body with | .structured b => b | _ => []
+  match pReqProc.body with | .structured b false => b | _ => []
 
 /-- The expected inferred identifier and expression shapes used by the
 operational and denotational proofs. -/
@@ -221,15 +221,15 @@ private theorem pReqBody_eq :
          (iteMdOf pReqBody)] := by native_decide
 
 /-- The inferred `pAssume` body is `.structured pAssumeBody`. -/
-private theorem pAssumeProc_body : pAssumeProc.body = .structured pAssumeBody := by
+private theorem pAssumeProc_body : pAssumeProc.body = .structured pAssumeBody false := by
   native_decide
 
 /-- The inferred `pNoAssume` body is `.structured pNoAssumeBody`. -/
-private theorem pNoAssumeProc_body : pNoAssumeProc.body = .structured pNoAssumeBody := by
+private theorem pNoAssumeProc_body : pNoAssumeProc.body = .structured pNoAssumeBody false := by
   native_decide
 
 /-- The inferred `pReq` body is `.structured pReqBody`. -/
-private theorem pReqProc_body : pReqProc.body = .structured pReqBody := by
+private theorem pReqProc_body : pReqProc.body = .structured pReqBody false := by
   native_decide
 
 /-- Procedure lookup resolves `pAssume`. -/
@@ -322,6 +322,40 @@ private theorem ite_run_inv
           (ρ' := ρi) (singletonRun_to_stmtRunE (Core.EvalCommandE π) hin)
         exact .inr ⟨hc, by simpa using htr⟩
 
+/-- Every finite execution of the `ite` emits nothing, or the assertion of the branch its
+    condition selects. -/
+private theorem ite_prefix_inv
+    {mdT mdF mdIte : Imperative.MetaData Core.Expression}
+    {ρ : Imperative.Env Core.Expression} {cfg : Config Core.Expression Core.Command}
+    {tr : List (Event Core.Expression)}
+    (h : StepStmtStarE Core.Expression (Core.EvalCommandE π)
+        (.stmt (Stmt.ite (.det xExpr)
+          [Core.Statement.assert "t" forallExpr mdT]
+          [Core.Statement.assert "f" ff0 mdF] mdIte) ρ) tr cfg) :
+    tr = [] ∨
+    (Core.Expression.eval ρ.factory ρ.store xExpr = some (HasBool.ttVal ρ.factory) ∧
+      tr = [Event.assert ⟨ρ.factory, ρ.store, "t", forallExpr, mdT⟩]) ∨
+    (Core.Expression.eval ρ.factory ρ.store xExpr = some (HasBool.ffVal ρ.factory) ∧
+      tr = [Event.assert ⟨ρ.factory, ρ.store, "f", ff0, mdF⟩]) := by
+  cases h with
+  | refl => exact .inl rfl
+  | step _ _ _ _ _ hstep hrest =>
+    cases hstep with
+    | step_ite_true hc =>
+      obtain ⟨_, hin⟩ := block_run_inner_prefixE hrest
+      obtain ⟨_, hin⟩ := singleton_prefixE hin
+      rcases cmd_prefixE hin with ⟨_, rfl⟩ | ⟨_, rfl⟩
+      · exact .inl rfl
+      · obtain ⟨htr, _⟩ := EvalCmdExtE.assertRun_inv (π := π) (.inl hin)
+        exact .inr (.inl ⟨hc, by simpa using htr⟩)
+    | step_ite_false hc =>
+      obtain ⟨_, hin⟩ := block_run_inner_prefixE hrest
+      obtain ⟨_, hin⟩ := singleton_prefixE hin
+      rcases cmd_prefixE hin with ⟨_, rfl⟩ | ⟨_, rfl⟩
+      · exact .inl rfl
+      · obtain ⟨htr, _⟩ := EvalCmdExtE.assertRun_inv (π := π) (.inl hin)
+        exact .inr (.inr ⟨hc, by simpa using htr⟩)
+
 end
 
 /-! ## Facts about the two captured assertions -/
@@ -381,39 +415,36 @@ theorem pAssume_meets_contract :
   refine Core.Logic.Hoare.Procedure.contractTriple_of_core_typed (hmono := by native_decide)
     examplePgmAST testParams "pAssume" pAssumeProc pAssumeBody
     pAssumeProc_named pAssumeProc_body (by native_decide) ?_
-  intro ρ₀ ρ' trace hpre hwf hrun
+  intro ρ₀ hpre hwf
   obtain ⟨_hpreP, hfac, _hold, _hin⟩ := hpre
-  obtain ⟨ρ_inner, hinner, _hρ'⟩ :=
-    stmt_block_reaches_doneE
-      (singletonRun_to_stmtRunE (Core.EvalCommandE examplePgmAST.findProcByString?) hrun)
-  refine ⟨?_, fun _ => ?_⟩
-  ·
+  refine ⟨fun cfg trace hrun => ?_, fun _ _ _ _ => ?_⟩
+  · obtain ⟨_, hrun⟩ := singleton_prefixE hrun
+    obtain ⟨_, hinner⟩ := stmt_block_prefixE hrun
     rw [pAssumeBody_eq] at hinner
-    rcases stmts_append_doneE (Core.EvalCommandE examplePgmAST.findProcByString?)
+    rcases stmts_append_prefixE (EvalCmd := Core.EvalCommandE examplePgmAST.findProcByString?)
       [Core.Statement.assume "a" xExpr (assumeMdOf pAssumeBody)]
       [Stmt.ite (.det xExpr)
         [Core.Statement.assert "t" forallExpr (thenMdOf pAssumeBody)]
         [Core.Statement.assert "f" ff0 (elseMdOf pAssumeBody)]
-        (iteMdOf pAssumeBody)] ρ₀ ρ_inner hinner with
-      ⟨lbl, hexit₁⟩ | ⟨ρ₁, tr₁, tr₂, htr, hterm₁, hfin₂⟩
-    · exact absurd hexit₁ (stmts_exitsCoveredByBlocks_noEscapeE
-        (Core.EvalCommandE examplePgmAST.findProcByString?)
-        [Core.Statement.assume "a" xExpr (assumeMdOf pAssumeBody)]
-        (by simp [Block.exitsCoveredByBlocks, Stmt.exitsCoveredByBlocks]) ρ₀ lbl ρ_inner)
-    ·
-      obtain ⟨htr₁, hρ₁⟩ := EvalCmdExtE.assumeRun_inv (π := examplePgmAST.findProcByString?)
-        (l := "a") (e := xExpr) (md := assumeMdOf pAssumeBody) (ρ := ρ₀) (ρ' := ρ₁)
-        (singletonRun_to_stmtRunE (Core.EvalCommandE examplePgmAST.findProcByString?) (.inl hterm₁))
-      subst ρ₁; subst htr; subst htr₁
-      rcases ite_run_inv examplePgmAST.findProcByString? (ρ := ρ₀) (ρ' := ρ_inner)
-        (singletonRun_to_stmtRunE (Core.EvalCommandE examplePgmAST.findProcByString?) hfin₂) with
-        ⟨_hc, htr₂⟩ | ⟨hc, htr₂⟩
-      ·
-        subst htr₂
-        exact ⟨fun _ world _ => forall_holds _ world ρ₀.store ρ₀.factory _ hfac, trivial⟩
-      ·
-        subst htr₂
-        refine ⟨fun _ world hassum => absurd
+        (iteMdOf pAssumeBody)] ρ₀ hinner with
+      ⟨_, h₁⟩ | ⟨ρ₁, tr₁, tr₂, rfl, hterm₁, _, h₂⟩
+    · -- an execution still in the assumption emits no assertion
+      obtain ⟨_, h₁⟩ := singleton_prefixE h₁
+      rcases cmd_prefixE h₁ with ⟨_, rfl⟩ | ⟨_, rfl⟩
+      · exact trivial
+      · obtain ⟨rfl, _⟩ := EvalCmdExtE.assumeRun_inv (π := examplePgmAST.findProcByString?)
+          (.inl h₁)
+        exact trivial
+    · obtain ⟨rfl, hρ₁⟩ := EvalCmdExtE.assumeRun_inv (π := examplePgmAST.findProcByString?)
+        (singletonRun_to_stmtRunE (Core.EvalCommandE examplePgmAST.findProcByString?)
+          (.inl hterm₁))
+      subst ρ₁
+      obtain ⟨_, h₂⟩ := singleton_prefixE h₂
+      rcases ite_prefix_inv examplePgmAST.findProcByString? h₂ with
+        rfl | ⟨_hc, rfl⟩ | ⟨hc, rfl⟩
+      · exact trivial
+      · exact ⟨fun _ world _ => forall_holds _ world ρ₀.store ρ₀.factory _ hfac, trivial⟩
+      · refine ⟨fun _ world hassum => absurd
           (hassum ⟨ρ₀.factory, ρ₀.store, "a", xExpr, assumeMdOf pAssumeBody⟩ (by simp))
           (xFalse_notHolds _ ρ₀ world "a" (assumeMdOf pAssumeBody) hfac hc), trivial⟩
   ·
@@ -602,7 +633,7 @@ theorem pNoAssume_contract_refuted :
       simp only [List.mem_singleton] at hmem
       obtain ⟨rfl, rfl⟩ := hmem
       exact ⟨_, rfl, rfl⟩
-  have hres := htriple (xFalseEnv model) (xFalseEnv model) _
+  have hres := Strata.Logic.Hoare.TripleWith.run htriple (xFalseEnv model) (xFalseEnv model) _
     ⟨hpre, Core.Specification.axiomsBeforeProcedureDecl_of_noAxioms (by native_decide) _⟩ (xFalseEnv_blockWF model)
     (.inl (xFalseEnv_blockrun model examplePgmAST.findProcByString?))
   have hfalse := hres.1.1 trivial (someValuation _)
@@ -620,22 +651,19 @@ theorem pReq_meets_contract :
   refine Core.Logic.Hoare.Procedure.contractTriple_of_core_typed (hmono := by native_decide)
     examplePgmAST testParams "pReq" pReqProc pReqBody
     pReqProc_named pReqProc_body (by native_decide) ?_
-  intro ρ₀ ρ' trace hpre hwf hrun
+  intro ρ₀ hpre hwf
   obtain ⟨hpreP, hfac, _hold, _hin⟩ := hpre
-  obtain ⟨ρ_inner, hinner, _hρ'⟩ :=
-    stmt_block_reaches_doneE
-      (singletonRun_to_stmtRunE (Core.EvalCommandE examplePgmAST.findProcByString?) hrun)
-  refine ⟨?_, fun _ => ?_⟩
+  refine ⟨fun cfg trace hrun => ?_, fun _ _ _ _ => ?_⟩
   ·
+    obtain ⟨_, hrun⟩ := singleton_prefixE hrun
+    obtain ⟨_, hinner⟩ := stmt_block_prefixE hrun
     rw [pReqBody_eq] at hinner
-    rcases ite_run_inv examplePgmAST.findProcByString? (ρ := ρ₀) (ρ' := ρ_inner)
-      (singletonRun_to_stmtRunE (Core.EvalCommandE examplePgmAST.findProcByString?) hinner) with
-      ⟨_hc, htr⟩ | ⟨hc, htr⟩
+    obtain ⟨_, hinner⟩ := singleton_prefixE hinner
+    rcases ite_prefix_inv examplePgmAST.findProcByString? hinner with
+      rfl | ⟨_hc, rfl⟩ | ⟨hc, rfl⟩
+    · exact trivial
+    · exact ⟨fun _ world _ => forall_holds _ world ρ₀.store ρ₀.factory _ hfac, trivial⟩
     ·
-      subst htr
-      exact ⟨fun _ world _ => forall_holds _ world ρ₀.store ρ₀.factory _ hfac, trivial⟩
-    ·
-      subst htr
       refine ⟨fun _ world _ => ?_, trivial⟩
       exfalso
       have hmem : ("requires_x", pReqCheck) ∈ pReqProc.spec.preconditions.toList := by

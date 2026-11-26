@@ -401,12 +401,19 @@ def verifyCommand (dialects : LoadedDialects)
         println! f!"Skipping verification."
       else
         let provedGoalCount := (vcResults.filter Core.VCResult.isSuccess).size
-        let failedGoalCount := (vcResults.filter Core.VCResult.isNotSuccess).size
+        -- Goals a run stopped at its first error did not check are counted on their own.
+        let notCheckedCount := (vcResults.filter Core.VCResult.isNotChecked).size
+        let failedGoalCount := (vcResults.filter Core.VCResult.isNotSuccess).size - notCheckedCount
         -- Encoding failures, solver crashes, or per-check SMT errors (exit 3)
         let hasImplError := vcResults.any (fun r => r.isImplementationError || r.hasSMTError)
         -- Assertion violations that are not timeouts or internal errors (exit 2)
-        let hasFailure := vcResults.any (fun r => !r.isSuccess && !r.isTimeout && !r.isImplementationError && !r.hasSMTError)
-        println! f!"Finished with {provedGoalCount} goals passed, {failedGoalCount} failed."
+        -- A goal not checked is not a failure: the goal the run stopped at decides the exit code.
+        let hasFailure := vcResults.any fun r =>
+          !r.isSuccess && !r.isTimeout && !r.isImplementationError && !r.hasSMTError &&
+            !r.isNotChecked
+        let notChecked := if notCheckedCount == 0 then "" else s!", {notCheckedCount} not checked"
+        println! f!"Finished with {provedGoalCount} goals passed, \
+          {failedGoalCount} failed{notChecked}."
         if hasImplError then
           IO.Process.exit ExitCode.internalError
         else if hasFailure then

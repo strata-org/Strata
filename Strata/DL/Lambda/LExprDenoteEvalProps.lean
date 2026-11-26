@@ -35,6 +35,8 @@ definitions it uses.
 - `LExpr.denoteEval_mapFvarNames` — renaming free variables
 - `LExpr.denoteEval_substFvarsBy` — substituting variables or Boolean literals holding the
   values of free variables
+- `LExpr.denoteEval_substFvarsBy_eval` — substituting expressions that evaluate to the
+  values of the variables they replace
 - `LExpr.denoteEval_of_hasTypeA` — a well-typed expression evaluates
 - `LExpr.denoteEval_of_isValue` — a well-typed value (`isValue`) denotes one semantic
   value in every store
@@ -1263,6 +1265,112 @@ theorem LExpr.denoteEval_substFvarsBy {M : ModeledFactory T} {σ σ' : ValStore 
       show b = ((σ x).bind (·.read M.model.tcInterp LSort.bool)).getD default
       rw [hw, Option.bind_some, SemValue.read_ofBool]
       rfl
+  have hfv : ∀ x ty, (x, some ty) ∈ (e.annotateFvars σ.ann).freeVars → look' x = none →
+      σ'.fvarVal M.model.tcInterp x (ty.substTyVars M.tyVarVal) =
+        σ.fvarVal M.model.tcInterp x (ty.substTyVars M.tyVarVal) := by
+    intro x ty hx hl
+    obtain ⟨⟨ty', hx'⟩, -⟩ := LExpr.mem_freeVars_annotateFvars hx
+    simp only [look', Option.map_eq_none_iff] at hl
+    simp [ValStore.fvarVal, hrest x ty' hx' hl]
+  constructor
+  · rintro ⟨τ, hτ, hg, rfl⟩
+    have hτ' : (e.annotateFvars σ.ann).HasTypeA [] τ := LExpr.typeCheck_to_HasTypeA
+      (htyeq ▸ LExpr.HasTypeA_to_typeCheck hτ)
+    refine ⟨τ, hτ', hg, ?_⟩
+    unfold LExpr.denoteEvalResult
+    congr 1
+    refine eq_of_heq ((denote_heq_of_eq hann hτ (LExpr.HasTypeA_substFvarsBy htc hτ')).trans ?_)
+    exact heq_of_eq (denote_substFvarsBy look' .nil htc hden hfv hτ' _)
+  · rintro ⟨τ, hτ, hg, rfl⟩
+    have hτ' : ((e.substFvarsBy look).annotateFvars σ'.ann).HasTypeA [] τ :=
+      LExpr.typeCheck_to_HasTypeA (htyeq.symm ▸ LExpr.HasTypeA_to_typeCheck hτ)
+    refine ⟨τ, hτ', hg, ?_⟩
+    unfold LExpr.denoteEvalResult
+    congr 1
+    symm
+    refine eq_of_heq ((denote_heq_of_eq hann hτ' (LExpr.HasTypeA_substFvarsBy htc hτ)).trans ?_)
+    exact heq_of_eq (denote_substFvarsBy look' .nil htc hden hfv hτ _)
+
+/-- **Substituting expressions that evaluate to the values of the variables they replace.**
+    Substituting, for free variables of `e`, expressions that evaluate in `σ'` to the values
+    the variables have in `σ`, preserves evaluation, when the remaining free variables have the
+    same values. -/
+theorem LExpr.denoteEval_substFvarsBy_eval {M : ModeledFactory T} {σ σ' : ValStore T}
+    (look : Identifier T.IDMeta → Option (LExpr T.mono)) (e : LExpr T.mono)
+    (hlook : ∀ x ty r, (x, ty) ∈ e.freeVars → look x = some r →
+      ∃ w, σ x = some w ∧ r.denoteEval M σ' = some w)
+    (hrest : ∀ x ty, (x, ty) ∈ e.freeVars → look x = none → σ' x = σ x) :
+    (e.substFvarsBy look).denoteEval M σ' = e.denoteEval M σ := by
+  have hdef : σ'.Defines M.model.tcInterp (e.substFvarsBy look) ↔ σ.Defines M.model.tcInterp e := by
+    simp only [ValStore.Defines, getVars_eq_freeVars_idents, List.mem_map, Prod.exists,
+      exists_and_right, exists_eq_right, forall_exists_index]
+    constructor
+    · intro hd x ty hx
+      cases hl : look x with
+      | none =>
+        rw [← hrest x ty hx hl]
+        exact hd x ty ((LExpr.mem_freeVars_substFvarsBy_of hx).1 hl)
+      | some r =>
+        obtain ⟨w, hw, hr⟩ := hlook x ty r hx hl
+        exact ⟨w, hw, LExpr.denoteEval_tc hr⟩
+    · intro hd x ty hx
+      rcases LExpr.mem_freeVars_substFvarsBy hx with ⟨hx', hl⟩ | ⟨y, tyy, r, hy, hl, hr⟩
+      · rw [hrest x ty hx' hl]; exact hd x ty hx'
+      · obtain ⟨w, -, hrv⟩ := hlook y tyy r hy hl
+        exact LExpr.denoteEval_defines hrv x (LExpr.mem_getVars_of_mem_freeVars hr)
+  apply Option.ext
+  intro v
+  rw [LExpr.denoteEval_eq_some_iff, LExpr.denoteEval_eq_some_iff, hdef]
+  apply and_congr_right
+  intro hd
+  let look' : Identifier T.IDMeta → Option (LExpr T.mono) :=
+    fun x => (look x).map (·.annotateFvars σ'.ann)
+  have hann :
+      (e.substFvarsBy look).annotateFvars σ'.ann = (e.annotateFvars σ.ann).substFvarsBy look' :=
+    LExpr.annotateFvars_substFvarsBy look σ.ann σ'.ann e fun x ty hx hl => by
+      simp [ValStore.ann, hrest x ty hx hl]
+  -- A substituted occurrence: its annotation is the sort of its value, and the annotated
+  -- replacement has that type and denotes that value.
+  have hocc : ∀ x tyo r', (x, tyo) ∈ (e.annotateFvars σ.ann).freeVars → look' x = some r' →
+      ∃ τ, ∃ h : r'.HasTypeA [] τ, τ.IsGround ∧ tyo = some τ ∧
+        σ x = some ⟨M.model.tcInterp, τ.substTyVars M.tyVarVal,
+          letI := M.model.allInhabited
+          LExpr.denote M.model.tcInterp M.model.opInterp (σ'.fvarVal M.model.tcInterp)
+            M.tyVarVal .nil r' τ h⟩ := by
+    intro x tyo r' hx hl
+    obtain ⟨⟨ty', hx'⟩, hann'⟩ := LExpr.mem_freeVars_annotateFvars hx
+    simp only [look', Option.map_eq_some_iff] at hl
+    obtain ⟨r, hl, rfl⟩ := hl
+    obtain ⟨w, hw, hrv⟩ := hlook x ty' r hx' hl
+    obtain ⟨-, τ, h, hg, rfl⟩ := LExpr.denoteEval_eq_some_iff.mp hrv
+    refine ⟨τ, h, hg, ?_, hw⟩
+    have := hann' (LExpr.denoteEvalResult M σ' r τ h).sort.toMonoTy (by simp [ValStore.ann, hw])
+    rw [this]
+    simp only [LExpr.denoteEvalResult]
+    rw [LMonoTy.IsGround.substTyVars_eq hg M.tyVarVal refTyVarVal, hg]
+  have htc : ∀ x tyo r', (x, tyo) ∈ (e.annotateFvars σ.ann).freeVars → look' x = some r' →
+      ∀ Δ', LExpr.typeCheck Δ' r' = tyo := by
+    intro x tyo r' hx hl Δ'
+    obtain ⟨τ, h, -, rfl, -⟩ := hocc x tyo r' hx hl
+    rw [typeCheck_of_lcAt (HasTypeA_nil_lcAt h)]
+    exact LExpr.HasTypeA_to_typeCheck h
+  have htyeq : LExpr.typeCheck [] ((e.substFvarsBy look).annotateFvars σ'.ann) =
+      LExpr.typeCheck [] (e.annotateFvars σ.ann) := by
+    rw [hann]; exact LExpr.typeCheck_substFvarsBy look' _ [] htc
+  letI := M.model.allInhabited
+  have hden : ∀ x ty r', (x, some ty) ∈ (e.annotateFvars σ.ann).freeVars → look' x = some r' →
+      ∀ Δ' (bv' : BVarVal M.model.tcInterp M.tyVarVal Δ') (hr : r'.HasTypeA Δ' ty),
+        LExpr.denote M.model.tcInterp M.model.opInterp (σ'.fvarVal M.model.tcInterp) M.tyVarVal
+          bv' r' ty hr = σ.fvarVal M.model.tcInterp x (ty.substTyVars M.tyVarVal) := by
+    intro x ty r' hx hl Δ' bv' hr
+    obtain ⟨τ, h, -, hty, hw⟩ := hocc x _ r' hx hl
+    simp only [Option.some.injEq] at hty
+    subst hty
+    rw [denote_irrel_of_lcAt M.model.tcInterp M.model.opInterp (σ'.fvarVal M.model.tcInterp)
+      M.tyVarVal (HasTypeA_nil_lcAt h) hr h bv' .nil]
+    simp only [ValStore.fvarVal, hw, Option.bind_some]
+    rw [SemValue.read_self]
+    rfl
   have hfv : ∀ x ty, (x, some ty) ∈ (e.annotateFvars σ.ann).freeVars → look' x = none →
       σ'.fvarVal M.model.tcInterp x (ty.substTyVars M.tyVarVal) =
         σ.fvarVal M.model.tcInterp x (ty.substTyVars M.tyVarVal) := by

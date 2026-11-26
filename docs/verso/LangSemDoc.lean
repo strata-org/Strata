@@ -573,10 +573,17 @@ assumptions.
 
 A partial-correctness Hoare triple `Strata.Logic.Hoare.TripleWith`
 ([`Logic/HoareTemplate.lean`](https://github.com/strata-org/Strata/blob/main/Strata/DL/Imperative/Logic/HoareTemplate.lean)),
-states that any run of `s` from an initial environment satisfying `Pre` that
-reaches a terminal or exiting (like `break` in C/Java) configuration emits an
-assertion-valid trace under its supplied condition interpreter.  If that trace is
-`Trace.Reachable`, the final environment also satisfies `Post`.
+states that every finite execution of `s` from an initial environment satisfying `Pre`,
+finished or not, emits an assertion-valid trace under its supplied condition interpreter,
+and that every run reaching a terminal or exiting (like `break` in C/Java) configuration
+along a `Trace.Reachable` trace ends in an environment satisfying `Post`. So
+`{True} assert false; while (true) {} {Post}` holds for no `Post`, although the program
+never finishes. With the trivial postcondition, the triple is
+`AllAssertsValidOnTracesWhen` over the admitted entries.
+
+{docstring Strata.Logic.Hoare.TripleWith}
+
+{docstring Strata.Logic.Hoare.TripleWith.true_iff_allAssertsValidOnTracesWhen}
 
 For Imperative's structured statements, since Imperative doesn't fix command type
 and wellformedness of the statement, the structural rules (`consequence`, `seq_append`,
@@ -611,9 +618,10 @@ For a polymorphic procedure, the judgement asks every instance of the procedure
 any of them; a monomorphic procedure has one instance, itself.
 The precondition also assumes the axioms and `distinct` declarations that precede
 the procedure, as the entry environments of `ProcedureAssertsValidOnTraces` do, and
-a proved `Procedure.contractTriple` gives the contract part of that property
-(`contract_of_contractTriple`); for a polymorphic procedure, through its instance at its own
-type parameters.
+a proved `Procedure.contractTriple` of a structured body gives that property
+(`procedureAssertsValidOnTraces_of_contractTriple`): both validate the assertions of every
+finite execution and the postconditions of every finished run. For a polymorphic procedure,
+it does so through its instance at its own type parameters.
 `StrataTest/Languages/Core/Tests/Logic/Hoare.lean` has examples of Hoare triples
 derived from procedure contracts and their proofs,
 `StrataTest/Languages/Core/Tests/Logic/HoareAxioms.lean` has contracts that rest on
@@ -625,8 +633,9 @@ one that calls a polymorphic function.
 
 ### Total Correctness
 
-The partial triple says nothing about a run that never finishes, so a program that
-diverges or gets stuck meets every partial triple. Termination is stated with the
+The partial triple owes no postcondition at a run that never finishes, so a program that
+diverges or gets stuck, with valid assertions, meets every partial triple. Termination is
+stated with the
 must-termination predicate of `EventLang`: a configuration must terminate when it has
 finished, or when it can step and every successor must terminate. It is inductive, so it
 excludes infinite executions, and its progress premise excludes stuck ones.
@@ -651,14 +660,14 @@ The total-correctness triple `Strata.Logic.HoareTotal.TripleWith`
 asks for `TerminatesAndAssertsValid` from every admitted entry satisfying `Pre`, and for
 `Post` at the end of every finished run whose trace is reachable. It amounts to the partial
 triple together with `TerminatesAndAssertsValid`, since that condition gives the validity of
-the assertions of every finished run. Since only reachable runs owe `Post`, an `assume` may
+the assertions of every finite execution. Since only reachable runs owe `Post`, an `assume` may
 feed the postcondition: `{True} havoc x; assume x > 0 {x > 0}` holds, and so does
 `{True} assume false; while (true) {} {False}`, whose divergent run is
 unreachable. The rules compose because the condition is per world: in a fixed world, the
 prefix of a run whose assumptions hold there is reachable, so the intermediate assertion or
 the loop invariant holds where the rest of the run starts. Because assertions are checked
 step by step, a total triple validates the assertions of every finite execution, finished
-or not. Checking them only on finished runs would let
+or not, as the partial triple does. Checking them only on finished runs would let
 `assume x > 0; assert false; assume x < 0; while (true) {}` meet any total triple: it has no
 finished run, and it diverges only after an assumption that fails in every world reaching
 the failing assertion.
@@ -725,10 +734,9 @@ satisfiability follows the same existential trace pattern.
 
 {docstring Imperative.Specification.AssertSatisfiableOnTraces}
 
-The event Hoare triple validates every completed trace and gates its
-postcondition on joint satisfiability of that trace's assumptions.  Trace
-validity above quantifies over every finite prefix, so the two notions are
-separate unless an additional progress or trace-extension result relates them.
+With the trivial postcondition, the event Hoare triple is `AllAssertsValidOnTracesWhen` over
+the entries its precondition and gate admit
+(`Strata.Logic.Hoare.TripleWith.true_iff_allAssertsValidOnTracesWhen`).
 
 ### Soundness and Completeness of Analysis
 
@@ -761,10 +769,12 @@ Transformations must not change what the verifier concludes. The definitions in
 `Strata/Transform/Specification.lean` can relate different source and target
 languages.
 
-The analysis-specific {name Imperative.Specification.Transform.Sound}`Sound`
+The analysis-specific
+{name Imperative.Specification.Transform.AssertValidityPreservedWhen}`AssertValidityPreservedWhen`
 predicate relates two `EventLang` values under one condition interpretation. It
-states that validity of each target assertion on reachable traces implies the
-corresponding source validity, so a verified output certifies the input.
+states that, for source statements meeting a precondition, validity of each
+target assertion on reachable traces implies the corresponding source validity,
+so a verified output certifies the input.
 
 The operational definitions are more general across analyses and support
 horizontal and vertical composition. They are the primary specifications for

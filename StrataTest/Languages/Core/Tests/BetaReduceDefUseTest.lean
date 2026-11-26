@@ -36,14 +36,14 @@ def body : Statements :=
 def pgm : Program :=
   { decls := [.proc { header := { name := id' "P", typeArgs := [], inputs := [], outputs := [] },
                       spec := { preconditions := [], postconditions := [] },
-                      body := .structured body } #[]] }
+                      body := .structured body false } #[]] }
 
 /-- The structured body of the first procedure of `p`. -/
 def firstBody (p : Program) : Statements :=
   match p.decls with
   | .proc q _ :: _ => match q.body with
-    | .structured ss => ss
-    | .cfg _ => []
+    | .structured ss _ => ss
+    | .cfg _ _ | .abstract => []
   | _ => []
 
 /-- The entry names `z` and `w` are defined; no operator is declared. -/

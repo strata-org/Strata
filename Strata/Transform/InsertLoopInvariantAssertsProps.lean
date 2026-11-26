@@ -1619,8 +1619,8 @@ private theorem runStmtsRec_insert (ss : List Statement) (γ : CoreGenState) :
     declaration. -/
 private def declNumChecked : Decl → Nat
   | .proc proc _ => match proc.body with
-    | .structured ss => Block.numCheckedLoops ss
-    | .cfg _ => 0
+    | .structured ss _ => Block.numCheckedLoops ss
+    | .cfg _ _ | .abstract => 0
   | _ => 0
 
 /-- The number of loops carrying invariants or a measure in the structured procedure bodies of a
@@ -1670,7 +1670,7 @@ private theorem numChecked_le (p : Program) : numChecked p ≤ numLoops p := by
     split <;> rename_i h <;> simp only [h]
     · have hb := Block.numCheckedLoops_le ‹_›
       omega
-    · omega
+    all_goals omega
 
 /-- The invariant of the iteration from `p`: the generator state is well formed, and each
     procedure body of the program is that of `p` with the checks of some loops inserted,
@@ -1694,8 +1694,9 @@ private theorem declStep_iter {γ γ' : CoreGenState} (hwf : γ.WF) (hle : GenLe
     cases hb : proc₀.body
     · simp only [Core.LoopElim.DeclBodyRel, hb] at h₁ ⊢
       obtain ⟨ss₁, hrel, rfl⟩ := h₁
-      obtain ⟨ss, ss', hss, hq, hr⟩ := Or.resolve_right h₂ fun ⟨_, hg, _⟩ => by cases hg
-      obtain rfl : ss₁ = ss := Body.structured.inj hss
+      obtain ⟨ss, ss', o, hss, hq, hr⟩ := Or.resolve_right h₂ fun
+        | .inl ⟨_, _, hg, _⟩ | .inr ⟨hg, _⟩ => by cases hg
+      obtain ⟨rfl, rfl⟩ := Body.structured.inj hss
       obtain ⟨hstep, hle', hlt, hz⟩ := hq hwf
       obtain ⟨c, d'⟩ := r
       cases c <;> simp only [Bool.false_eq_true, ↓reduceIte] at hr <;> subst hr
@@ -1707,13 +1708,15 @@ private theorem declStep_iter {γ γ' : CoreGenState} (hwf : γ.WF) (hle : GenLe
           hstep, rfl⟩, ?_, fun _ => ?_, nofun⟩ <;> simp only [declNumChecked]
         · exact Nat.le_of_lt (hlt rfl)
         · exact hlt rfl
-    · -- A CFG body is kept.
+    all_goals
+      -- A CFG body and an abstract procedure are kept.
       simp only [Core.LoopElim.DeclBodyRel, hb] at h₁
       subst h₁
-      rcases h₂ with ⟨ss, -, hss, -⟩ | ⟨-, -, rfl⟩
+      rcases h₂ with ⟨ss, _, _, hss, -⟩ | ⟨_, _, _, rfl⟩ | ⟨-, rfl⟩
       · rw [hb] at hss
         cases hss
-      · refine ⟨by simp only [Core.LoopElim.DeclBodyRel, hb], Nat.le_refl _, nofun, fun _ => ?_⟩
+      all_goals
+        refine ⟨by simp only [Core.LoopElim.DeclBodyRel, hb], Nat.le_refl _, nofun, fun _ => ?_⟩
         simp [declNumChecked, hb]
   all_goals
     obtain rfl := h₁
@@ -1791,7 +1794,8 @@ private theorem declBodyRel_blockRel {D : Expression.Ident → Prop} {p p' : Pro
       · simp only [Core.LoopElim.DeclBodyRel, hb] at hd ⊢
         obtain ⟨ss', hrel, rfl⟩ := hd
         exact ⟨ss', hrel.blockRel (by simp only [declNumChecked] at hn; omega), rfl⟩
-      · simp only [Core.LoopElim.DeclBodyRel, hb] at hd ⊢
+      all_goals
+        simp only [Core.LoopElim.DeclBodyRel, hb] at hd ⊢
         exact hd
     all_goals exact hd
 
@@ -1808,9 +1812,9 @@ theorem insertLoopInvariantAsserts_blockRel {p p' : Program} {c : Bool}
     (h : insertLoopInvariantAsserts p σ = (.ok (c, p'), σ')) :
     List.Rel₂ (fun d d' => match d with
       | .proc proc md => match proc.body with
-        | .structured ss =>
-          ∃ ss', BlockRel [] ss ss' ∧ d' = .proc { proc with body := .structured ss' } md
-        | .cfg _ => d' = d
+        | .structured ss o =>
+          ∃ ss', BlockRel [] ss ss' ∧ d' = .proc { proc with body := .structured ss' o } md
+        | .cfg _ _ | .abstract => d' = d
       | _ => d' = d) p.decls p'.decls := by
   have hinit : IterInv p p σ.genState := ⟨hwf, by
     generalize p.decls = ds
@@ -1823,7 +1827,7 @@ theorem insertLoopInvariantAsserts_blockRel {p p' : Program} {c : Bool}
         cases hb : proc.body
         · simp only [Core.LoopElim.DeclBodyRel, hb]
           exact ⟨_, BlockRelSome.refl _, by rw [← hb]⟩
-        · simp only [Core.LoopElim.DeclBodyRel, hb]
+        all_goals simp only [Core.LoopElim.DeclBodyRel, hb]
       all_goals rfl⟩
   obtain ⟨⟨-, hrel⟩, hn⟩ := Transform.runProgramUntil_postGen (Inv := IterInv p)
     (runProgram_insert p) (Nat.lt_succ_of_le (numChecked_le p)) σ _ σ' hinit h
@@ -1839,8 +1843,8 @@ theorem insertLoopInvariantAsserts_body_blockRel {p p' : Program} {c : Bool}
     {σ σ' : Transform.CoreTransformState} (hwf : σ.genState.WF)
     (h : insertLoopInvariantAsserts p σ = (.ok (c, p'), σ'))
     {i : Nat} {proc : Procedure} {md : MetaData Expression} {ss : Statements}
-    (hproc : p.decls[i]? = some (.proc proc md)) (hbody : proc.body = .structured ss) :
-    ∃ ss', p'.decls[i]? = some (.proc { proc with body := .structured ss' } md) ∧
+    (hproc : p.decls[i]? = some (.proc proc md)) (hbody : proc.body = .structured ss opq) :
+    ∃ ss', p'.decls[i]? = some (.proc { proc with body := .structured ss' opq } md) ∧
       BlockRel [] ss ss' := by
   obtain ⟨d', hd', hrel⟩ := (insertLoopInvariantAsserts_blockRel hwf h).getElem?_some hproc
   simp only [hbody] at hrel

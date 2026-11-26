@@ -67,7 +67,7 @@ def noMd (p : Program) : Program :=
       | .proc q _ =>
         let q := Procedure.mapExprs eraseLocs q
         .proc { q with body := match q.body with
-          | .structured ss => .structured (stmtsNoMd ss)
+          | .structured ss o => .structured (stmtsNoMd ss) o
           | b => b } #[]
       | d => d }
 
@@ -138,7 +138,7 @@ partial def stmtKinds : Statement → List String
 /-- The structured bodies of `p`. -/
 def bodies (p : Program) : List (List Statement) :=
   p.decls.filterMap fun
-    | .proc q _ => match q.body with | .structured ss => some ss | _ => none
+    | .proc q _ => match q.body with | .structured ss _ => some ss | _ => none
     | _ => none
 
 /-- The kinds the module documentation promises, missing from every program of seeds 0 to

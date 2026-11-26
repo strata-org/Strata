@@ -39,15 +39,17 @@ public section
 
 variable {fac : Lambda.Factory CoreLParams}
 
-/-- A successful run of `ssaProgram`: every procedure of the input has its obligation procedure
-    in the output. -/
+/-- A successful run of `ssaProgram`: every procedure of the input that has an obligation
+    procedure (every procedure that is not abstract) has it in the output. -/
 private theorem ssaProgram_mem {reserved : List Expression.Ident} {mid out : Program}
     (h : ssaProgram fac reserved mid = .ok out) :
-    ∀ q md, Decl.proc q md ∈ mid.decls → ∃ d,
-      ssaProc fac (IdSet.ofList (avoidOf [] (reserved ++ declNames mid))) q = .ok d ∧
-        d ∈ out.decls := fun _ _ hq =>
-  ((Except.bind_is_ok _ _ _).1 h).elim fun _ ⟨hm, rfl⟩ =>
-    (mapM_except_mem_left _ _ _ hm _ hq).imp fun _ h => h.symm
+    ∀ q md, Decl.proc q md ∈ mid.decls → ∀ d,
+      ssaProc fac (IdSet.ofList (avoidOf [] (reserved ++ declNames mid))) q = .ok (some d) →
+        d ∈ out.decls := fun _ _ hq d hd =>
+  ((Except.bind_is_ok _ _ _).1 h).elim fun _ ⟨hm, he⟩ => by
+    obtain ⟨od, hod, hf⟩ := mapM_except_mem_left _ _ _ hm _ hq
+    cases Except.ok.inj he
+    exact List.mem_filterMap.2 ⟨od, hod, Except.ok.inj (hf.symm.trans hd)⟩
 
 /-- Substituting no variable leaves a Core expression unchanged. -/
 private theorem substFn_none (e : Expression.Expr) : WPOps.substFn e (fun _ => none) = e :=
@@ -57,7 +59,7 @@ private theorem substFn_none (e : Expression.Expr) : WPOps.substFn e (fun _ => n
 private theorem ssaProc_lemmaUnit (G : IdSet Expression) (name : String)
     (ob : Imperative.ProofObligation Expression) {P : Procedure}
     {md : Imperative.MetaData Expression} (h : lemmaUnit name ob = Decl.proc P md) :
-    ssaProc fac G P = .ok (lemmaUnit name ob) := by
+    ssaProc fac G P = .ok (some (lemmaUnit name ob)) := by
   cases h
   unfold ProofObligation.toCheckCmd
   split <;> simp [ssaProc, ssaLoopFree, ssaEntry, ssaBody, ssaList, pushObl, oblVar, renM',

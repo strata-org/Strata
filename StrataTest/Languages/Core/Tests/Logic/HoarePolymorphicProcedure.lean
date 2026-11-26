@@ -191,8 +191,9 @@ private def cmdMdOf (n : String) : MetaData Core.Expression :=
 private def entryBlockOf (n : String) :
     Option (List Core.Command × Imperative.DetTransferCmd String Core.Expression) :=
   match (procOf polyAST n).body with
-  | .cfg c => (c.blocks.lookup "entry").map fun b => (b.cmds, b.transfer)
-  | .structured _ => none
+  | .cfg c _ => (c.blocks.lookup "entry").map fun b => (b.cmds, b.transfer)
+  | .structured _ _ => none
+  | .abstract => none
 
 /-- The metadata of the first command of the entry block of the procedure `n`. -/
 private def cfgCmdMdOf (n : String) : MetaData Core.Expression :=
@@ -227,7 +228,7 @@ private def copySpec (n : String) (T : Lambda.LMonoTy) : Core.Procedure.Spec :=
 private def copyProc (n : String) (T : Lambda.LMonoTy) : Core.Procedure where
   header := copyHeader n T
   spec := copySpec n T
-  body := .structured [Core.Statement.set rId (tv xId T) (cmdMdOf n)]
+  body := .structured [Core.Statement.set rId (tv xId T) (cmdMdOf n)] false
 
 /-- The command `r := x` of the CFG body of the procedure `n` at the type `T`. -/
 private abbrev cfgSet (n : String) (T : Lambda.LMonoTy) : Core.Command :=
@@ -242,7 +243,7 @@ private def copyCfg (n : String) (T : Lambda.LMonoTy) : Core.DetCFG :=
 private def copyCfgProc (n : String) (T : Lambda.LMonoTy) : Core.Procedure where
   header := copyHeader n T
   spec := copySpec n T
-  body := .cfg (copyCfg n T)
+  body := .cfg (copyCfg n T) false
 
 /-- The arguments `(y, out s)` of a call, with `y` at the type `T`. -/
 private abbrev relayArgs (T : Lambda.LMonoTy) : List (CallArg Core.Expression) :=
@@ -257,7 +258,7 @@ private def relayProc (n : String) (extra : List (Core.Expression.Ident × Lambd
               outputs := [(sId, T)] }
   spec := { preconditions := [],
             postconditions := [(n ++ "_ensures_0", { expr := eqE sId yId T, md := postMdOf n })] }
-  body := .structured [Core.Statement.call callee tyArgs (relayArgs T) (cmdMdOf n)]
+  body := .structured [Core.Statement.call callee tyArgs (relayArgs T) (cmdMdOf n)] false
 
 /-- `CallFirst` at the type `T`: `r := first(x, y)`, ensuring `r == first(x, y)`. -/
 private def callFirstProc (T : Lambda.LMonoTy) : Core.Procedure where
@@ -266,7 +267,7 @@ private def callFirstProc (T : Lambda.LMonoTy) : Core.Procedure where
   spec := { preconditions := [],
             postconditions := [("CallFirst_ensures_0",
               { expr := .eq Core.valueLoc (tv rId T) (firstE T), md := postMdOf "CallFirst" })] }
-  body := .structured [Core.Statement.set rId (firstE T) (cmdMdOf "CallFirst")]
+  body := .structured [Core.Statement.set rId (firstE T) (cmdMdOf "CallFirst")] false
 
 /-- `p` with the type parameters `as`. -/
 private abbrev withTypeArgs (p : Core.Procedure) (as : List String) : Core.Procedure :=
@@ -682,31 +683,6 @@ private theorem copyCfg_run {n : String} {T : Lambda.LMonoTy} {fac : Core.Expres
     obtain ⟨hr, hother, -⟩ := copyCfg_finished hrun
     exact ⟨hr, hother⟩
 
-/-- **`copyCfgProc n T`'s body meets its contract**: from every entry meeting the contract
-    precondition, the CFG `r := x; return` ends, on the store projected through the entry
-    store, with `r == x`. -/
-private theorem copyCfg_triple (n : String) (T : Lambda.LMonoTy)
-    (F : Lambda.Factory Core.CoreLParams) (A : Env Core.Expression → Prop)
-    (ρEntry : Env Core.Expression) :
-    Core.Logic.Hoare.TripleUnstructured π testParams
-      (fun ρ => (Core.Logic.Hoare.Procedure.contractPre F (copyCfgProc n T) ρ ∧ A ρ) ∧
-        ρ = ρEntry)
-      (copyCfg n T)
-      (fun ρ' => Core.Logic.Hoare.Procedure.contractPost F (copyCfgProc n T)
-        { ρ' with store := projectStore ρEntry.store ρ'.store })
-      (factory := F) := by
-  intro ρ₀ ρ' trace ⟨⟨hpre, _⟩, hρ⟩ hinit hterm
-  subst hρ
-  have hrun : ReflTransTrace (StepCFGE Core.Expression (Core.EvalCommandE π))
-      (.atBlock (copyCfg n T) "entry" ρ₀) trace (.terminal ρ') := by
-    rcases hterm with h | ⟨_, h⟩ <;> exact h
-  obtain ⟨hr, hother, hf, rfl⟩ := copyCfg_finished hrun
-  obtain ⟨vx, hx, -⟩ := copy_input rfl hpre
-  refine ⟨True.intro, fun _ => post_of_eq (copySpec_post n T) (by rw [hf]; exact hpre.2.1)
-    (hr.trans hx) ((hother xId (by decide)).trans hx) ?_⟩
-  rw [hf]
-  exact hinit.storeWellDefined _ _ hx
-
 /-- From every entry meeting the contract precondition of `copyCfgProc n T`, every run of
     `copyCfg n T` must terminate, with no assertion. -/
 private theorem copyCfg_terminates (n : String) (T : Lambda.LMonoTy)
@@ -743,6 +719,34 @@ private theorem copyCfg_terminates (n : String) (T : Lambda.LMonoTy)
         | step_cmd hcmd => obtain ⟨-, -, -, rfl⟩ := copySet_inv hcmd; simp [Trace.AssertionsHoldIn])
       (fun _ _ h _ => by cases h; exact hfin _)
 
+/-- **`copyCfgProc n T`'s body meets its contract**: from every entry meeting the contract
+    precondition, the CFG `r := x; return` ends, on the store projected through the entry
+    store, with `r == x`. -/
+private theorem copyCfg_triple (n : String) (T : Lambda.LMonoTy)
+    (F : Lambda.Factory Core.CoreLParams) (A : Env Core.Expression → Prop)
+    (ρEntry : Env Core.Expression) :
+    Core.Logic.Hoare.TripleUnstructured π testParams
+      (fun ρ => (Core.Logic.Hoare.Procedure.contractPre F (copyCfgProc n T) ρ ∧ A ρ) ∧
+        ρ = ρEntry)
+      (copyCfg n T)
+      (fun ρ' => Core.Logic.Hoare.Procedure.contractPost F (copyCfgProc n T)
+        { ρ' with store := projectStore ρEntry.store ρ'.store })
+      (factory := F) := by
+  intro ρ₀ ⟨⟨hpre, _⟩, hρ⟩ hinit
+  subst hρ
+  refine ⟨fun c trace hrun => (Trace.AssertionsValid_iff_assertionsHoldIn _ trace).2 fun w =>
+    (copyCfg_terminates n T F hpre hinit.storeWellDefined _ w).assertionsHoldIn hrun,
+    fun ρ' trace hterm _ => ?_⟩
+  have hrun : ReflTransTrace (StepCFGE Core.Expression (Core.EvalCommandE π))
+      (.atBlock (copyCfg n T) "entry" ρ₀) trace (.terminal ρ') := by
+    rcases hterm with h | ⟨_, h⟩ <;> exact h
+  obtain ⟨hr, hother, hf, rfl⟩ := copyCfg_finished hrun
+  obtain ⟨vx, hx, -⟩ := copy_input rfl hpre
+  refine post_of_eq (copySpec_post n T) (by rw [hf]; exact hpre.2.1)
+    (hr.trans hx) ((hother xId (by decide)).trans hx) ?_
+  rw [hf]
+  exact hinit.storeWellDefined _ _ hx
+
 /-- **`copyCfgProc n T`'s body meets its contract under total correctness**: from every entry
     meeting the contract precondition, the CFG `r := x; return` terminates and ends, on the
     store projected through the entry store, with `r == x`. -/
@@ -758,7 +762,7 @@ private theorem copyCfg_triple_total (n : String) (T : Lambda.LMonoTy)
       (factory := F) :=
   fun ρ₀ hpre hinit =>
     ⟨fun w => copyCfg_terminates n T F hpre.1.1 hinit.storeWellDefined _ w,
-      fun ρ' trace hrun => (copyCfg_triple n T F A ρEntry ρ₀ ρ' trace hpre hinit hrun).2⟩
+      (copyCfg_triple n T F A ρEntry ρ₀ hpre hinit).2⟩
 
 /-- **`IdCfg` meets its contract**: at every type, its CFG body ends with `r == x`. -/
 theorem idCfg_meets_contract :
@@ -824,13 +828,15 @@ private structure CopyCallee (cn : String) (tyArgs : Option (List Core.Expressio
     HasVal.value fac vy → HasVal.value fac vs →
     Core.Logic.Hoare.Procedure.valueHasType T vy → Core.Logic.Hoare.Procedure.valueHasType T vs →
     match c.body with
-    | .structured bss =>
+    | .structured bss _ =>
         Core.Logic.BlockInitEnvWF testParams [Stmt.block "" bss #[]] ⟨entryStore vy vs, fac⟩
-    | .cfg cfg => Core.Logic.CFGInitEnvWF testParams cfg ⟨entryStore vy vs, fac⟩
+    | .cfg cfg _ => Core.Logic.CFGInitEnvWF testParams cfg ⟨entryStore vy vs, fac⟩
+    | .abstract => True
   finishes : ∀ (fac : Core.Expression.Factory) vy vs, fac.factory = Core.Factory →
     HasVal.value fac vy → HasVal.value fac vs →
     Core.Logic.Hoare.Procedure.valueHasType T vy → Core.Logic.Hoare.Procedure.valueHasType T vs →
     ∃ σEnd evs, Core.CoreBodyExecE π c.body ⟨entryStore vy vs, fac⟩ σEnd evs
+  transparent : c.body.isOpaque = Bool.false
 
 /-- The facts the call proofs need of the caller `cp`, a procedure named `pn`: it sees
     `Core.Factory`, has an input `y : T` and an output `s : T`, and ensures `s == y`. -/
@@ -1053,7 +1059,9 @@ private theorem relay_call {cn : String} {tyArgs : Option (List Core.Expression.
     have e₁ : vy = vy' := Option.some.inj (hy.symm.trans hy')
     have e₂ : vs = vs' := Option.some.inj (hs.symm.trans hs')
     subst e₁ e₂
-    exact ⟨callee_pre hc hfac hty hts, hc.gate _ _ _ hfac hvy hvs hty hts⟩
+    refine ⟨callee_pre hc hfac hty hts, ?_⟩
+    simp only [hc.transparent, Bool.false_eq_true, ↓reduceIte]
+    exact hc.gate _ _ _ hfac hvy hvs hty hts
   · intro ρ₀ proc ρ' σ' σAO hpre _ hlk hpost hout hρ' hce hframe hcx
     obtain rfl : proc = c := Option.some.inj (hlk.symm.trans hc.callee)
     rw [← hF]
@@ -1075,6 +1083,8 @@ private theorem relay_call_total {cn : String} {tyArgs : Option (List Core.Expre
   refine Core.Logic.HoareTotal.Procedure.call_of_contract polyAST testParams cn (relayArgs T) md
     (CallerPre pn cp) _ hc.contract ⟨_, hc.callee⟩ (callee_frame hc) (callee_outputs hc) ?_
     (fun _ _ _ _ _ _ _ => hc.axioms _) ?_ ?_ ?_ ?_
+    (fun _ _ _ _ _ hlk ho _ => by
+      obtain rfl := Option.some.inj (hlk.symm.trans hc.callee); rw [hc.transparent] at ho; cases ho)
   · -- hentry: the callee entry meets the callee's contract precondition and its body's gate.
     intro ρ₀ proc σAO hpre _ hlk hce
     obtain rfl : proc = c := Option.some.inj (hlk.symm.trans hc.callee)
@@ -1083,7 +1093,9 @@ private theorem relay_call_total {cn : String} {tyArgs : Option (List Core.Expre
     have e₁ : vy = vy' := Option.some.inj (hy.symm.trans hy')
     have e₂ : vs = vs' := Option.some.inj (hs.symm.trans hs')
     subst e₁ e₂
-    exact ⟨callee_pre hc hfac hty hts, hc.gate _ _ _ hfac hvy hvs hty hts⟩
+    refine ⟨callee_pre hc hfac hty hts, ?_⟩
+    simp only [hc.transparent, Bool.false_eq_true, ↓reduceIte]
+    exact hc.gate _ _ _ hfac hvy hvs hty hts
   · -- hexit: the write-back establishes the caller's postcondition.
     intro ρ₀ proc ρ' σ' σAO hpre _ hlk hpost hout hρ' hce hframe hcx
     obtain rfl : proc = c := Option.some.inj (hlk.symm.trans hc.callee)
@@ -1095,7 +1107,7 @@ private theorem relay_call_total {cn : String} {tyArgs : Option (List Core.Expre
     obtain ⟨-, ⟨vy, hy, -⟩, ⟨vs, hs, -⟩⟩ := caller_values hcaller hpre
     exact ⟨_, callEntry_of hc.header hpre.2 hy hs⟩
   · -- hbodyRun: some run of the callee's body finishes from the callee entry.
-    intro ρ₀ proc σAO hpre _ hlk hce
+    intro ρ₀ proc σAO hpre _ hlk _ hce
     obtain rfl : proc = c := Option.some.inj (hlk.symm.trans hc.callee)
     obtain ⟨hfac, ⟨vy, hy, hvy, hty⟩, ⟨vs, hs, hvs, hts⟩⟩ := caller_values hcaller hpre
     obtain ⟨vy', vs', hy', hs', rfl⟩ := callEntry_inv hc.header hpre.2 hce
@@ -1285,6 +1297,7 @@ private theorem id_copyCallee (T : Lambda.LMonoTy) :
   run := fun _ _ _ _ hb => copyProc_run hb
   gate := fun _ _ _ hfac hvy hvs hty _ => copyProc_gate hfac hvy hvs hty
   finishes := fun _ _ _ _ hvy hvs hty hts => copyProc_finishes hvy hvs hty hts
+  transparent := rfl
 
 /-- A call to `IdInt` runs a copying callee. -/
 private theorem idInt_copyCallee : CopyCallee "IdInt" (some []) (copyProc "IdInt" .int) .int where
@@ -1297,6 +1310,7 @@ private theorem idInt_copyCallee : CopyCallee "IdInt" (some []) (copyProc "IdInt
   run := fun _ _ _ _ hb => copyProc_run hb
   gate := fun _ _ _ hfac hvy hvs hty _ => copyProc_gate hfac hvy hvs hty
   finishes := fun _ _ _ _ hvy hvs hty hts => copyProc_finishes hvy hvs hty hts
+  transparent := rfl
 
 /-- A call to `IdCfg` at `T` runs a copying callee with a CFG body. -/
 private theorem idCfg_copyCallee (T : Lambda.LMonoTy) :
@@ -1310,6 +1324,7 @@ private theorem idCfg_copyCallee (T : Lambda.LMonoTy) :
   run := fun _ _ _ _ hb => copyCfg_run hb
   gate := fun _ _ _ hfac hvy hvs _ _ => copyCfg_gate hfac hvy hvs
   finishes := fun _ _ _ _ hvy hvs hty hts => copyCfg_finishes hvy hvs hty hts
+  transparent := rfl
 
 /-! ### The callers -/
 

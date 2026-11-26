@@ -181,7 +181,8 @@ def transformToGoto (cprog : Core.Program) : Except Format CProverGOTO.Context :
       -- TODO: This pass could be split into a two-stage transformation:
       -- 1. structured → cfg (via StructuredToUnstructured)
       -- 2. cfg → CProverGOTO (always operates on CFG, no pattern matching needed)
-      let bodyStmts ← p.body.getStructured.mapError fun s => f!"{s}"
+      -- An abstract procedure is exported with an empty body.
+      let bodyStmts ← p.body.getStructuredOrEmpty.mapError fun s => f!"{s}"
       let cmds ← bodyStmts.mapM
         (fun b => match b with
           | .cmd (.cmd c) => return c

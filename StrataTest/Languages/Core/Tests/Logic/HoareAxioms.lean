@@ -25,6 +25,9 @@ A constant `c` with no definition, whose value differs from model to model, an a
 - `witness_contract`: the same fact in the form of the `contract` field of
   `Core.Specification.ProcedureAssertsValidOnTraces.denote`, from
   `Core.Specification.contract_of_contractTriple`.
+- `witness_procedureAssertsValidOnTraces`: `Witness` satisfies
+  `Core.Specification.ProcedureAssertsValidOnTraces.denote`, from
+  `Core.Specification.procedureAssertsValidOnTraces_of_contractTriple`.
 
 ## The position of a declaration decides
 
@@ -91,7 +94,7 @@ private theorem ensures_among_axioms :
     hold: a model may interpret `c` as `0`. -/
 theorem witness_meets_contract :
     Core.Logic.Hoare.Procedure.contractTriple axiomAST testParams "Witness" := by
-  refine Core.Logic.Hoare.Procedure.contractTriple_of_core_typed_axioms
+  refine Core.Logic.Hoare.Procedure.contractTriple_of_core_typed_axioms (opq := false)
       (hmono := by native_decide) axiomAST testParams
     "Witness" witnessProc [] (by native_decide) (by native_decide) (by native_decide) ?_
   refine Core.Logic.Hoare.consequence _ _
@@ -109,7 +112,7 @@ theorem witness_meets_contract :
     environment that satisfies the axiom, every finished run of the body, followed by
     the postcondition as an assertion, is assertion-valid. -/
 theorem witness_contract (ss : Core.Statements)
-    (hbody : witnessProc.body = .structured ss)
+    (hbody : witnessProc.body = .structured ss false)
     (ρ₀ ρ' : Imperative.Env Core.Expression) (trace : Imperative.Trace Core.Expression)
     (hentry : Core.Specification.ProcEntryEnv testParams "Witness" axiomAST witnessProc ρ₀)
     (hrun : (Core.Logic.EventLang.coreBlock axiomAST.findProcByString?).TerminatesAt
@@ -120,13 +123,23 @@ theorem witness_contract (ss : Core.Statements)
   Core.Specification.contract_of_contractTriple witness_meets_contract witnessProc ss
     (by native_decide) hbody (by native_decide) ρ₀ ρ' trace hentry hrun
 
+/-- **Procedure correctness for `Witness`.** Every assertion of every finite execution of the
+    body is valid, and every finished run meets the contract:
+    `Core.Specification.ProcedureAssertsValidOnTraces.denote`, from
+    `Core.Specification.procedureAssertsValidOnTraces_of_contractTriple`. -/
+theorem witness_procedureAssertsValidOnTraces (ss : Core.Statements)
+    (hbody : witnessProc.body = .structured ss false) :
+    Core.Specification.ProcedureAssertsValidOnTraces.denote testParams "Witness" axiomAST :=
+  Core.Specification.procedureAssertsValidOnTraces_of_contractTriple witness_meets_contract
+    (by native_decide) hbody (by native_decide)
+
 /-! ## The position of a declaration decides -/
 
 /-- A procedure with an empty body meets its contract when the declarations before it
     cannot all hold. -/
 private theorem contractTriple_of_entry_absurd (p : Core.Program) (n : String)
     (hproc : p.findProcByString? n = some (procOf p n))
-    (hbody : (procOf p n).body = .structured [])
+    (hbody : (procOf p n).body = .structured [] false)
     (htyped : Core.Logic.Hoare.Procedure.contractChecksTyped (procOf p n))
     (habsurd : ∀ ρ, ¬ Core.Specification.AxiomsBeforeProcedureDecl n p ρ)
     (hmono : (procOf p n).header.typeArgs = [] := by native_decide) :
@@ -144,7 +157,7 @@ private theorem contractTriple_of_entry_absurd (p : Core.Program) (n : String)
 private theorem not_contractTriple_ensures_false (p : Core.Program) (n : String)
     (hfactory : p.factoryBeforeProcedure n = Core.Factory)
     (hproc : p.findProcByString? n = some (procOf p n))
-    (hbody : (procOf p n).body = .structured [])
+    (hbody : (procOf p n).body = .structured [] false)
     (hpre : (procOf p n).spec.preconditions.toList = [])
     (hinout : ListMap.keys (procOf p n).header.getInoutParams = [])
     (hinputs : (procOf p n).header.inputs.toList = [])
@@ -165,7 +178,7 @@ private theorem not_contractTriple_ensures_false (p : Core.Program) (n : String)
   rw [hbody] at htb
   let ρ : Imperative.Env Core.Expression :=
     { store := fun _ => none, factory := boolFactory model }
-  have ⟨_hvalid, hpostF⟩ := htb ρ ρ []
+  have ⟨_hvalid, hpostF⟩ := Strata.Logic.Hoare.TripleWith.run htb ρ ρ []
     ⟨⟨preAsPredicate_of_no_pre _ _ ρ hpre, rfl,
       oldInoutAsPredicate_of_no_inout _ ρ hinout,
       (fun id ty hmem => by rw [hinputs] at hmem; cases hmem),

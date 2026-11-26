@@ -302,8 +302,7 @@ theorem Program.Procedure.find?_of_mem_of_suffix
   obtain ⟨pre, hpre⟩ := hsuffix
   have hmemDecls : Decl.proc q mdq ∈ program.decls := by
     rw [← hpre]; exact List.mem_append_right _ hmem
-  simpa using
-    Program.Procedure.find?_of_mem_of_getNames_nodup program.decls q mdq hnodup hmemDecls
+  exact Program.Procedure.find?_of_mem_of_getNames_nodup program.decls q mdq hnodup hmemDecls
 
 /-- If no function and no datatype is declared before `procName`, its visible factory is
     exactly `Core.Factory`. -/

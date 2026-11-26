@@ -330,8 +330,8 @@ private def cseVarRanges (p : Core.Program) : List (Nat × Nat) :=
   match p.decls.findSome? (fun | .proc pr _ => some pr | _ => none) with
   | some pr =>
     match pr.body with
-    | .structured ss => (Statements.collectExprs ss).flatMap go
-    | .cfg _ => []
+    | .structured ss _ => (Statements.collectExprs ss).flatMap go
+    | .cfg _ _ | .abstract => []
   | none => []
 
 -- The duplicate is found, and its three uses have three distinct ranges: each
@@ -392,6 +392,262 @@ private def dblTerm : Nat → Expression.Expr
 #guard addA.beqIgnoringMetadata addB
 #guard !(addA.beqIgnoringMetadata mulA)
 
+
+/-! ## `stmtRunCSESinglePass` agrees with `stmtRunCSE`
+
+`runCSE` runs `stmtRunCSESinglePass`; `stmtRunCSE` is its specification. The
+checks below run both on the same bodies and compare the results: the same next
+index, and the same statements once locations are erased (the two may keep the
+location of different occurrences; `toString` prints no location, so the printed
+programs are equal too). -/
+
+/-- `ss` with every location of its expressions erased. -/
+private def eraseStmts (ss : Statements) : Statements :=
+  Statements.mapExprs Core.eraseLocs ss
+
+/-- Whether `stmtRunCSE` and `stmtRunCSESinglePass` agree on `ss` from index `idx`:
+    the same next index, the same statements up to locations, and the same
+    printed statements. -/
+private def agree (ss : Statements) (idx : Nat := 0) : Bool :=
+  let (a, i) := stmtRunCSE ss idx
+  let (b, j) := stmtRunCSESinglePass ss idx
+  i == j && decide (eraseStmts a = eraseStmts b) &&
+    toString (Std.format a) == toString (Std.format b)
+
+/-- `agree` on every structured procedure body of `p`, threading the index from
+    one procedure to the next as `runCSE` does. -/
+private def progAgree (p : Core.Program) : Bool := Id.run do
+  let mut idx := 0
+  let mut ok := Bool.true
+  for d in p.decls do
+    match d with
+    | .proc proc _ =>
+      match proc.body with
+      | .structured ss _ =>
+        ok := ok && agree ss idx
+        idx := (stmtRunCSE ss idx).2
+      | .cfg _ _ | .abstract => pure ()
+    | _ => pure ()
+  return ok
+
+#guard progAgree (translateCore iteDupProg)
+#guard progAgree (translateCore noDupProg)
+#guard progAgree (translateCore iteDupExprProg)
+#guard progAgree (translateCore fnCallDupArgProg)
+#guard progAgree (translateCore uniqueSubexprProg)
+#guard progAgree (translateCore nestedDupProg)
+#guard progAgree (translateCore quantBoundaryProg)
+#guard progAgree (translateCore quantBvarProg)
+#guard progAgree (translateCore absBvarProg)
+#guard progAgree (translateCore quantLiftProg)
+#guard progAgree (translateCore locDupProg)
+
+/-! ### Bodies built directly
+
+Expressions built as shared DAGs, so that a nesting depth of 20 or more does not
+need an exponentially long program text. -/
+
+private def mT : ExprSourceLoc := ExprSourceLoc.synthesized "T"
+private def mU : ExprSourceLoc := ExprSourceLoc.synthesized "U"
+/-- An `int` variable. -/
+private def vI (n : String) : Expression.Expr := .fvar mT ⟨n, ()⟩ (some .int)
+/-- A `bool` variable. -/
+private def vB (n : String) : Expression.Expr := .fvar mT ⟨n, ()⟩ (some .bool)
+/-- A variable without a type: every expression containing it is untyped. -/
+private def vU (n : String) : Expression.Expr := .fvar mT ⟨n, ()⟩ none
+/-- An integer constant. -/
+private def cI (i : Int) : Expression.Expr := .intConst mT i
+/-- A binary `int` operator. -/
+private def op2 (n : String) : Expression.Expr :=
+  .op mT ⟨n, ()⟩ (some (.arrow .int (.arrow .int .int)))
+/-- `int.add(a, b)`. -/
+private def add (a b : Expression.Expr) : Expression.Expr := .app mT (.app mT (op2 "Int.Add") a) b
+/-- `int.mul(a, b)`. -/
+private def mul (a b : Expression.Expr) : Expression.Expr := .app mT (.app mT (op2 "Int.Mul") a) b
+/-- `int.lt(a, b)`. -/
+private def lt (a b : Expression.Expr) : Expression.Expr :=
+  .app mT (.app mT (.op mT ⟨"Int.Lt", ()⟩ (some (.arrow .int (.arrow .int .bool)))) a) b
+/-- `assert [l]: e`. -/
+private def asrt (l : String) (e : Expression.Expr) : Statement := Statement.assert l e .empty
+/-- `assume [l]: e`. -/
+private def asm (l : String) (e : Expression.Expr) : Statement := Statement.assume l e .empty
+
+/-- The value of `y` after `k` merged branches `if (g_i) { y := y * i + y }`:
+    `ite(g_k, e_{k-1} * k + e_{k-1}, e_{k-1})`, the shape symbolic execution's
+    merges produce. Every `e_i` occurs twice in `e_{i+1}`, so the duplicates nest
+    `k` deep. -/
+private def mergeChain : Nat → Expression.Expr
+  | 0 => vI "y"
+  | k + 1 =>
+    let e := mergeChain k
+    .ite mT (vB s!"g{k}") (add (mul e (cI (k + 1))) e) e
+
+/-- Two checks of the value of a chain of `k` merges. -/
+private def chainBody (k : Nat) : Statements :=
+  [asrt "a0" (lt (cI 0) (mergeChain k)), asrt "a1" (lt (mergeChain k) (cI 100))]
+
+#guard agree (chainBody 1)
+#guard agree (chainBody 5)
+#guard agree (chainBody 25)
+-- `e_1, …, e_25` are named.
+#guard (stmtRunCSESinglePass (chainBody 25) 0).2 == 25
+
+-- Deeply nested duplicates take the single pass, without falling back to rounds.
+#guard !singlePassFallsBack (chainBody 25)
+#guard !singlePassFallsBack (chainBody 400)
+#guard (stmtRunCSESinglePass (chainBody 400) 0).2 == 400
+
+/-- An untyped duplicate `h(u, int.add(x, y))` holding the typed duplicate
+    `int.add(x, y)`, which also occurs twice outside it. The untyped duplicate is
+    never named, and nothing below it is either; `int.mul(x, y)`, a duplicate
+    outside it, is. -/
+private def blockerBody : Statements :=
+  let t := add (vI "x") (vI "y")
+  let b := .app mT (.app mT (.op mT ⟨"h", ()⟩ none) (vU "u")) t
+  [asrt "a0" (.eq mT b b), asrt "a1" (lt t (mul (vI "x") (vI "y"))),
+   asrt "a2" (lt (mul (vI "x") (vI "y")) t), asrt "a3" (.eq mT b (cI 0))]
+
+#guard agree blockerBody
+#guard (stmtRunCSESinglePass blockerBody 0).2 == 1
+
+/-- Duplicates inside a quantifier and a lambda: `int.add(x, 1)` occurs twice
+    outside any binder and once under each binder; `int.add(z, 1)` mentions the
+    bound variable. An application holding a quantifier is not bvar-free, so the
+    walk expands it at each of its two occurrences and `int.mul(x, x)` below it is
+    counted twice. -/
+private def binderBody : Statements :=
+  let t := add (vI "x") (cI 1)
+  let q : Expression.Expr := .quant mT .all "z" (some .int) (.bvar mT 0)
+    (lt (add (.bvar mT 0) (cI 1)) t)
+  let l : Expression.Expr := .abs mT "z" (some .int) (add (.bvar mT 0) t)
+  let andQ := .app mT (.app mT (.op mT ⟨"Bool.And", ()⟩
+    (some (.arrow .bool (.arrow .bool .bool)))) (lt (mul (vI "x") (vI "x")) (cI 3))) q
+  [asrt "a0" (lt t (cI 0)), asrt "a1" (lt t (cI 9)), asrt "a2" q,
+   asrt "a3" (lt (.app mT l (cI 2)) (cI 4)), asrt "a4" andQ, asrt "a5" andQ]
+
+#guard agree binderBody
+
+/-- Partial applications: `int.add(x + 1)` is the argument of two different functions,
+    `g` and `h`, so it is a duplicate, and it is also the function of
+    `int.add(x + 1, w)`. Naming it would change how often that application's arguments
+    are counted, so `stmtRunCSESinglePass` uses `stmtRunCSE` on this body. -/
+private def partialBody : Statements :=
+  let w := mul (vI "y") (vI "y")
+  let pa := .app mT (op2 "Int.Add") (add (vI "x") (cI 1))
+  let fnTy : Option LMonoTy := some (.arrow (.arrow .int .int) .int)
+  let g (e : Expression.Expr) := .app mT (.op mT ⟨"g", ()⟩ fnTy) e
+  let h (e : Expression.Expr) := .app mT (.op mT ⟨"h", ()⟩ fnTy) e
+  [asrt "a0" (lt (g pa) (cI 0)), asrt "a1" (lt (h pa) (cI 1)),
+   asrt "a2" (lt (.app mT pa w) (cI 2)), asrt "a3" (lt w (cI 3))]
+
+#guard agree partialBody
+#guard singlePassFallsBack partialBody
+
+/-- Partial applications on spines only: `int.add(x + 1)` is shared by two full
+    applications but is never an argument, so it is not a duplicate. -/
+private def spineBody : Statements :=
+  let pa := .app mT (op2 "Int.Add") (add (vI "x") (cI 1))
+  [asrt "a0" (lt (.app mT pa (cI 2)) (cI 0)), asrt "a1" (lt (.app mT pa (cI 3)) (cI 0))]
+
+#guard agree spineBody
+
+/-- A body that already declares `$__cse.0`: starting at index 1 avoids it. -/
+private def collisionBody : Statements :=
+  let c := vI "$__cse.0"
+  [asrt "a0" (lt (add c (vI "x")) (cI 0)), asrt "a1" (lt (add c (vI "x")) (cI 1))]
+
+#guard agree collisionBody 1
+#guard (stmtRunCSESinglePass collisionBody 1).2 == 2
+
+/-- Many duplicates at the same level, named in hash order, and their copies at
+    other locations. -/
+private def bucketBody : Statements :=
+  let ts := (List.range 12).map fun i => add (vI s!"x{i}") (cI (Int.ofNat i))
+  ts.flatMap fun t =>
+    [asrt "a" (lt t (cI 0)), asm "b" (lt (LExpr.replaceMetadata1 mU t) (cI 1))]
+
+#guard agree bucketBody
+#guard agree bucketBody 7
+
+/-! ### Random bodies
+
+`randomBody seed` builds pools of shared `int`, `bool` and function-valued
+expressions from a few variables (one untyped) by applying operators, shared
+partial applications, `ite`, `eq`, quantifiers and lambdas to earlier pool
+entries (mostly recent ones, so duplicates nest), and copies entries at another
+location; it then checks some of them in assertions, assumptions, an `init` and
+an `if`. -/
+
+/-- One step of a 64-bit linear congruential generator. -/
+private def lcg (s : Nat) : Nat :=
+  (s * 6364136223846793005 + 1442695040888963407) % 18446744073709551616
+
+/-- An entry of `pool` picked by `s`: one of the last three with probability 2/3. -/
+private def pickFrom (pool : Array Expression.Expr) (s : Nat) : Expression.Expr :=
+  let n := pool.size
+  let i := if s % 3 == 0 then (s / 3) % n else n - 1 - (s / 3) % (min n 3)
+  pool[i]!
+
+/-- `Bool.And(a, b)`. -/
+private def andE (a b : Expression.Expr) : Expression.Expr :=
+  .app mT (.app mT (.op mT ⟨"Bool.And", ()⟩ (some (.arrow .bool (.arrow .bool .bool)))) a) b
+
+/-- A random body (see above). -/
+private def randomBody (seed : Nat) : Statements := Id.run do
+  let mut s := lcg (seed + 1)
+  let mut ints : Array Expression.Expr := #[vI "x", vI "y", vI "$__cse.0", cI 1]
+  let mut bools : Array Expression.Expr := #[vB "b", vB "c"]
+  let mut fns : Array Expression.Expr := #[.op mT ⟨"f", ()⟩ (some (.arrow .int .int))]
+  let steps := 8 + seed % 30
+  for _ in [0:steps] do
+    s := lcg s
+    let r := s / 64
+    let i₁ := pickFrom ints r
+    let i₂ := pickFrom ints (lcg r)
+    let b₁ := pickFrom bools (lcg (lcg r))
+    let b₂ := pickFrom bools (lcg (lcg (lcg r)))
+    let f₁ := pickFrom fns (lcg (lcg (lcg (lcg r))))
+    match s % 19 with
+    | 0 | 1 => ints := ints.push (add i₁ i₂)
+    | 2 => ints := ints.push (mul i₁ i₂)
+    | 3 | 4 => ints := ints.push (.ite mT b₁ i₁ i₂)
+    | 5 => ints := ints.push (.app mT f₁ i₁)
+    | 6 => ints := ints.push (LExpr.replaceMetadata1 mU i₁)
+    | 7 => ints := ints.push (.app mT (.app mT (.op mT ⟨"h", ()⟩ none) (vU "u")) i₁)
+    | 8 =>
+      let g : Expression.Expr := .op mT ⟨"g", ()⟩ (some (.arrow (.arrow .int .int) .int))
+      ints := ints.push (.app mT g f₁)
+    | 9 | 10 => bools := bools.push (lt i₁ i₂)
+    | 11 => bools := bools.push (.eq mT i₁ i₂)
+    | 12 => bools := bools.push (.ite mT b₁ b₂ (lt i₂ i₁))
+    | 13 =>
+      let q : Expression.Expr := .quant mT .all "z" (some .int) (.bvar mT 0) (lt (.bvar mT 0) i₁)
+      bools := bools.push q
+    | 14 => bools := bools.push (andE b₁ b₂)
+    | 15 =>
+      let q : Expression.Expr :=
+        .quant mT .exist "z" (some .int) (.bvar mT 0) (.eq mT (.bvar mT 0) (add i₁ i₂))
+      bools := bools.push (andE b₁ q)
+    | 16 => fns := fns.push (.app mT (op2 "Int.Add") i₁)
+    | 17 => fns := fns.push (.abs mT "z" (some .int) (add (.bvar mT 0) i₁))
+    | _ => bools := bools.push (LExpr.replaceMetadata1 mU b₁)
+  let bool (k : Nat) : Expression.Expr := pickFrom bools (lcg (s + k))
+  let int (k : Nat) : Expression.Expr := pickFrom ints (lcg (s + k))
+  let stmts : Statements :=
+    [asrt "a0" (bool 0), asm "a1" (bool 1),
+     Statement.init ⟨"v", ()⟩ (.forAll [] .int) (.det (int 2)) .empty,
+     Imperative.Stmt.ite (.det (bool 3)) [asrt "a2" (bool 4)] [asrt "a3" (lt (int 5) (int 6))]
+       .empty,
+     asrt "a4" (bool 7), asrt "a5" (.eq mT (int 8) (int 9))]
+  return stmts.take (2 + seed % 5) ++ stmts.drop 5
+
+/-- The seeds below 600 on which the two passes disagree. -/
+private def randomDisagreements : List Nat :=
+  (List.range 600).filter fun seed => !agree (randomBody seed) (seed % 3)
+
+/-- info: [] -/
+#guard_msgs in
+#eval randomDisagreements
 
 end Core.CSE.Tests
 end
