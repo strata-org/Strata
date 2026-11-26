@@ -84,7 +84,7 @@ theorem Ctx.ofFactory_fresh (F : Lambda.Factory CoreLParams) (c : List String) :
 
     At the pipeline level this is an assumption: `callElim` and `loopElim` declare that
     they establish `ProgramFact.noCalls` and `ProgramFact.noLoops`, but their
-    `establishes_ok` obligations are not proved yet (`proveAllPhaseContracts`). -/
+    `establishes_ok` obligations are not proved yet: both list every fact in `unproved`. -/
 @[expose] def BodyFragment (ss : List Statement) : Prop :=
   Statements.noCalls ss = true ∧ Block.noLoops ss = true
 

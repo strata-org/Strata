@@ -439,6 +439,17 @@ def ProgramFact.noLambdasOffender (p : Program) : Option String :=
       | none => ""
     s!"the lambda `{Program.showLambda e}`{at_}"
 
+/-- Does `f` read only the program's procedures? Every fact does but those that also read
+    functions, axioms or other expressions. Each fact is listed, so a new one has to be
+    classified here. -/
+@[expose] def ProgramFact.readsOnlyProcedures : ProgramFact → Bool
+  | .noBetaRedexes | .noLambdas | .noPrecondsFromFuncs | .noPolymorphicFunctions
+  | .typeAnnotated => false
+  | .wellFormedCalls | .noCFGBodies | .noCalls | .noLoops | .noLoopInvariants | .noLoopMeasures
+  | .uniqueInits | .loopBodyNoInits | .staticSingleAssignment | .noNondetGuards
+  | .hasObligationForm | .noProcedureContracts | .noPolymorphicProcedures | .noInits
+  | .treeForm | .exitsCovered | .armsHaveObligations | .noCFGCycles => true
+
 /-- Executable check for a fact, for the facts that have one. `none` means
     the fact is still perfectly usable in a contract — it just cannot be
     asserted, since there is nothing to run. -/

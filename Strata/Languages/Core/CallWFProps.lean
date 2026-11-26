@@ -7,6 +7,8 @@ module
 
 public import Strata.Languages.Core.WF
 import all Strata.Languages.Core.CallWF
+import all Strata.Languages.Core.Program
+import Strata.Languages.Core.ProgramProps
 import Strata.Languages.Core.StatementProps
 
 /-! # Properties of well-formed calls
@@ -247,6 +249,23 @@ theorem Command.callsWellFormed_mapInput {P : Program} (g : Expression.Expr → 
   intro cs hcs
   obtain ⟨cs₀, hmem, rfl⟩ := List.mem_map.mp hcs
   exact WF.WFcallProp.map_mapInput g (h cs₀ hmem)
+
+/-- A well-formed call stays well formed in a program that looks its callee up the same way. -/
+private theorem WF.WFcallProp.of_find?_eq {P1 P2 : Program} {nm : String}
+    {args : List (CallArg Expression)}
+    (hfind : Program.Procedure.find? P2 nm = Program.Procedure.find? P1 nm)
+    (h : WF.WFcallProp P1 nm args) : WF.WFcallProp P2 nm args := by
+  obtain ⟨q, hq⟩ := Option.isSome_iff_exists.mp h.defined
+  exact WF.WFcallProp.of_argsMatch (hfind.trans hq) (h.argsMatch hq) h.lhsWF
+
+/-- A program with the same procedures as one whose calls are well formed, in the same order,
+    has well-formed calls: its calls are the same, and each callee is found the same way. -/
+theorem Program.callsWellFormed_of_procs_eq {p p' : Program}
+    (hprocs : p'.decls.filter Decl.isProc = p.decls.filter Decl.isProc)
+    (h : p.callsWellFormed) : p'.callsWellFormed := by
+  intro c hc
+  rw [Program.callSites_of_procs_eq hprocs] at hc
+  exact WF.WFcallProp.of_find?_eq (Program.Procedure.find?_of_procs_eq hprocs _) (h c hc)
 
 /-- When each output formal agrees in kind with the result argument it is paired with, the two
     agree at every position. -/

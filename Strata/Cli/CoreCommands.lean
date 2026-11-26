@@ -101,8 +101,8 @@ structure PipelineResolver where
         let phases ← Strata.Core.resolvePhases (Strata.Core.nameablePhases options)
           (names.splitToList (· == ','))
           (hint := "Use --display-phases to see the available phases.")
-        let vp ← Strata.Core.validatePipeline phases
-        pure { pipeline := some vp }
+        let (vp, notes) ← Strata.Core.validatePipelineRepairing phases
+        pure { pipeline := some vp, notes }
   /-- Every phase this resolver accepts a name for. `--display-phases` lists these, so a
       resolver overriding `resolve` states here what it will accept, or its help text and
       what it takes would drift apart. -/
