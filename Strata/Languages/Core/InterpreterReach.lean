@@ -82,13 +82,13 @@ public section
     ValStore.Defines (T := CoreLParams) σ F.model.tcInterp e →
     (e.annotateFvars (ValStore.ann (T := CoreLParams) σ)).HasTypeA [] τ →
     ∃ c : LConst, c.isPrimitive = true ∧ c.ty = τ ∧
-      Expression.eval F σ e = some (SemValue.ofConst F.model.tcInterp c) ∧
+      Expression.eval F σ e = some (SemValue.ofConst F.model.tcInterp F.model.opInterp c) ∧
       ∃ n m, evalBounded n F.factory σr e = some (.const m c)
 
 /-- A well-typed literal (`LConst.wt`) denotes exactly the value of its constant. -/
 theorem denotes_const_iff {F : Expression.Factory} {m : ExpressionMetadata} {c : LConst}
     {v : Expression.Val} (hc : c.wt = true) :
-    InterpLang.Denotes F (.const m c) v ↔ v = SemValue.ofConst F.model.tcInterp c := by
+    InterpLang.Denotes F (.const m c) v ↔ v = SemValue.ofConst F.model.tcInterp F.model.opInterp c := by
   refine ⟨fun h => ?_, fun h => h ▸ denotes_literal (LExpr.denoteEval_const hc)⟩
   have h2 := (denotes_iff.1 h).2.2
   rw [LExpr.denoteEval_const (T := CoreLParams) hc] at h2
@@ -108,7 +108,7 @@ private theorem computable_of_evalBounded {F : Expression.Factory} (hF : EvalFac
     (h : evalBounded n F.factory σr e = some (.const m c))
     (hdec : c.ty = τ → c.isPrimitive = true) :
     ∃ c' : LConst, c'.isPrimitive = true ∧ c'.ty = τ ∧
-      Expression.eval F σ e = some (SemValue.ofConst F.model.tcInterp c') ∧
+      Expression.eval F σ e = some (SemValue.ofConst F.model.tcInterp F.model.opInterp c') ∧
       ∃ n m, evalBounded n F.factory σr e = some (.const m c') := by
   obtain ⟨v, hv, hd⟩ := boundedEvalSoundAt_of_evalFactoryWF F hF n σr σ e _ hS h
   obtain rfl := (denotes_const_iff (denotes_const_wt hd)).1 hd
@@ -205,7 +205,7 @@ theorem computableEval_fvar (F : Expression.Factory) (hF : EvalFactoryWF F.facto
     (hlit : ConstrsNotLit F.factory) {σ : SemanticStore Expression} {m : ExpressionMetadata}
     {x : CoreIdent} {ty : Option LMonoTy}
     (hx : ∀ v, σ x = some v →
-      ∃ c, c.isPrimitive = true ∧ v = SemValue.ofConst F.model.tcInterp c) :
+      ∃ c, c.isPrimitive = true ∧ v = SemValue.ofConst F.model.tcInterp F.model.opInterp c) :
     ComputableEval F σ (.fvar m x ty) := by
   intro σr τ hS hd hty
   obtain ⟨w, hw, -⟩ := hd x (by simp [LExpr.LExpr.getVars])
@@ -821,13 +821,15 @@ abbrev LitBinds := List (Expression.Ident × LConst)
 @[expose] def LitBinds.rstore (bs : LitBinds) : RStore Expression :=
   fun x => (bs.lookup x).map (.const valueLoc)
 
-/-- The semantic store holding the values of the literals of `bs` under `tc`. -/
-@[expose] noncomputable def LitBinds.store (tc : TyConstrInterp) (bs : LitBinds) : CoreStore :=
-  fun x => (bs.lookup x).map (SemValue.ofConst tc)
+/-- The semantic store holding the values of the literals of `bs` under `tc` and `op`. -/
+@[expose] noncomputable def LitBinds.store (tc : TyConstrInterp) (op : OpInterp tc)
+    (bs : LitBinds) : CoreStore :=
+  fun x => (bs.lookup x).map (SemValue.ofConst tc op)
 
-/-- The store `σ` holds the value under `tc` of every literal of `bs`. -/
-@[expose] def LitBinds.Holds (tc : TyConstrInterp) (σ : CoreStore) (bs : LitBinds) : Prop :=
-  ∀ b ∈ bs, σ b.1 = some (SemValue.ofConst tc b.2)
+/-- The store `σ` holds the value under `tc` and `op` of every literal of `bs`. -/
+@[expose] def LitBinds.Holds (tc : TyConstrInterp) (op : OpInterp tc) (σ : CoreStore)
+    (bs : LitBinds) : Prop :=
+  ∀ b ∈ bs, σ b.1 = some (SemValue.ofConst tc op b.2)
 
 /-- `bs` with `x` bound to `c`. -/
 @[expose] def LitBinds.set (bs : LitBinds) (x : Expression.Ident) (c : LConst) : LitBinds :=

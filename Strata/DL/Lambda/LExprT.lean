@@ -178,13 +178,19 @@ constant. However, pragmatically, we may want to incorporate first-class support
 for some kinds of constants, especially for types with really large or infinite
 members (e.g., bitvectors, natural numbers, etc.). `.const` is the place to do
 that.
+
+A constant containing a datatype value (`LConst.hasData`) is rejected: no source program
+contains one.
 -/
 def inferConst (C: LContext T) (Env : TEnv T.IDMeta) (c : LConst) :
   Except Format (LMonoTy × (TEnv T.IDMeta)) :=
   if C.knownTypes.containsName c.tyName && c.wt &&
-      (c.isPrimitive || c.ty.knownInstance C.knownTypes) then
+      (c.isPrimitive || c.ty.knownInstance C.knownTypes) && !c.hasData then
     .ok (c.ty, Env)
-  else .error (if !c.wt then
+  else .error (if c.hasData then
+                f!"The literal {c} contains a datatype value, which only the evaluator \
+                  builds."
+              else if !c.wt then
                 f!"Ill-typed literal: an element of {c} does not have the sort its \
                   literal declares."
               else if C.knownTypes.containsName c.tyName then

@@ -12,7 +12,7 @@ meta section
 
 /-! # Tests for map and sequence literals
 
-Unit tests for the `mapConst` and `sequenceConst` constants of `LConst`: the map-entry
+Unit tests for the `mapConst`, `sequenceConst` and `dataConst` constants of `LConst`: the map-entry
 operations `LConst.mapUpdate` and `LConst.mapSelect`, the equality test `LConst.eql`, and
 the well-typedness check `LConst.wt`. -/
 
@@ -54,8 +54,8 @@ which puts the first entry outermost (`SMTEncoderTests`). -/
 #guard LConst.mapSelect (.intConst 0) (ents #[(1, 2), (1, 3)]) (.intConst 1) = .intConst 2
 
 /-- The value of `{1 ↦ 2, 1 ↦ 3, _ ↦ 0}` at key `1` is `2`. -/
-example (tcInterp : TyConstrInterp) :
-    ∃ m, constVal tcInterp (.tcons "Map" [.int, .int])
+example (tcInterp : TyConstrInterp) (opInterp : OpInterp tcInterp) :
+    ∃ m, constVal tcInterp opInterp (.tcons "Map" [.int, .int])
         (.mapConst .int .int (.intConst 0)
           ⟨[(.intConst 1, .intConst 2), (.intConst 1, .intConst 3)]⟩)
         = some m ∧
@@ -94,5 +94,41 @@ private def seqOfMaps : LConst := .sequenceConst (.tcons "Map" [intS, intS]) #[i
 -- An ill-typed literal has type `bool`.
 #guard (LConst.sequenceConst boolS #[.intConst 1]).ty = .bool
 #guard (intSeq #[]).ty = .tcons "Sequence" [.int]
+
+/-! ## Datatype values
+
+A datatype value (`LConst.dataConst`) is a constructor applied to constants; it can be a
+default, key, value or element of a collection literal. -/
+
+private def boxS : LSort := .tcons "$Box" []
+private def fieldS : LSort := .tcons "Field" []
+/-- The `$Box` value `BoxInt(i)`. -/
+private def boxInt (i : Int) : LConst := .dataConst "BoxInt" [intS] boxS #[.intConst i]
+/-- The nullary `Field` value `f`. -/
+private def field (f : String) : LConst := .dataConst f [] fieldS #[]
+/-- The `Map Field $Box` literal with default `BoxInt(0)` and the given entries. -/
+private def fieldMap (es : Array (String × Int)) : LConst :=
+  .mapConst fieldS boxS (boxInt 0) (es.map fun (f, i) => (field f, boxInt i))
+/-- A heap literal: `Map int (Map Field $Box)` with one object at reference `-1`. -/
+private def heapLit : LConst :=
+  .mapConst intS (.tcons "Map" [fieldS, boxS]) (fieldMap #[])
+    #[(.intConst (-1), fieldMap #[("x", 5)])]
+
+-- `{_ ↦ BoxInt(0)}` and the nested heap literal are well typed, at their map types.
+#guard (fieldMap #[]).wt
+#guard (fieldMap #[]).ty = .tcons "Map" [.tcons "Field" [], .tcons "$Box" []]
+#guard heapLit.wt
+#guard heapLit.ty = .tcons "Map" [.int, .tcons "Map" [.tcons "Field" [], .tcons "$Box" []]]
+#guard heapLit.size = 11
+#guard toString heapLit = "{-1 ↦ {x ↦ BoxInt(5), _ ↦ BoxInt(0)}, _ ↦ {_ ↦ BoxInt(0)}}"
+-- A datatype value of a built-in sort is not well typed, and has type `bool`.
+#guard !(LConst.dataConst "c" [] boolS #[]).wt
+#guard (LConst.dataConst "c" [] boolS #[]).ty = .bool
+-- A datatype value with the wrong number of arguments is not well typed.
+#guard !(LConst.dataConst "BoxInt" [intS] boxS #[]).wt
+-- A datatype sort is not canonical: syntactically different datatype values may be equal.
+#guard !(boxInt 1).eqDecidable
+#guard LConst.eql (boxInt 1) (boxInt 2) = none
+#guard LConst.eql (boxInt 1) (boxInt 1) = some true
 
 end Lambda.LConstCollectionTests

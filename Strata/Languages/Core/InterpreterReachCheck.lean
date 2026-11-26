@@ -209,7 +209,7 @@ theorem computableEval_of_fragment (F : Expression.Factory) (hF : EvalFactoryWF 
       ComputableOp fn ∨ UserFnComputable F fn)
     {σ : SemanticStore Expression} {e : Expression.Expr} (h : FragmentExpr F.factory ok e)
     (hσ : ∀ x ∈ LExpr.LExpr.getVars e, ∀ v, σ x = some v →
-      ∃ c, c.isPrimitive = true ∧ v = SemValue.ofConst F.model.tcInterp c) :
+      ∃ c, c.isPrimitive = true ∧ v = SemValue.ofConst F.model.tcInterp F.model.opInterp c) :
     ComputableEval F σ e := by
   induction h with
   | const m c hc => exact computableEval_const F hF σ m hc
@@ -515,7 +515,7 @@ theorem inFragment_iff (F : Lambda.Factory CoreLParams) (e : Expression.Expr) :
 theorem computableEval_of_inFragment {F : Expression.Factory} (hF : FragmentFactoryWF F)
     {σ : SemanticStore Expression} {e : Expression.Expr} (h : InFragment F.factory e)
     (hσ : ∀ x ∈ LExpr.LExpr.getVars e, ∀ v, σ x = some v →
-      ∃ c, c.isPrimitive = true ∧ v = SemValue.ofConst F.model.tcInterp c) :
+      ∃ c, c.isPrimitive = true ∧ v = SemValue.ofConst F.model.tcInterp F.model.opInterp c) :
     ComputableEval F σ e :=
   computableEval_of_fragment F hF.1 hF.2.1 (fun fn hfn hin => fragmentFns_sound hF fn hfn hin) h.1
     hσ
@@ -538,8 +538,9 @@ theorem computableEval_of_inFragment {F : Expression.Factory} (hF : FragmentFact
 
 /-- A semantic value of a sort whose type is a type of literals is the value of a primitive
     literal whose type is not `real`. -/
-theorem eq_ofConst_of_isLitMonoTy {v : SemValue} (h : isLitMonoTy v.sort.toMonoTy = true) :
-    ∃ c, c.isPrimitive = true ∧ notRealResult c.ty = true ∧ v = SemValue.ofConst v.tc c := by
+theorem eq_ofConst_of_isLitMonoTy {v : SemValue} {op : OpInterp v.tc}
+    (h : isLitMonoTy v.sort.toMonoTy = true) :
+    ∃ c, c.isPrimitive = true ∧ notRealResult c.ty = true ∧ v = SemValue.ofConst v.tc op c := by
   obtain ⟨tc, s, val⟩ := v
   cases s with
   | bitvec n => exact ⟨.bitvecConst n val, rfl, rfl, rfl⟩
@@ -755,7 +756,8 @@ theorem procInFragment_iff (fe : Expression.Expr → Bool) (p : Procedure) :
 /-- A semantic value is the value of a primitive literal (`LConst.isPrimitive`) of the factory's
     model, of a type other than `real`. -/
 @[expose] def LitVal (F : Expression.Factory) (v : Expression.Val) : Prop :=
-  ∃ c, c.isPrimitive = true ∧ notRealResult c.ty = true ∧ v = SemValue.ofConst F.model.tcInterp c
+  ∃ c, c.isPrimitive = true ∧ notRealResult c.ty = true ∧
+    v = SemValue.ofConst F.model.tcInterp F.model.opInterp c
 
 /-- Every value of the store is the value of a literal (`LitVal`). -/
 @[expose] def LitStore (F : Expression.Factory) (σ : CoreStore) : Prop :=
@@ -795,13 +797,14 @@ private theorem exists_storeDenotes {F : Expression.Factory} {σ : CoreStore}
     reified, by the model's reification of primitive values (`FactoryInterpModel.reifyAt`), as
     that literal. -/
 theorem reifyAt_ofConst {c : LConst} (hc : c.isPrimitive = true) :
-    FactoryInterpModel.reifyAt (SemValue.ofConst FactoryInterpModel.tcInterp c).sort
-      (SemValue.ofConst FactoryInterpModel.tcInterp c).val =
+    FactoryInterpModel.reifyAt (SemValue.ofConst FactoryInterpModel.tcInterp FactoryInterpModel.opInterp c).sort
+      (SemValue.ofConst FactoryInterpModel.tcInterp FactoryInterpModel.opInterp c).val =
         (LExpr.const default c : Expression.Expr) := by
   cases c with
   | rationalConst r => exact FactoryInterpModel.reifyAt_ofRat r
   | mapConst => cases hc
   | sequenceConst => cases hc
+  | dataConst => cases hc
   | _ => rfl
 
 /-- The value of a computable expression on a store of literals, none of whose literals and
@@ -900,9 +903,11 @@ private theorem isLitMonoTy_ty {c : LConst} (hc : c.isPrimitive = true)
 private theorem litVal_of_valueOfTy {F : Expression.Factory} {v : Expression.Val}
     {ty : Expression.Ty} (hty : isLitTy ty = true) (h : HasVal.valueOfTy F v ty) : LitVal F v := by
   obtain ⟨htc, hv⟩ := h
+  obtain ⟨tc, s, val⟩ := v
+  dsimp only at htc hv hty ⊢
+  subst htc
   simp only [isLitTy, hv, Option.any_some] at hty
-  obtain ⟨c, hcp, hcr, hc⟩ := eq_ofConst_of_isLitMonoTy hty
-  exact ⟨c, hcp, hcr, htc ▸ hc⟩
+  exact eq_ofConst_of_isLitMonoTy (v := ⟨F.model.tcInterp, s, val⟩) (op := F.model.opInterp) hty
 
 /-- A value of the type of the value a variable of a store of literals holds is the value of a
     literal. -/

@@ -152,6 +152,14 @@ inductive HasType {T: LExprParams} [DecidableEq T.IDMeta] [Hashable T.IDMeta] (C
             HasType C Γ (.const m (.sequenceConst a es))
               (.forAll [] (LConst.sequenceConst a es).ty)
 
+  /-- A well-typed datatype value (`LConst.wt`) has the type naming its sort (its `LConst.ty`)
+  if the type constructor of its sort (`LConst.tyName`) is a known type in this context. -/
+  | tdata_const : ∀ Γ m n as s es,
+            C.knownTypes.containsName (LConst.dataConst n as s es).tyName →
+            (LConst.dataConst n as s es).wt = true →
+            HasType C Γ (.const m (.dataConst n as s es))
+              (.forAll [] (LConst.dataConst n as s es).ty)
+
   /-- An un-annotated variable has the type recorded for it in `Γ`, if any. -/
   | tvar : ∀ Γ m x ty, Γ.types.find? x = some ty → HasType C Γ (.fvar m x none) ty
 
@@ -1135,6 +1143,7 @@ theorem HasType_FindEq (C : LContext T) (Γ Ξ : TContext T.IDMeta)
   | tbitvec_const Γ m n b h => exact .tbitvec_const Ξ m n b h
   | tmap_const Γ m k v d es h hw => exact .tmap_const Ξ m k v d es h hw
   | tseq_const Γ m a es h hw => exact .tseq_const Ξ m a es h hw
+  | tdata_const Γ m n as s es h hw => exact .tdata_const Ξ m n as s es h hw
   | tvar Γ m x ty h_find =>
     exact .tvar Ξ m x ty ((hEq.1 x).trans h_find)
   | tvar_annotated Γ m x ty_o ty_s tys ann h_find h_len h_open h_ac =>
@@ -4246,7 +4255,7 @@ theorem resolveAux_preserves (C : LContext T)
   | case1 Env m c =>
     intro Env' et h
     by_cases hc : (C.knownTypes.containsName c.tyName && c.wt &&
-        (c.isPrimitive || c.ty.knownInstance C.knownTypes)) = true
+        (c.isPrimitive || c.ty.knownInstance C.knownTypes) && !c.hasData) = true
     · simp only [resolveAux, inferConst, hc, ite_true, bind, Except.bind,
         Except.ok.injEq, Prod.mk.injEq] at h
       obtain ⟨rfl, rfl⟩ := h
@@ -5797,7 +5806,7 @@ private theorem resolveAux_HasType_fits :
     elim_err h
     rename_i h_known
     simp only [Bool.and_eq_true] at h_known
-    obtain ⟨⟨h_known, h_wt⟩, -⟩ := h_known
+    obtain ⟨⟨⟨h_known, h_wt⟩, -⟩, -⟩ := h_known
     simp only [bind, Except.bind, Except.ok.injEq, Prod.mk.injEq] at h
     obtain ⟨h_et, h_env⟩ := h
     constructor
@@ -5815,6 +5824,7 @@ private theorem resolveAux_HasType_fits :
       | bitvecConst n b => exact HasType.tbitvec_const _ _ _ _ h_known
       | mapConst k v d es => exact HasType.tmap_const _ _ _ _ _ _ h_known h_wt
       | sequenceConst a es => exact HasType.tseq_const _ _ _ _ h_known h_wt
+      | dataConst n as s es => exact HasType.tdata_const _ _ _ _ _ _ h_known h_wt
   case h_op =>
     intro m o oty et C Env Env' h h_envwf h_ne h_fwf h_ws
     have h_aw := h_envwf.aliasesWF
@@ -6537,6 +6547,7 @@ private theorem HasType_transfer_empty_scope
   | tbitvec_const _ m n b h_known => exact HasType.tbitvec_const _ m n b h_known
   | tmap_const _ m k v d es h_known hw => exact HasType.tmap_const _ m k v d es h_known hw
   | tseq_const _ m a es h_known hw => exact HasType.tseq_const _ m a es h_known hw
+  | tdata_const _ m n as s es h_known hw => exact HasType.tdata_const _ m n as s es h_known hw
   | tvar _ m x ty h_find =>
     subst hΓ_eq; simp [HMaps.find?, HMap.find?_empty] at h_find
   | tvar_annotated _ m x ty_o ty_s tys ann h_find h_len h_open h_compat =>

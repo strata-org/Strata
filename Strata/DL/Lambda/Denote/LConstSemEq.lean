@@ -19,11 +19,13 @@ unobservable, and so is the default when the listed keys exhaust the key sort.
 Two equal literals are equal at every sort, as mainline's `LConst.eql` answers first; so
 `semEq?` answers wherever `eql` does, with the same answer, and also decides the map literals
 whose entries are reordered, repeat a key or hide the default, where `eql` does not answer.
-At a sort without `Map` the value of a literal determines the literal (`constVal_injective`), so
-there semantic equality is structural equality. This covers the Boolean, integer, string and
-bit-vector literals, rational literals (a rational literal denotes `Real.ofRat` of a reduced
-fraction, and `ofRat` is injective, `Strata.Util.Real.ofRat_inj`), and sequences of those.
-Only sorts containing `Map` need more.
+At a sort without `Map`, the value of a literal holding no datatype value (`LConst.hasData`)
+determines the literal (`constVal_injective`), so there semantic equality is structural
+equality. This covers the
+Boolean, integer, string and bit-vector literals, rational literals (a rational literal denotes
+`Real.ofRat` of a reduced fraction, and `ofRat` is injective, `Strata.Util.Real.ofRat_inj`), and
+sequences of those. Map literals need more. Two different datatype values (`LConst.dataConst`)
+are not decided, since their operators need not be constructors.
 
 The answer is an `Option Bool`: `some b` is the answer, and `none` means that it is not
 decided, so a fold must not fold. `none` arises where the answer depends on the
@@ -148,20 +150,22 @@ end
 
 /-- **Semantic equality of two literals of one sort**, with `fuel` bounding the nesting of
     collection literals it descends through (`none` when exhausted). Two equal literals are
-    equal (`true`, the first case of `LConst.eql`, at any fuel). At a sort without `Map` it is
-    structural equality (`constVal_injective`); sequences are compared elementwise and maps as
-    the functions they denote (`mapEqWith`). So it answers wherever `LConst.eql` answers, with
-    the same answer. -/
+    equal (`true`, the first case of `LConst.eql`, at any fuel). At a sort without `Map`, when `c`
+    holds no datatype value (`LConst.hasData`), it is structural equality (`constVal_injective`); sequences are compared
+    elementwise and maps as the functions they denote (`mapEqWith`); two different datatype
+    values are not decided, nor are two literals of different shapes, which have different
+    sorts. So it answers wherever `LConst.eql` answers, with the same
+    answer. -/
 @[expose] def LConst.semEq? : Nat → LConst → LConst → Option Bool
   | 0, c, d => if c = d then some true else none
   | fuel + 1, c, d =>
     if c = d then some true
-    else if c.sort.hasMap = false then some false
+    else if !c.sort.hasMap && !c.hasData then some false
     else
       match c, d with
       | .sequenceConst _ ⟨xs⟩, .sequenceConst _ ⟨ys⟩ => listEqWith (semEq? fuel) xs ys
       | .mapConst k _ dc ⟨xs⟩, .mapConst _ _ dd ⟨ys⟩ => mapEqWith (semEq? fuel) k dc xs dd ys
-      | _, _ => some false
+      | _, _ => none
 
 end
 

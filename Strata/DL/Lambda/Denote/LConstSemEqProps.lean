@@ -27,14 +27,15 @@ namespace Lambda
 
 public section
 
-variable {tcInterp : TyConstrInterp}
+variable {tcInterp : TyConstrInterp} {opInterp : OpInterp tcInterp}
 
-/-- The comparison `f` is *sound* in the interpretation `tcInterp`: whenever it decides two
-    literals that have values at one sort, its answer is the equality of those values. -/
-@[expose] def LConst.SemSound (tcInterp : TyConstrInterp) (f : LConst → LConst → Option Bool) :
-    Prop :=
+/-- The comparison `f` is *sound* in the interpretation `tcInterp`, `opInterp`: whenever it
+    decides two literals that have values at one sort, its answer is the equality of those
+    values. -/
+@[expose] def LConst.SemSound (tcInterp : TyConstrInterp) (opInterp : OpInterp tcInterp)
+    (f : LConst → LConst → Option Bool) : Prop :=
   ∀ {s : LSort} {c d : LConst} {x y : SortDenote tcInterp s} {b : Bool},
-    constVal tcInterp s c = some x → constVal tcInterp s d = some y → f c d = some b →
+    constVal tcInterp opInterp s c = some x → constVal tcInterp opInterp s d = some y → f c d = some b →
       (x = y ↔ b = true)
 
 /-- The map `mapOf` builds from no entries is its default. -/
@@ -56,8 +57,8 @@ private theorem mapOf_cons {k v : LSort} (dv : SortDenote tcInterp v)
 /-- The elements of a list with values have a value each, the lists have one length, and the
     values of a non-empty list are the value of its head before those of its tail. -/
 private theorem constValElems_cons {a : LSort} {e : LConst} {r : List LConst}
-    {xs : List (SortDenote tcInterp a)} (h : constValElems tcInterp a (e :: r) = some xs) :
-    ∃ x xs', constVal tcInterp a e = some x ∧ constValElems tcInterp a r = some xs' ∧
+    {xs : List (SortDenote tcInterp a)} (h : constValElems tcInterp opInterp a (e :: r) = some xs) :
+    ∃ x xs', constVal tcInterp opInterp a e = some x ∧ constValElems tcInterp opInterp a r = some xs' ∧
       xs = x :: xs' := by
   simp only [constValElems] at h
   split at h <;> cases h
@@ -67,18 +68,18 @@ private theorem constValElems_cons {a : LSort} {e : LConst} {r : List LConst}
     before those of the remaining ones. -/
 private theorem constValEntries_cons {k v : LSort} {a w : LConst} {r : List (LConst × LConst)}
     {kvs : List (SortDenote tcInterp k × SortDenote tcInterp v)}
-    (h : constValEntries tcInterp k v ((a, w) :: r) = some kvs) :
-    ∃ xa yw kvs', constVal tcInterp k a = some xa ∧ constVal tcInterp v w = some yw ∧
-      constValEntries tcInterp k v r = some kvs' ∧ kvs = (xa, yw) :: kvs' := by
+    (h : constValEntries tcInterp opInterp k v ((a, w) :: r) = some kvs) :
+    ∃ xa yw kvs', constVal tcInterp opInterp k a = some xa ∧ constVal tcInterp opInterp v w = some yw ∧
+      constValEntries tcInterp opInterp k v r = some kvs' ∧ kvs = (xa, yw) :: kvs' := by
   simp only [constValEntries] at h
   split at h <;> cases h
   exact ⟨_, _, _, ‹_›, ‹_›, ‹_›, rfl⟩
 
 /-- **Elementwise comparison is sound** for a sound `f`. -/
 private theorem LConst.listEqWith_sound {f : LConst → LConst → Option Bool}
-    (hf : LConst.SemSound tcInterp f) {a : LSort} :
+    (hf : LConst.SemSound tcInterp opInterp f) {a : LSort} :
     ∀ {xs ys : List LConst} {xv yv : List (SortDenote tcInterp a)} {b : Bool},
-      constValElems tcInterp a xs = some xv → constValElems tcInterp a ys = some yv →
+      constValElems tcInterp opInterp a xs = some xv → constValElems tcInterp opInterp a ys = some yv →
       LConst.listEqWith f xs ys = some b → (xv = yv ↔ b = true)
   | [], [], _, _, _, rfl, rfl, rfl => iff_of_true rfl rfl
   | [], _ :: _, _, _, _, rfl, hy, rfl => (constValElems_cons hy).elim fun _ ⟨_, _, _, he⟩ => by
@@ -99,13 +100,13 @@ private theorem LConst.listEqWith_sound {f : LConst → LConst → Option Bool}
     `u`, or the default `dc` when it finds none, has the value the map `mapOf` builds sends the
     value of `u` to. -/
 private theorem LConst.lookupWith_sound {f : LConst → LConst → Option Bool}
-    (hf : LConst.SemSound tcInterp f) {k v : LSort} {u dc : LConst}
+    (hf : LConst.SemSound tcInterp opInterp f) {k v : LSort} {u dc : LConst}
     {xu : SortDenote tcInterp k} {dv : SortDenote tcInterp v}
-    (hu : constVal tcInterp k u = some xu) (hdc : constVal tcInterp v dc = some dv) :
+    (hu : constVal tcInterp opInterp k u = some xu) (hdc : constVal tcInterp opInterp v dc = some dv) :
     ∀ {xs : List (LConst × LConst)} {kvs : List (SortDenote tcInterp k × SortDenote tcInterp v)}
       {r : Option LConst},
-      constValEntries tcInterp k v xs = some kvs → LConst.lookupWith f u xs = some r →
-      constVal tcInterp v (r.getD dc) =
+      constValEntries tcInterp opInterp k v xs = some kvs → LConst.lookupWith f u xs = some r →
+      constVal tcInterp opInterp v (r.getD dc) =
         some ((SortDenote.mapOf dv kvs : SortDenote tcInterp k → SortDenote tcInterp v) xu)
   | [], _, _, rfl, rfl => by simpa [mapOf_nil] using hdc
   | (a, w) :: rest, kvs, r, hx, h => by
@@ -142,8 +143,8 @@ private theorem LConst.allWith_false {g : LConst → Option Bool} :
 /-- Every key of a map literal with values has a value. -/
 private theorem LConst.constVal_key_of_entries {k v : LSort} :
     ∀ {xs : List (LConst × LConst)} {kvs : List (SortDenote tcInterp k × SortDenote tcInterp v)},
-      constValEntries tcInterp k v xs = some kvs →
-      ∀ u ∈ xs.map Prod.fst, ∃ xu, constVal tcInterp k u = some xu
+      constValEntries tcInterp opInterp k v xs = some kvs →
+      ∀ u ∈ xs.map Prod.fst, ∃ xu, constVal tcInterp opInterp k u = some xu
   | [], _, _, _, hu => by simp at hu
   | (a, w) :: rest, _, hx, u, hu => by
     obtain ⟨xa, _, _, ha, -, hr, -⟩ := constValEntries_cons hx
@@ -153,8 +154,8 @@ private theorem LConst.constVal_key_of_entries {k v : LSort} :
 private theorem LConst.mapOf_of_not_key {k v : LSort} {dv : SortDenote tcInterp v}
     {x : SortDenote tcInterp k} :
     ∀ {xs : List (LConst × LConst)} {kvs : List (SortDenote tcInterp k × SortDenote tcInterp v)},
-      constValEntries tcInterp k v xs = some kvs →
-      (∀ u ∈ xs.map Prod.fst, constVal tcInterp k u ≠ some x) →
+      constValEntries tcInterp opInterp k v xs = some kvs →
+      (∀ u ∈ xs.map Prod.fst, constVal tcInterp opInterp k u ≠ some x) →
       (SortDenote.mapOf dv kvs : SortDenote tcInterp k → SortDenote tcInterp v) x = dv
   | [], _, rfl, _ => mapOf_nil dv x
   | (a, w) :: rest, _, hx, hn => by
@@ -184,8 +185,8 @@ private theorem LConst.le_length_of_injOn {α : Type} :
     some value is the value of no key. -/
 private theorem LConst.exists_not_key_of_inj {s : LSort} (g : Nat → SortDenote tcInterp s)
     (hg : ∀ i j, g i = g j → i = j) (us : List LConst) :
-    ∃ x : SortDenote tcInterp s, ∀ u ∈ us, constVal tcInterp s u ≠ some x := by
-  let L := us.filterMap (constVal tcInterp s)
+    ∃ x : SortDenote tcInterp s, ∀ u ∈ us, constVal tcInterp opInterp s u ≠ some x := by
+  let L := us.filterMap (constVal tcInterp opInterp s)
   refine Classical.byContradiction fun hn => Nat.not_succ_le_self L.length ?_
   exact LConst.le_length_of_injOn _ L g (fun i j _ _ => hg i j) fun i _ =>
     Classical.byContradiction fun hx =>
@@ -193,9 +194,11 @@ private theorem LConst.exists_not_key_of_inj {s : LSort} (g : Nat → SortDenote
 
 /-- A literal with a value at `bool` is a Boolean literal with that value. -/
 private theorem eq_boolConst_of_constVal {u : LConst} {x : SortDenote tcInterp .bool}
-    (h : constVal tcInterp .bool u = some x) : u = .boolConst x := by
+    (h : constVal tcInterp opInterp .bool u = some x) : u = .boolConst x := by
   have hs := constVal_sort h
-  cases u <;> simp [LConst.sort] at hs
+  cases u
+  case dataConst => have := (constVal_dataConst_some h).2; simp [LSort.isDataSort] at this
+  all_goals simp [LConst.sort] at hs
   rw [constVal_boolConst] at h
   exact congrArg _ (Option.some.inj h)
 
@@ -203,14 +206,14 @@ private theorem eq_boolConst_of_constVal {u : LConst} {x : SortDenote tcInterp .
     a listed key. -/
 private theorem LConst.keysCover?_true {k : LSort} {us : List LConst}
     (h : LConst.keysCover? k us = some true) :
-    ∀ x : SortDenote tcInterp k, ∃ u ∈ us, constVal tcInterp k u = some x := by
+    ∀ x : SortDenote tcInterp k, ∃ u ∈ us, constVal tcInterp opInterp k u = some x := by
   unfold LConst.keysCover? at h
   split at h
   · simp only [Option.some.injEq, Bool.and_eq_true, List.any_eq_true] at h
     obtain ⟨⟨ut, hut, het⟩, ⟨uf, huf, hef⟩⟩ := h
     obtain rfl : ut = .boolConst true := by split at het <;> first | rfl | cases het
     obtain rfl : uf = .boolConst false := by split at hef <;> first | rfl | cases hef
-    have hy : ∀ y : Bool, ∃ u ∈ us, constVal tcInterp .bool u = some y
+    have hy : ∀ y : Bool, ∃ u ∈ us, constVal tcInterp opInterp .bool u = some y
       | false => ⟨_, huf, constVal_boolConst false⟩
       | true => ⟨_, hut, constVal_boolConst true⟩
     exact hy
@@ -231,7 +234,7 @@ private theorem LConst.keysCover?_true {k : LSort} {us : List LConst}
     sort has infinitely many values because its element sort has one. -/
 private theorem LConst.keysCover?_false [hI : TyConstrInterp.AllInhabited tcInterp] {k : LSort}
     {us : List LConst} (h : LConst.keysCover? k us = some false) :
-    ∃ x : SortDenote tcInterp k, ∀ u ∈ us, constVal tcInterp k u ≠ some x := by
+    ∃ x : SortDenote tcInterp k, ∀ u ∈ us, constVal tcInterp opInterp k u ≠ some x := by
   unfold LConst.keysCover? at h
   split at h
   · simp only [Option.some.injEq, Bool.and_eq_false_iff, List.any_eq_false] at h
@@ -245,14 +248,17 @@ private theorem LConst.keysCover?_false [hI : TyConstrInterp.AllInhabited tcInte
       obtain ⟨i, hi, hn⟩ := h
       exact ⟨BitVec.ofNat n i, fun u hu he => by
         have hs := constVal_sort he
-        cases u <;> simp only [LConst.sort, LSort.bitvec.injEq, reduceCtorEq] at hs
+        cases u
+        case dataConst =>
+          have := (constVal_dataConst_some he).2; simp [LSort.isDataSort] at this
+        all_goals simp only [LConst.sort, LSort.bitvec.injEq, reduceCtorEq] at hs
         subst hs
         rw [constVal_bitvecConst] at he
         simpa [Option.some.inj he, Nat.mod_eq_of_lt hi] using hn _ hu⟩
 
     · rename_i hlt
       refine Classical.byContradiction fun hn => hlt (Nat.le_trans (LConst.le_length_of_injOn
-        (2 ^ n) (us.filterMap (constVal tcInterp (.bitvec n)))
+        (2 ^ n) (us.filterMap (constVal tcInterp opInterp (.bitvec n)))
         (fun i => (BitVec.ofNat n i : SortDenote tcInterp (.bitvec n))) ?_ ?_)
         (List.length_filterMap_le _ us))
       · exact fun i j hi hj he => by
@@ -277,18 +283,18 @@ private theorem LConst.keysCover?_false [hI : TyConstrInterp.AllInhabited tcInte
 /-- **Comparing two map literals as functions is sound** for a sound comparison `f` of their
     keys and values. -/
 private theorem LConst.mapEqWith_sound [TyConstrInterp.AllInhabited tcInterp]
-    {f : LConst → LConst → Option Bool} (hf : LConst.SemSound tcInterp f) {k v : LSort}
+    {f : LConst → LConst → Option Bool} (hf : LConst.SemSound tcInterp opInterp f) {k v : LSort}
     {dc dd : LConst} {xs ys : List (LConst × LConst)} {dv dv' : SortDenote tcInterp v}
     {kvs kvs' : List (SortDenote tcInterp k × SortDenote tcInterp v)} {b : Bool}
-    (hdc : constVal tcInterp v dc = some dv) (hdd : constVal tcInterp v dd = some dv')
-    (hx : constValEntries tcInterp k v xs = some kvs)
-    (hy : constValEntries tcInterp k v ys = some kvs')
+    (hdc : constVal tcInterp opInterp v dc = some dv) (hdd : constVal tcInterp opInterp v dd = some dv')
+    (hx : constValEntries tcInterp opInterp k v xs = some kvs)
+    (hy : constValEntries tcInterp opInterp k v ys = some kvs')
     (h : LConst.mapEqWith f k dc xs dd ys = some b) :
     ((SortDenote.mapOf dv kvs : SortDenote tcInterp k → SortDenote tcInterp v) =
       SortDenote.mapOf dv' kvs' ↔ b = true) := by
   have hat : ∀ u {b' : Bool}, (match LConst.lookupWith f u xs, LConst.lookupWith f u ys with
         | some a, some b => f (a.getD dc) (b.getD dd)
-        | _, _ => none) = some b' → ∀ xu, constVal tcInterp k u = some xu →
+        | _, _ => none) = some b' → ∀ xu, constVal tcInterp opInterp k u = some xu →
       ((SortDenote.mapOf dv kvs : SortDenote tcInterp k → SortDenote tcInterp v) xu =
         SortDenote.mapOf dv' kvs' xu ↔ b' = true) := by
     intro u b' hg xu hu
@@ -297,20 +303,20 @@ private theorem LConst.mapEqWith_sound [TyConstrInterp.AllInhabited tcInterp]
       exact hf (LConst.lookupWith_sound hf hu hdc hx ha) (LConst.lookupWith_sound hf hu hdd hy hc)
         hg
     · cases hg
-  have hdef : ∀ x, (∀ u ∈ xs.map Prod.fst ++ ys.map Prod.fst, constVal tcInterp k u ≠ some x) →
+  have hdef : ∀ x, (∀ u ∈ xs.map Prod.fst ++ ys.map Prod.fst, constVal tcInterp opInterp k u ≠ some x) →
       (SortDenote.mapOf dv kvs : SortDenote tcInterp k → SortDenote tcInterp v) x = dv ∧
         (SortDenote.mapOf dv' kvs' : SortDenote tcInterp k → SortDenote tcInterp v) x = dv' :=
     fun x hn => ⟨LConst.mapOf_of_not_key hx fun u hu => hn u (List.mem_append_left _ hu),
       LConst.mapOf_of_not_key hy fun u hu => hn u (List.mem_append_right _ hu)⟩
   simp only [LConst.mapEqWith] at h
   split at h <;> rename_i hpw
-  · have heq : (∀ x, (∃ u ∈ xs.map Prod.fst ++ ys.map Prod.fst, constVal tcInterp k u = some x) ∨
+  · have heq : (∀ x, (∃ u ∈ xs.map Prod.fst ++ ys.map Prod.fst, constVal tcInterp opInterp k u = some x) ∨
         dv = dv') →
         (SortDenote.mapOf dv kvs : SortDenote tcInterp k → SortDenote tcInterp v) =
           SortDenote.mapOf dv' kvs' := by
       intro hall
       funext x
-      by_cases hk : ∃ u ∈ xs.map Prod.fst ++ ys.map Prod.fst, constVal tcInterp k u = some x
+      by_cases hk : ∃ u ∈ xs.map Prod.fst ++ ys.map Prod.fst, constVal tcInterp opInterp k u = some x
       · obtain ⟨u, hu, hxu⟩ := hk
         exact (hat u (LConst.allWith_true hpw u hu) x hxu).2 rfl
       · obtain ⟨h1, h2⟩ := hdef x fun u hu he => hk ⟨u, hu, he⟩
@@ -332,21 +338,11 @@ private theorem LConst.mapEqWith_sound [TyConstrInterp.AllInhabited tcInterp]
     exact ⟨fun he => (hat u hg xu hxu).1 (congrFun he xu), nofun⟩
   · cases h
 
-/-- Two literals of one sort containing `Map` are two sequence literals or two map literals,
-    with the same element sort, or the same key and value sorts. -/
-private theorem shape_of_hasMap {c d : LConst} (hs : c.sort = d.sort)
-    (hm : c.sort.hasMap = true) :
-    (∃ a xs ys, c = .sequenceConst a ⟨xs⟩ ∧ d = .sequenceConst a ⟨ys⟩) ∨
-      (∃ k v dc xs dd ys, c = .mapConst k v dc ⟨xs⟩ ∧ d = .mapConst k v dd ⟨ys⟩) := by
-  rcases c with _ | _ | _ | _ | _ | ⟨_, _, _, ⟨_⟩⟩ | ⟨_, ⟨_⟩⟩ <;>
-    rcases d with _ | _ | _ | _ | _ | ⟨_, _, _, ⟨_⟩⟩ | ⟨_, ⟨_⟩⟩ <;>
-    simp_all [LConst.sort, LSort.hasMap, LSort.hasMap.hasMapList]
-
 /-- **Semantic equality is sound.** When `semEq?` decides two literals that have values at one
     sort, in an interpretation whose type constructors are inhabited (as every model's are), its
     answer is the equality of those values. -/
 theorem LConst.semEq?_sound [TyConstrInterp.AllInhabited tcInterp] :
-    ∀ fuel, LConst.SemSound tcInterp (LConst.semEq? fuel)
+    ∀ fuel, LConst.SemSound tcInterp opInterp (LConst.semEq? fuel)
   | 0, _, c, d, _, _, _, hc, hd, h => by
     simp only [LConst.semEq?] at h
     split at h <;> cases h
@@ -363,21 +359,25 @@ theorem LConst.semEq?_sound [TyConstrInterp.AllInhabited tcInterp] :
     split at h
     · rename_i hne hm
       cases h
-      exact ⟨fun hxy => absurd (constVal_injective c d (hsc ▸ hm) hc (hxy ▸ hd)) hne, nofun⟩
-    · rename_i hne hm
-      rcases shape_of_hasMap (hsc.trans hsd.symm) (by simpa using hm) with
-        ⟨a, xs, ys, rfl, rfl⟩ | ⟨k, v, dc, xs, dd, ys, rfl, rfl⟩
-      · simp only at h
-        obtain rfl : s = .seq a := hsc.symm
+      simp only [Bool.and_eq_true, Bool.not_eq_true'] at hm
+      exact ⟨fun hxy => absurd (constVal_injective c d (hsc ▸ hm.1) hm.2 hc (hxy ▸ hd)) hne, nofun⟩
+    · split at h
+      · simp only [LConst.sort] at hsc hsd
+        subst hsc
+        simp only [LSort.tcons.injEq, List.cons.injEq, true_and, and_true] at hsd
+        subst hsd
         rw [constVal_sequenceConst] at hc hd
         obtain ⟨xv, hxv, rfl⟩ := Option.map_eq_some_iff.mp hc
         obtain ⟨yv, hyv, rfl⟩ := Option.map_eq_some_iff.mp hd
         exact LConst.listEqWith_sound (LConst.semEq?_sound fuel) hxv hyv h
-      · simp only at h
-        obtain rfl : s = .map k v := hsc.symm
+      · simp only [LConst.sort] at hsc hsd
+        subst hsc
+        simp only [LSort.tcons.injEq, List.cons.injEq, true_and, and_true] at hsd
+        obtain ⟨rfl, rfl⟩ := hsd
         rw [constVal_mapConst] at hc hd
         split at hc <;> split at hd <;> cases hc <;> cases hd
         exact LConst.mapEqWith_sound (LConst.semEq?_sound fuel) ‹_› ‹_› ‹_› ‹_› h
+      · cases h
 
 
 end

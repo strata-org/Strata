@@ -39,7 +39,7 @@ public section
     typed. -/
 private theorem storeDenotes_litBinds (F : Expression.Factory) {bs : LitBinds}
     (hwt : ∀ b ∈ bs, b.2.wt = true) :
-    StoreDenotes F bs.rstore (bs.store F.model.tcInterp) := by
+    StoreDenotes F bs.rstore (bs.store F.model.tcInterp F.model.opInterp) := by
   refine ⟨fun x => by simp [LitBinds.rstore, LitBinds.store], fun x r v hr hv => ?_⟩
   simp only [LitBinds.rstore, Option.map_eq_some_iff] at hr
   simp only [LitBinds.store, Option.map_eq_some_iff] at hv
@@ -53,8 +53,8 @@ private theorem storeDenotes_litBinds (F : Expression.Factory) {bs : LitBinds}
     `e` evaluates to the value of `c`. -/
 theorem eval_of_evalLit {F : Expression.Factory} (hF : F.factory = Core.Factory)
     {σ : CoreStore} {bs : LitBinds} {e : Expression.Expr} {c : LConst} {fuel : Nat}
-    (hσ : LitBinds.Holds F.model.tcInterp σ bs) (h : evalLit fuel bs e = some c) :
-    Expression.eval F σ e = some (SemValue.ofConst F.model.tcInterp c) := by
+    (hσ : LitBinds.Holds F.model.tcInterp F.model.opInterp σ bs) (h : evalLit fuel bs e = some c) :
+    Expression.eval F σ e = some (SemValue.ofConst F.model.tcInterp F.model.opInterp c) := by
   unfold evalLit at h
   split at h
   · rename_i hchk
@@ -67,10 +67,10 @@ theorem eval_of_evalLit {F : Expression.Factory} (hF : F.factory = Core.Factory)
         simp only [Option.some.injEq] at h
         subst h
         obtain ⟨v, hv, hd⟩ := boundedEvalSoundAt_coreFactory F hF fuel bs.rstore
-          (bs.store F.model.tcInterp) e (.const m c') (storeDenotes_litBinds F hwt)
+          (bs.store F.model.tcInterp F.model.opInterp) e (.const m c') (storeDenotes_litBinds F hwt)
           (show evalBounded fuel F.factory bs.rstore e = _ by rw [hF]; exact hev)
         rw [(denotes_const_iff hc).1 hd] at hv
-        have hcongr : Expression.eval F σ e = Expression.eval F (bs.store F.model.tcInterp) e :=
+        have hcongr : Expression.eval F σ e = Expression.eval F (bs.store F.model.tcInterp F.model.opInterp) e :=
           LExpr.denoteEval_congr e fun x ty hx => by
             obtain ⟨c'', hc''⟩ := Option.isSome_iff_exists.mp (hfv (x, ty) hx)
             rw [hσ _ (List.mem_of_lookup_eq_some hc'')]
@@ -83,10 +83,10 @@ theorem eval_of_evalLit {F : Expression.Factory} (hF : F.factory = Core.Factory)
 
 /-- A store that holds `bs` and binds `x` to the value of `c`, leaving every other name alone,
     holds `bs.set x c`. -/
-theorem LitBinds.Holds.set {tc : TyConstrInterp} {σ σ' : CoreStore} {bs : LitBinds}
-    {x : Expression.Ident} {c : LConst} (hσ : LitBinds.Holds tc σ bs)
-    (hx : σ' x = some (SemValue.ofConst tc c)) (hoth : ∀ w, x ≠ w → σ' w = σ w) :
-    LitBinds.Holds tc σ' (bs.set x c) := by
+theorem LitBinds.Holds.set {tc : TyConstrInterp} {op : OpInterp tc} {σ σ' : CoreStore}
+    {bs : LitBinds} {x : Expression.Ident} {c : LConst} (hσ : LitBinds.Holds tc op σ bs)
+    (hx : σ' x = some (SemValue.ofConst tc op c)) (hoth : ∀ w, x ≠ w → σ' w = σ w) :
+    LitBinds.Holds tc op σ' (bs.set x c) := by
   intro b hb
   simp only [LitBinds.set, List.mem_cons, List.mem_filter, bne_iff_ne, ne_eq] at hb
   rcases hb with rfl | ⟨hb, hne⟩
@@ -99,8 +99,9 @@ theorem LitBinds.Holds.set {tc : TyConstrInterp} {σ σ' : CoreStore} {bs : LitB
 private theorem stepLit_step {π : String → Option Procedure} {fuel : Nat} {bs bs' : LitBinds}
     {s : Statement} (h : stepLit fuel bs s = some bs') :
     ∃ c, s = .cmd c ∧ ∀ {F : Expression.Factory} {σ σ' : CoreStore} {tr : Trace Expression},
-      F.factory = Core.Factory → LitBinds.Holds F.model.tcInterp σ bs →
-      EvalCommandE π F σ c σ' tr → tr = [] ∧ LitBinds.Holds F.model.tcInterp σ' bs' := by
+      F.factory = Core.Factory → LitBinds.Holds F.model.tcInterp F.model.opInterp σ bs →
+      EvalCommandE π F σ c σ' tr →
+      tr = [] ∧ LitBinds.Holds F.model.tcInterp F.model.opInterp σ' bs' := by
   unfold stepLit at h
   split at h
   · rename_i x e md
@@ -125,10 +126,12 @@ private theorem stepLit_step {π : String → Option Procedure} {fuel : Nat} {bs
 theorem runLits_run {π : String → Option Procedure} {fuel : Nat} :
     ∀ {ss : Statements} {bs bs' : LitBinds}, runLits fuel bs ss = some bs' →
       ∀ {ρ ρ' : Imperative.Env Expression} {tr : Trace Expression},
-      ρ.factory.factory = Core.Factory → LitBinds.Holds ρ.factory.model.tcInterp ρ.store bs →
+      ρ.factory.factory = Core.Factory →
+      LitBinds.Holds ρ.factory.model.tcInterp ρ.factory.model.opInterp ρ.store bs →
+     
       StepStmtStarE Expression (EvalCommandE π) (.stmts ss ρ) tr (.terminal ρ') →
       tr = [] ∧ ρ'.factory = ρ.factory ∧
-        LitBinds.Holds ρ'.factory.model.tcInterp ρ'.store bs'
+        LitBinds.Holds ρ'.factory.model.tcInterp ρ'.factory.model.opInterp ρ'.store bs'
   | [], bs, bs', h, ρ, ρ', tr, _, hσ, hrun => by
     simp only [runLits, Option.some.injEq] at h
     subst h
@@ -152,7 +155,7 @@ theorem runLits_run {π : String → Option Procedure} {fuel : Nat} :
     type. -/
 private theorem valueOfTy_ofConst {F : Expression.Factory} {c : LConst} {ty : Expression.Ty}
     (h : ty.toMonoType? = some c.ty) :
-    HasVal.valueOfTy F (SemValue.ofConst F.model.tcInterp c) ty :=
+    HasVal.valueOfTy F (SemValue.ofConst F.model.tcInterp F.model.opInterp c) ty :=
   ⟨rfl, h.trans (congrArg some (LConst.ty_isGround c).symm)⟩
 
 /-- A statement list headed by a command must terminate when the command can execute, and the
@@ -189,7 +192,8 @@ private theorem mustTerminate_cmd_cons {π : String → Option Procedure} {c : C
 private theorem runLits_mustTerminate {π : String → Option Procedure} {fuel : Nat} :
     ∀ (ss : Statements) (bs : LitBinds) (Γ : LitDecls) (ρ : Imperative.Env Expression),
       runLitsProgresses fuel bs Γ ss = true → ρ.factory.factory = Core.Factory →
-      LitBinds.Holds ρ.factory.model.tcInterp ρ.store bs → LitDecls.Holds ρ.factory ρ.store Γ →
+      LitBinds.Holds ρ.factory.model.tcInterp ρ.factory.model.opInterp ρ.store bs →
+      LitDecls.Holds ρ.factory ρ.store Γ →
       (∀ x ∈ Block.definedVars ss true, Γ.lookup x = none → ρ.store x = none) →
       (Logic.EventLang.coreBlock π).MustTerminate (.stmts ss ρ)
   | [], _, _, _, _, _, _, _, _ =>
@@ -206,7 +210,7 @@ private theorem runLits_mustTerminate {π : String → Option Procedure} {fuel :
       have hev := eval_of_evalLit hF hbs hc
       have hvTy := valueOfTy_ofConst (F := ρ.factory) (ty := .forAll [] c.ty) rfl
       refine mustTerminate_cmd_cons
-        ⟨fun y => if y = x then some (SemValue.ofConst ρ.factory.model.tcInterp c) else ρ.store y,
+        ⟨fun y => if y = x then some (SemValue.ofConst ρ.factory.model.tcInterp ρ.factory.model.opInterp c) else ρ.store y,
           [], .eval_set hev (.update hprev (ite_eq_left rfl) fun y hy => ite_eq_right (Ne.symm hy))
             ⟨prev, _, hprev, hprevTy, hvTy⟩ (coreEvaluator_WellFormedSemanticEvalVar _)⟩
         fun σ' tr hc' => ?_
@@ -238,7 +242,7 @@ private theorem runLits_mustTerminate {π : String → Option Procedure} {fuel :
       have hev := eval_of_evalLit hF hbs hc
       have hvTy := valueOfTy_ofConst (F := ρ.factory) hmono
       refine mustTerminate_cmd_cons
-        ⟨fun y => if y = x then some (SemValue.ofConst ρ.factory.model.tcInterp c) else ρ.store y,
+        ⟨fun y => if y = x then some (SemValue.ofConst ρ.factory.model.tcInterp ρ.factory.model.opInterp c) else ρ.store y,
           [], .eval_init hev (.init hnone (ite_eq_left rfl) fun y hy => ite_eq_right (Ne.symm hy))
             hvTy (coreEvaluator_WellFormedSemanticEvalVar _)⟩
         fun σ' tr hc' => ?_

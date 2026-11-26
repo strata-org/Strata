@@ -408,8 +408,8 @@ def lconstToExpr {M} [Inhabited M] (c : Lambda.LConst) :
     -- so this does not go through `mkGenericCall`.
     ToCSTM.logError "lconstToExpr" "unsupported bitvec width" (toString w)
     renderAsGenericCall s!"Bv{w}.Lit" [.natToInt default ⟨default, v.toNat⟩]
-  | .mapConst .. | .sequenceConst .. => do
-    -- `lexprToExpr` renders collection literals as operator applications
+  | .mapConst .. | .sequenceConst .. | .dataConst .. => do
+    -- `lexprToExpr` renders collection literals and datatype values as operator applications
     -- (`Core.litToOpExpr`) and does not call this function on them.
     ToCSTM.logError "lconstToExpr" "collection literal" (toString c)
     renderAsGenericCall "$__collectionLiteral" []
@@ -918,8 +918,8 @@ partial def lexprToExpr {M} [Inhabited M]
   match e with
   | .const _ c =>
     match c with
-    -- A collection literal renders as the operator applications that build it.
-    | .mapConst .. | .sequenceConst .. => lexprToExpr (Core.litToOpExpr c) qLevel
+    -- A collection literal or datatype value renders as the operator applications that build it.
+    | .mapConst .. | .sequenceConst .. | .dataConst .. => lexprToExpr (Core.litToOpExpr c) qLevel
     | _ => lconstToExpr c
   | .bvar _ idx =>
     if idx < ctx.allBoundVars.size then
@@ -1556,9 +1556,11 @@ private def extractFromType (ty : Lambda.LMonoTy) : Array String :=
   | .ftvar name => #[name]
   | .bitvec _ => #[]
 
--- Extract operation and free variable names from expressions.
+-- Extract operation and free variable names from expressions, including the constructors and
+-- datatypes of the datatype values in constants, which `lexprToExpr` renders as the operator
+-- applications of `Core.litToOpExpr`.
 -- Ignore built-in operations since they are already tackled by `lexprToExpr`.
-private def extractNames (exprs : List Core.Expression.Expr) :
+private partial def extractNames (exprs : List Core.Expression.Expr) :
     Array String :=
   let rec extractFromExpr (e : Core.Expression.Expr) :=
     match e with
@@ -1573,6 +1575,8 @@ private def extractNames (exprs : List Core.Expression.Expr) :
     | .ite _ c t f => extractFromExpr c ++ extractFromExpr t ++ extractFromExpr f
     | .eq _ e1 e2 => extractFromExpr e1 ++ extractFromExpr e2
     | .quant _ _ _ _ trigger body => extractFromExpr trigger ++ extractFromExpr body
+    | .const _ c@(.mapConst ..) | .const _ c@(.sequenceConst ..) | .const _ c@(.dataConst ..) =>
+      extractFromExpr (Core.litToOpExpr c)
     | _ => #[]
   exprs.foldl (fun acc expr => acc ++ extractFromExpr expr) #[]
 

@@ -12,7 +12,8 @@ import all Strata.DL.Lambda.LTy
 
 Ground monomorphic types. They name the sort of a value in the denotational
 semantics (`Strata.DL.Lambda.Denote.LExprDenote`) and the element types of
-collection literals (`LConst.mapConst`, `LConst.sequenceConst`). Their properties, and
+collection literals (`LConst.mapConst`, `LConst.sequenceConst`) and datatype values
+(`LConst.dataConst`). Their properties, and
 their decidable equality, are in `Strata.DL.Lambda.LSortProps`.
 -/
 
@@ -74,11 +75,8 @@ where
   | [] => []
   | s :: ss => toMonoTy s :: map ss
 
-/-- Whether a sort mentions the `Map` type constructor anywhere. Two well-typed
-constants of a sort without `Map` are equal exactly when they denote the same value;
-map literals are not canonical (two different literals can denote the same map,
-e.g. when the key sort is finite), so for them only syntactic equality is known to
-imply semantic equality. -/
+/-- Whether a sort mentions the `Map` type constructor anywhere. The evaluators of the map
+and sequence operations decline at a key or element sort with `Map`. -/
 @[expose] public def LSort.hasMap : LSort → Bool
   | .tcons name args => name == "Map" || hasMapList args
   | .bitvec _ => false
@@ -86,6 +84,28 @@ where
   hasMapList : List LSort → Bool
   | [] => false
   | s :: ss => hasMap s || hasMapList ss
+
+/-- Iterated arrow at the sort level: `mkArrow ret [s₁, s₂] = s₁ → s₂ → ret`. -/
+@[expose] public def LSort.mkArrow (ret : LSort) : List LSort → LSort
+  | [] => ret
+  | s :: ss => .tcons "arrow" [s, LSort.mkArrow ret ss]
+
+/-- Whether a sort can be the sort of a datatype value (`LConst.dataConst`): a type
+constructor other than the built-in `bool`, `int`, `real`, `string`, `arrow`, `Map` and
+`Sequence`. -/
+@[expose] public def LSort.isDataSort : LSort → Bool
+  | .tcons name _ => !["bool", "int", "real", "string", "arrow", "Map", "Sequence"].contains name
+  | .bitvec _ => false
+
+/-- Whether syntactic equality of well-typed constants of a sort is semantic equality: the sorts
+built from `bool`, `int`, `real`, `string`, `bitvec n` and `Sequence`. A map literal is not
+canonical (two different literals can denote the same map, e.g. when the key sort is finite),
+nor is a datatype value (`LConst.dataConst`), whose operator need not be a constructor. -/
+@[expose] public def LSort.litCanonical : LSort → Bool
+  | .tcons "bool" [] | .tcons "int" [] | .tcons "real" [] | .tcons "string" [] => true
+  | .bitvec _ => true
+  | .tcons "Sequence" [a] => litCanonical a
+  | _ => false
 
 end Lambda
 

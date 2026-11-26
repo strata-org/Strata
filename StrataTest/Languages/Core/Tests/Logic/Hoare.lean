@@ -319,14 +319,14 @@ private theorem procOf_eq {p : Core.Program} {nm : String} {proc : Core.Procedur
 /-- The value of the literal `κ` in the runtime factory of `ρ`. -/
 private noncomputable abbrev cval (ρ : Imperative.Env Core.Expression) (κ : Lambda.LConst) :
     Core.Expression.Val :=
-  Lambda.SemValue.ofConst ρ.factory.model.tcInterp κ
+  Lambda.SemValue.ofConst ρ.factory.model.tcInterp ρ.factory.model.opInterp κ
 
 /-- The environment over the runtime factory of `model` where `x` holds `1` and every other
     name is unbound. -/
 private noncomputable def xIs1Env (model : Lambda.Interp Core.Factory) :
     Imperative.Env Core.Expression :=
   { store := fun n => if n.name = "x" then
-      some (Lambda.SemValue.ofConst model.tcInterp (.intConst 1)) else none
+      some (Lambda.SemValue.ofConst model.tcInterp model.opInterp (.intConst 1)) else none
     factory := boolFactory model }
 
 /-- `xIs1Env` holds only values of its factory.  The well-formedness conditions require
@@ -352,7 +352,7 @@ private theorem inputAsPredicate_xIs1 (model : Lambda.Interp Core.Factory)
   rw [hinputs] at hmem
   simp only [List.mem_singleton, Prod.mk.injEq] at hmem
   obtain ⟨rfl, rfl⟩ := hmem
-  exact ⟨Lambda.SemValue.ofConst model.tcInterp (.intConst 1), by simp [xIs1Env], rfl⟩
+  exact ⟨Lambda.SemValue.ofConst model.tcInterp model.opInterp (.intConst 1), by simp [xIs1Env], rfl⟩
 
 /-- At `xIs1Env`, the clause `x == n` evaluates to `false` for every `n ≠ 1`. -/
 private theorem xIs1_eval_eq_false (model : Lambda.Interp Core.Factory) (n : Int)
@@ -362,7 +362,7 @@ private theorem xIs1_eval_eq_false (model : Lambda.Interp Core.Factory) (n : Int
         (Lambda.LExpr.intConst Core.valueLoc n)) =
       some (HasBool.ffVal (xIs1Env model).factory) :=
   Core.eval_eq_false _
-    (Core.eval_fvar (v := Lambda.SemValue.ofConst model.tcInterp (.intConst 1)) _
+    (Core.eval_fvar (v := Lambda.SemValue.ofConst model.tcInterp model.opInterp (.intConst 1)) _
       (by simp [xIs1Env]) rfl)
     (Core.eval_intConst _ _ n) rfl
     (fun h => hn (Lambda.SemValue.ofInt_injective
@@ -2101,7 +2101,7 @@ example (x : Core.Expression.Ident) (ty : Core.Expression.Ty)
   intro h
   have hbad := h
     { store := fun y => if y = x then
-        some (Lambda.SemValue.ofConst Core.factoryInterp.tcInterp (.intConst 1)) else none,
+        some (Lambda.SemValue.ofConst Core.factoryInterp.tcInterp Core.factoryInterp.opInterp (.intConst 1)) else none,
       factory := boolFactory Core.factoryInterp }
       (by simp)
   simp [Imperative.dropVars, Imperative.Block.definedVars,

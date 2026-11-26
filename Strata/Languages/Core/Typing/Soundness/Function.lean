@@ -2865,6 +2865,8 @@ private theorem HasType_ambient_congr {C C' : LContext CoreLParams}
     exact .tmap_const Δ m k v d es (containsName_of_getElem?_agree hk "Map" hknown) hw
   | tseq_const Δ m a es hknown hw =>
     exact .tseq_const Δ m a es (containsName_of_getElem?_agree hk "Sequence" hknown) hw
+  | tdata_const Δ m n as s es hknown hw =>
+    exact .tdata_const Δ m n as s es (containsName_of_getElem?_agree hk _ hknown) hw
   | tvar Δ m x tyx hfind => exact .tvar Δ m x tyx hfind
   | tvar_annotated Δ m x ty_o ty_s tys ann hfind hlen hopen hcompat =>
     exact .tvar_annotated Δ m x ty_o ty_s tys ann hfind hlen hopen hcompat

@@ -86,8 +86,8 @@ abbrev LExprParamsT.typed (T: LExprParamsT): LExprParamsT :=
 Lambda constants.
 
 Constants are integers, strings, reals, bitvectors of a fixed length,
-booleans, and literals of the collection types `Map k v` and `Sequence a`
-built from constants.
+booleans, literals of the collection types `Map k v` and `Sequence a`
+built from constants, and datatype values built from constants.
 
 A collection literal names the sorts of its elements, so its type is known even
 when it has no elements. Its elements are not checked against those sorts by
@@ -122,6 +122,20 @@ inductive LConst : Type where
 
   /-- A literal of type `Sequence elemSort`: the finite sequence `elems`. -/
   | sequenceConst (elemSort : LSort) (elems : Array LConst)
+
+  /-- A datatype value: the operator `name`, at type `argSorts → sort`
+  (`LSort.mkArrow sort argSorts`), applied to the constants `args`. It occurs as a default, key,
+  value or element of a collection literal, which cannot hold an expression.
+
+  Whether `name` is a constructor is not part of its well-typedness (`LConst.wt`), which knows no
+  factory; it is checked where a factory is known.
+
+  A datatype value is opaque to the traversals of an expression's operators (`LExpr.getOps`,
+  `LExpr.OpsConsistent`, `Factory.OpsClosed`): they do not look inside constants. This is sound
+  because no verification phase creates a datatype value, and the factory wrapper that creates
+  them (`Core.extendDataLits`) turns one back into constructor operators only after checking the
+  constructor against its factory. -/
+  | dataConst (name : String) (argSorts : List LSort) (sort : LSort) (args : Array LConst)
 deriving Repr, Hashable
 
 namespace LConst
@@ -158,6 +172,12 @@ def decEqConst : (a b : LConst) → Decidable (a = b)
       | isTrue h => isTrue (by subst ha h; rfl)
       | isFalse h => isFalse (by intro e; cases e; exact h rfl)
     else isFalse (by intro e; cases e; exact ha rfl)
+  | .dataConst n as s ⟨es⟩, .dataConst n' as' s' ⟨es'⟩ =>
+    if h : n = n' ∧ as = as' ∧ s = s' then
+      match decEqConstElems es es' with
+      | isTrue h' => isTrue (by obtain ⟨rfl, rfl, rfl⟩ := h; subst h'; rfl)
+      | isFalse h' => isFalse (by intro e; cases e; exact h' rfl)
+    else isFalse (by intro e; cases e; exact h ⟨rfl, rfl, rfl⟩)
   | .intConst _, .strConst _ | .intConst _, .rationalConst _ | .intConst _, .bitvecConst ..
   | .intConst _, .boolConst _ | .intConst _, .mapConst .. | .intConst _, .sequenceConst ..
   | .strConst _, .intConst _ | .strConst _, .rationalConst _ | .strConst _, .bitvecConst ..
@@ -174,7 +194,12 @@ def decEqConst : (a b : LConst) → Decidable (a = b)
   | .mapConst .., .bitvecConst .. | .mapConst .., .boolConst _ | .mapConst .., .sequenceConst ..
   | .sequenceConst .., .intConst _ | .sequenceConst .., .strConst _
   | .sequenceConst .., .rationalConst _ | .sequenceConst .., .bitvecConst ..
-  | .sequenceConst .., .boolConst _ | .sequenceConst .., .mapConst .. =>
+  | .sequenceConst .., .boolConst _ | .sequenceConst .., .mapConst ..
+  | .dataConst .., .intConst _ | .dataConst .., .strConst _ | .dataConst .., .rationalConst _
+  | .dataConst .., .bitvecConst .. | .dataConst .., .boolConst _ | .dataConst .., .mapConst ..
+  | .dataConst .., .sequenceConst .. | .intConst _, .dataConst .. | .strConst _, .dataConst ..
+  | .rationalConst _, .dataConst .. | .bitvecConst .., .dataConst .. | .boolConst _, .dataConst ..
+  | .mapConst .., .dataConst .. | .sequenceConst .., .dataConst .. =>
     isFalse (by intro e; cases e)
 def decEqConstEntries : (a b : List (LConst × LConst)) → Decidable (a = b)
   | [], [] => isTrue rfl
@@ -433,8 +458,9 @@ def LExpr.sizeOf: LExpr T → Nat
   | _ => 1
 
 /--
-The sort a constant declares: the sort of a primitive constant, and `Map k v` or
-`Sequence a` for a collection literal, whatever its elements are. -/
+The sort a constant declares: the sort of a primitive constant, `Map k v` or
+`Sequence a` for a collection literal, whatever its elements are, and the sort of a datatype
+value. -/
 @[expose]
 def LConst.sort : LConst → LSort
   | .intConst _ => .int
@@ -444,16 +470,19 @@ def LConst.sort : LConst → LSort
   | .boolConst _ => .bool
   | .mapConst k v _ _ => .map k v
   | .sequenceConst a _ => .seq a
+  | .dataConst _ _ s _ => s
 
 mutual
 /-- A constant is well typed when every element of every collection literal in it
-has the sort its literal declares for it (and is itself well typed). Primitive
-constants are always well typed. -/
+has the sort its literal declares for it (and is itself well typed), and every datatype value in
+it has a datatype sort (`LSort.isDataSort`) and one well-typed argument of each of its argument
+sorts. Primitive constants are always well typed. -/
 @[expose]
 def LConst.wt : LConst → Bool
   | .intConst _ | .strConst _ | .rationalConst _ | .bitvecConst _ _ | .boolConst _ => true
   | .mapConst k v d ⟨es⟩ => d.wt && decide (d.sort = v) && LConst.wtEntries k v es
   | .sequenceConst a ⟨es⟩ => LConst.wtElems a es
+  | .dataConst _ as s ⟨es⟩ => s.isDataSort && LConst.wtArgs as es
 /-- Every entry of a map literal is well typed at key sort `k` and value sort `v`. -/
 @[expose]
 def LConst.wtEntries (k v : LSort) : List (LConst × LConst) → Bool
@@ -465,16 +494,25 @@ def LConst.wtEntries (k v : LSort) : List (LConst × LConst) → Bool
 def LConst.wtElems (s : LSort) : List LConst → Bool
   | [] => true
   | a :: rest => a.wt && decide (a.sort = s) && LConst.wtElems s rest
+/-- The arguments of a datatype value are well typed at the argument sorts `ss`: one argument of
+each sort, in order. -/
+@[expose]
+def LConst.wtArgs : List LSort → List LConst → Bool
+  | [], [] => true
+  | s :: ss, a :: rest => a.wt && decide (a.sort = s) && LConst.wtArgs ss rest
+  | _, _ => false
 end
 
 mutual
 /-- The number of constants a constant is built from: itself and, for a collection literal,
-those of its default, keys, values and elements. -/
+those of its default, keys, values and elements, and for a datatype value those of its
+arguments. -/
 @[expose]
 def LConst.size : LConst → Nat
   | .intConst _ | .strConst _ | .rationalConst _ | .bitvecConst _ _ | .boolConst _ => 1
   | .mapConst _ _ d ⟨es⟩ => 1 + d.size + LConst.sizeEntries es
   | .sequenceConst _ ⟨es⟩ => 1 + LConst.sizeElems es
+  | .dataConst _ _ _ ⟨es⟩ => 1 + LConst.sizeElems es
 /-- The number of constants the keys and values of map entries are built from. -/
 @[expose]
 def LConst.sizeEntries : List (LConst × LConst) → Nat
@@ -487,11 +525,53 @@ def LConst.sizeElems : List LConst → Nat
   | a :: rest => a.size + LConst.sizeElems rest
 end
 
+mutual
+/-- Whether a constant is or contains a datatype value (`LConst.dataConst`). -/
+@[expose]
+def LConst.hasData : LConst → Bool
+  | .intConst _ | .strConst _ | .rationalConst _ | .bitvecConst _ _ | .boolConst _ => false
+  | .mapConst _ _ d ⟨es⟩ => d.hasData || LConst.hasDataEntries es
+  | .sequenceConst _ ⟨es⟩ => LConst.hasDataElems es
+  | .dataConst .. => true
+/-- Whether a key or value of map entries is or contains a datatype value. -/
+@[expose]
+def LConst.hasDataEntries : List (LConst × LConst) → Bool
+  | [] => false
+  | (a, b) :: rest => a.hasData || b.hasData || LConst.hasDataEntries rest
+/-- Whether an element of a sequence is or contains a datatype value. -/
+@[expose]
+def LConst.hasDataElems : List LConst → Bool
+  | [] => false
+  | a :: rest => a.hasData || LConst.hasDataElems rest
+end
+
+mutual
+/-- The operators of the datatype values in a constant, each with the sort of its value
+(`LSort.mkArrow sort argSorts`). A constant's denotation reads the operator interpretation only
+at these. -/
+@[expose]
+def LConst.dataOps : LConst → List (String × LSort)
+  | .intConst _ | .strConst _ | .rationalConst _ | .bitvecConst _ _ | .boolConst _ => []
+  | .mapConst _ _ d ⟨es⟩ => d.dataOps ++ LConst.dataOpsEntries es
+  | .sequenceConst _ ⟨es⟩ => LConst.dataOpsElems es
+  | .dataConst n as s ⟨es⟩ => (n, LSort.mkArrow s as) :: LConst.dataOpsElems es
+/-- The operators of the datatype values in the keys and values of map entries. -/
+@[expose]
+def LConst.dataOpsEntries : List (LConst × LConst) → List (String × LSort)
+  | [] => []
+  | (a, b) :: rest => a.dataOps ++ b.dataOps ++ LConst.dataOpsEntries rest
+/-- The operators of the datatype values in the elements of a sequence. -/
+@[expose]
+def LConst.dataOpsElems : List LConst → List (String × LSort)
+  | [] => []
+  | a :: rest => a.dataOps ++ LConst.dataOpsElems rest
+end
+
 /--
 Get type of a constant `c`.
 
-A collection literal that is not well typed (`LConst.wt`) has type `bool` (and
-denotes `false`). This keeps `ty` total and every typed constant denotable: an
+A collection literal or datatype value that is not well typed (`LConst.wt`) has type
+`bool` (and denotes `false`). This keeps `ty` total and every typed constant denotable: an
 element of the wrong sort has no value of the sort its literal declares, and that
 sort need not have any value at all. Such a literal is a type error wherever a
 collection is expected.
@@ -508,9 +588,11 @@ def LConst.ty (c: LConst) : LMonoTy :=
     cond (LConst.mapConst k v d es).wt (.tcons "Map" [k.toMonoTy, v.toMonoTy]) .bool
   | .sequenceConst a es =>
     cond (LConst.sequenceConst a es).wt (.tcons "Sequence" [a.toMonoTy]) .bool
+  | .dataConst n as s es => cond (LConst.dataConst n as s es).wt s.toMonoTy .bool
 
 /--
-Get type name of a constant `c` (e.g. "int")
+Get type name of a constant `c` (e.g. "int"): for a datatype value, the type constructor of its
+sort.
 -/
 def LConst.tyName (c: LConst) : String :=
   match c with
@@ -521,6 +603,8 @@ def LConst.tyName (c: LConst) : String :=
   | .boolConst _ => "bool"
   | .mapConst .. => "Map"
   | .sequenceConst .. => "Sequence"
+  | .dataConst _ _ (.tcons n _) _ => n
+  | .dataConst _ _ (.bitvec _) _ => "bitvec"
 
 /--
 Get type name of a constant `c` as a Format (e.g. "Integers")
@@ -534,19 +618,22 @@ def LConst.tyNameFormat (c: LConst) : Format :=
   | .boolConst _ => f!"Booleans"
   | .mapConst .. => f!"Maps"
   | .sequenceConst .. => f!"Sequences"
+  | .dataConst .. => f!"Datatype values"
 
 /-- Whether syntactic inequality of `c` with another constant of the same type
-implies semantic inequality: `c` is well typed and its sort has no `Map`. -/
+implies semantic inequality: `c` is well typed, its sort has no `Map`, and it holds no datatype
+value (`LConst.hasData`). -/
 @[expose]
 def LConst.eqDecidable (c : LConst) : Bool :=
-  c.wt && !c.sort.hasMap
+  c.wt && !c.sort.hasMap && !c.hasData
 
 /-- Whether `c` is a primitive literal (Boolean, integer, rational, string or
-bit-vector), not a map or sequence literal. -/
+bit-vector), not a map or sequence literal or a datatype value. -/
 @[expose]
 def LConst.isPrimitive : LConst → Bool
   | .mapConst .. => false
   | .sequenceConst .. => false
+  | .dataConst .. => false
   | _ => true
 
 /-- Decide the equality of two constants of the same type: equal constants are
@@ -559,19 +646,22 @@ def LConst.eql (c1 c2 : LConst) : Option Bool :=
   else none
 
 /-- The entries of a map literal with default `dflt` after setting key `k` to `v`.
-If the entries have distinct keys and no value `dflt`, so does the result. Keys are
+If the entries have distinct keys, so does the result. Keys are
 compared syntactically ("distinct" means syntactically distinct), so this is the update
-of the map the literal denotes only at a key sort without `Map` (`LSort.hasMap`). -/
+of the map the literal denotes only at a key sort without `Map` and a key `k` holding no
+datatype value (`LConst.hasData`). An entry
+set to the default is dropped only when the value has no datatype value (`LConst.hasData`): the
+decision is syntactic. -/
 @[expose]
 def LConst.mapUpdate (dflt : LConst) (es : Array (LConst × LConst)) (k v : LConst) :
     Array (LConst × LConst) :=
   let es := es.filter (fun e => e.1 != k)
-  if v = dflt then es else es.push (k, v)
+  if v = dflt ∧ v.hasData = false then es else es.push (k, v)
 
 /-- The value a map literal with default `dflt` and entries `es` gives key `k`:
 the value of the first entry with key `k`, else `dflt`. Keys are compared
-syntactically, so this is the value of the map the literal denotes only at a key
-sort without `Map` (`LSort.hasMap`). -/
+syntactically, so this is the value of the map the literal denotes only at a key sort without
+`Map` and a key `k` holding no datatype value (`LConst.hasData`). -/
 @[expose]
 def LConst.mapSelect (dflt : LConst) (es : Array (LConst × LConst)) (k : LConst) : LConst :=
   match es.find? (fun e => e.1 == k) with
@@ -1054,7 +1144,8 @@ def eraseTypes {T : LExprParamsT} (e : LExpr T) : LExpr T :=
 /- Formatting and Parsing of Lambda Expressions -/
 mutual
 /-- Render a constant. A map literal is shown as its entries and default value,
-`{k₁ ↦ v₁, …, _ ↦ d}`, and a sequence literal as `[e₁, …]`. -/
+`{k₁ ↦ v₁, …, _ ↦ d}`, a sequence literal as `[e₁, …]`, and a datatype value as its operator
+applied to its arguments, `f(a₁, …)`, or `f` without arguments. -/
 def LConst.toStr : LConst → String
   | .intConst i => toString i
   | .strConst s => s
@@ -1063,6 +1154,8 @@ def LConst.toStr : LConst → String
   | .boolConst b => toString b
   | .mapConst _ _ d ⟨es⟩ => "{" ++ LConst.entriesToStr es ++ "_ ↦ " ++ LConst.toStr d ++ "}"
   | .sequenceConst _ ⟨es⟩ => "[" ++ LConst.elemsToStr es ++ "]"
+  | .dataConst n _ _ ⟨[]⟩ => n
+  | .dataConst n _ _ ⟨es⟩ => n ++ "(" ++ LConst.elemsToStr es ++ ")"
 /-- Render map entries, each followed by `, `. -/
 def LConst.entriesToStr : List (LConst × LConst) → String
   | [] => ""

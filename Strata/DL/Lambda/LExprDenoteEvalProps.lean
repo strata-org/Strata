@@ -392,7 +392,7 @@ private theorem denote_ext_of_eq {tc : TyConstrInterp} {op : OpInterp tc} {vt : 
     (h₁ : e₁.HasTypeA [] τ) (h₂ : e₂.HasTypeA [] τ) :
     LExpr.denote tc op fv₁ vt .nil e₁ τ h₁ = LExpr.denote tc op fv₂ vt .nil e₂ τ h₂ := by
   subst he
-  exact denote_ext tc vt (fun _ _ _ => rfl) hfv (fun _ _ _ _ _ => rfl) h₁ h₂
+  exact denote_ext tc vt (fun _ _ _ => rfl) hfv (fun _ _ _ _ _ => rfl) (fun _ _ _ _ => rfl) h₁ h₂
 
 /-- Evaluation depends only on the store's bindings of the free variables. -/
 theorem LExpr.denoteEval_congr {M : ModeledFactory T} {σ σ' : ValStore T}
@@ -1622,17 +1622,17 @@ evaluates to its value. -/
 theorem LExpr.denoteEval_const {M : ModeledFactory T} {σ : ValStore T}
     {m : T.Metadata} {c : LConst} (hc : c.wt = true := by rfl) :
     (LExpr.const m c : LExpr T.mono).denoteEval M σ =
-      some (SemValue.ofConst M.model.tcInterp c) := by
+      some (SemValue.ofConst M.model.tcInterp M.model.opInterp c) := by
   rw [LExpr.denoteEval_eq_some_iff]
   refine ⟨fun y hy => by simp [getVars_eq_freeVars_idents, LExpr.freeVars] at hy, c.ty, .const hc,
     LConst.ty_isGround c, ?_⟩
   apply SemValue.mk_eq_mk ((LConst.ty_isGround c).substTyVars_eq _ _)
   show HEq _ (LExpr.denote _ _ _ _ _ (.const m c) _ _)
   rw [denote_const]
-  show HEq _ (denoteConst M.model.tcInterp M.tyVarVal c)
+  show HEq _ (denoteConst M.model.tcInterp M.model.opInterp M.tyVarVal c)
   have hs := congrArg (SortDenote M.model.tcInterp)
     ((LConst.ty_isGround c).substTyVars_eq M.tyVarVal refTyVarVal)
-  exact (heq_of_eq (denoteConst_cast_vt _ _ _ c hs)).trans (cast_heq _ _)
+  exact (heq_of_eq (denoteConst_cast_vt _ _ _ _ c hs)).trans (cast_heq _ _)
 
 /-- A literal that evaluates is well typed. -/
 theorem LExpr.denoteEval_const_wt {M : ModeledFactory T} {σ : ValStore T}

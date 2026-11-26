@@ -600,8 +600,8 @@ private theorem eval_ite_consts {F : Expression.Factory} {σ : SemanticStore Exp
       Expression.eval F σ (.ite m c (.const m₁ k₁) (.const m₂ k₂)) = none) := by
   have h₁ := LExpr.denoteEval_const (T := CoreLParams) (M := F) (σ := σ) (m := m₁) (c := k₁) hw₁
   have h₂ := LExpr.denoteEval_const (T := CoreLParams) (M := F) (σ := σ) (m := m₂) (c := k₂) hw₂
-  have hs : (SemValue.ofConst F.model.tcInterp k₁).sort =
-      (SemValue.ofConst F.model.tcInterp k₂).sort := by
+  have hs : (SemValue.ofConst F.model.tcInterp F.model.opInterp k₁).sort =
+      (SemValue.ofConst F.model.tcInterp F.model.opInterp k₂).sort := by
     simp [SemValue.ofConst, hk]
   refine ⟨fun b hb => ?_, fun hn => Option.eq_none_iff_forall_ne_some.2 fun v hv => ?_⟩
   · show LExpr.denoteEval F σ _ = if b then LExpr.denoteEval F σ _ else LExpr.denoteEval F σ _
@@ -714,10 +714,10 @@ theorem betaNG_laws (fac : Lambda.Factory CoreLParams) : RootLaws fac betaNG whe
 /-- A value of `n` arguments that is the denotation of the literal `k` whatever the arguments:
     for `n = 0` the denotation of `k`, for `n + 1` a function from the first argument's sort to
     such a value of `n` arguments. -/
-private def ConstVal (tc : TyConstrInterp) (vt : TyVarVal) (k : LConst) :
+private def ConstVal (tc : TyConstrInterp) (op : OpInterp tc) (vt : TyVarVal) (k : LConst) :
     (n : Nat) → (τ : LMonoTy) → TyDenote tc vt τ → Prop
-  | 0, _, v => HEq v (denoteConst tc vt k)
-  | n + 1, .tcons "arrow" [_, b], v => ∀ x, ConstVal tc vt k n b (v x)
+  | 0, _, v => HEq v (denoteConst tc op vt k)
+  | n + 1, .tcons "arrow" [_, b], v => ∀ x, ConstVal tc op vt k n b (v x)
   | _ + 1, _, _ => False
 
 /-- An expression that `constRedex` reads as `k` with `n` binders left denotes a value of `n`
@@ -726,7 +726,7 @@ private theorem constRedex_denote {tc : TyConstrInterp} {op : OpInterp tc}
     {fv : FreeVarVal CoreLParams tc} {vt : TyVarVal} :
     ∀ {e : Expression.Expr} {n : Nat} {k : LConst}, constRedex e = some (n, k) →
     ∀ {Δ : List LMonoTy} (bv : BVarVal tc vt Δ) {τ : LMonoTy} (h : e.HasTypeA Δ τ),
-      ConstVal tc vt k n τ (LExpr.denote tc op fv vt bv e τ h)
+      ConstVal tc op vt k n τ (LExpr.denote tc op fv vt bv e τ h)
   | .const m c, n, k, hr, Δ, bv, τ, h => by
     cases hr
     cases h
@@ -783,7 +783,7 @@ private theorem bodyFold_spec {fac : Lambda.Factory CoreLParams} {e : Expression
       (∀ (model : Lambda.Interp fac) (fv : FreeVarVal CoreLParams model.tcInterp)
         (vt : TyVarVal) {τ : LMonoTy} (hT : e.HasTypeA [] τ),
         HEq (LExpr.denote model.tcInterp model.opInterp fv vt .nil e τ hT)
-          (denoteConst model.tcInterp vt k)) ∧ k.wt = true := by
+          (denoteConst model.tcInterp model.opInterp vt k)) ∧ k.wt = true := by
   unfold bodyFold at h
   repeat' split at h
   all_goals try cases h
@@ -906,12 +906,12 @@ theorem testCtor_laws (fac : Lambda.Factory CoreLParams) : RootLaws fac (testCto
       have hkey : ∀ e' (he : e' = e) (h' : e'.HasTypeA [] k.ty),
           HEq (LExpr.denote F.model.tcInterp F.model.opInterp
             (ValStore.fvarVal F.model.tcInterp σ) F.tyVarVal .nil e' k.ty h')
-            (denoteConst F.model.tcInterp F.tyVarVal k) := by
+            (denoteConst F.model.tcInterp F.model.opInterp F.tyVarVal k) := by
         rintro _ rfl h'
         exact hD F.model _ F.tyVarVal h'
       refine congrArg some (SemValue.mk_eq_mk (hg.substTyVars_eq _ _) ?_)
       refine HEq.trans ?_ (hkey _ hself _).symm
-      rw [denoteConst_cast_vt F.model.tcInterp refTyVarVal F.tyVarVal k
+      rw [denoteConst_cast_vt F.model.tcInterp F.model.opInterp refTyVarVal F.tyVarVal k
         (congrArg (SortDenote F.model.tcInterp) (hg.substTyVars_eq _ _))]
       exact cast_heq _ _
     · rfl

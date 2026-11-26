@@ -58,21 +58,33 @@ private class LitCodec (ty : LMonoTy) (V : Type) [LambdaLeanType ty V] : Prop wh
 private theorem decodesLits_int : DecodesLits (InV := Int) .int := by
   intro m c hw hc
   rw [LConst.ty_of_wt hw] at hc
-  cases c <;> first | exact ⟨_, rfl⟩ | simp [LConst.sort, LSort.toMonoTy, LSort.toMonoTy.map,
+  cases c
+  case dataConst =>
+    simp only [LConst.wt, Bool.and_eq_true] at hw
+    exact absurd (LSort.isDataSort_toMonoTy hw.1 hc) (by decide)
+  all_goals first | exact ⟨_, rfl⟩ | simp [LConst.sort, LSort.toMonoTy, LSort.toMonoTy.map,
     LMonoTy.int] at hc
 
 /-- Boolean literals decode. -/
 private theorem decodesLits_bool : DecodesLits (InV := Bool) .bool := by
   intro m c hw hc
   rw [LConst.ty_of_wt hw] at hc
-  cases c <;> first | exact ⟨_, rfl⟩ | simp [LConst.sort, LSort.toMonoTy, LSort.toMonoTy.map,
+  cases c
+  case dataConst =>
+    simp only [LConst.wt, Bool.and_eq_true] at hw
+    exact absurd (LSort.isDataSort_toMonoTy hw.1 hc) (by decide)
+  all_goals first | exact ⟨_, rfl⟩ | simp [LConst.sort, LSort.toMonoTy, LSort.toMonoTy.map,
     LMonoTy.bool] at hc
 
 /-- String literals decode. -/
 private theorem decodesLits_string : DecodesLits (InV := String) .string := by
   intro m c hw hc
   rw [LConst.ty_of_wt hw] at hc
-  cases c <;> first | exact ⟨_, rfl⟩ | simp [LConst.sort, LSort.toMonoTy, LSort.toMonoTy.map,
+  cases c
+  case dataConst =>
+    simp only [LConst.wt, Bool.and_eq_true] at hw
+    exact absurd (LSort.isDataSort_toMonoTy hw.1 hc) (by decide)
+  all_goals first | exact ⟨_, rfl⟩ | simp [LConst.sort, LSort.toMonoTy, LSort.toMonoTy.map,
     LMonoTy.string] at hc
 
 /-- Bit-vector literals of width `n` decode. -/
@@ -84,6 +96,8 @@ private theorem decodesLits_bitvec (n : Nat) : DecodesLits (InV := BitVec n) (.b
     simp only [LConst.sort, LSort.toMonoTy, LMonoTy.bitvec.injEq] at hc
     subst hc
     exact ⟨b, by simp [LambdaLeanType.cevalTy, LExpr.denoteBitVec]⟩
+  | dataConst _ _ s _ =>
+    cases s <;> simp_all [LConst.wt, LConst.sort, LSort.toMonoTy, LSort.isDataSort]
   | _ => simp [LConst.sort, LSort.toMonoTy, LSort.toMonoTy.map] at hc
 
 /-- A `unaryOp` over primitive types without a guard, whose decoder decodes every literal of its

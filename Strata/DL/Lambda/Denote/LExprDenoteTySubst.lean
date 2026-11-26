@@ -74,7 +74,7 @@ theorem substTyVars_subst (vt : TyVarVal) (S : Subst) (ty : LMonoTy) :
 
 private theorem LConst.subst_ty (S : Subst) (c : LConst) : LMonoTy.subst S c.ty = c.ty := by
   cases c
-  case mapConst | sequenceConst =>
+  case mapConst | sequenceConst | dataConst =>
     exact LMonoTy.subst_no_relevant_keys _ _ (fun x hx => by
       rw [LConst.ty_freeVars] at hx; cases hx)
   all_goals
@@ -227,7 +227,7 @@ private theorem denote_applyTypeSubst_gen
     subst h_inv
     have h_inv_s := HasTypeA.const_inv h_subst
     -- Relate denoteConst at vt vs vt'
-    rw [denoteConst_cast_vt (tcInterp := tcInterp) vt vt' c]
+    rw [denoteConst_cast_vt (tcInterp := tcInterp) (opInterp := opInterp) vt vt' c]
     · grind
     · exact (h_inv_s ▸ h_td).symm
   | op m o uty =>

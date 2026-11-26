@@ -547,7 +547,7 @@ private theorem resolveAux_HasTypeA_aux [DecidableEq T.IDMeta] [Hashable T.IDMet
       simp only
       rw [LConst.ty_subst]
       simp only [Bool.and_eq_true] at h_cond
-      exact HasTypeA.const h_cond.1.2
+      exact HasTypeA.const h_cond.1.1.2
     · simp at heq_inferConst
   case h_op =>
     intro m o oty et C Env Env' h h_envwf h_ne h_fwf h_resolved S h_absorbs

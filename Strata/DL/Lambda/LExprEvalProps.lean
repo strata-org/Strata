@@ -533,7 +533,14 @@ theorem LExpr.isValue_bool_eq_boolConst {T : LExprParams} {F : Factory T} (hF : 
   rename_i hops
   unfold LExpr.isValue at hc
   split at hc
-  · cases ‹LConst› <;> simp_all [LExpr.typeCheck, LConst.ty, LExpr.boolConst, LMonoTy.bool,
+  · cases ‹LConst›
+    case dataConst =>
+      simp_all only [typeCheck, LConst.ty, LMonoTy.bool, cond_eq_ite, ↓reduceIte,
+        Option.ite_none_right_eq_some, Option.some.injEq, boolConst, const.injEq, reduceCtorEq,
+        and_false, exists_const, exists_false]
+      simp only [LConst.wt, Bool.and_eq_true] at ht
+      exact absurd (LSort.isDataSort_toMonoTy ht.1.1 ht.2) (by decide)
+    all_goals simp_all [LExpr.typeCheck, LConst.ty, LExpr.boolConst, LMonoTy.bool,
       LMonoTy.int, LMonoTy.real, LMonoTy.string]
   · cases ‹Option LMonoTy› <;>
       simp_all [LExpr.typeCheck, LMonoTy.arrow, LMonoTy.bool, Option.bind_eq_some_iff]

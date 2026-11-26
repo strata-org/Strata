@@ -112,6 +112,24 @@ info: "; f\n(declare-fun f (Int Int) Int)\n; x\n(declare-const x Int)\n(assert (
    (factory := Core.Factory.pushIfNew $
           LFunc.mk "f" [] false false [("m", LMonoTy.int), ("n", LMonoTy.int)] LMonoTy.int .none #[] .none [] [])
 
+/-! ## Datatype values
+
+A datatype value (`LConst.dataConst`) is encoded as its operator applied to its arguments. No
+pipeline phase sends one to the solver; the encoding exists for totality and printing. -/
+
+/-- `x == BoxInt(5)`, with `BoxInt` a function of the factory. -/
+private def boxIntEq : LExpr CoreLParams.mono :=
+  .eq testLoc (.fvar testLoc "x" (.some (.tcons "Box" [])))
+    (.const Core.valueLoc (.dataConst "BoxInt" [.int] (.tcons "Box" []) #[.intConst 5]))
+
+/--
+info: "; x\n(declare-const x Box)\n; BoxInt\n(declare-fun BoxInt (Int) Box)\n(assert (= x (BoxInt 5)))\n"
+-/
+#guard_msgs in
+#eval toSMTCommandsWithAssert boxIntEq
+   (factory := Core.Factory.pushIfNew $
+          LFunc.mk "BoxInt" [] false false [("i", LMonoTy.int)] (.tcons "Box" []) .none #[] .none [] [])
+
 /-! ## Tests for Array Theory Support -/
 
 section MapLiterals

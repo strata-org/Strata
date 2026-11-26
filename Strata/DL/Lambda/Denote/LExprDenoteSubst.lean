@@ -824,7 +824,7 @@ theorem substFvarsLifting_denote [DecidableEq T.IDMeta]
     subst h_bindings_nil h_sort_nil
     cases h_args
     exact denote_ext tcInterp vt
-      (by intros; rfl) (by intro n ty _; rfl) (by intros; rfl)
+      (by intros; rfl) (by intro n ty _; rfl) (by intros; rfl) (by intros; rfl)
       _ h_body
   · -- bindings.isEmpty = false → apply go_denote with Δ_body = [], bvarVal_body = .nil
     rename_i h_not_empty

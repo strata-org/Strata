@@ -935,7 +935,8 @@ def functionValueToSMT (fn : CoreIdent) (intys : LMonoTys) (op : List Term → T
 mutual
 /-- Encode a constant. A collection literal is encoded as the applications of the operators
     that build it (see `Core.litToOpExpr`): `mapConst` and `update` for a map, the first entry
-    outermost, and `Sequence.empty` and `Sequence.build` for a sequence. -/
+    outermost, and `Sequence.empty` and `Sequence.build` for a sequence. A datatype value is
+    encoded as its operator applied to its arguments. -/
 def litToSMTTerm (factory : @Lambda.Factory CoreLParams) (c : LConst) (ctx : SMT.Context)
     (pending : SMT.PendingFnQueue) :
     Except Format (Term × SMT.Context × SMT.PendingFnQueue) :=
@@ -966,6 +967,20 @@ def litToSMTTerm (factory : @Lambda.Factory CoreLParams) (c : LConst) (ctx : SMT
     let (mk, sty, ctx, pending) ←
       toSMTOp factory (← collectionOpIdent factory "Sequence.empty" [et]) (seqTy et) ctx pending
     litElemsToSMTTerm factory et (mk [] sty) xs ctx pending
+  | .dataConst n as s ⟨xs⟩ => do
+    let (argTs, ctx, pending) ← litArgsToSMTTerms factory xs ctx pending
+    let (mk, rty, ctx, pending) ←
+      toSMTOp factory ⟨n, ()⟩ (LMonoTy.mkArrow' s.toMonoTy (as.map (·.toMonoTy))) ctx pending
+    .ok (mk argTs rty, ctx, pending)
+/-- Encode the arguments of a datatype value, in order. -/
+def litArgsToSMTTerms (factory : @Lambda.Factory CoreLParams) :
+    List LConst → SMT.Context → SMT.PendingFnQueue →
+    Except Format (List Term × SMT.Context × SMT.PendingFnQueue)
+  | [], ctx, pending => .ok ([], ctx, pending)
+  | x :: rest, ctx, pending => do
+    let (xT, ctx, pending) ← litToSMTTerm factory x ctx pending
+    let (restTs, ctx, pending) ← litArgsToSMTTerms factory rest ctx pending
+    .ok (xT :: restTs, ctx, pending)
 /-- Encode `base` updated with map entries, the first one outermost. -/
 def litEntriesToSMTTerm (factory : @Lambda.Factory CoreLParams) (kt vt : LMonoTy) (base : Term) :
     List (LConst × LConst) → SMT.Context → SMT.PendingFnQueue →

@@ -14,7 +14,9 @@ import all Strata.DL.Lambda.LTy
 Induction on sorts (`LSort.ind`); `LSort_eqb` decides equality (`LSort_eqb_eq`,
 `LSort_eqb_refl`), which gives the `DecidableEq LSort` instance; the type naming a sort has no
 free type variables (`LSort.toMonoTy_freeVars`); and `LMonoTy.toSort?` inverts
-`LSort.toMonoTy` (`LMonoTy.toSort?_toMonoTy`, with `LMonoTy.toSortList?_toMonoTy` on lists).
+`LSort.toMonoTy` (`LMonoTy.toSort?_toMonoTy`, with `LMonoTy.toSortList?_toMonoTy` on lists); and a
+datatype sort is not canonical (`LSort.litCanonical_of_isDataSort`), and the type naming it is a
+type constructor other than the built-in ones (`LSort.isDataSort_toMonoTy`).
 -/
 
 namespace Lambda
@@ -117,5 +119,23 @@ public theorem LMonoTy.toSortList?_toMonoTy : ∀ {ts : List LMonoTy} {ss : List
       exact ⟨LMonoTy.toSort?_toMonoTy hs, LMonoTy.toSortList?_toMonoTy hss⟩
     · cases h
 end
+
+/-- A datatype sort (`LSort.isDataSort`) is not canonical (`LSort.litCanonical`). -/
+public theorem LSort.litCanonical_of_isDataSort {s : LSort} (h : s.isDataSort = true) :
+    s.litCanonical = false := by
+  rcases s with ⟨n, _ | ⟨a, _ | _⟩⟩ | _ <;>
+    simp_all [LSort.isDataSort, LSort.litCanonical] <;> grind
+
+/-- The type naming a datatype sort (`LSort.isDataSort`) is a type constructor other than the
+    built-in ones. -/
+public theorem LSort.isDataSort_toMonoTy {s : LSort} (h : s.isDataSort = true) {n : String}
+    {args : List LMonoTy} (he : s.toMonoTy = .tcons n args) :
+    n ∉ ["bool", "int", "real", "string", "arrow", "Map", "Sequence"] := by
+  cases s with
+  | tcons n' _ =>
+    simp only [LSort.toMonoTy, LMonoTy.tcons.injEq] at he
+    obtain ⟨rfl, -⟩ := he
+    simpa [LSort.isDataSort] using h
+  | bitvec => simp [LSort.toMonoTy] at he
 
 end Lambda

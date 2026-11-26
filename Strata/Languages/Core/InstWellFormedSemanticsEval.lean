@@ -266,6 +266,7 @@ theorem coreEvaluator_WellFormedSemanticEvalBool (f : Expression.Factory)
     | bitvecConst n bv => exact hApp _
     | mapConst k v d es => exact hApp _
     | sequenceConst a es => exact hApp _
+    | dataConst n as s es => exact hApp _
   | op m o ty => exact hApp _
   | bvar m i => exact hApp _
   | fvar m x ty => exact hApp _

@@ -6,6 +6,7 @@
 module
 
 public import Strata.Languages.Core.Factory
+import Strata.Languages.Core.AggregateTypesFactoryProps
 public import Strata.DL.Lambda.Denote.LExprSemanticsConsistent
 public import Strata.DL.Lambda.LExprEvalAnnotateProps
 public import Strata.DL.Lambda.OperationalSemanticsProps
@@ -41,13 +42,18 @@ namespace Core
 public section
 
 /-- The shape of the results of a factory function's concrete evaluator: a well-typed constant
-    of the function's output type or of the result type of the operator's type annotation, or
-    the second of exactly two arguments when both inputs and the output have type `bool`. -/
+    of the function's output type or of the result type of the operator's type annotation, the
+    second of exactly two arguments when both inputs and the output have type `bool`, or the `ite`
+    chain `AggregateLitEval.selectChain` of a well-typed map literal and key whose value sort is
+    the result type of the operator's type annotation. -/
 private def EvalShape (fn : Lambda.LFunc CoreLParams) : Prop :=
   ∀ ceval, fn.concreteEval = some ceval → ∀ md opTy args r, ceval md opTy args = some r →
     (∃ m c, r = .const m c ∧ c.wt = true ∧
       (c.ty = fn.output ∨ opTy.map (Lambda.LMonoTy.arrowResult fn.inputs.length) = some c.ty)) ∨
-    (∃ x, args = [x, r] ∧ fn.inputs.map Prod.snd = [.bool, .bool] ∧ fn.output = .bool)
+    (∃ x, args = [x, r] ∧ fn.inputs.map Prod.snd = [.bool, .bool] ∧ fn.output = .bool) ∨
+    (∃ m key d es k v, r = AggregateLitEval.selectChain m key d es ∧ key.wt = true ∧
+      key.sort = k ∧ (Lambda.LConst.mapConst k v d ⟨es⟩).wt = true ∧
+      opTy.map (Lambda.LMonoTy.arrowResult fn.inputs.length) = some v.toMonoTy)
 
 /-- The concrete evaluator of a short-circuit factory function commutes with re-annotating the
     free variables of the arguments after the first. -/
@@ -143,7 +149,7 @@ private theorem shortCircuitOp_shape {n : CoreLParams.Identifier} {absorb decide
         · cases h
           exact .inl ⟨_, _, rfl, rfl, .inl rfl⟩
         · cases h
-          exact .inr ⟨_, rfl, rfl, rfl⟩
+          exact .inr (.inl ⟨_, rfl, rfl, rfl⟩)
       · cases h
     · cases h
   · cases hce
@@ -174,6 +180,30 @@ private theorem polyLitOp_shape {n : CoreLParams.Identifier} {ta inputs output e
     · cases hres
   · cases h
 
+open Lambda in
+/-- The evaluator of `select` returns a literal of the result type of the operator's type
+    annotation, or the `ite` chain of a well-typed map literal and key; it is not a short-circuit
+    function. -/
+private theorem mapSelect_shape : EvalShape mapSelectFunc.func ∧ SCShape mapSelectFunc.func := by
+  refine ⟨fun ceval hce md opTy args r h => ?_, fun h => by
+    simp [Strata.DL.Util.FuncAttr.hasShortCircuit, mapSelectFunc, mapSelectLitFunc, polyLitOp] at h⟩
+  cases hce
+  simp only [mapSelectEval] at h
+  cases hr : (mapSelectLitFunc.func.concreteEval.getD fun _ _ _ => none) md opTy args with
+  | some r' =>
+    rw [hr] at h; cases h
+    have hlit : EvalShape mapSelectLitFunc.func := by unfold mapSelectLitFunc; exact polyLitOp_shape.1
+    rcases hlit _ rfl md opTy args _ hr with h1 | h1 | h1
+    · exact .inl h1
+    · exact .inr (.inl h1)
+    · exact .inr (.inr h1)
+  | none =>
+    rw [hr] at h
+    simp only [Option.orElse] at h
+    obtain ⟨k, v, d, es, key, -, -, -, hw, hkw, hks, hty, rfl⟩ :=
+      AggregateLitEval.selectChainEval_some h
+    exact .inr (.inr ⟨md, key, d, es, k, v, rfl, hkw, hks, hw, hty⟩)
+
 /-- Every function of `Core.Factory`'s underlying array has an evaluator of the shape
     `EvalShape` and, if it is a short-circuit function, one that commutes with re-annotation. -/
 private theorem all_shape :
@@ -191,6 +221,7 @@ private theorem all_shape :
     | exact heteroBinaryOp_shape
     | exact shortCircuitOp_shape
     | exact polyLitOp_shape
+    | exact mapSelect_shape
     | exact unaryOp_shape (inTy := .bitvec _) (outTy := .int) (pre := []) (hI := rfl)
         (hO := rfl) (hp := nofun)
     | exact unaryOp_shape (inTy := .int) (outTy := .bitvec _) (pre := []) (hI := rfl)
@@ -220,7 +251,7 @@ private theorem evalWt_of_mem {fn : Lambda.LFunc CoreLParams} (hfn : fn ∈ Core
       args ((fn.inputs.map Prod.snd).map (Lambda.LMonoTy.subst S))) :
     Lambda.LExpr.HasTypeA [] r (fn.output.subst S) := by
   rcases (shape_of_mem hfn).1 ceval hce md _ args r h with
-    ⟨m, c, rfl, hw, hc | hc⟩ | ⟨x, rfl, hin, hout⟩
+    ⟨m, c, rfl, hw, hc | hc⟩ | ⟨x, rfl, hin, hout⟩ | ⟨m, key, d, es, k, v, rfl, hkw, hks, hw, hc⟩
   · rw [← hc, LConst_ty_subst]
     exact .const hw
   · simp only [Lambda.LFunc.instTy, Option.map_some, Option.some.injEq] at hc
@@ -237,16 +268,29 @@ private theorem evalWt_of_mem {fn : Lambda.LFunc CoreLParams} (hfn : fn ∈ Core
     cases hargs with
     | cons _ h2 => cases h2 with
       | cons h3 _ => exact h3
+  · simp only [Lambda.LFunc.instTy, Option.map_some, Option.some.injEq] at hc
+    have hlen : fn.inputs.length = ((fn.inputs.map Prod.snd).map (Lambda.LMonoTy.subst S)).length :=
+      by
+        simp only [List.length_map]
+        exact (List.length_map (as := (fn.inputs : List (CoreLParams.Identifier × Lambda.LMonoTy)))
+          (f := Prod.snd)).symm
+    rw [hlen, Lambda.LMonoTy.arrowResult_mkArrow'] at hc
+    rw [hc]
+    exact AggregateLitEval.selectChain_hasType m hkw hks hw
 
 /-- A concrete evaluator of a `Core.Factory` function returns a result satisfying a property `P`
     of expressions that holds of every constant, on arguments that satisfy `P`. -/
 private theorem evalPres_of_mem {fn : Lambda.LFunc CoreLParams} (hfn : fn ∈ Core.Factory.toArray)
     {ceval md opTy args r} (hce : fn.concreteEval = some ceval) (h : ceval md opTy args = some r)
     (P : Lambda.LExpr CoreLParams.mono → Prop) (hc : ∀ m c, P (.const m c))
+    (heq : ∀ m a b, P a → P b → P (.eq m a b))
+    (hite : ∀ m c t e, P c → P t → P e → P (.ite m c t e))
     (hargs : ∀ a ∈ args, P a) : P r := by
-  rcases (shape_of_mem hfn).1 ceval hce md opTy args r h with ⟨m, c, rfl, -⟩ | ⟨x, rfl, -⟩
+  rcases (shape_of_mem hfn).1 ceval hce md opTy args r h with
+    ⟨m, c, rfl, -⟩ | ⟨x, rfl, -⟩ | ⟨m, key, d, es, -, -, rfl, -⟩
   · exact hc m c
   · exact hargs r (by simp)
+  · exact AggregateLitEval.selectChain_ind P hc heq hite m key d es
 
 /-- A function a factory names belongs to the factory's underlying array. -/
 private theorem getElem_mem_toArray {F : Lambda.Factory CoreLParams} {f : String} (hf : f ∈ F) :
@@ -365,9 +409,11 @@ theorem programFactory_evalSoundWF (F : Lambda.Factory CoreLParams) (hWF : Lambd
       fun h' => nomatch h'.1.symm.trans hce
   · exact (hc f hf).elim (fun h => nomatch (all_bodies_none _ h).symm.trans hb)
       fun h => (h.2.2 body hb).2.2 callee args S hS
-  · exact (hc f hf).elim (fun h' => evalPres_of_mem h' hce h.symm _ fun _ _ => trivial)
+  · exact (hc f hf).elim (fun h' => evalPres_of_mem h' hce h.symm _ (fun _ _ => trivial)
+      (fun _ _ _ ha hb => ⟨ha, hb⟩) (fun _ _ _ _ hc ht he => ⟨hc, ht, he⟩))
       fun h' => nomatch h'.1.symm.trans hce
-  · exact (hc f hf).elim (fun h' => evalPres_of_mem h' hce h.symm _ fun _ _ => trivial)
+  · exact (hc f hf).elim (fun h' => evalPres_of_mem h' hce h.symm _ (fun _ _ => trivial)
+      (fun _ _ _ ha hb => ⟨ha, hb⟩) (fun _ _ _ _ hc ht he => ⟨hc, ht, he⟩))
       fun h' => nomatch h'.1.symm.trans hce
 
 /-- The short-circuit evaluators of a factory each of whose functions is a function of
@@ -403,9 +449,10 @@ theorem programFactory_opsClosed (F : Lambda.Factory CoreLParams)
   refine ⟨hbody, fun fn hfn ceval hce md opTy args r hr => ?_⟩
   rcases hfns fn hfn with h | h
   · rcases (shape_of_mem h).1 ceval hce md opTy args r hr with
-      ⟨m, c, rfl, -⟩ | ⟨x, rfl, -⟩
+      ⟨m, c, rfl, -⟩ | ⟨x, rfl, -⟩ | ⟨m, key, d, es, -, -, rfl, -⟩
     · exact Lambda.LExpr.OpsIn.const
     · exact fun o ho => .inr ⟨r, by simp, ho⟩
+    · exact fun o ho => absurd ho (by simp [AggregateLitEval.selectChain_getOps])
   · exact nomatch h.1.symm.trans hce
 
 /-- `Core.Factory` brings in only its own operators: its functions have no body, and their

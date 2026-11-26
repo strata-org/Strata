@@ -53,7 +53,8 @@ A body that `Core.runLits` runs, over literals, to a state where its postconditi
 /-- The assertion `runLits_triple` carries: the runtime factory is over `Core.Factory` and the
     store holds the literals of `bs`. -/
 @[expose] def LitState (bs : LitBinds) (ρ : Imperative.Env Expression) : Prop :=
-  ρ.factory.factory = Core.Factory ∧ LitBinds.Holds ρ.factory.model.tcInterp ρ.store bs
+  ρ.factory.factory = Core.Factory ∧
+    LitBinds.Holds ρ.factory.model.tcInterp ρ.factory.model.opInterp ρ.store bs
 
 /-- A statement `stepLit` runs is a command, so it exits no block. -/
 private theorem exitsCovered_of_stepLit {fuel : Nat} {bs bs' : LitBinds} (s : Statement)

@@ -192,7 +192,7 @@ theorem computable_committed {F : Expression.Factory} {σ : SemanticStore Expres
     {e : Expression.Expr} {v : Expression.Val} {σr : RStore Expression} {n : Nat}
     {r : Expression.Expr} (h : ComputableEval F σ e) (hv : Expression.eval F σ e = some v)
     (hS : StoreDenotes F σr σ) (hb : evalBounded n F.factory σr e = some r) :
-    ∃ m c, r = .const m c ∧ v = SemValue.ofConst F.model.tcInterp c ∧ c.isPrimitive = true := by
+    ∃ m c, r = .const m c ∧ v = SemValue.ofConst F.model.tcInterp F.model.opInterp c ∧ c.isPrimitive = true := by
   obtain ⟨hd, τ, hτ, -, -⟩ := (LExpr.denoteEval_eq_some_iff (T := CoreLParams)).1 hv
   obtain ⟨c, hcd, -, hc, n0, m, hb0⟩ := h σr τ hS hd hτ
   obtain ⟨-, he, -⟩ := evalBounded_eq_some_iff.1 hb
@@ -201,14 +201,19 @@ theorem computable_committed {F : Expression.Factory} {σ : SemanticStore Expres
     Option.some.inj (hv.symm.trans hc), hcd⟩
 
 /-- The value of a well-typed literal is the Boolean value `b` only for the literal `b`. -/
-private theorem ofConst_eq_ofBool {tc : TyConstrInterp} {c : LConst} {b : Bool}
-    (hw : c.wt = true) (h : SemValue.ofConst tc c = SemValue.ofBool tc b) :
+private theorem ofConst_eq_ofBool {tc : TyConstrInterp} {op : OpInterp tc} {c : LConst}
+    {b : Bool} (hw : c.wt = true) (h : SemValue.ofConst tc op c = SemValue.ofBool tc b) :
     c = .boolConst b := by
   have hs := congrArg SemValue.sort h
   cases c with
   | boolConst b' =>
     obtain ⟨-, -, hv⟩ := SemValue.mk.inj h
     exact congrArg LConst.boolConst (eq_of_heq (by exact hv : b' ≍ b))
+  | dataConst n as s es =>
+    simp only [SemValue.ofConst, SemValue.ofBool, LConst.ty_of_wt hw,
+      LSort.toMonoTy_substTyVars] at hs
+    subst hs
+    simp [LConst.wt, LSort.isDataSort] at hw
   | _ => simp [SemValue.ofConst, SemValue.ofBool, LConst.ty, LMonoTy.substTyVars, LMonoTy.int,
       LMonoTy.real, LMonoTy.string, LSort.bool, hw] at hs
 
@@ -242,8 +247,8 @@ theorem engEval_ff_of_computable {F : Expression.Factory} {σ : SemanticStore Ex
     (engEvalOK_bool (b := false) h hv σr n r hS hb).elim fun m hm => hm ▸ boolLit?_boolConst m _⟩
 
 /-- The value of a literal has the literal's type as the monomorphic type of its sort. -/
-private theorem ofConst_sort (tc : TyConstrInterp) (c : LConst) :
-    (SemValue.ofConst tc c).sort.toMonoTy = c.ty :=
+private theorem ofConst_sort (tc : TyConstrInterp) (op : OpInterp tc) (c : LConst) :
+    (SemValue.ofConst tc op c).sort.toMonoTy = c.ty :=
   LConst.ty_isGround c
 
 /-- **Reference base commands on computable right-hand sides are engine-realizable**: a reference

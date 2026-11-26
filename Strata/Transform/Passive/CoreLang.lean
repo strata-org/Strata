@@ -407,21 +407,21 @@ instance : Imperative.WP.WPLang Expression where
 /-! ## The evaluation of operator applications on constants -/
 
 /-- A well-typed literal's value as a `SemValue` is its `constVal` at the sort of its type. -/
-private theorem ofConst_eq_mk {tc : TyConstrInterp} {c : LConst} (hw : c.wt = true)
-    {s : LSort} (hs : c.ty.substTyVars refTyVarVal = s) {x : SortDenote tc s}
-    (hx : constVal tc s c = some x) : SemValue.ofConst tc c = ⟨tc, s, x⟩ := by
+private theorem ofConst_eq_mk {tc : TyConstrInterp} {op : OpInterp tc} {c : LConst}
+    (hw : c.wt = true) {s : LSort} (hs : c.ty.substTyVars refTyVarVal = s) {x : SortDenote tc s}
+    (hx : constVal tc op s c = some x) : SemValue.ofConst tc op c = ⟨tc, s, x⟩ := by
   subst hs
   exact Option.some.inj ((constVal_denoteConst refTyVarVal hw).symm.trans hx) ▸ rfl
 
 /-- **Two well-typed literals of one type have equal values exactly as `semEq?` decides**, when
     it decides. -/
 private theorem ofConst_eq_iff_semEq {tc : TyConstrInterp} [TyConstrInterp.AllInhabited tc]
-    {ca cb : LConst} (hca : ca.wt = true) (hcb : cb.wt = true) (hty : ca.ty = cb.ty) {n : Nat}
-    {b : Bool} (h : LConst.semEq? n ca cb = some b) :
-    SemValue.ofConst tc ca = SemValue.ofConst tc cb ↔ b = true := by
-  obtain ⟨y, hy⟩ : ∃ y, constVal tc (ca.ty.substTyVars refTyVarVal) cb = some y :=
+    {op : OpInterp tc} {ca cb : LConst} (hca : ca.wt = true) (hcb : cb.wt = true)
+    (hty : ca.ty = cb.ty) {n : Nat} {b : Bool} (h : LConst.semEq? n ca cb = some b) :
+    SemValue.ofConst tc op ca = SemValue.ofConst tc op cb ↔ b = true := by
+  obtain ⟨y, hy⟩ : ∃ y, constVal tc op (ca.ty.substTyVars refTyVarVal) cb = some y :=
     hty ▸ ⟨_, constVal_denoteConst refTyVarVal hcb⟩
-  have hx := constVal_denoteConst (tcInterp := tc) refTyVarVal hca
+  have hx := constVal_denoteConst (tcInterp := tc) (opInterp := op) refTyVarVal hca
   rw [ofConst_eq_mk hca rfl hx, ofConst_eq_mk hcb (by rw [hty]) hy, ← LConst.semEq?_sound n hx hy h]
   exact ⟨fun he => by cases he; rfl, fun he => by rw [he]⟩
 
@@ -452,7 +452,7 @@ private theorem eval_boolNot {F : Expression.Factory}
 private theorem constFold_eval {F : Expression.Factory}
     (hB : WellFormedSemanticEvalBool (P := Expression) F) (σ : SemanticStore Expression) :
     ∀ {e : Expression.Expr} {c : LConst}, constFold e = some c →
-      Expression.eval F σ e = some (SemValue.ofConst F.model.tcInterp c)
+      Expression.eval F σ e = some (SemValue.ofConst F.model.tcInterp F.model.opInterp c)
   | .const _ c, _, h => by
     simp only [constFold] at h
     split at h <;> cases h
@@ -467,7 +467,8 @@ private theorem constFold_eval {F : Expression.Factory}
     have hcb := constFold_eval hB σ hb
     letI := F.model.allInhabited
     obtain ⟨r, hr, rfl⟩ := Option.map_eq_some_iff.1 h
-    have hiff := ofConst_eq_iff_semEq (tc := F.model.tcInterp) (constFold_wt ha)
+    have hiff := ofConst_eq_iff_semEq (tc := F.model.tcInterp) (op := F.model.opInterp)
+      (constFold_wt ha)
       (constFold_wt hb) hty hr
     cases r
     · exact LExpr.denoteEval_eq_false (T := CoreLParams) hca hcb

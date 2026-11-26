@@ -291,11 +291,12 @@ open Lambda
 
 mutual
 /-- Is every character of every string literal in the constant `c`, including the strings
-    inside map and sequence literals, in SMT-LIB's string alphabet (see `StrLitsInAlphabet`)? -/
+    inside map and sequence literals and datatype values, in SMT-LIB's string alphabet (see `StrLitsInAlphabet`)? -/
 @[expose] def ConstStrsInAlphabet : LConst → Bool
   | .strConst str => str.toList.all (·.toNat ≤ 0x2FFFF)
   | .mapConst _ _ d ⟨es⟩ => ConstStrsInAlphabet d && EntriesStrsInAlphabet es
   | .sequenceConst _ ⟨es⟩ => ElemsStrsInAlphabet es
+  | .dataConst _ _ _ ⟨es⟩ => ElemsStrsInAlphabet es
   | .intConst _ | .rationalConst _ | .bitvecConst _ _ | .boolConst _ => true
 /-- `ConstStrsInAlphabet` holds of the key and the value of every entry of a map literal. -/
 @[expose] def EntriesStrsInAlphabet : List (LConst × LConst) → Bool

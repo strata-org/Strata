@@ -90,6 +90,71 @@ private def mapKeyed : LConst :=
 #guard AggregateLitEval.mapSelect none [mapKeyed, intMap #[]] = none
 #guard AggregateLitEval.mapUpdate none [mapKeyed, intMap #[], .intConst 1] = none
 
+/-! ## Map literals at a key sort that is not canonical
+
+At a datatype key sort, syntactically different keys may denote the same value, so `select`
+returns the `ite` chain over the entries and `update` puts the new entry first. -/
+
+private def fieldS : LSort := .tcons "Field" []
+private def boxS : LSort := .tcons "$Box" []
+private def fieldTy : LMonoTy := .tcons "Field" []
+private def boxTy : LMonoTy := .tcons "$Box" []
+private def field (f : String) : LConst := .dataConst f [] fieldS #[]
+private def boxInt (i : Int) : LConst := .dataConst "BoxInt" [intS] boxS #[.intConst i]
+/-- The `Map Field $Box` literal with default `BoxInt(0)` and the given entries. -/
+private def fieldMap (es : Array (String × Int)) : LConst :=
+  .mapConst fieldS boxS (boxInt 0) (es.map fun (f, i) => (field f, boxInt i))
+
+/-- What `mapSelectFunc`'s concrete evaluator returns for `select(m, key)` at its annotation. -/
+private def factorySelectE (m key : LConst) : Option Expression.Expr :=
+  mapSelectFunc.func.concreteEval.bind fun ev =>
+    ev valueLoc (some (.arrow (mapTy fieldTy boxTy) (.arrow fieldTy boxTy)))
+      [.const valueLoc m, .const valueLoc key]
+
+-- `select` at a `Field` key returns the chain over the entries up to the first whose key is
+-- syntactically the key, whose value closes it: other keys holding datatype values are compared
+-- only semantically.
+#guard factorySelectE (fieldMap #[("a", 1), ("b", 2)]) (field "b") =
+  some (.ite valueLoc (.eq valueLoc (.const valueLoc (field "b")) (.const valueLoc (field "a")))
+    (.const valueLoc (boxInt 1)) (.const valueLoc (boxInt 2)))
+#guard factorySelectE (fieldMap #[("a", 1)]) (field "b") =
+  some (.ite valueLoc (.eq valueLoc (.const valueLoc (field "b")) (.const valueLoc (field "a")))
+    (.const valueLoc (boxInt 1)) (.const valueLoc (boxInt 0)))
+-- At a key sort without `Map`, a key holding no datatype value, such as the empty `Sequence Field`,
+-- is compared syntactically, so `select` returns the value of its entry.
+private def seqKey : LConst := .sequenceConst fieldS #[]
+#guard (mapSelectFunc.func.concreteEval.bind fun ev =>
+    ev valueLoc (some (.arrow (mapTy (seqTy fieldTy) boxTy) (.arrow (seqTy fieldTy) boxTy)))
+      [.const valueLoc (.mapConst (.seq fieldS) boxS (boxInt 0) #[(seqKey, boxInt 7)]),
+       .const valueLoc seqKey]) = some (.const valueLoc (boxInt 7))
+-- `update` at a `Field` key puts the new entry first and keeps every entry whose key is not
+-- syntactically the updated key, also one set to the default.
+#guard AggregateLitEval.mapUpdate none [fieldMap #[("a", 1), ("b", 2)], field "b", boxInt 3] =
+  some (fieldMap #[("b", 3), ("a", 1)])
+#guard AggregateLitEval.mapUpdate none [fieldMap #[("a", 1)], field "b", boxInt 0] =
+  some (fieldMap #[("b", 0), ("a", 1)])
+-- `Sequence.contains` at a datatype element sort declines.
+#guard AggregateLitEval.seqContains none [.sequenceConst fieldS #[field "a"], field "a"] = none
+
+/-! Literals holding no datatype value are decided as on a sort without datatypes, also at a sort
+built from a datatype sort, such as `Sequence Field`: their keys and elements are compared
+syntactically. -/
+
+private def seqSeqKey : LConst := .sequenceConst (.seq fieldS) #[seqKey]
+-- `Sequence.contains([[]], [])` at element sort `Sequence Field`.
+#guard AggregateLitEval.seqContains none [seqSeqKey, seqKey] = some (.boolConst true)
+#guard AggregateLitEval.seqContains none [.sequenceConst (.seq fieldS) #[], seqKey] =
+  some (.boolConst false)
+-- `select` and `update` at key sort `Sequence Field` with the key `[]`: the literal value, and
+-- the update replacing the key's entry.
+private def seqKeyMap (es : Array (LConst × LConst)) : LConst :=
+  .mapConst (.seq fieldS) boxS (boxInt 0) es
+#guard AggregateLitEval.mapSelect none [seqKeyMap #[(seqKey, boxInt 7)], seqKey] = some (boxInt 7)
+#guard AggregateLitEval.mapUpdate none [seqKeyMap #[(seqKey, boxInt 7)], seqKey, boxInt 8] =
+  some (seqKeyMap #[(seqKey, boxInt 8)])
+-- Equality of two different nested sequences of `Sequence Field` is decided.
+#guard LConst.eql seqSeqKey (.sequenceConst (.seq fieldS) #[]) = some false
+
 /-! ## Sequence literals -/
 
 #guard AggregateLitEval.seqEmpty (some (seqTy .int)) [] = some (intSeq #[])

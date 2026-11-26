@@ -63,25 +63,26 @@ theorem eqModuloMeta_true_implies_denote_eq
 
 /-! ## `denoteConst` injectivity -/
 
-/-- For constants of the same type that are `LConst.eqDecidable` (well typed, of a
-sort without `Map`), `denoteConst` is injective: distinct constants of the same
+/-- For constants of the same type that are `LConst.eqDecidable` (well typed, of a sort
+without `Map`, holding no datatype value), `denoteConst` is injective: distinct constants of the same
 type have distinct denotations. -/
 theorem denoteConst_injective
     (c1 c2 : LConst)
     (h1 : c1.eqDecidable = true) (h2 : c2.eqDecidable = true)
     (hty : c1.ty = c2.ty)
-    (heq : (hty ▸ denoteConst tcInterp vt c1 : TyDenote tcInterp vt c2.ty) =
-            denoteConst tcInterp vt c2)
+    (heq : (hty ▸ denoteConst tcInterp opInterp vt c1 : TyDenote tcInterp vt c2.ty) =
+            denoteConst tcInterp opInterp vt c2)
     : c1 = c2 := by
   simp only [LConst.eqDecidable, Bool.and_eq_true, Bool.not_eq_true'] at h1 h2
   have key : ∀ (t : LMonoTy) (ht : c1.ty = t),
-      constVal tcInterp (t.substTyVars vt) c1 = some (ht ▸ denoteConst tcInterp vt c1) := by
-    intro t ht; subst ht; exact constVal_denoteConst (tcInterp := tcInterp) vt h1.1
+      constVal tcInterp opInterp (t.substTyVars vt) c1 = some (ht ▸ denoteConst tcInterp opInterp vt c1) := by
+    intro t ht; subst ht; exact constVal_denoteConst (tcInterp := tcInterp) (opInterp := opInterp) vt h1.1.1
   have hv1 := key c2.ty hty
   rw [heq] at hv1
   have hs : (c2.ty.substTyVars vt).hasMap = false := by
-    rw [LConst.ty_of_wt h2.1, LSort.toMonoTy_substTyVars]; exact h2.2
-  exact constVal_injective c1 c2 hs hv1 (constVal_denoteConst (tcInterp := tcInterp) vt h2.1)
+    rw [LConst.ty_of_wt h2.1.1, LSort.toMonoTy_substTyVars]; exact h2.1.2
+  exact constVal_injective c1 c2 hs h1.2 hv1
+    (constVal_denoteConst (tcInterp := tcInterp) (opInterp := opInterp) vt h2.1.1)
 
 /-! ## `eqlCombine` helpers -/
 
@@ -441,13 +442,13 @@ theorem eql_false_implies_denote_ne
     have hty2 : τ = c2.ty := by cases h₂; rfl
     have htyeq : c1.ty = c2.ty := by rw [← hty1, ← hty2]
     intro heq
-    have hdenote_eq : (htyeq ▸ denoteConst tcInterp vt c1 : TyDenote tcInterp vt c2.ty) =
-        denoteConst tcInterp vt c2 := by
+    have hdenote_eq : (htyeq ▸ denoteConst tcInterp opInterp vt c1 : TyDenote tcInterp vt c2.ty) =
+        denoteConst tcInterp opInterp vt c2 := by
       subst hty1
       rw [denote_const tcInterp opInterp fvarVal vt .nil h₁,
           denote_const tcInterp opInterp fvarVal vt .nil h₂] at heq
       grind
-    exact hneq (denoteConst_injective tcInterp vt c1 c2 hd1 hd2 htyeq hdenote_eq)
+    exact hneq (denoteConst_injective tcInterp opInterp vt c1 c2 hd1 hd2 htyeq hdenote_eq)
   | case3 m1 pn1 ty1 body1 m2 pn2 ty2 body2 htyneq hnotmod => -- abs/abs, ty1 ≠ ty2
     -- Vacuous: HasTypeA forces ty1 = ty2
     have htyneq' : ty1 ≠ ty2 := by simp only [bne_iff_ne, ne_eq] at htyneq; exact htyneq

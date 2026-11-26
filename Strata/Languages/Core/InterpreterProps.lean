@@ -142,7 +142,7 @@ theorem boundedEvalComplete_core (f : Expression.Factory) (σr : RStore Expressi
   cases he with
   | const m c =>
     have hw := Lambda.LExpr.denoteEval_const_wt hv
-    have hc : Expression.eval f σ (.const m c) = some (Lambda.SemValue.ofConst _ c) :=
+    have hc : Expression.eval f σ (.const m c) = some (Lambda.SemValue.ofConst _ _ c) :=
       Lambda.LExpr.denoteEval_const hw
     exact ⟨0, _, evalBounded_const 0 _ σr m c hw, Option.some.inj (hc.symm.trans hv) ▸
       denotes_literal (Lambda.LExpr.denoteEval_const hw)⟩

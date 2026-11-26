@@ -386,6 +386,7 @@ private theorem HasType_of_HasTypeA_of_annots_aux {T : LExprParams}
       | boolConst b => exact .tbool_const Γ m b hk
       | mapConst k v d es => exact .tmap_const Γ m k v d es hk (HasTypeA.const_wt hA)
       | sequenceConst a es => exact .tseq_const Γ m a es hk (HasTypeA.const_wt hA)
+      | dataConst n as s es => exact .tdata_const Γ m n as s es hk (HasTypeA.const_wt hA)
     | bvar m i =>
       have hlookup := HasTypeA.bvar_inv hA
       rw [List.getElem?_nil] at hlookup

@@ -61,7 +61,7 @@ public theorem monomorphizeFunctions_reflectsLemmas :
   generalize monoRen (collectPolymorphicFuncDecls p s.factory) s.factory = g at hg hinv hdecls hfac
   generalize collectPolymorphicFuncDecls p s.factory = P at hfac
   have hops : ∀ d ∈ p.decls, ∀ e ∈ d.ownExprs, OpsUnmangled (copyPrefixOf s p) e :=
-    fun d hd e he => opsUnmangled_of_mem hd he
+    fun d hd e he => opsUnmangled_of_mem hpre hd he
   have htakeN : p.decls.take p.decls.length = p.decls := List.take_length
   have hzlen : (p.decls.map (topDecl g)).zipIdx.take p.decls.length =
       (p.decls.map (topDecl g)).zipIdx := List.take_of_length_le (by simp)
@@ -101,20 +101,21 @@ public theorem monomorphizeFunctions_reflectsLemmas :
   have hcover := runtime_constr_cover hpre hdecls hdist hsrc
   let M₀ : ModeledFactory CoreLParams := ⟨runtimeFactoryOf s.factory p.decls, M, tv⟩
   have hev : ∀ e, OpsUnmangled (copyPrefixOf s p) e → ∀ σ,
-      (e.renameOps g).denoteEval (instModel M₀ hrel hnat hconstr hcover) σ = e.denoteEval M₀ σ :=
+      (e.renameOpNodes g).denoteEval (instModel M₀ hrel hnat hconstr hcover) σ =
+        e.denoteEval M₀ σ :=
     fun e he σ => eval_instModel hg M₀ σ he
   refine ⟨⟨store, instModel M₀ hrel hnat hconstr hcover⟩, ⟨rfl, hstore⟩, ?_⟩
   intro i l md hl hval hfacts
   have hlops : OpsUnmangled (copyPrefixOf s p) l.e :=
     hops _ (List.mem_of_getElem? hl) l.e (by simp [Decl.ownExprs])
   have hLi : ((p.decls.map (topDecl g)).zipIdx)[i]? =
-      some (.lemma { l with e := l.e.renameOps g } md, i) := by
+      some (.lemma { l with e := l.e.renameOpNodes g } md, i) := by
     simp [List.getElem?_zipIdx, hl, topDecl]
   obtain ⟨hidx, htake⟩ := List.flatMap_index _ (updDecl g (specsByFnOf st.specializedFnsInProg)) hLi
-    (b := .lemma { l with e := l.e.renameOps g } md) (by simp [updDecl])
+    (b := .lemma { l with e := l.e.renameOpNodes g } md) (by simp [updDecl])
   rw [← hdecls] at hidx htake
-  refine ⟨_, { l with e := l.e.renameOps g }, hidx, rfl, ?_, ?_, ?_⟩
-  · show ((l.e.renameOps g).denoteEval _ store).isSome
+  refine ⟨_, { l with e := l.e.renameOpNodes g }, hidx, rfl, ?_, ?_, ?_⟩
+  · show ((l.e.renameOpNodes g).denoteEval _ store).isSome
     rw [hev _ hlops]; exact hval
   · rw [htake]
     intro d hd c hc
@@ -133,7 +134,7 @@ public theorem monomorphizeFunctions_reflectsLemmas :
       have h0 := hf0 (declArg ⟨store, M₀⟩ a.name a.e md')
         (by simp only [declAssumes, List.mem_singleton]; rfl)
       simp only [declArg] at h0 ⊢
-      change (a.e.renameOps g).denoteEval _ store = _
+      change (a.e.renameOpNodes g).denoteEval _ store = _
       rw [hev _ (hops _ hd0m a.e (by simp [Decl.ownExprs]))]
       exact h0
     | distinct n es md' =>
@@ -145,7 +146,7 @@ public theorem monomorphizeFunctions_reflectsLemmas :
       have h0 := hf0 (declArg ⟨store, M₀⟩ (toString n) (distinctPairExpr a b) md')
         (by simp only [declAssumes, List.mem_map]; exact ⟨(a, b), hab, rfl⟩)
       simp only [declArg, Function.comp_apply] at h0 ⊢
-      change ((distinctPairExpr a b).renameOps g).denoteEval _ store = _
+      change ((distinctPairExpr a b).renameOpNodes g).denoteEval _ store = _
       rw [hev _ (opsUnmangled_distinctPairExpr
         (hops _ hd0m a (by simpa [Decl.ownExprs] using ha))
         (hops _ hd0m b (by simpa [Decl.ownExprs] using hb)))]
@@ -165,7 +166,7 @@ public theorem monomorphizeFunctions_reflectsLemmas :
       subst hdx; simp [declAssumes] at hc
   · intro h
     simp only [lemmaEvent, declArg] at h ⊢
-    change (l.e.renameOps g).denoteEval _ store = _ at h
+    change (l.e.renameOpNodes g).denoteEval _ store = _ at h
     rw [hev _ hlops] at h
     exact h
 

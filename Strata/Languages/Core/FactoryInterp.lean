@@ -931,13 +931,13 @@ every instantiation of the operation's type, and `litOp_consistent` turns it int
 /-- Each value of `xs` is the value at its sort of the literal at the same position. -/
 def ConstVals : (ss : List LSort) → List LConst → HList (SortDenote tcInterp) ss → Prop
   | [], [], .nil => True
-  | s :: ss, c :: cs, .cons x xs => constVal tcInterp s c = some x ∧ ConstVals ss cs xs
+  | s :: ss, c :: cs, .cons x xs => constVal tcInterp opInterp s c = some x ∧ ConstVals ss cs xs
   | _, _, _ => False
 
 /-- A typed literal has its denotation as value at the sort of its type. -/
 private theorem denote_const_constVal {fv : FreeVarVal T tcInterp} {vt : TyVarVal}
     {m : T.Metadata} {c : LConst} {τ : LMonoTy} (h : LExpr.HasTypeA [] (.const m c) τ) :
-    constVal tcInterp (τ.substTyVars vt) c =
+    constVal tcInterp opInterp (τ.substTyVars vt) c =
       some (LExpr.denote tcInterp opInterp fv vt .nil (.const m c) τ h) := by
   cases h with
   | const hw =>
@@ -974,7 +974,7 @@ def AggregateLitEvalSound (name : String) (inputs : List LMonoTy) (output : LMon
     (inputs.map (LMonoTy.subst S)).map (LMonoTy.substTyVars vt) = ins →
     (output.subst S).substTyVars vt = out →
     ev (some (LMonoTy.mkArrow' (output.subst S) (inputs.map (LMonoTy.subst S)))) cs = some r →
-    ConstVals ins cs xs → constVal tcInterp out r = some y →
+    ConstVals ins cs xs → constVal tcInterp opInterp out r = some y →
     y = SortDenote.applyArgs tcInterp (axiomOp name (LSort.mkArrow out ins)) xs
 
 /-- A polymorphic function with a concrete evaluator is interpreted by `axiomOp`. -/
@@ -990,13 +990,11 @@ private theorem opInterp_lit {name : String} {func : LFunc T}
 private theorem litOp_consistent {n : T.Identifier} {typeArgs : List String}
     {inputs : List (T.Identifier × LMonoTy)} {output : LMonoTy}
     {ev : Option LMonoTy → List LConst → Option LConst} {axs pre h1 h2 h3 h4 h5 h6}
-    (hpoly : typeArgs.isEmpty = false)
     (hsound : AggregateLitEvalSound n.name (inputs.map Prod.snd) output ev)
     {ceval : ConcreteEval T}
     (hce : (polyLitOp n typeArgs inputs output ev axs pre h1 h2 h3 h4 h5 h6).func.concreteEval =
       some ceval)
-    (hlook : Core.Factory.get? n.name =
-      some (polyLitOp n typeArgs inputs output ev axs pre h1 h2 h3 h4 h5 h6).func) :
+    (hop : opInterp n.name = axiomOp n.name) :
     LFunc.InterpConsistentEval tcInterp opInterp
       (polyLitOp n typeArgs inputs output ev axs pre h1 h2 h3 h4 h5 h6).func ceval := by
   injection hce with hce
@@ -1011,9 +1009,8 @@ private theorem litOp_consistent {n : T.Identifier} {typeArgs : List String}
     · simp only [Option.some.injEq] at hres; subst hres
       have hx := denoteArgs_constVals (fv := fv) (vt := vt) args _ h_args cs hcs
       have hy := denote_const_constVal (fv := fv) (vt := vt) h_res
-      rw [opInterp_lit
-        (name := (polyLitOp n typeArgs inputs output ev axs pre h1 h2 h3 h4 h5 h6).func.name.name)
-        hlook hpoly]
+      show _ = SortDenote.applyArgs tcInterp (opInterp n.name _) _
+      rw [hop]
       exact hsound S vt _ _ _ _ cs r rfl rfl hev hx hy
     · cases hres
   · cases heval
@@ -1029,7 +1026,7 @@ private theorem constVals_nil {cs : List LConst} {xs : HList (SortDenote tcInter
     `s` is the one value of `xs`. -/
 private theorem constVals_one {s : LSort} {cs : List LConst}
     {xs : HList (SortDenote tcInterp) [s]} (h : ConstVals [s] cs xs) :
-    ∃ c x, cs = [c] ∧ xs = .cons x .nil ∧ constVal tcInterp s c = some x := by
+    ∃ c x, cs = [c] ∧ xs = .cons x .nil ∧ constVal tcInterp opInterp s c = some x := by
   match cs, xs, h with
   | [c], .cons x .nil, ⟨hc, _⟩ => exact ⟨c, x, rfl, rfl, hc⟩
   | [], .cons _ _, h => exact h.elim
@@ -1040,7 +1037,7 @@ private theorem constVals_one {s : LSort} {cs : List LConst}
 private theorem constVals_two {s₁ s₂ : LSort} {cs : List LConst}
     {xs : HList (SortDenote tcInterp) [s₁, s₂]} (h : ConstVals [s₁, s₂] cs xs) :
     ∃ c₁ c₂ x₁ x₂, cs = [c₁, c₂] ∧ xs = .cons x₁ (.cons x₂ .nil) ∧
-      constVal tcInterp s₁ c₁ = some x₁ ∧ constVal tcInterp s₂ c₂ = some x₂ := by
+      constVal tcInterp opInterp s₁ c₁ = some x₁ ∧ constVal tcInterp opInterp s₂ c₂ = some x₂ := by
   match cs, xs, h with
   | [c₁, c₂], .cons x₁ (.cons x₂ .nil), ⟨h₁, h₂, _⟩ => exact ⟨c₁, c₂, x₁, x₂, rfl, rfl, h₁, h₂⟩
   | [], .cons _ _, h => exact h.elim
@@ -1052,8 +1049,8 @@ private theorem constVals_two {s₁ s₂ : LSort} {cs : List LConst}
 private theorem constVals_three {s₁ s₂ s₃ : LSort} {cs : List LConst}
     {xs : HList (SortDenote tcInterp) [s₁, s₂, s₃]} (h : ConstVals [s₁, s₂, s₃] cs xs) :
     ∃ c₁ c₂ c₃ x₁ x₂ x₃, cs = [c₁, c₂, c₃] ∧ xs = .cons x₁ (.cons x₂ (.cons x₃ .nil)) ∧
-      constVal tcInterp s₁ c₁ = some x₁ ∧ constVal tcInterp s₂ c₂ = some x₂ ∧
-      constVal tcInterp s₃ c₃ = some x₃ := by
+      constVal tcInterp opInterp s₁ c₁ = some x₁ ∧ constVal tcInterp opInterp s₂ c₂ = some x₂ ∧
+      constVal tcInterp opInterp s₃ c₃ = some x₃ := by
   match cs, xs, h with
   | [c₁, c₂, c₃], .cons x₁ (.cons x₂ (.cons x₃ .nil)), ⟨h₁, h₂, h₃, _⟩ =>
     exact ⟨c₁, c₂, c₃, x₁, x₂, x₃, rfl, rfl, h₁, h₂, h₃⟩
@@ -1066,9 +1063,9 @@ private theorem constVals_three {s₁ s₂ s₃ : LSort} {cs : List LConst}
 and `m` is the map of the values of its default and entries. -/
 private theorem constVal_mapConst_inv {K V k v : LSort} {d : LConst}
     {ents : List (LConst × LConst)} {m : SortDenote tcInterp (.tcons "Map" [K, V])}
-    (h : constVal tcInterp (.tcons "Map" [K, V]) (.mapConst k v d ⟨ents⟩) = some m) :
-    k = K ∧ v = V ∧ ∃ dv kvs, constVal tcInterp v d = some dv ∧
-      constValEntries tcInterp k v ents = some kvs ∧ HEq m (SortDenote.mapOf (k := k) dv kvs) := by
+    (h : constVal tcInterp opInterp (.tcons "Map" [K, V]) (.mapConst k v d ⟨ents⟩) = some m) :
+    k = K ∧ v = V ∧ ∃ dv kvs, constVal tcInterp opInterp v d = some dv ∧
+      constValEntries tcInterp opInterp k v ents = some kvs ∧ HEq m (SortDenote.mapOf (k := k) dv kvs) := by
   have hs := constVal_sort h
   simp only [LConst.sort, LSort.tcons.injEq, List.cons.injEq, and_true, true_and] at hs
   obtain ⟨rfl, rfl⟩ := hs
@@ -1083,8 +1080,8 @@ private theorem constVal_mapConst_inv {K V k v : LSort} {d : LConst}
 `sv` is the list of the values of its elements. -/
 private theorem constVal_sequenceConst_inv {A a : LSort} {xs : List LConst}
     {sv : SortDenote tcInterp (.tcons "Sequence" [A])}
-    (h : constVal tcInterp (.tcons "Sequence" [A]) (.sequenceConst a ⟨xs⟩) = some sv) :
-    a = A ∧ ∃ vals, constValElems tcInterp a xs = some vals ∧ HEq sv vals := by
+    (h : constVal tcInterp opInterp (.tcons "Sequence" [A]) (.sequenceConst a ⟨xs⟩) = some sv) :
+    a = A ∧ ∃ vals, constValElems tcInterp opInterp a xs = some vals ∧ HEq sv vals := by
   have hs := constVal_sort h
   simp only [LConst.sort, LSort.tcons.injEq, List.cons.injEq, and_true, true_and] at hs
   subst hs
@@ -1150,16 +1147,17 @@ private theorem sound_mapSelect :
     obtain ⟨ents⟩ := ents
     simp only [AggregateLitEval.mapSelect] at hev
     split at hev
-    · cases hev
     · rename_i hk
+      simp only [Bool.and_eq_true, Bool.not_eq_true'] at hk
       simp only [Option.some.injEq] at hev; subst hev
       obtain ⟨rfl, rfl, dv, kvs, hd, hkvs, hmv⟩ := constVal_mapConst_inv hm
-      have hsel := constVal_mapSelect (Bool.eq_false_iff.mpr hk) hd hkvs hkey
+      have hsel := constVal_mapSelect hk.1 hd hkvs hk.2 hkey
       rw [hy, Option.some.injEq] at hsel
       subst hsel
       rw [eq_of_heq hmv]
       show _ = coeS v v (SortDenote.mapOf dv kvs (coeS k k x))
       simp
+    · cases hev
   | _ => simp [AggregateLitEval.mapSelect] at hev
 
 open Classical in
@@ -1180,14 +1178,34 @@ private theorem sound_mapUpdate :
     simp only [AggregateLitEval.mapUpdate] at hev
     split at hev
     · cases hev
-    · rename_i hk
+    rename_i hk
+    split at hev
+    · rename_i hkd
+      simp only [Bool.not_eq_true, Bool.not_eq_true'] at hk hkd
       simp only [Option.some.injEq] at hev; subst hev
       obtain ⟨rfl, rfl, dv, kvs, hd, hkvs, hmv⟩ := constVal_mapConst_inv hm
       obtain ⟨kvs', hkvs', hfun⟩ :=
-        constValEntries_mapUpdate (Bool.eq_false_iff.mpr hk) hd hkvs hkey hxv
+        constValEntries_mapUpdate hk hd hkvs hkd hkey hxv
       obtain ⟨-, -, dv', kvs'', hd', hkvs'', hy'⟩ := constVal_mapConst_inv hy
       have hk2 : some kvs'' = some kvs' := hkvs''.symm.trans hkvs'
       have hk3 := Option.some.inj hk2
+      have hdv : dv' = dv := Option.some.inj (hd'.symm.trans hd)
+      subst hdv hk3
+      rw [eq_of_heq hy', eq_of_heq hmv]
+      funext z
+      show _ = (if coeS k k z = xk then coeS v v xv
+        else coeS v v (SortDenote.mapOf dv' kvs (coeS k k z)))
+      simp only [coeS_self]
+      exact hfun z
+    · simp only [Option.some.injEq] at hev; subst hev
+      obtain ⟨rfl, rfl, dv, kvs, hd, hkvs, hmv⟩ := constVal_mapConst_inv hm
+      have hlist : (AggregateLitEval.mapUpdateFront ⟨ents⟩ key xc).toList =
+          (key, xc) :: ents.filter (fun e => e.1 != key) := by
+        simp [AggregateLitEval.mapUpdateFront]
+      obtain ⟨kvs', hkvs', hfun⟩ := constValEntries_cons_update (dv := dv) hkvs hkey hxv
+      rw [← hlist] at hkvs'
+      obtain ⟨-, -, dv', kvs'', hd', hkvs'', hy'⟩ := constVal_mapConst_inv hy
+      have hk3 := Option.some.inj (hkvs''.symm.trans hkvs')
       have hdv : dv' = dv := Option.some.inj (hd'.symm.trans hd)
       subst hdv hk3
       rw [eq_of_heq hy', eq_of_heq hmv]
@@ -1251,8 +1269,8 @@ private theorem sound_seqEmpty :
 
 /-- A sequence literal has as value at its sort the list of the values of its elements. -/
 private theorem constVal_seq_of {a : LSort} {arr : Array LConst}
-    {vals : List (SortDenote tcInterp a)} (h : constValElems tcInterp a arr.toList = some vals) :
-    constVal tcInterp (.tcons "Sequence" [a]) (.sequenceConst a arr) = some vals := by
+    {vals : List (SortDenote tcInterp a)} (h : constValElems tcInterp opInterp a arr.toList = some vals) :
+    constVal tcInterp opInterp (.tcons "Sequence" [a]) (.sequenceConst a arr) = some vals := by
   cases arr
   rw [constVal_sequenceConst, h]
   rfl
@@ -1342,7 +1360,7 @@ private theorem sound_seqBuild :
     simp only [AggregateLitEval.seqBuild, Option.some.injEq] at hev; subst hev
     obtain ⟨ha, vals, hvals, hsv⟩ := constVal_sequenceConst_inv hs
     subst A
-    have hone : constValElems tcInterp a [c₂] = some [xv] := by simp [constValElems, hxv]
+    have hone : constValElems tcInterp opInterp a [c₂] = some [xv] := by simp [constValElems, hxv]
     have hy' := constVal_seq_of (arr := (⟨xs₁⟩ : Array LConst).push c₂)
       (by rw [Array.toList_push]; exact constValElems_append hvals hone)
     have hyy := Option.some.inj (hy.symm.trans hy'); subst hyy
@@ -1404,15 +1422,15 @@ private theorem sound_seqContains :
     obtain ⟨xs₁⟩ := xs₁
     simp only [AggregateLitEval.seqContains] at hev
     split at hev
-    · cases hev
-    · rename_i ha
+    · rename_i hac0
+      simp only [Bool.and_eq_true, Bool.not_eq_true'] at hac0
       simp only [Option.some.injEq] at hev; subst hev
       obtain ⟨ha, vals, hvals, hsv⟩ := constVal_sequenceConst_inv hs
       subst A
       rw [constVal_boolConst] at hy
       have hy := Option.some.inj hy
       subst hy
-      have hiff := constValElems_contains (Bool.eq_false_iff.mpr ha) hvals hxv
+      have hiff := constValElems_contains hac0.1 hvals hac0.2 hxv
       rw [eq_of_heq hsv]
       show _ = decide (∃ i : Int, 0 ≤ i ∧ i < (vals.length : Int) ∧ seqGet a a vals i = xv)
       have hac : ((⟨xs₁⟩ : Array LConst).contains c₂ = true) ↔ (xs₁.contains c₂ = true) := by
@@ -1430,6 +1448,7 @@ private theorem sound_seqContains :
         unfold seqGet at heq
         rw [dite_eq_left ⟨h0, by omega⟩] at heq
         simpa using heq
+    · cases hev
   | _ => simp [AggregateLitEval.seqContains] at hev
 
 /-- On literal arguments, at every instantiation of its type parameters, the sequence literal
@@ -1510,6 +1529,135 @@ private theorem sound_seqDrop (name : String) (hname : checkedName name = "Seque
     | _ => simp [AggregateLitEval.seqDrop] at hev
   | _ => simp [AggregateLitEval.seqDrop] at hev
 
+/-- Values of one constant at equal sorts are heterogeneously equal. -/
+private theorem constVal_heq_of_sort {c : LConst} : ∀ {s₁ s₂ : LSort} (_ : s₁ = s₂)
+    {y : SortDenote tcInterp s₁} {x : SortDenote tcInterp s₂},
+    constVal tcInterp opInterp s₁ c = some y → constVal tcInterp opInterp s₂ c = some x →
+    HEq y x := by
+  intro s₁ s₂ hs y x h₁ h₂
+  subst hs
+  obtain rfl := Option.some.inj (h₁.symm.trans h₂)
+  rfl
+
+/-- A constant of a type denoting the sort `V` denotes its value at `V`. -/
+private theorem denote_const_heq {fv : FreeVarVal T tcInterp} {vt : TyVarVal} {m : T.Metadata}
+    {c : LConst} {τ : LMonoTy} {V : LSort} {x : SortDenote tcInterp V} (hτ : τ.substTyVars vt = V)
+    (h : LExpr.HasTypeA [] (.const m c) τ) (hc : constVal tcInterp opInterp V c = some x) :
+    HEq (LExpr.denote tcInterp opInterp fv vt .nil (.const m c) τ h) x :=
+  constVal_heq_of_sort hτ (denote_const_constVal (fv := fv) h) hc
+
+open Classical in
+/-- The `ite` chain `AggregateLitEval.selectChain` of a key and the entries of a map literal
+    denotes the value at the key's value of the map the literal denotes. -/
+private theorem denote_selectChain {fv : FreeVarVal T tcInterp} {vt : TyVarVal} {md : T.Metadata}
+    {key d : LConst} {K V : LSort} {xkey : SortDenote tcInterp K} {dv : SortDenote tcInterp V}
+    (hkey : constVal tcInterp opInterp K key = some xkey)
+    (hd : constVal tcInterp opInterp V d = some dv) :
+    ∀ {es : List (LConst × LConst)} {kvs : List (SortDenote tcInterp K × SortDenote tcInterp V)},
+      constValEntries tcInterp opInterp K V es = some kvs →
+      ∀ {τ : LMonoTy} (_ : τ.substTyVars vt = V)
+        (h : LExpr.HasTypeA [] (AggregateLitEval.selectChain md key d es) τ),
+        HEq (LExpr.denote tcInterp opInterp fv vt .nil (AggregateLitEval.selectChain md key d es)
+          τ h) (SortDenote.mapOf dv kvs xkey)
+  | [], kvs, hes, τ, hτ, h => by
+    simp only [constValEntries, Option.some.injEq] at hes; subst hes
+    exact denote_const_heq hτ h hd
+  | (k, v) :: rest, kvs, hes, τ, hτ, h => by
+    simp only [constValEntries] at hes
+    split at hes
+    · rename_i xk xv r hk hv hr
+      simp only [Option.some.injEq] at hes; subst hes
+      rw [SortDenote.mapOf_cons]
+      revert h
+      unfold AggregateLitEval.selectChain
+      split
+      · rename_i hc
+        subst hc
+        intro h
+        obtain rfl := Option.some.inj (hk.symm.trans hkey)
+        simp only [↓reduceIte]
+        exact denote_const_heq hτ h hv
+      · intro h
+        obtain ⟨h_c, h_t, h_e⟩ := HasTypeA.ite_inv h
+        obtain ⟨ty', -, h_1, h_2⟩ := HasTypeA.eq_inv h_c
+        have hs₁ : ty'.substTyVars vt = K := by
+          rw [HasTypeA.const_inv h_1, LConst.ty_of_wt (HasTypeA.const_wt h_1),
+            LSort.toMonoTy_substTyVars]
+          exact constVal_sort hkey
+        have hx₁ := denote_const_heq (fv := fv) hs₁ h_1 hkey
+        have hx₂ := denote_const_heq (fv := fv) hs₁ h_2 hk
+        rw [denote_ite .nil h_c h_t h_e h]
+        by_cases hxk : xk = xkey
+        · subst hxk
+          rw [denote_eq_true .nil h_1 h_2 h_c (eq_of_heq (hx₁.trans hx₂.symm))]
+          simp only [Bool.cond_true, ↓reduceIte]
+          exact denote_const_heq hτ h_t hv
+        · rw [denote_eq_false .nil h_1 h_2 h_c (fun he => hxk (eq_of_heq
+            (hx₂.symm.trans ((heq_of_eq he).symm.trans hx₁))))]
+          simp only [Bool.cond_false, hxk, ↓reduceIte]
+          exact denote_selectChain hkey hd hr hτ h_e
+    · cases hes
+
+/-- On literal arguments, at every instantiation of its type parameters, the `ite` chain
+    `AggregateLitEval.selectChainEval` returns for a map literal and a key denotes the model's
+    interpretation of `select` (`axiomOp`) at their values: the map's value at the key. -/
+private theorem sound_selectChain (S : Subst) (vt : TyVarVal) (ins : List LSort) (out : LSort)
+    (xs : HList (SortDenote tcInterp) ins) {fv : FreeVarVal T tcInterp} {md : T.Metadata}
+    {k v : LSort} {d key : LConst} {es : List (LConst × LConst)}
+    (hins : ([mapTy (.ftvar "k") (.ftvar "v"), .ftvar "k"].map (LMonoTy.subst S)).map
+      (LMonoTy.substTyVars vt) = ins)
+    (hout : (LMonoTy.subst S (.ftvar "v")).substTyVars vt = out)
+    (hx : ConstVals ins [.mapConst k v d ⟨es⟩, key] xs) {τ : LMonoTy}
+    (hτ : τ.substTyVars vt = out)
+    (h : LExpr.HasTypeA [] (AggregateLitEval.selectChain md key d es) τ) :
+    HEq (LExpr.denote tcInterp opInterp fv vt .nil (AggregateLitEval.selectChain md key d es) τ h)
+      (SortDenote.applyArgs tcInterp (axiomOp "select" (LSort.mkArrow out ins)) xs) := by
+  simp only [List.map_cons, List.map_nil, mapTy, LMonoTy.subst_tcons, LMonoTys.subst_eq_map,
+    LMonoTy.substTyVars, LMonoTy.substTyVars.map] at hins
+  subst hins hout
+  generalize LMonoTy.substTyVars vt (LMonoTy.subst S (.ftvar "k")) = K at *
+  generalize LMonoTy.substTyVars vt (LMonoTy.subst S (.ftvar "v")) = V at *
+  obtain ⟨c₁, c₂, m, x, hcs, rfl, hm, hkey⟩ := constVals_two hx
+  simp only [List.cons.injEq, and_true] at hcs
+  obtain ⟨rfl, rfl⟩ := hcs
+  obtain ⟨rfl, rfl, dv, kvs, hd, hkvs, hmv⟩ := constVal_mapConst_inv hm
+  show HEq _ (coeS v v (m (coeS k k x)))
+  rw [coeS_self, coeS_self, eq_of_heq hmv]
+  exact denote_selectChain hkey hd hkvs hτ h
+
+/-- `concreteEval` consistency of `select`: both the literal it returns and the `ite` chain it
+    returns for a key holding a datatype value denote the map's value at the key. -/
+private theorem select_consistent {ceval : ConcreteEval T}
+    (hce : mapSelectFunc.func.concreteEval = some ceval)
+    (hlook : Core.Factory.get? mapSelectFunc.func.name.name = some mapSelectFunc.func) :
+    LFunc.InterpConsistentEval tcInterp opInterp mapSelectFunc.func ceval := by
+  injection hce with hce
+  subst hce
+  have hop : opInterp "select" = axiomOp "select" := funext (opInterp_lit hlook rfl)
+  have hlit : LFunc.InterpConsistentEval tcInterp opInterp mapSelectLitFunc.func
+      (mapSelectLitFunc.func.concreteEval.getD fun _ _ _ => none) :=
+    litOp_consistent sound_mapSelect rfl hop
+  intro vt fv md S args res
+  simp only []
+  intro heval h_args h_res
+  change ((mapSelectLitFunc.func.concreteEval.getD fun _ _ _ => none) md _ args).orElse
+    (fun _ => AggregateLitEval.selectChainEval md _ args) = some res at heval
+  cases hr : (mapSelectLitFunc.func.concreteEval.getD fun _ _ _ => none) md
+    (some (mapSelectFunc.func.instTy S)) args with
+  | some r =>
+    rw [hr] at heval
+    cases heval
+    exact hlit vt fv md S args _ hr h_args h_res
+  | none =>
+    rw [hr] at heval
+    simp only [Option.orElse] at heval
+    obtain ⟨k, v, d, es, key, hc, -, -, -, -, -, -, rfl⟩ :=
+      AggregateLitEval.selectChainEval_some heval
+    have hx := denoteArgs_constVals (fv := fv) (vt := vt) args _ h_args _ hc
+    show _ = SortDenote.applyArgs tcInterp (opInterp "select" _) _
+    rw [hop]
+    exact eq_of_heq (sound_selectChain S vt _ _ _ rfl rfl hx rfl h_res)
+
 /-- For every `Core.Factory` function with a concrete evaluator, `opInterp` agrees
     with that evaluator. -/
 private theorem eval_consistent :
@@ -1534,18 +1682,18 @@ private theorem eval_consistent :
       | exact heteroBinaryOp_func_consistent (hce := hce) (hlook := hlook)
       | exact unaryOp_func_consistent (hce := hce) (hlook := hlook)
       | exact shortCircuit_func_consistent (hce := hce) (hlook := hlook)
-      | exact litOp_consistent rfl sound_mapConst hce hlook
-      | exact litOp_consistent rfl sound_mapSelect hce hlook
-      | exact litOp_consistent rfl sound_mapUpdate hce hlook
-      | exact litOp_consistent rfl sound_seqLength hce hlook
-      | exact litOp_consistent rfl sound_seqEmpty hce hlook
-      | exact litOp_consistent rfl sound_seqAppend hce hlook
-      | exact litOp_consistent rfl (sound_seqSelect _ rfl) hce hlook
-      | exact litOp_consistent rfl sound_seqBuild hce hlook
-      | exact litOp_consistent rfl (sound_seqUpdate _ rfl) hce hlook
-      | exact litOp_consistent rfl sound_seqContains hce hlook
-      | exact litOp_consistent rfl (sound_seqTake _ rfl) hce hlook
-      | exact litOp_consistent rfl (sound_seqDrop _ rfl) hce hlook
+      | exact litOp_consistent sound_mapConst hce (funext (opInterp_lit hlook rfl))
+      | exact select_consistent hce hlook
+      | exact litOp_consistent sound_mapUpdate hce (funext (opInterp_lit hlook rfl))
+      | exact litOp_consistent sound_seqLength hce (funext (opInterp_lit hlook rfl))
+      | exact litOp_consistent sound_seqEmpty hce (funext (opInterp_lit hlook rfl))
+      | exact litOp_consistent sound_seqAppend hce (funext (opInterp_lit hlook rfl))
+      | exact litOp_consistent (sound_seqSelect _ rfl) hce (funext (opInterp_lit hlook rfl))
+      | exact litOp_consistent sound_seqBuild hce (funext (opInterp_lit hlook rfl))
+      | exact litOp_consistent (sound_seqUpdate _ rfl) hce (funext (opInterp_lit hlook rfl))
+      | exact litOp_consistent sound_seqContains hce (funext (opInterp_lit hlook rfl))
+      | exact litOp_consistent (sound_seqTake _ rfl) hce (funext (opInterp_lit hlook rfl))
+      | exact litOp_consistent (sound_seqDrop _ rfl) hce (funext (opInterp_lit hlook rfl))
   intro f hf ceval hce
   have hmem : Core.Factory[f] ∈ Core.WFFactoryArray.map (·.func) :=
     Lambda.Factory.ofArray_mem (a := Core.WFFactoryArray.map (·.func)) (get_mem f hf)

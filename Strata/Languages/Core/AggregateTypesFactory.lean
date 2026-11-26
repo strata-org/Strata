@@ -173,8 +173,8 @@ literals. `mapConst` and `Sequence.empty` read the key, value or element sort fr
 the type annotation of their operator, since their arguments do not determine it.
 
 An evaluator compares keys (`select`, `update`) or elements (`Sequence.contains`)
-syntactically, which decides their equality only at a sort without `Map`
-(`LSort.hasMap`), so it declines at a sort with `Map`. The partial `Sequence`
+syntactically, which decides their equality at a sort without `Map` when the key or element
+looked up holds no datatype value (`LConst.hasData`), so it declines otherwise. The partial `Sequence`
 operations, and their unchecked `!` variants, evaluate only within bounds. -/
 
 namespace AggregateLitEval
@@ -192,13 +192,25 @@ namespace AggregateLitEval
 
 /-- `select(m, key)` on a map literal: the value of `key` (`LConst.mapSelect`). -/
 @[expose] def mapSelect : Option LMonoTy → List LConst → Option LConst
-  | _, [.mapConst k _ d xs, key] => if k.hasMap then none else some (LConst.mapSelect d xs key)
+  | _, [.mapConst k _ d xs, key] =>
+    if !k.hasMap && !key.hasData then some (LConst.mapSelect d xs key) else none
   | _, _ => none
 
-/-- `update(m, key, x)` on a map literal (`LConst.mapUpdate`). -/
+/-- The entries of a map literal after setting key `k` to `v`: `(k, v)` followed by the entries
+    whose key is not syntactically `k`, which the new entry shadows. The first entry counts, so
+    these entries give the map updated at `k` at every key sort. No entry is dropped for having
+    the default value. -/
+@[expose] def mapUpdateFront (es : Array (LConst × LConst)) (k v : LConst) :
+    Array (LConst × LConst) :=
+  #[(k, v)] ++ es.filter (fun e => e.1 != k)
+
+/-- `update(m, key, x)` on a map literal at a key sort without `Map`: `LConst.mapUpdate` when
+    `key` holds no datatype value (`LConst.hasData`), and `mapUpdateFront` when it holds one. -/
 @[expose] def mapUpdate : Option LMonoTy → List LConst → Option LConst
   | _, [.mapConst k v d xs, key, x] =>
-    if k.hasMap then none else some (.mapConst k v d (LConst.mapUpdate d xs key x))
+    if k.hasMap then none
+    else if !key.hasData then some (.mapConst k v d (LConst.mapUpdate d xs key x))
+    else some (.mapConst k v d (mapUpdateFront xs key x))
   | _, _ => none
 
 /-- `Sequence.empty()` at operator type `Sequence a`. It reads the annotation, so it returns
@@ -238,9 +250,11 @@ namespace AggregateLitEval
     else none
   | _, _ => none
 
-/-- `Sequence.contains(s, x)`, at an element sort without `Map`. -/
+/-- `Sequence.contains(s, x)`, at an element sort without `Map` and an `x` holding no datatype
+    value (`LConst.hasData`). -/
 @[expose] def seqContains : Option LMonoTy → List LConst → Option LConst
-  | _, [.sequenceConst a xs, x] => if a.hasMap then none else some (.boolConst (xs.contains x))
+  | _, [.sequenceConst a xs, x] =>
+    if !a.hasMap && !x.hasData then some (.boolConst (xs.contains x)) else none
   | _, _ => none
 
 /-- `Sequence.take(s, n)` (and `Sequence.take!`) for `0 ≤ n ≤ length(s)`. -/
@@ -256,13 +270,90 @@ namespace AggregateLitEval
     else none
   | _, _ => none
 
+/-- The value at `key` of a map literal with default `d` and entries `es`, as the chain
+    `ite(key == k₁, v₁, ite(key == k₂, v₂, … d))` over the entries. An entry whose key is
+    syntactically `key` closes the chain with its value. Every node is a constant, an equality of
+    two constants, or an `ite` whose condition is such an equality. -/
+@[expose] def selectChain (md : CoreExprMetadata) (key d : LConst) :
+    List (LConst × LConst) → Expression.Expr
+  | [] => .const md d
+  | (k, v) :: rest =>
+    if k = key then .const md v
+    else .ite md (.eq md (.const md key) (.const md k)) (.const md v) (selectChain md key d rest)
+
+/-- `select(m, key)` on a map literal at a key sort without `Map`, for a key holding a datatype
+    value (`LConst.hasData`): the chain `selectChain`, when the literal is well typed, `key` is a
+    well-typed constant of the key sort, the operator's annotation has the value sort as its
+    result type, and the literal has at most `maxLitSize` constants. -/
+@[expose] def selectChainEval : ConcreteEval CoreLParams := fun md opTy args =>
+  match LExpr.constArgs? args with
+  | some [.mapConst k v d ⟨es⟩, key] =>
+    if key.hasData && !k.hasMap && (LConst.mapConst k v d ⟨es⟩).wt && key.wt &&
+        decide (key.sort = k) && decide (opTy.map (LMonoTy.arrowResult 2) = some v.toMonoTy) &&
+        decide ((LConst.mapConst k v d ⟨es⟩).size ≤ maxLitSize) then
+      some (selectChain md key d es)
+    else none
+  | _ => none
+
+/-- `selectChain` builds expressions equal up to metadata at any two metadata. -/
+private theorem selectChain_eraseMetadata (md₁ md₂ : CoreExprMetadata) (key d : LConst) :
+    ∀ es, (selectChain md₁ key d es).eraseMetadata = (selectChain md₂ key d es).eraseMetadata
+  | [] => by simp [selectChain, LExpr.eraseMetadata, LExpr.replaceMetadata]
+  | (k, v) :: rest => by
+    have ih := selectChain_eraseMetadata md₁ md₂ key d rest
+    simp only [selectChain]
+    split
+    · simp [LExpr.eraseMetadata, LExpr.replaceMetadata]
+    · simp only [LExpr.eraseMetadata, LExpr.replaceMetadata] at ih ⊢
+      rw [ih]
+
+/-- `selectChain` has no free variables. -/
+private theorem selectChain_getVars (md : CoreExprMetadata) (key d : LConst) :
+    ∀ es, LExpr.LExpr.getVars (selectChain md key d es) = []
+  | [] => rfl
+  | (k, v) :: rest => by
+    simp only [selectChain]
+    split
+    · rfl
+    · simp [LExpr.LExpr.getVars, selectChain_getVars md key d rest]
+
+/-- Arguments that are all constants are as many as their constants. -/
+private theorem constArgs?_length : ∀ {args : List Expression.Expr} {cs : List LConst},
+    LExpr.constArgs? args = some cs → args.length = cs.length
+  | [], cs, h => by simp only [LExpr.constArgs?, Option.some.injEq] at h; subst h; rfl
+  | a :: rest, cs, h => by
+    cases a <;> simp only [LExpr.constArgs?, reduceCtorEq] at h
+    obtain ⟨cs', h', rfl⟩ := Option.map_eq_some_iff.mp h
+    simp [constArgs?_length h']
+
+/-- What `selectChainEval` returns: the chain of a map literal and a key, which are its two
+    arguments, under the conditions it checks. -/
+theorem selectChainEval_some {md : CoreExprMetadata} {opTy : Option LMonoTy}
+    {args : List Expression.Expr} {r : Expression.Expr} (h : selectChainEval md opTy args = some r) :
+    ∃ k v d es key, LExpr.constArgs? args = some [.mapConst k v d ⟨es⟩, key] ∧
+      key.hasData = true ∧ k.hasMap = false ∧ (LConst.mapConst k v d ⟨es⟩).wt = true ∧
+      key.wt = true ∧ key.sort = k ∧ opTy.map (LMonoTy.arrowResult 2) = some v.toMonoTy ∧
+      r = selectChain md key d es := by
+  unfold selectChainEval at h
+  split at h
+  · rename_i k v d es key hc
+    split at h
+    · rename_i hchk
+      simp only [Option.some.injEq] at h
+      simp only [Bool.and_eq_true, Bool.not_eq_true', decide_eq_true_eq] at hchk
+      exact ⟨k, v, d, es, key, hc, hchk.1.1.1.1.1.1, hchk.1.1.1.1.1.2, hchk.1.1.1.1.2,
+        hchk.1.1.1.2, hchk.1.1.2, hchk.1.2, h.symm⟩
+    · cases h
+  · cases h
+
 end AggregateLitEval
 
 mutual
 /-- A collection literal as the expression that builds it from operators:
     `mapConst(d)` updated with the entries (the first entry outermost, since it is
     the one that counts), or `Sequence.empty()` built on with the elements in
-    order. Any other constant is itself. -/
+    order. A datatype value is its operator, annotated with its signature, applied to its
+    arguments. Any other constant is itself. -/
 def litToOpExpr : LConst → Expression.Expr
   | .mapConst k v d ⟨xs⟩ =>
     let kt := k.toMonoTy
@@ -272,6 +363,9 @@ def litToOpExpr : LConst → Expression.Expr
       xs
   | .sequenceConst a ⟨xs⟩ =>
     litElemsToOpExpr a.toMonoTy (.op default "Sequence.empty" (some (seqTy a.toMonoTy))) xs
+  | .dataConst n as s ⟨xs⟩ =>
+    litArgsToOpExpr
+      (.op default ⟨n, default⟩ (some (LMonoTy.mkArrow' s.toMonoTy (as.map (·.toMonoTy))))) xs
   | c => .const default c
 /-- `base` updated with the map entries `xs`, the first one outermost. -/
 def litEntriesToOpExpr (kt vt : LMonoTy) (base : Expression.Expr) :
@@ -283,6 +377,10 @@ def litEntriesToOpExpr (kt vt : LMonoTy) (base : Expression.Expr) :
       (.app default (.app default (.op default "update" (some updTy))
         (litEntriesToOpExpr kt vt base rest)) (litToOpExpr key))
       (litToOpExpr x)
+/-- `f` applied to the expressions of the constants `xs`, in order. -/
+def litArgsToOpExpr (f : Expression.Expr) : List LConst → Expression.Expr
+  | [] => f
+  | x :: rest => litArgsToOpExpr (.app default f (litToOpExpr x)) rest
 /-- `acc` with the sequence elements `xs` appended in order. -/
 def litElemsToOpExpr (et : LMonoTy) (acc : Expression.Expr) : List LConst → Expression.Expr
   | [] => acc
@@ -314,11 +412,85 @@ def mapConstFunc : WFLFunc CoreLParams :=
                 ((~mapConst : %v → (Map %k %v)) %1)) %0) == %1)]
     ])
 
-/- A `Map` selection function with type `∀k, v. Map k v → k → v`. -/
-def mapSelectFunc : WFLFunc CoreLParams :=
+/-- The literal evaluator of `select`, at a canonical key sort (`polyLitOp` of
+    `AggregateLitEval.mapSelect`). -/
+def mapSelectLitFunc : WFLFunc CoreLParams :=
   polyLitOp "select" ["k", "v"]
     [("m", mapTy mty[%k] mty[%v]), ("i", mty[%k])] mty[%v]
     AggregateLitEval.mapSelect
+
+/-- The concrete evaluator of `select`: the literal of `mapSelectLitFunc`, else the chain of
+    `AggregateLitEval.selectChainEval`. -/
+@[expose] def mapSelectEval : ConcreteEval CoreLParams := fun md ty args =>
+  ((mapSelectLitFunc.func.concreteEval.getD fun _ _ _ => none) md ty args).orElse fun _ =>
+    AggregateLitEval.selectChainEval md ty args
+
+/- A `Map` selection function with type `∀k, v. Map k v → k → v`. At a key sort without `Map` it
+   evaluates to the literal value for a key holding no datatype value, and to the `ite` chain over
+   the literal's entries (`AggregateLitEval.selectChain`) for a key holding one. -/
+def mapSelectFunc : WFLFunc CoreLParams :=
+  ⟨{ mapSelectLitFunc.func with concreteEval := some mapSelectEval }, {
+    toFuncWF := mapSelectLitFunc.wf.toFuncWF
+    constr_no_eval := by simp [mapSelectLitFunc, polyLitOp]
+    typeArgs_no_gen_prefix := mapSelectLitFunc.wf.typeArgs_no_gen_prefix
+    concreteEval_argmatch := by
+      intro fn md opTy args res hfn hres
+      cases hfn
+      simp only [mapSelectEval] at hres
+      cases hr : (mapSelectLitFunc.func.concreteEval.getD fun _ _ _ => none) md opTy args with
+      | some r =>
+        exact mapSelectLitFunc.wf.concreteEval_argmatch _ md opTy args r rfl hr
+      | none =>
+        simp only [hr, Option.orElse] at hres
+        obtain ⟨k, v, d, es, key, hc, -⟩ := AggregateLitEval.selectChainEval_some hres
+        exact AggregateLitEval.constArgs?_length hc
+    body_or_concreteEval := by simp [mapSelectLitFunc, polyLitOp]
+    concreteEval_eraseMetadata := by
+      intro fn hfn md1 md2 opTy args1 args2 res1 he hres
+      cases hfn
+      simp only [mapSelectEval] at hres ⊢
+      cases hr1 : (mapSelectLitFunc.func.concreteEval.getD fun _ _ _ => none) md1 opTy args1 with
+      | some r =>
+        simp only [hr1, Option.orElse] at hres; cases hres
+        obtain ⟨r2, hr2, heq⟩ := mapSelectLitFunc.wf.concreteEval_eraseMetadata _ rfl md1 md2 opTy
+          args1 args2 res1 he hr1
+        exact ⟨r2, by simp [show (mapSelectLitFunc.func.concreteEval.getD fun _ _ _ => none) md2
+          opTy args2 = some r2 from hr2, Option.orElse], heq⟩
+      | none =>
+        simp only [hr1, Option.orElse] at hres
+        cases hr2 : (mapSelectLitFunc.func.concreteEval.getD fun _ _ _ => none) md2 opTy args2 with
+        | some r =>
+          obtain ⟨r', hr', -⟩ := mapSelectLitFunc.wf.concreteEval_eraseMetadata _ rfl md2 md1 opTy
+            args2 args1 r he.symm hr2
+          simp [show (mapSelectLitFunc.func.concreteEval.getD fun _ _ _ => none) md1 opTy args1 =
+            some r' from hr'] at hr1
+        | none =>
+          simp only [Option.orElse]
+          unfold AggregateLitEval.selectChainEval at hres ⊢
+          rw [← LExpr.constArgs?_eraseMetadata he]
+          split at hres
+          · split at hres
+            · simp only [Option.some.injEq] at hres; subst hres
+              rename_i hchk
+              simp only [hchk, ↓reduceIte]
+              exact ⟨_, rfl, AggregateLitEval.selectChain_eraseMetadata md1 md2 _ _ _⟩
+            · cases hres
+          · cases hres
+    concreteEval_freeVars := by
+      intro fn hfn md opTy args res hres z hz
+      cases hfn
+      simp only [mapSelectEval] at hres
+      cases hr : (mapSelectLitFunc.func.concreteEval.getD fun _ _ _ => none) md opTy args with
+      | some r =>
+        simp only [hr, Option.orElse] at hres; cases hres
+        exact mapSelectLitFunc.wf.concreteEval_freeVars _ rfl md opTy args res hr z hz
+      | none =>
+        simp only [hr, Option.orElse] at hres
+        obtain ⟨k, v, d, es, key, -, -, -, -, -, -, -, rfl⟩ :=
+          AggregateLitEval.selectChainEval_some hres
+        simp [AggregateLitEval.selectChain_getVars] at hz
+    shortCircuit_substFvars := by intro h; simp [Strata.DL.Util.FuncAttr.hasShortCircuit,
+      mapSelectLitFunc, polyLitOp] at h }⟩
 
 /- A `Map` update function with type `∀k, v. Map k v → k → v → Map k v`. -/
 def mapUpdateFunc : WFLFunc CoreLParams :=

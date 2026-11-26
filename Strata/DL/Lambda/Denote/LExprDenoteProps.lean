@@ -14,7 +14,8 @@ import all Strata.DL.Lambda.Denote.LExprAnnotated
 
 Extensionality, irrelevance, and structural properties of `denote`.
 
-- `denote_ext` — extensionality: denotation depends only on used ops, fvars, and bvars
+- `denote_ext` — extensionality: denotation depends only on used ops, fvars, bvars, and the
+  operators of the datatype values in constants
 - `denote_irrel_of_lcAt` — closed expressions are independent of the bvar valuation
 - `denote_replaceMetadata` — denotation is invariant under metadata replacement
 - `typeCheck_replaceMetadata1` / `HasTypeA_replaceMetadata1` / `denote_replaceMetadata1` — typing
@@ -51,20 +52,22 @@ theorem cast_injective {α β : Sort _} (h : α = β) {a b : α}
     (heq : cast h a = cast h b) : a = b := by
   cases h; exact heq
 
-/-- The denotation of a collection literal is independent of the type variable
+/-- The denotation of a collection literal or datatype value is independent of the type variable
 valuation `vt`. -/
 private theorem denoteCollection_cast_vt (vt vt' : TyVarVal) (c : LConst)
     (h : TyDenote tcInterp vt' c.ty = TyDenote tcInterp vt c.ty)
-    : denoteCollection tcInterp vt c = cast h (denoteCollection tcInterp vt' c) := by
+    : denoteCollection tcInterp opInterp vt c =
+      cast h (denoteCollection tcInterp opInterp vt' c) := by
   unfold denoteCollection
   split <;> rw [cast_cast]
 
 /-- `denoteConst` is independent of the type variable valuation `vt`. -/
 theorem denoteConst_cast_vt (vt vt' : TyVarVal) (c : LConst)
     (h : TyDenote tcInterp vt' c.ty = TyDenote tcInterp vt c.ty)
-    : denoteConst tcInterp vt c = cast h (denoteConst tcInterp vt' c) := by
+    : denoteConst tcInterp opInterp vt c = cast h (denoteConst tcInterp opInterp vt' c) := by
   cases c
-  case mapConst | sequenceConst => exact denoteCollection_cast_vt tcInterp vt vt' _ h
+  case mapConst | sequenceConst | dataConst =>
+    exact denoteCollection_cast_vt tcInterp opInterp vt vt' _ h
   all_goals simp [denoteConst, LConst.ty, TyDenote, LMonoTy.substTyVars] at h ⊢ <;> grind
 
 /-- If the body denotation agrees for all witnesses, the quantifier denotation
@@ -280,8 +283,8 @@ private theorem bvar_ext_cons
 /-! ### Extensionality for denote -/
 
 /-- If two interpretations agree on all free variables, operations, and bound
-variables that appear in an expression, then `denote` produces the same
-result. -/
+variables that appear in an expression, and on the operators of the datatype values
+inside its constants (`LConst.dataOps`), then `denote` produces the same result. -/
 theorem denote_ext
     {e : LExpr T.mono} {τ : LMonoTy}
     {Δ : List LMonoTy}
@@ -291,12 +294,15 @@ theorem denote_ext
     (h_op : ∀ o ty, (o, some ty) ∈ e.usedOps → opInterp₁ o.name (LMonoTy.substTyVars vt ty) = opInterp₂ o.name (LMonoTy.substTyVars vt ty))
     (h_fvar : ∀ name ty, (name, some ty) ∈ e.freeVars → fvarVal₁ name (LMonoTy.substTyVars vt ty) = fvarVal₂ name (LMonoTy.substTyVars vt ty))
     (h_bvar : ∀ i (τ' : LMonoTy) (h₁ : Δ[i]? = some τ') (h₂ : Δ[i]? = some τ'), i ∈ e.usedBvars → bvarVal₁.get i h₁ = bvarVal₂.get i h₂)
+    (h_data : ∀ c ∈ e.getConsts, ∀ p ∈ c.dataOps, opInterp₁ p.1 p.2 = opInterp₂ p.1 p.2)
     (h₁ : LExpr.HasTypeA Δ e τ)
     (h₂ : LExpr.HasTypeA Δ e τ)
     : LExpr.denote tcInterp opInterp₁ fvarVal₁ vt bvarVal₁ e τ h₁ =
       LExpr.denote tcInterp opInterp₂ fvarVal₂ vt bvarVal₂ e τ h₂ := by
   induction e generalizing Δ τ bvarVal₁ bvarVal₂ with
-  | const => rfl
+  | const m c =>
+    rw [denote_const _ _ _ _ _ h₁, denote_const _ _ _ _ _ h₂,
+      denoteConst_congr_opInterp tcInterp vt (h_data c (List.mem_singleton_self c))]
   | op _ _ ty =>
     cases ty with
     | none => exact absurd (LExpr.HasTypeA_to_typeCheck h₁) (by simp [LExpr.typeCheck])
@@ -324,12 +330,12 @@ theorem denote_ext
     rw [ih_fn
         (fun o ty ho => h_op o ty (List.mem_append_left _ ho))
         (fun n ty hf => h_fvar n ty (List.mem_append_left _ hf))
-        (fun i τ' hi₁ hi₂ hb => h_bvar i τ' hi₁ hi₂ (List.mem_append_left _ hb))
+        (fun i τ' hi₁ hi₂ hb => h_bvar i τ' hi₁ hi₂ (List.mem_append_left _ hb)) (fun c hc => h_data c (List.mem_append_left _ hc))
         h_fn₁ h_fn₂,
       ih_arg
         (fun o ty ho => h_op o ty (List.mem_append_right _ ho))
         (fun n ty hf => h_fvar n ty (List.mem_append_right _ hf))
-        (fun i τ' hi₁ hi₂ hb => h_bvar i τ' hi₁ hi₂ (List.mem_append_right _ hb))
+        (fun i τ' hi₁ hi₂ hb => h_bvar i τ' hi₁ hi₂ (List.mem_append_right _ hb)) (fun c hc => h_data c (List.mem_append_right _ hc))
         h_arg₁ h_arg₂]
   | ite _ c t e ih_c ih_t ih_e =>
     have ⟨h_c₁, h_t₁, h_e₁⟩ := HasTypeA.ite_inv h₁
@@ -337,15 +343,15 @@ theorem denote_ext
     rw [denote_ite _ h_c₁ h_t₁ h_e₁, denote_ite _ h_c₂ h_t₂ h_e₂]
     rw [ih_c (fun o ty ho => h_op o ty (List.mem_append_left _ (List.mem_append_left _ ho)))
             (fun n ty hf => h_fvar n ty (List.mem_append_left _ (List.mem_append_left _ hf)))
-            (fun i τ' hi₁ hi₂ hb => h_bvar i τ' hi₁ hi₂ (List.mem_append_left _ (List.mem_append_left _ hb)))
+            (fun i τ' hi₁ hi₂ hb => h_bvar i τ' hi₁ hi₂ (List.mem_append_left _ (List.mem_append_left _ hb))) (fun c hc => h_data c (List.mem_append_left _ (List.mem_append_left _ hc)))
             h_c₁ h_c₂,
         ih_t (fun o ty ho => h_op o ty (List.mem_append_left _ (List.mem_append_right _ ho)))
             (fun n ty hf => h_fvar n ty (List.mem_append_left _ (List.mem_append_right _ hf)))
-            (fun i τ' hi₁ hi₂ hb => h_bvar i τ' hi₁ hi₂ (List.mem_append_left _ (List.mem_append_right _ hb)))
+            (fun i τ' hi₁ hi₂ hb => h_bvar i τ' hi₁ hi₂ (List.mem_append_left _ (List.mem_append_right _ hb))) (fun c hc => h_data c (List.mem_append_left _ (List.mem_append_right _ hc)))
             h_t₁ h_t₂,
         ih_e (fun o ty ho => h_op o ty (List.mem_append_right _ ho))
             (fun n ty hf => h_fvar n ty (List.mem_append_right _ hf))
-            (fun i τ' hi₁ hi₂ hb => h_bvar i τ' hi₁ hi₂ (List.mem_append_right _ hb))
+            (fun i τ' hi₁ hi₂ hb => h_bvar i τ' hi₁ hi₂ (List.mem_append_right _ hb)) (fun c hc => h_data c (List.mem_append_right _ hc))
             h_e₁ h_e₂]
   | eq _ e1 e2 ih1 ih2 =>
     have ⟨ty', h_bool₁, h_1₁, h_2₁⟩ := HasTypeA.eq_inv h₁
@@ -362,19 +368,19 @@ theorem denote_ext
             LExpr.denote tcInterp opInterp₂ fvarVal₂ vt bvarVal₂ e2 ty' h_2₂ := by
         rw [← ih1 (fun o ty ho => h_op o ty (List.mem_append_left _ ho))
                     (fun n ty hf => h_fvar n ty (List.mem_append_left _ hf))
-                    (fun i τ' hi₁ hi₂ hb => h_bvar i τ' hi₁ hi₂ (List.mem_append_left _ hb)) h_1₁ h_1₂,
+                    (fun i τ' hi₁ hi₂ hb => h_bvar i τ' hi₁ hi₂ (List.mem_append_left _ hb)) (fun c hc => h_data c (List.mem_append_left _ hc)) h_1₁ h_1₂,
                 ← ih2 (fun o ty ho => h_op o ty (List.mem_append_right _ ho))
                     (fun n ty hf => h_fvar n ty (List.mem_append_right _ hf))
-                    (fun i τ' hi₁ hi₂ hb => h_bvar i τ' hi₁ hi₂ (List.mem_append_right _ hb)) h_2₁ h_2₂]; exact heq
+                    (fun i τ' hi₁ hi₂ hb => h_bvar i τ' hi₁ hi₂ (List.mem_append_right _ hb)) (fun c hc => h_data c (List.mem_append_right _ hc)) h_2₁ h_2₂]; exact heq
       rw [denote_eq_true _ h_1₁ h_2₁ h₁ heq, denote_eq_true _ h_1₂ h_2₂ h₂ h_eq_rhs]
     · have h_neq_rhs : LExpr.denote tcInterp opInterp₂ fvarVal₂ vt bvarVal₂ e1 ty' h_1₂ ≠
             LExpr.denote tcInterp opInterp₂ fvarVal₂ vt bvarVal₂ e2 ty' h_2₂ := by
         rw [← ih1 (fun o ty ho => h_op o ty (List.mem_append_left _ ho))
                     (fun n ty hf => h_fvar n ty (List.mem_append_left _ hf))
-                    (fun i τ' hi₁ hi₂ hb => h_bvar i τ' hi₁ hi₂ (List.mem_append_left _ hb)) h_1₁ h_1₂,
+                    (fun i τ' hi₁ hi₂ hb => h_bvar i τ' hi₁ hi₂ (List.mem_append_left _ hb)) (fun c hc => h_data c (List.mem_append_left _ hc)) h_1₁ h_1₂,
                 ← ih2 (fun o ty ho => h_op o ty (List.mem_append_right _ ho))
                     (fun n ty hf => h_fvar n ty (List.mem_append_right _ hf))
-                    (fun i τ' hi₁ hi₂ hb => h_bvar i τ' hi₁ hi₂ (List.mem_append_right _ hb)) h_2₁ h_2₂]; exact heq
+                    (fun i τ' hi₁ hi₂ hb => h_bvar i τ' hi₁ hi₂ (List.mem_append_right _ hb)) (fun c hc => h_data c (List.mem_append_right _ hc)) h_2₁ h_2₂]; exact heq
       rw [denote_eq_false _ h_1₁ h_2₁ h₁ heq, denote_eq_false _ h_1₂ h_2₂ h₂ h_neq_rhs]
   | abs _ _ ty body ih_body =>
     cases ty with
@@ -392,6 +398,7 @@ theorem denote_ext
         exact fun n ty hf => h_fvar n ty hf
       · -- h_bvar: for i ∈ usedBvars body, (.cons x bv₁).get i = (.cons x bv₂).get i
         exact bvar_ext_cons tcInterp vt x (fun i τ' hi₁ hi₂ hb => h_bvar i τ' hi₁ hi₂ hb)
+      · exact h_data
   | quant _ qk _ ty tr body ih_tr ih_body =>
     cases ty with
     | none => exact absurd (LExpr.HasTypeA_to_typeCheck h₁) (by simp [LExpr.typeCheck])
@@ -405,6 +412,7 @@ theorem denote_ext
           (fun n ty hf => h_fvar n ty (List.mem_append_right _ hf))
           (bvar_ext_cons tcInterp vt x (fun i τ' hi₁ hi₂ hb =>
             h_bvar i τ' hi₁ hi₂ (List.mem_append_right _ hb)))
+          (fun c hc => h_data c (List.mem_append_right _ hc))
           h_body₁ h_body₂
 
 /-- For a closed expression (no free variables), the denotation is independent
@@ -425,6 +433,7 @@ theorem denote_closed_fvarVal_irrel
   · intro o ty _; rfl
   · intro name ty hmem; exact absurd (hfv ▸ hmem : _ ∈ ([] : List _)) (by grind)
   · intro _ _ _ _ _; rfl
+  · intro _ _ _ _; rfl
 
 /-! ### Metadata Doesn't Affect Typing or Denotations -/
 

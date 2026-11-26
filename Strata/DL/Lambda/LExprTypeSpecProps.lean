@@ -162,6 +162,7 @@ theorem HasType_idents_irrel (C : LContext T) (j : Identifiers T.IDMeta)
   | tbitvec_const Γ m n b h => exact .tbitvec_const Γ m n b h
   | tmap_const Γ m k v d es h hw => exact .tmap_const Γ m k v d es h hw
   | tseq_const Γ m a es h hw => exact .tseq_const Γ m a es h hw
+  | tdata_const Γ m n as s es h hw => exact .tdata_const Γ m n as s es h hw
   | tvar Γ m x ty h_find => exact .tvar Γ m x ty h_find
   | tvar_annotated Γ m x ty_o ty_s tys ann h_find h_len h_open h_ac =>
     exact .tvar_annotated Γ m x ty_o ty_s tys ann h_find h_len h_open h_ac
@@ -420,6 +421,7 @@ theorem HasType_ScopeRel (C : LContext T) (ΓR : TContext T.IDMeta)
   | tbitvec_const Γ m n b hk => exact fun tsD _ _ => .tbitvec_const _ m n b hk
   | tmap_const Γ m k v d es hk hw => exact fun tsD _ _ => .tmap_const _ m k v d es hk hw
   | tseq_const Γ m a es hk hw => exact fun tsD _ _ => .tseq_const _ m a es hk hw
+  | tdata_const Γ m n as s es hk hw => exact fun tsD _ _ => .tdata_const _ m n as s es hk hw
   | tvar Γ m x ty h_find =>
     intro tsD hwf hrel
     rcases hrel x with heq | ⟨d, r, hd, hr, hae⟩
@@ -881,9 +883,19 @@ private theorem inferConst_knownInstance
   simp only [Except.ok.injEq, Prod.mk.injEq] at h
   obtain ⟨h1, h2⟩ := h
   simp only [Bool.and_eq_true, Bool.or_eq_true] at hname
-  obtain ⟨⟨hknown, -⟩, hp | hk⟩ := hname
+  obtain ⟨⟨⟨hknown, -⟩, hp | hk⟩, -⟩ := hname
   · exact ⟨h1 ▸ hlit c hp hknown, h2.symm⟩
   · exact ⟨h1 ▸ hk, h2.symm⟩
+
+omit [ToString T.IDMeta] [Std.ToFormat T.IDMeta] [HasGen T.IDMeta] [Std.ToFormat (LFunc T)] in
+/-- Type checking rejects every constant holding a datatype value: a constant `inferConst`
+    accepts holds none (`LConst.hasData`). -/
+theorem inferConst_hasData (C : LContext T) (Env : TEnv T.IDMeta) (c : LConst)
+    (r : LMonoTy × TEnv T.IDMeta) (h : inferConst C Env c = .ok r) : c.hasData = false := by
+  simp only [inferConst] at h
+  elim_err h with hname
+  simp only [Bool.and_eq_true, Bool.not_eq_true'] at hname
+  exact hname.2
 
 omit [ToString T.IDMeta] [HasGen T.IDMeta] [Std.ToFormat (LFunc T)] in
 /-- Unifying an instantiated annotation with a registered type keeps the range registered. -/
@@ -1734,6 +1746,8 @@ private theorem HasType_of_AnnotRewrite {T : LExprParams} [DecidableEq T.IDMeta]
     intro _ E' hr; cases hr; exact LExpr.HasType.tmap_const Γ' m k v d es hk hw
   | tseq_const Γ' m a es hk hw =>
     intro _ E' hr; cases hr; exact LExpr.HasType.tseq_const Γ' m a es hk hw
+  | tdata_const Γ' m n as s es hk hw =>
+    intro _ E' hr; cases hr; exact LExpr.HasType.tdata_const Γ' m n as s es hk hw
   | tvar Γ' m z tz h_find =>
     intro h_mono E' hr
     cases hr with
@@ -1996,6 +2010,8 @@ theorem HasType_of_AnnotInstRewrite {T : LExprParams} [DecidableEq T.IDMeta] [Ha
     intro E hr; cases hr; exact LExpr.HasType.tmap_const Γ' m k v d es hk hw
   | tseq_const Γ' m a es hk hw =>
     intro E hr; cases hr; exact LExpr.HasType.tseq_const Γ' m a es hk hw
+  | tdata_const Γ' m n as s es hk hw =>
+    intro E hr; cases hr; exact LExpr.HasType.tdata_const Γ' m n as s es hk hw
   | tvar Γ' m z tz h_find =>
     intro E hr
     cases hr with
@@ -2982,13 +2998,13 @@ theorem resolveAux_const_shape (C : LContext T) (Env Env' : TEnv T.IDMeta) (m : 
     C.knownTypes.containsName c.tyName = true ∧ inferConst C Env c = .ok (c.ty, Env) ∧
       et = .const ⟨m, c.ty⟩ c ∧ Env' = Env := by
   by_cases hk : (C.knownTypes.containsName c.tyName && c.wt &&
-      (c.isPrimitive || c.ty.knownInstance C.knownTypes)) = true
+      (c.isPrimitive || c.ty.knownInstance C.knownTypes) && !c.hasData) = true
   · have hinf : inferConst C Env c = .ok (c.ty, Env) := by
       simp only [inferConst, hk, ite_true]
     simp only [resolveAux, hinf, bind, Except.bind, Except.ok.injEq, Prod.mk.injEq] at h
     obtain ⟨rfl, rfl⟩ := h
     simp only [Bool.and_eq_true] at hk
-    exact ⟨hk.1.1, hinf, rfl, rfl⟩
+    exact ⟨hk.1.1.1, hinf, rfl, rfl⟩
   · simp only [resolveAux, inferConst, hk, ite_false, bind, Except.bind, reduceCtorEq] at h
 
 omit [ToString T.IDMeta] [Std.ToFormat (LFunc T)] [Std.ToFormat T.Metadata] in

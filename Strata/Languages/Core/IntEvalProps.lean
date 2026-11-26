@@ -276,7 +276,7 @@ theorem eval_boolConst (f : Expression.Factory)
 evaluates to its value. -/
 theorem eval_const (f : Expression.Factory) {m : ExpressionMetadata} (σ : CoreStore) (c : LConst)
     (hc : c.wt = true := by rfl) :
-    Expression.eval f σ (.const m c) = some (SemValue.ofConst f.model.tcInterp c) :=
+    Expression.eval f σ (.const m c) = some (SemValue.ofConst f.model.tcInterp f.model.opInterp c) :=
   LExpr.denoteEval_const hc
 
 /-- An equality of two expressions with the same value evaluates to `true`. -/

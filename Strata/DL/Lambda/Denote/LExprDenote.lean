@@ -44,11 +44,6 @@ namespace Lambda
 
 /-! ### Sorts and Type Denotation -/
 
-/-- Iterated arrow at the sort level: `mkArrow ret [s₁, s₂] = s₁ → s₂ → ret`. -/
-@[expose] public def LSort.mkArrow (ret : LSort) : List LSort → LSort
-  | [] => ret
-  | s :: ss => .tcons "arrow" [s, LSort.mkArrow ret ss]
-
 /-- Substitute all free type variables in a monomorphic type, producing a
 ground sort. -/
 @[expose] public def LMonoTy.substTyVars (ρ : TyIdentifier → LSort) : LMonoTy → LSort
@@ -233,12 +228,24 @@ first entry with that key. -/
     (xs : List (SortDenote tcInterp a)) : SortDenote tcInterp (.seq a) :=
   xs
 
+/-- Apply a curried `SortDenote` value of iterated-arrow sort to an `HList`
+of argument values. -/
+public def SortDenote.applyArgs (tcInterp : TyConstrInterp)
+    : {args : List LSort} → {ret : LSort} →
+      SortDenote tcInterp (LSort.mkArrow ret args) →
+      HList (SortDenote tcInterp) args →
+      SortDenote tcInterp ret
+  | [], _, f, .nil => f
+  | _ :: _, _, f, .cons x xs => applyArgs tcInterp (f x) xs
+
 mutual
-/-- The value of constant `c` at sort `s`: `none` unless `c` is well typed
-(`LConst.wt`) and declares sort `s`. A map literal denotes `SortDenote.mapOf` of
-its default and entries, a sequence literal the list of its elements. -/
-@[expose] public noncomputable def constVal (tcInterp : TyConstrInterp) (s : LSort) :
-    LConst → Option (SortDenote tcInterp s)
+/-- The value of constant `c` at sort `s` under the operator interpretation `opInterp`: `none`
+unless `c` is well typed (`LConst.wt`) and declares sort `s`. A map literal denotes
+`SortDenote.mapOf` of its default and entries, a sequence literal the list of its elements, and a
+datatype value the interpretation of its operator applied to the values of its arguments, as the
+expression applying that operator to them does. -/
+@[expose] public noncomputable def constVal (tcInterp : TyConstrInterp)
+    (opInterp : OpInterp tcInterp) (s : LSort) : LConst → Option (SortDenote tcInterp s)
   | .boolConst b =>
     if h : LSort.bool = s then some (h ▸ (show SortDenote tcInterp .bool from b)) else none
   | .intConst i =>
@@ -254,38 +261,57 @@ its default and entries, a sequence literal the list of its elements. -/
     else none
   | .mapConst k v d ⟨es⟩ =>
     if h : LSort.map k v = s then
-      match constVal tcInterp v d, constValEntries tcInterp k v es with
+      match constVal tcInterp opInterp v d, constValEntries tcInterp opInterp k v es with
       | some dv, some kvs => some (h ▸ SortDenote.mapOf dv kvs)
       | _, _ => none
     else none
   | .sequenceConst a ⟨es⟩ =>
     if h : LSort.seq a = s then
-      (constValElems tcInterp a es).map (fun xs => h ▸ SortDenote.seqOf xs)
+      (constValElems tcInterp opInterp a es).map (fun xs => h ▸ SortDenote.seqOf xs)
+    else none
+  | .dataConst n as srt ⟨es⟩ =>
+    if h : srt = s ∧ srt.isDataSort = true then
+      (constValArgs tcInterp opInterp as es).map
+        (fun xs => h.1 ▸ SortDenote.applyArgs tcInterp (opInterp n (LSort.mkArrow srt as)) xs)
     else none
 /-- The values of the entries of a map literal at key sort `k` and value sort `v`,
 if all of them have one. -/
-@[expose] public noncomputable def constValEntries (tcInterp : TyConstrInterp) (k v : LSort) :
+@[expose] public noncomputable def constValEntries (tcInterp : TyConstrInterp)
+    (opInterp : OpInterp tcInterp) (k v : LSort) :
     List (LConst × LConst) → Option (List (SortDenote tcInterp k × SortDenote tcInterp v))
   | [] => some []
   | (a, b) :: r =>
-    match constVal tcInterp k a, constVal tcInterp v b, constValEntries tcInterp k v r with
+    match constVal tcInterp opInterp k a, constVal tcInterp opInterp v b,
+      constValEntries tcInterp opInterp k v r with
     | some x, some y, some r' => some ((x, y) :: r')
     | _, _, _ => none
 /-- The values of the elements of a sequence literal at sort `a`, if all of them
 have one. -/
-@[expose] public noncomputable def constValElems (tcInterp : TyConstrInterp) (a : LSort) :
+@[expose] public noncomputable def constValElems (tcInterp : TyConstrInterp)
+    (opInterp : OpInterp tcInterp) (a : LSort) :
     List LConst → Option (List (SortDenote tcInterp a))
   | [] => some []
   | e :: r =>
-    match constVal tcInterp a e, constValElems tcInterp a r with
+    match constVal tcInterp opInterp a e, constValElems tcInterp opInterp a r with
     | some x, some r' => some (x :: r')
     | _, _ => none
+/-- The values of the arguments of a datatype value at the argument sorts `ss`, if there is one
+argument of each sort and all of them have one. -/
+@[expose] public noncomputable def constValArgs (tcInterp : TyConstrInterp)
+    (opInterp : OpInterp tcInterp) :
+    (ss : List LSort) → List LConst → Option (HList (SortDenote tcInterp) ss)
+  | [], [] => some .nil
+  | s :: ss, e :: r =>
+    match constVal tcInterp opInterp s e, constValArgs tcInterp opInterp ss r with
+    | some x, some xs => some (.cons x xs)
+    | _, _ => none
+  | _, _ => none
 end
 
 mutual
 /-- A well-typed constant has a value at the sort it declares. -/
-public theorem constVal_isSome (tcInterp : TyConstrInterp) :
-    ∀ (c : LConst), c.wt = true → (constVal tcInterp c.sort c).isSome
+public theorem constVal_isSome (tcInterp : TyConstrInterp) (opInterp : OpInterp tcInterp) :
+    ∀ (c : LConst), c.wt = true → (constVal tcInterp opInterp c.sort c).isSome
   | .boolConst _, _ | .intConst _, _ | .rationalConst _, _ | .strConst _, _
   | .bitvecConst _ _, _ => by
     unfold constVal
@@ -295,9 +321,9 @@ public theorem constVal_isSome (tcInterp : TyConstrInterp) :
   | .mapConst k v d ⟨es⟩, h => by
     simp only [LConst.wt, Bool.and_eq_true, decide_eq_true_eq] at h
     obtain ⟨⟨hd, hds⟩, hes⟩ := h
-    have h1 := constVal_isSome tcInterp d hd
+    have h1 := constVal_isSome tcInterp opInterp d hd
     rw [hds] at h1
-    have h2 := constValEntries_isSome tcInterp k v es hes
+    have h2 := constValEntries_isSome tcInterp opInterp k v es hes
     obtain ⟨dv, hdv⟩ := Option.isSome_iff_exists.mp h1
     obtain ⟨kvs, hkvs⟩ := Option.isSome_iff_exists.mp h2
     unfold constVal
@@ -305,40 +331,63 @@ public theorem constVal_isSome (tcInterp : TyConstrInterp) :
     · simp only [hdv, hkvs]; rfl
     · exact absurd rfl ‹_›
   | .sequenceConst a ⟨es⟩, h => by
-    have h2 := constValElems_isSome tcInterp a es h
+    have h2 := constValElems_isSome tcInterp opInterp a es h
     unfold constVal
     split
     · rw [Option.isSome_map]; exact h2
     · exact absurd rfl ‹_›
+  | .dataConst n as srt ⟨es⟩, h => by
+    simp only [LConst.wt, Bool.and_eq_true] at h
+    have h2 := constValArgs_isSome tcInterp opInterp as es h.2
+    unfold constVal
+    split
+    · rw [Option.isSome_map]; exact h2
+    · exact absurd (And.intro rfl h.1) ‹_›
 /-- The entries of a well-typed map literal have values. -/
-public theorem constValEntries_isSome (tcInterp : TyConstrInterp) (k v : LSort) :
-    ∀ (es : List (LConst × LConst)), LConst.wtEntries k v es = true →
-      (constValEntries tcInterp k v es).isSome
+public theorem constValEntries_isSome (tcInterp : TyConstrInterp) (opInterp : OpInterp tcInterp)
+    (k v : LSort) : ∀ (es : List (LConst × LConst)), LConst.wtEntries k v es = true →
+      (constValEntries tcInterp opInterp k v es).isSome
   | [], _ => rfl
   | (a, b) :: r, h => by
     simp only [LConst.wtEntries, Bool.and_eq_true, decide_eq_true_eq] at h
     obtain ⟨⟨⟨⟨ha, has⟩, hb⟩, hbs⟩, hr⟩ := h
-    have h1 := constVal_isSome tcInterp a ha
-    have h2 := constVal_isSome tcInterp b hb
+    have h1 := constVal_isSome tcInterp opInterp a ha
+    have h2 := constVal_isSome tcInterp opInterp b hb
     rw [has] at h1; rw [hbs] at h2
-    have h3 := constValEntries_isSome tcInterp k v r hr
+    have h3 := constValEntries_isSome tcInterp opInterp k v r hr
     obtain ⟨x, hx⟩ := Option.isSome_iff_exists.mp h1
     obtain ⟨y, hy⟩ := Option.isSome_iff_exists.mp h2
     obtain ⟨z, hz⟩ := Option.isSome_iff_exists.mp h3
     simp [constValEntries, hx, hy, hz]
 /-- The elements of a well-typed sequence literal have values. -/
-public theorem constValElems_isSome (tcInterp : TyConstrInterp) (s : LSort) :
-    ∀ (es : List LConst), LConst.wtElems s es = true → (constValElems tcInterp s es).isSome
+public theorem constValElems_isSome (tcInterp : TyConstrInterp) (opInterp : OpInterp tcInterp)
+    (s : LSort) : ∀ (es : List LConst), LConst.wtElems s es = true →
+      (constValElems tcInterp opInterp s es).isSome
   | [], _ => rfl
   | e :: r, h => by
     simp only [LConst.wtElems, Bool.and_eq_true, decide_eq_true_eq] at h
     obtain ⟨⟨he, hes⟩, hr⟩ := h
-    have h1 := constVal_isSome tcInterp e he
+    have h1 := constVal_isSome tcInterp opInterp e he
     rw [hes] at h1
-    have h3 := constValElems_isSome tcInterp s r hr
+    have h3 := constValElems_isSome tcInterp opInterp s r hr
     obtain ⟨x, hx⟩ := Option.isSome_iff_exists.mp h1
     obtain ⟨z, hz⟩ := Option.isSome_iff_exists.mp h3
     simp [constValElems, hx, hz]
+/-- The arguments of a well-typed datatype value have values. -/
+public theorem constValArgs_isSome (tcInterp : TyConstrInterp) (opInterp : OpInterp tcInterp) :
+    ∀ (ss : List LSort) (es : List LConst), LConst.wtArgs ss es = true →
+      (constValArgs tcInterp opInterp ss es).isSome
+  | [], [], _ => rfl
+  | s :: ss, e :: r, h => by
+    simp only [LConst.wtArgs, Bool.and_eq_true, decide_eq_true_eq] at h
+    obtain ⟨⟨he, hes⟩, hr⟩ := h
+    have h1 := constVal_isSome tcInterp opInterp e he
+    rw [hes] at h1
+    have h3 := constValArgs_isSome tcInterp opInterp ss r hr
+    obtain ⟨x, hx⟩ := Option.isSome_iff_exists.mp h1
+    obtain ⟨z, hz⟩ := Option.isSome_iff_exists.mp h3
+    simp [constValArgs, hx, hz]
+  | [], _ :: _, h | _ :: _, [], h => by simp [LConst.wtArgs] at h
 end
 
 /-- A well-typed constant has the type naming the sort it declares. -/
@@ -349,29 +398,102 @@ public theorem LConst.ty_of_wt {c : LConst} (h : c.wt = true) : c.ty = c.sort.to
 public theorem LConst.ty_of_not_wt {c : LConst} (h : c.wt = false) : c.ty = .bool := by
   cases c <;> simp_all [LConst.ty, LConst.wt]
 
-/-- The value of a collection literal at its type: its value at its sort if it is
-well typed (`constVal`), and `false` otherwise (its type is then `bool`). -/
-@[expose] public noncomputable def denoteCollection (tcInterp : TyConstrInterp) (vt : TyVarVal)
-    (c : LConst) : TyDenote tcInterp vt c.ty :=
+/-- The value of a collection literal or datatype value at its type: its value at its sort if it
+is well typed (`constVal`), and `false` otherwise (its type is then `bool`). -/
+@[expose] public noncomputable def denoteCollection (tcInterp : TyConstrInterp)
+    (opInterp : OpInterp tcInterp) (vt : TyVarVal) (c : LConst) : TyDenote tcInterp vt c.ty :=
   if h : c.wt = true then
     cast (congrArg (SortDenote tcInterp)
         (by rw [LConst.ty_of_wt h, LSort.toMonoTy_substTyVars])).symm
-      ((constVal tcInterp c.sort c).get (constVal_isSome tcInterp c h))
+      ((constVal tcInterp opInterp c.sort c).get (constVal_isSome tcInterp opInterp c h))
   else
     cast (congrArg (SortDenote tcInterp)
         (by rw [LConst.ty_of_not_wt (Bool.eq_false_iff.mpr h)]; rfl)).symm
       (show SortDenote tcInterp .bool from false)
 
 /-- Denote a constant literal. -/
-public noncomputable def denoteConst (tcInterp : TyConstrInterp) (vt : TyVarVal) :
-    (c : LConst) → TyDenote tcInterp vt c.ty
+public noncomputable def denoteConst (tcInterp : TyConstrInterp) (opInterp : OpInterp tcInterp)
+    (vt : TyVarVal) : (c : LConst) → TyDenote tcInterp vt c.ty
     | .boolConst b     => b
     | .intConst i      => i
     | .rationalConst r => Strata.Util.Real.ofRat r
     | .strConst s      => s
     | .bitvecConst _ b => b
-    | .mapConst k v d es => denoteCollection tcInterp vt (.mapConst k v d es)
-    | .sequenceConst a es => denoteCollection tcInterp vt (.sequenceConst a es)
+    | .mapConst k v d es => denoteCollection tcInterp opInterp vt (.mapConst k v d es)
+    | .sequenceConst a es => denoteCollection tcInterp opInterp vt (.sequenceConst a es)
+    | .dataConst n as s es => denoteCollection tcInterp opInterp vt (.dataConst n as s es)
+
+mutual
+/-- The value of a constant depends on the operator interpretation only at the operators of its
+datatype values (`LConst.dataOps`). -/
+private theorem constVal_congr_opInterp {tcInterp : TyConstrInterp} {op₁ op₂ : OpInterp tcInterp} :
+    ∀ (s : LSort) (c : LConst), (∀ p ∈ c.dataOps, op₁ p.1 p.2 = op₂ p.1 p.2) →
+      constVal tcInterp op₁ s c = constVal tcInterp op₂ s c
+  | _, .boolConst _, _ | _, .intConst _, _ | _, .rationalConst _, _ | _, .strConst _, _
+  | _, .bitvecConst _ _, _ => by unfold constVal; rfl
+  | _, .mapConst k v d ⟨es⟩, h => by
+    simp only [LConst.dataOps, List.mem_append] at h
+    unfold constVal
+    rw [constVal_congr_opInterp v d (fun p hp => h p (.inl hp)),
+      constValEntries_congr_opInterp k v es (fun p hp => h p (.inr hp))]
+  | _, .sequenceConst a ⟨es⟩, h => by
+    unfold constVal
+    rw [constValElems_congr_opInterp a es h]
+  | _, .dataConst n as srt ⟨es⟩, h => by
+    simp only [LConst.dataOps, List.mem_cons] at h
+    unfold constVal
+    rw [h _ (.inl rfl), constValArgs_congr_opInterp as es (fun p hp => h p (.inr hp))]
+/-- `constVal_congr_opInterp` for the entries of a map literal. -/
+private theorem constValEntries_congr_opInterp {tcInterp : TyConstrInterp}
+    {op₁ op₂ : OpInterp tcInterp} :
+    ∀ (k v : LSort) (es : List (LConst × LConst)),
+      (∀ p ∈ LConst.dataOpsEntries es, op₁ p.1 p.2 = op₂ p.1 p.2) →
+      constValEntries tcInterp op₁ k v es = constValEntries tcInterp op₂ k v es
+  | _, _, [], _ => rfl
+  | k, v, (a, b) :: r, h => by
+    simp only [LConst.dataOpsEntries, List.mem_append] at h
+    unfold constValEntries
+    rw [constVal_congr_opInterp k a (fun p hp => h p (.inl (.inl hp))),
+      constVal_congr_opInterp v b (fun p hp => h p (.inl (.inr hp))),
+      constValEntries_congr_opInterp k v r (fun p hp => h p (.inr hp))]
+/-- `constVal_congr_opInterp` for the elements of a sequence literal. -/
+private theorem constValElems_congr_opInterp {tcInterp : TyConstrInterp}
+    {op₁ op₂ : OpInterp tcInterp} :
+    ∀ (a : LSort) (es : List LConst), (∀ p ∈ LConst.dataOpsElems es, op₁ p.1 p.2 = op₂ p.1 p.2) →
+      constValElems tcInterp op₁ a es = constValElems tcInterp op₂ a es
+  | _, [], _ => rfl
+  | a, e :: r, h => by
+    simp only [LConst.dataOpsElems, List.mem_append] at h
+    unfold constValElems
+    rw [constVal_congr_opInterp a e (fun p hp => h p (.inl hp)),
+      constValElems_congr_opInterp a r (fun p hp => h p (.inr hp))]
+/-- `constVal_congr_opInterp` for the arguments of a datatype value. -/
+private theorem constValArgs_congr_opInterp {tcInterp : TyConstrInterp}
+    {op₁ op₂ : OpInterp tcInterp} :
+    ∀ (ss : List LSort) (es : List LConst),
+      (∀ p ∈ LConst.dataOpsElems es, op₁ p.1 p.2 = op₂ p.1 p.2) →
+      constValArgs tcInterp op₁ ss es = constValArgs tcInterp op₂ ss es
+  | [], [], _ | [], _ :: _, _ | _ :: _, [], _ => by unfold constValArgs; rfl
+  | s :: ss, e :: r, h => by
+    simp only [LConst.dataOpsElems, List.mem_append] at h
+    unfold constValArgs
+    rw [constVal_congr_opInterp s e (fun p hp => h p (.inl hp)),
+      constValArgs_congr_opInterp ss r (fun p hp => h p (.inr hp))]
+end
+
+/-- The denotation of a constant depends on the operator interpretation only at the operators of
+its datatype values (`LConst.dataOps`). -/
+public theorem denoteConst_congr_opInterp (tcInterp : TyConstrInterp) {op₁ op₂ : OpInterp tcInterp}
+    (vt : TyVarVal) {c : LConst} (h : ∀ p ∈ c.dataOps, op₁ p.1 p.2 = op₂ p.1 p.2) :
+    denoteConst tcInterp op₁ vt c = denoteConst tcInterp op₂ vt c := by
+  have hget : ∀ {α : Type} {o o' : Option α} (h : o = o') (p : o.isSome) (p' : o'.isSome),
+      o.get p = o'.get p' := by intro _ _ _ h; subst h; intros; rfl
+  have hcoll : denoteCollection tcInterp op₁ vt c = denoteCollection tcInterp op₂ vt c := by
+    unfold denoteCollection
+    split
+    · exact congrArg _ (hget (constVal_congr_opInterp _ c h) _ _)
+    · rfl
+  cases c <;> first | rfl | exact hcoll
 
 /-- Interpret a well-typed annotated `LExpr` into a Lean value.
 
@@ -395,7 +517,7 @@ public noncomputable def LExpr.denote
     : TyDenote tcInterp vt τ :=
   match e with
   | .const _ c =>
-    HasTypeA.const_inv h ▸ denoteConst tcInterp vt c
+    HasTypeA.const_inv h ▸ denoteConst tcInterp opInterp vt c
   | .op _ o (some ty) =>
     HasTypeA.op_inv h ▸ opInterp o.name (ty.substTyVars vt)
   | .op _ _ none => absurd (HasTypeA_to_typeCheck h) (by simp [typeCheck])
@@ -453,7 +575,7 @@ inductive Denotes
       (e : LExpr T.mono) → (τ : LMonoTy) → LExpr.HasTypeA Δ e τ →
       TyDenote tcInterp vt τ → Prop where
   | const : ∀ {Δ} (bvarVal : BVarVal tcInterp vt Δ) {m c h},
-      Denotes tcInterp opInterp fvarVal vt bvarVal (.const m c) c.ty h (denoteConst tcInterp vt c)
+      Denotes tcInterp opInterp fvarVal vt bvarVal (.const m c) c.ty h (denoteConst tcInterp opInterp vt c)
   | op : ∀ {Δ} (bvarVal : BVarVal tcInterp vt Δ) {m o ty h},
       Denotes tcInterp opInterp fvarVal vt bvarVal (.op m o (some ty)) ty h (opInterp o.name (ty.substTyVars vt))
   | fvar : ∀ {Δ} (bvarVal : BVarVal tcInterp vt Δ) {m x ty h},
@@ -727,7 +849,7 @@ public theorem denote_const
     (bvarVal : BVarVal tcInterp vt Δ)
     (h : LExpr.HasTypeA Δ (.const m c) τ)
     : LExpr.denote tcInterp opInterp fvarVal vt bvarVal (.const m c) τ h =
-      HasTypeA.const_inv h ▸ denoteConst tcInterp vt c := by rfl
+      HasTypeA.const_inv h ▸ denoteConst tcInterp opInterp vt c := by rfl
 
 public theorem denote_intConst
     {T : LExprParams}
@@ -1052,16 +1174,6 @@ section FactoryConsistent
 variable {T : LExprParams}
 variable (tcInterp : TyConstrInterp)
 variable (opInterp : OpInterp tcInterp)
-
-/-- Apply a curried `SortDenote` value of iterated-arrow sort to an `HList`
-of argument values. -/
-public def SortDenote.applyArgs
-    : {args : List LSort} → {ret : LSort} →
-      SortDenote tcInterp (LSort.mkArrow ret args) →
-      HList (SortDenote tcInterp) args →
-      SortDenote tcInterp ret
-  | [], _, f, .nil => f
-  | _ :: _, _, f, .cons x xs => applyArgs (f x) xs
 
 /-- An `opInterp` is consistent with an `LFunc` whose definition is given by
 `body`: for every choice of argument values, the interpretation of the op

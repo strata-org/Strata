@@ -59,6 +59,9 @@ import Strata.Languages.Core.Analysis.DeductiveVerificationProps
 import Strata.Languages.Core.Analysis.FragmentFactory
 import Strata.DL.Lambda.LFuncEvalSound
 import Strata.DL.Lambda.LExprRenameOps
+import Strata.DL.Lambda.Denote.LConstDataProps
+import Strata.Languages.Core.DataLits
+import Strata.Languages.Core.DataLitsProps
 import Strata.Transform.MonomorphizeFunctionsProps
 import Strata.Transform.MonomorphizeFunctionsCorrect
 import Strata.Languages.Core.ProcedureProps
@@ -268,6 +271,7 @@ import Strata.Languages.Core.ReplayWF
 import Strata.Languages.Core.Interpreter
 import Strata.Languages.Core.InterpreterDomainProps
 import Strata.Languages.Core.InterpreterEvalSound
+import Strata.Languages.Core.AggregateTypesFactoryProps
 import Strata.Languages.Core.FactoryEvalSoundWF
 import Strata.Languages.Core.InterpreterBridgeStatements
 -- Counterexample lifting (CEL): levels (c) model, (b) valuation, (a) run, and back-links

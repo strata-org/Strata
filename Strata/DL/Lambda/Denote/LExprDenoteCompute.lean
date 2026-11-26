@@ -165,7 +165,8 @@ theorem Denotes.op_ann {Δ : List LMonoTy} {bvarVal : BVarVal tcInterp vt Δ}
 /-- A constant denotes its value. -/
 theorem Denotes.const_val {Δ : List LMonoTy} {bvarVal : BVarVal tcInterp vt Δ}
     {m : T.Metadata} {c : LConst} {h : LExpr.HasTypeA Δ (.const m c) c.ty} :
-    Denotes tcInterp opInterp fvarVal vt bvarVal (.const m c) c.ty h (denoteConst tcInterp vt c) :=
+    Denotes tcInterp opInterp fvarVal vt bvarVal (.const m c) c.ty h
+      (denoteConst tcInterp opInterp vt c) :=
   .const bvarVal
 
 /-- A free variable denotes its value at the sort of its annotation. -/

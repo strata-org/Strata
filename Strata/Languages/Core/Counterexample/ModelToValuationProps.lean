@@ -207,14 +207,14 @@ variable {M : Expression.Factory} {F : @Lambda.Factory CoreLParams} {fuel : Nat}
 /-- A literal denotes the value of its constant. -/
 private theorem denotes_const {c : Lambda.LConst} {v : Expression.Val}
     (h : InterpLang.Denotes M (.const default c) v) :
-    v = Lambda.SemValue.ofConst M.model.tcInterp c :=
+    v = Lambda.SemValue.ofConst M.model.tcInterp M.model.opInterp c :=
   Option.some.inj ((denotes_iff.1 h).2.2.symm.trans
     (Lambda.LExpr.denoteEval_const (Lambda.LExpr.denoteEval_const_wt (denotes_iff.1 h).2.2)))
 
 /-- Two primitive literals with the same value are the same literal. -/
-private theorem ofConst_injective {tc : Lambda.TyConstrInterp} {c₁ c₂ : Lambda.LConst}
-    (hp₁ : c₁.isPrimitive = true) (hp₂ : c₂.isPrimitive = true)
-    (h : Lambda.SemValue.ofConst tc c₁ = Lambda.SemValue.ofConst tc c₂) : c₁ = c₂ := by
+private theorem ofConst_injective {tc : Lambda.TyConstrInterp} {op : Lambda.OpInterp tc}
+    {c₁ c₂ : Lambda.LConst} (hp₁ : c₁.isPrimitive = true) (hp₂ : c₂.isPrimitive = true)
+    (h : Lambda.SemValue.ofConst tc op c₁ = Lambda.SemValue.ofConst tc op c₂) : c₁ = c₂ := by
   cases c₁ <;> cases c₂ <;> try cases hp₁ <;> try cases hp₂
   all_goals simp only [Lambda.SemValue.ofConst, Lambda.LConst.ty,
     Lambda.LMonoTy.substTyVars, Lambda.LMonoTy.substTyVars.map] at h <;>
@@ -303,7 +303,7 @@ private theorem mapM_spec_consts (hM : InterpLang.rfactory M = F)
     {σ : SemanticStore Expression} (hs : StoreDenotes M s σ) :
     ∀ (es : List Expression.Expr) (cs : List Lambda.LConst),
       es.mapM (evalBounded fuel F s) = some (cs.map (.const default)) →
-      es.mapM (Expression.eval M σ) = some (cs.map (Lambda.SemValue.ofConst M.model.tcInterp))
+      es.mapM (Expression.eval M σ) = some (cs.map (Lambda.SemValue.ofConst M.model.tcInterp M.model.opInterp))
   | [], cs, h => by cases cs <;> simp_all
   | e :: es, cs, h => by
     simp only [List.mapM_cons, Option.bind_eq_bind, Option.bind_eq_some_iff,
@@ -351,7 +351,7 @@ private theorem entryHolds'_spec (hM : InterpLang.rfactory M = F)
     obtain ⟨cs, hp, rfl⟩ := exists_consts rs (hlit l es rfl rs hrs)
     simp only [entryHolds']
     erw [mapM_spec_consts hM hEval hs es cs hrs]
-    have hvs : (cs.map (Lambda.SemValue.ofConst M.model.tcInterp)).Nodup :=
+    have hvs : (cs.map (Lambda.SemValue.ofConst M.model.tcInterp M.model.opInterp)).Nodup :=
       List.pairwise_map.2 ((List.pairwise_map.1 hnd).imp_of_mem fun h₁ h₂ hne heq =>
         hne (congrArg _ (ofConst_injective (hp _ h₁) (hp _ h₂) heq)))
     simp only [hvs, ↓reduceIte]

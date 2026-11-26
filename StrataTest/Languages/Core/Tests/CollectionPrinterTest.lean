@@ -189,6 +189,40 @@ errors: []
 #guard_msgs in
 #eval IO.println (printWithErrors literalsProg)
 
+/-! A datatype value prints as its constructor application, also inside a map literal, and
+`Core.formatExprs` registers its constructors and datatypes, so it reports no conversion error. -/
+
+private def boxInt (i : Int) : LConst := .dataConst "BoxInt" [.tcons "int" []] (.tcons "Box" []) #[.intConst i]
+private def field (f : String) : LConst := .dataConst f [] (.tcons "Field" []) #[]
+/-- The `Map int (Map Field Box)` literal mapping `1` to the map from `F2` to `BoxInt(5)`. -/
+private def heapLit : LConst :=
+  let inner (es : Array (LConst × LConst)) : LConst :=
+    .mapConst (.tcons "Field" []) (.tcons "Box" []) (boxInt 0) es
+  .mapConst (.tcons "int" []) (.tcons "Map" [.tcons "Field" [], .tcons "Box" []]) (inner #[])
+    #[(.intConst 1, inner #[(field "F2", boxInt 5)])]
+
+/-- info: BoxInt(5), F2, (mapConst<int>(mapConst<Field>(BoxInt(0))))[1:=(mapConst<Field>(BoxInt(0)))[F2:=BoxInt(5)]] -/
+#guard_msgs in
+#eval IO.println (Core.formatExprs
+  [.const Core.valueLoc (boxInt 5), .const Core.valueLoc (field "F2"), .const Core.valueLoc heapLit])
+
+/-! A collection literal without datatype values prints as on mainline, and the user-defined type
+in its annotation is registered too: `Map MyType int` and `Sequence int` literals. -/
+
+/-- info: mapConst<MyType>(0), Sequence.build(Sequence.build(Sequence.empty<int>(), 1), 2) -/
+#guard_msgs in
+#eval IO.println (Core.formatExprs
+  [.const Core.valueLoc (.mapConst (.tcons "MyType" []) (.tcons "int" []) (.intConst 0) #[]),
+   .const Core.valueLoc (.sequenceConst (.tcons "int" []) #[.intConst 1, .intConst 2])])
+
+-- A type registered several times (from the literal and from two variables) prints the same.
+/-- info: mapConst<MyType>(0), x, y -/
+#guard_msgs in
+#eval IO.println (Core.formatExprs
+  [.const Core.valueLoc (.mapConst (.tcons "MyType" []) (.tcons "int" []) (.intConst 0) #[]),
+   .fvar Core.valueLoc ⟨"x", ()⟩ (some (.tcons "MyType" [])),
+   .fvar Core.valueLoc ⟨"y", ()⟩ (some (.tcons "MyType" []))])
+
 /-- info: set variable round-trips: true
 set operators round-trip: true
 sequence operators round-trip: true

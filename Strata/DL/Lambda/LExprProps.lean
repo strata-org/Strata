@@ -372,7 +372,7 @@ theorem exists_fresh_ftvar {T : LExprParams}
 public section
 
 /-- The type of a constant has no free type variables: it names the sort the constant declares,
-    or is `bool` for a collection literal that is not well typed. -/
+    or is `bool` for a collection literal or datatype value that is not well typed. -/
 theorem LConst.ty_freeVars (c : LConst) : LMonoTy.freeVars c.ty = [] := by
   cases c
   case mapConst k v d es =>
@@ -382,6 +382,10 @@ theorem LConst.ty_freeVars (c : LConst) : LMonoTy.freeVars c.ty = [] := by
   case sequenceConst a es =>
     simp only [LConst.ty]
     cases (LConst.sequenceConst a es).wt <;>
+      simp [LMonoTy.freeVars, LMonoTys.freeVars, LSort.toMonoTy_freeVars]
+  case dataConst n as s es =>
+    simp only [LConst.ty]
+    cases (LConst.dataConst n as s es).wt <;>
       simp [LMonoTy.freeVars, LMonoTys.freeVars, LSort.toMonoTy_freeVars]
   all_goals simp [LConst.ty, LMonoTy.int, LMonoTy.bool, LMonoTy.real, LMonoTy.string,
     LMonoTy.freeVars, LMonoTys.freeVars]

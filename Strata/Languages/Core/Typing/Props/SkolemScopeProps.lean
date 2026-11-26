@@ -1302,6 +1302,26 @@ private theorem skolemTransfer_aux_gen_between {C : Expression.TyContext} {σ : 
       (constTy_transfer_fixed _ _ (h_cf _ (List.mem_singleton_self _)))
       (LExpr.HasType.tseq_const (T := CoreLParams) Γp m a es
         (containsName_of_addSkolemTypes C hpfx "Sequence" (isAllowedName_eq_toList ▸ rfl) hk) hw)
+  | tdata_const Γ' m n as s es hk hw =>
+    intro Γp S ρ _ _ _ _ _ _ _ h_cf
+    have hfix := h_cf _ (List.mem_singleton_self _)
+    have hsd : s.isDataSort = true := by
+      simp only [LConst.wt, Bool.and_eq_true] at hw; exact hw.1
+    obtain ⟨n', args', rfl⟩ : ∃ n' args', s = .tcons n' args' := by
+      cases s with
+      | tcons n' a => exact ⟨n', a, rfl⟩
+      | bitvec => simp [LSort.isDataSort] at hsd
+    have hty : (LConst.dataConst n as (.tcons n' args') es).ty =
+        .tcons n' (LSort.toMonoTy.map args') := by
+      rw [LConst.ty_of_wt hw]; rfl
+    have hnone := (deskolemizeTy_tcons_fixed_inv (hty ▸ hfix)).1
+    have hk' : C.knownTypes.containsName n' = true := by
+      simp only [KnownTypes.containsName, Std.HashMap.contains_eq_isSome_getElem?,
+        LConst.tyName] at hk ⊢
+      rwa [addSkolemTypes_getElem?_of_find?_none _ _ _ hnone] at hk
+    exact skolemTransfer_const Γp m (LConst.dataConst n as (.tcons n' args') es) _ (ρ ++ S)
+      (constTy_transfer_fixed _ _ hfix)
+      (LExpr.HasType.tdata_const (T := CoreLParams) Γp m n as _ es hk' hw)
   | tvar Γ' m k tyk h_find =>
     intro Γp S ρ h_corr h_mono h_bo h_al h_awf h_adesk h_sk h_cf
     have hbv : LTy.boundVars tyk = [] := h_mono k tyk h_find
