@@ -24,7 +24,10 @@ open Cortex.Interp
 public section
 
 def cortexStopMessage : StopReason → String
+  | .engine .replayFuelExhausted => "resource-limit: out of fuel"
+  | .engine .callDepthExceeded => "resource-limit: the call-depth limit was exceeded"
   | .engine r => r.describe
+  | .stop summary => summary
   | .lowering msg => s!"lowering: {msg}"
   | .typeError msg => s!"type error: {msg}"
   | .notLowered c => s!"`{c}` was not lowered"
@@ -39,14 +42,49 @@ def stopLocation : StopReason → Option Strata.FileRange
   | .at md _ => Imperative.getFileRange md
   | _ => none
 
+/-- Whether `r` is one of the interpreter's bounds, its fuel or its call depth, running out. -/
+def isResourceLimit : StopReason → Bool
+  | .engine .replayFuelExhausted | .engine .callDepthExceeded => true
+  | .at _ r => isResourceLimit r
+  | _ => false
+
+/-- Whether `r` is a stop, a frontend's (`stopSummary?`) or a resource limit: a run that a stop ends has no verdict.
+Any other reason is an interpreter error. -/
+def isStop : StopReason → Bool
+  | .stop _ => true
+  | .at _ r => isStop r
+  | r => isResourceLimit r
+
 /-- What running the `entry` procedures of a program on the Cortex interpreter
 produced. -/
 structure InterpretOutcome where
-  /-- The failed assertions, the uncaught exceptions and the places of the interpreter errors, each reported once. -/
+  /-- The failed assertions, the uncaught exceptions, the stops and the places of the interpreter errors, each
+  reported once. -/
   diagnostics : Array Message := #[]
-  /-- The entry procedures that ended on an interpreter error, could not evaluate an assertion, or failed without a
-  source location, each with the reason. -/
+  /-- The entry procedures in which a check failed at a source location. A failed check is a verdict even when a stop
+  ends the run later: the run reached it before using anything it has no model of. -/
+  failed : Array String := #[]
+  /-- The entry procedures that a stop ended. -/
+  stops : Array String := #[]
+  /-- The entry procedures that ended on an interpreter error, could not evaluate an assertion, or failed or stopped
+  without a source location, each with the reason. -/
   errors : Array (String × String) := #[]
+
+/-- How a run of a program's entry procedures ended. -/
+inductive RunOutcome where
+  | passed
+  | stopped
+  | failed
+  | error
+  deriving DecidableEq, Repr
+
+/-- How the run ended: the worst of its entries, an interpreter error before a failed check, and a failed check
+before a stop. -/
+def InterpretOutcome.outcome (o : InterpretOutcome) : RunOutcome :=
+  if !o.errors.isEmpty then .error
+  else if !o.failed.isEmpty then .failed
+  else if !o.stops.isEmpty then .stopped
+  else .passed
 
 /-- Run every `entry` procedure of `m` on the Cortex interpreter, after the
 cleanup passes and the lowerings of `Cortex.Interp.lower`, giving
@@ -63,24 +101,42 @@ def interpretProgram (m : Cortex.UnorderedProgram) (fuel : Nat) (cleanup : Bool 
     | .error _ => pure none
   let mut out : Array Message := #[]
   let mut errors : Array (String × String) := #[]
+  let mut failed : Array String := #[]
+  let mut stops : Array String := #[]
   for p in entries do
-    let r := if p.body.isNone then .error (.procedureWithoutBody p.name) else
+    let (result, trace) : Except StopReason Config × Trace :=
+      if p.body.isNone then (.error (.procedureWithoutBody p.name), []) else
       match prepared with
-      | some m => runPrepared m fuel p.name
-      | none => runEntry m fuel p
-    match r with
-    | .error e =>
-      errors := errors.push (p.name, cortexStopMessage e)
-      if let some fr := stopLocation e then
-        out := out.push (Message.withRange fr s!"the interpreter fails here: {cortexStopMessage e}")
-    | .ok { trace, .. } =>
-      if unevaluated trace > 0 then
-        errors := errors.push (p.name, "an assertion could not be evaluated")
-      for (md, summary) in failures trace do
-        match Imperative.getFileRange md with
-        | some fr => out := out.push (Message.withRange fr s!"{summary} does not hold")
-        | none => errors := errors.push (p.name, s!"{summary} does not hold, at a check with no source location")
-  return { diagnostics := out.toList.eraseDups.toArray, errors := errors.toList.eraseDups.toArray }
+      | some m => runPreparedTraced m fuel p.name
+      | none => match runEntry m fuel p with
+        | .ok r => (.ok r.final, r.trace)
+        | .error e => (.error e, [])
+    if let .error e := result then
+      unless isStop e do
+        errors := errors.push (p.name, cortexStopMessage e)
+        if let some fr := stopLocation e then
+          out := out.push (Message.withRange fr s!"the interpreter fails here: {cortexStopMessage e}")
+        continue
+    if unevaluated trace > 0 then
+      errors := errors.push (p.name, "an assertion could not be evaluated")
+    let mut checkFailed := false
+    for (md, summary) in failures trace do
+      match Imperative.getFileRange md with
+      | some fr =>
+        out := out.push (Message.withRange fr s!"{summary} does not hold")
+        checkFailed := true
+      | none => errors := errors.push (p.name, s!"{summary} does not hold, at a check with no source location")
+    if let .error e := result then
+      -- A stop is reported where it happened, after the checks that failed before it. A resource limit that nothing
+      -- located, such as the fuel running out at a lowering's jump, is the entry's.
+      match (stopLocation e).orElse fun _ => if isResourceLimit e then Imperative.getFileRange p.md else none with
+      | some fr =>
+        out := out.push (Message.withRange fr s!"the run stops here: {cortexStopMessage e}")
+        stops := stops.push p.name
+      | none => errors := errors.push (p.name, s!"{cortexStopMessage e}, at a stop with no source location")
+    if checkFailed then
+      failed := failed.push p.name
+  return { diagnostics := out.toList.eraseDups.toArray, failed, stops, errors := errors.toList.eraseDups.toArray }
 
 def directStopMessage : DirectInterp.StopReason → String
   | .fuelExhausted => "out of fuel"

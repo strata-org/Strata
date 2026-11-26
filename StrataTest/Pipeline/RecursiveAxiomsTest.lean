@@ -50,7 +50,7 @@ private def withoutSymbolicEval (axioms : Bool)
     (entry ++ [Core.passTypeCheck .quiet, Core.passTermCheck, Core.passPrecondElim,
       Core.passGenOpaqueTypeParams, Core.passMonomorphizeFunctions, Core.passSimplify] ++
      (if axioms then [Core.passRecursiveAxioms axiomOptions] else []) ++
-     [ho, pc, Core.passFunctionInlining, Core.passBetaReduce])).toOption
+     [ho, pc, Core.passFunctionInlining, Core.passBetaReduce, Core.passLambdaLift])).toOption
 
 /-- The phase names of `withoutSymbolicEval axioms`, or why it does not compose. -/
 private def phaseNames (axioms : Bool) : String :=
@@ -58,11 +58,11 @@ private def phaseNames (axioms : Bool) : String :=
   | some vp => ", ".intercalate (vp.phases.map (·.phase.name))
   | none => "does not compose"
 
-/-- info: "assertNoCFGBodies, assertNoCalls, assertNoLoops, assertStaticSingleAssignment, assertNoNondetGuards, typeCheck, termCheck, precondElim, genOpaqueTypeParams, monomorphizeFunctions, simplify, recursiveAxioms, assertHasObligationForm, assertNoProcedureContracts, functionInlining, betaReduce" -/
+/-- info: "assertNoCFGBodies, assertNoCalls, assertNoLoops, assertStaticSingleAssignment, assertNoNondetGuards, typeCheck, termCheck, precondElim, genOpaqueTypeParams, monomorphizeFunctions, simplify, recursiveAxioms, assertHasObligationForm, assertNoProcedureContracts, functionInlining, betaReduce, lambdaLift" -/
 #guard_msgs in
 #eval phaseNames true
 
-/-- info: "assertNoCFGBodies, assertNoCalls, assertNoLoops, assertStaticSingleAssignment, assertNoNondetGuards, typeCheck, termCheck, precondElim, genOpaqueTypeParams, monomorphizeFunctions, simplify, assertHasObligationForm, assertNoProcedureContracts, functionInlining, betaReduce" -/
+/-- info: "assertNoCFGBodies, assertNoCalls, assertNoLoops, assertStaticSingleAssignment, assertNoNondetGuards, typeCheck, termCheck, precondElim, genOpaqueTypeParams, monomorphizeFunctions, simplify, assertHasObligationForm, assertNoProcedureContracts, functionInlining, betaReduce, lambdaLift" -/
 #guard_msgs in
 #eval phaseNames false
 

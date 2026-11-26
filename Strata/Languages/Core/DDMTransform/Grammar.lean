@@ -786,15 +786,21 @@ category Bindings;
 op mkBindings (bindings : CommaSepBy Binding) : Bindings => " (" bindings ")";
 
 // ---- Commands (procedures, type/const/function declarations, programs) ----
+// `opaque` before a body makes the procedure opaque (`Body.isOpaque`): its callers know it only
+// through its contract, and its body is still verified.
+category OpaqueMark;
+op opaque_mark () : OpaqueMark => "opaque ";
+
 op command_procedure (annots : Option MetadataAnn,
                       name : Ident,
                       typeArgs : Option TypeArgs,
                       @[scope(typeArgs)] b : Bindings,
                       @[scope(b)] s: Option Spec,
+                      opq : Option OpaqueMark,
                       @[scope(b)] body : Option Block) :
   Command =>
   @[prec(10)] annots:0 "procedure " name typeArgs b "\n"
-              s body ";\n";
+              s opq body ";\n";
 
 // (FIXME) Change when DDM supports type declarations like so:
 // type Array a;
@@ -1059,10 +1065,11 @@ op command_cfg_procedure (annots : Option MetadataAnn,
                           typeArgs : Option TypeArgs,
                           @[scope(typeArgs)] b : Bindings,
                           @[scope(b)] s : Option Spec,
+                          opq : Option OpaqueMark,
                           @[scope(b)] body : CFGBody) :
   Command =>
   @[prec(10)] annots:0 "procedure " name typeArgs b "\n"
-              s body ";\n";
+              s opq body ";\n";
 
 #end
 

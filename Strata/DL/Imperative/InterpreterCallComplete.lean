@@ -40,7 +40,8 @@ derivation.
 
 Key definitions: `EvalCommandEngAtE` and its closure `StepEngAtStarE` (the engine-realizable
 relations at a call-nesting height), `CallArgsReach` and `WriteBackOK` (the run-local facts of a
-call), `CmdArmComplete` (the per-command completeness obligation)
+call), `HavocEng` and `AbstractCallArmEng` (the engine-realizable havoc and call of an abstract
+callee), `CmdArmComplete` (the per-command completeness obligation)
 and `ReplayComplete` (completeness of the replay verdict `genuine`).
 
 Key theorems: `call_cmdArmComplete_all` (every engine-realizable command is performed by
@@ -49,16 +50,17 @@ engine-realizable run ending at a configuration the driver stops at is reproduce
 `runCallInterp π`) and `call_runCallInterp_complete_of_agree` (the same for a reference
 `StepStmtExtStarE` run, under `EngineAgreesFrom`).
 `cfg_stepCmd_store_complete` is the per-command completeness of `stepCmd π` with its result
-projected to the store, and `stepCmd_call_complete` the completeness of one `.call` step given
-its callee body run.
+projected to the store, `stepCmd_call_complete` the completeness of one `.call` step given
+its callee body run, `stepCmd_abstractCall_complete` that of a `.call` to an opaque callee given
+its havoc run, and `havocVarList_complete` the completeness of the havoc.
 `evalBoundedList_of_reach`, `readVarList_of_storedTy` and `writeBackTyped_of_rel` relate the
 engine's runtime call marshalling to the semantic one, and `guardEval_complete` gives the guard
 values, literals up to metadata, the engine branches on under `EngineGuardsAgree`.
 
 `RunChoices` is the choice sequence of a reference run: the values its nondeterministic
-`.init`/`.set` commands write and the Booleans its `.nondet` guards are read as, in execution
-order and inside callee bodies, read off an oracle by the relations `OracleStepE` and
-`OracleCmdAt`.  `ProgDeterministic` (with `Config.noNondetGuards`, `CmdExtDeterministic`) is the
+`.init`/`.set` commands and the calls to opaque callees write and the Booleans its `.nondet`
+guards are read as, in execution order and inside callee bodies, read off an oracle by the
+relations `OracleStepE`, `OracleCmdAt` and `HavocOracle`.  `ProgDeterministic` (with `Config.noNondetGuards`, `CmdExtDeterministic`) is the
 syntactic determinism of a call-aware program.  Completeness over choice sequences is in
 `InterpreterCallCompleteProps.lean`. -/
 
@@ -119,17 +121,19 @@ abbrev CallBodyRel (P : PureExpr) :=
     `BigStepE`: a structured body runs as `.block ""` through the engine-realizable statement
     relation built from `E`; a CFG body runs from its entry block at the factory of the entry
     environment through the engine-realizable event-trace CFG relation over `E` (`StepCFGEngE`),
-    and its final store is the halting store projected through the entry store. -/
+    and its final store is the halting store projected through the entry store.  An abstract body
+    has no execution (a call to an opaque callee is `AbstractCallArmEng`). -/
 @[expose] def BodyExecEngOf
     (R : ChoiceRecord P) (E : CallCmdRel P) : CallBodyRel P
-  | .structured ss, ρ, σ', emitted =>
+  | .structured ss _, ρ, σ', emitted =>
       ∃ ρ' : Env P,
         ReflTransTrace (Imperative.StepEngParamE P R E)
           (.stmt (Stmt.block "" ss #[]) ρ) emitted (.terminal ρ')
         ∧ ρ'.store = σ'
-  | .cfg g, ρ, σ', emitted =>
+  | .cfg g _, ρ, σ', emitted =>
       ∃ ρEnd : Env P, StepCFGEngStarE P E (.atBlock g g.entry ρ) emitted (.terminal ρEnd)
         ∧ projectStore ρ.store ρEnd.store = σ'
+  | .abstract, _, _, _ => False
 
 /-- The base-command arm of the engine-realizable command relation: the
     reference `EvalCmdExtE.cmd_sem` arm with the engine's executable value checks
@@ -148,7 +152,7 @@ abbrev CallBodyRel (P : PureExpr) :=
   fun fac σ c σ' emitted =>
     ∃ nm tyArgs p callArgs md σAO σ_final bodyEvents,
       c = CmdExt.call nm tyArgs callArgs md
-      ∧ typeInstantiatedCallee π nm tyArgs = some p
+      ∧ typeInstantiatedCallee π nm tyArgs = some p ∧ p.body.isOpaque = false
       ∧ CallEntry fac σ p callArgs σAO
       ∧ B p.body ⟨σAO, fac⟩ σ_final bodyEvents
       ∧ CallExit fac σ p callArgs σ_final σ'
@@ -156,10 +160,37 @@ abbrev CallBodyRel (P : PureExpr) :=
           bodyEvents ++ defaultAssertEvents fac σ_final p.spec.postconditions
       ∧ CallArgsReach fac σ callArgs ∧ WriteBackOK fac σ p callArgs σ_final
 
+/-- Engine-realizable havoc of the names `xs` from the store `σ` to `σ'`: one engine-realizable
+    nondeterministic `set` per name, in order (`EvalCmdEngE`, its value read off the choice record
+    `R`), as the engine's `havocVarList` runs them. -/
+inductive HavocEng (R : ChoiceRecord P) (f : P.Factory) :
+    SemanticStore P → List P.Ident → SemanticStore P → Prop where
+  | nil {σ : SemanticStore P} : HavocEng R f σ [] σ
+  | cons {σ σ₁ σ₂ : SemanticStore P} {x : P.Ident} {xs : List P.Ident} :
+      EvalCmdEngE P R f σ (.set x .nondet MetaData.empty) σ₁ [] →
+      HavocEng R f σ₁ xs σ₂ → HavocEng R f σ (x :: xs) σ₂
+
+/-- The abstract-call arm of the engine-realizable command relation: the reference
+    `EvalCmdExtE.call_abstract_sem` arm with an engine-realizable havoc of the output formals
+    (`HavocEng`), plus the two facts the engine's `.call` machinery needs of the individual call
+    (`CallArgsReach`, `WriteBackOK`), as in `CallArmEng`. -/
+@[expose] def AbstractCallArmEng (π : String → Option (Procedure P (CmdExt P) Hdr))
+    (R : ChoiceRecord P) : CallCmdRel P :=
+  fun fac σ c σ' emitted =>
+    ∃ nm tyArgs p callArgs md σAO σO,
+      c = CmdExt.call nm tyArgs callArgs md
+      ∧ typeInstantiatedCallee π nm tyArgs = some p ∧ p.body.isOpaque = true
+      ∧ CallEntry fac σ p callArgs σAO
+      ∧ HavocEng R fac σAO (ProcedureHeader.outputParams (P := P) p.header) σO
+      ∧ CallExit fac σ p callArgs σO σ'
+      ∧ emitted = defaultAssertEvents fac σAO (checksAtCall md p.spec.preconditions) ++
+          assumeEvents fac σO p.spec.postconditions
+      ∧ CallArgsReach fac σ callArgs ∧ WriteBackOK fac σ p callArgs σO
+
 /-- Engine-realizable command semantics at call-nesting height `n`: base
     commands at every height, and calls whose callee body is itself an
-    engine-realizable run at height `n - 1`.  At height `0` only base commands
-    are related. -/
+    engine-realizable run at height `n - 1`, or whose callee is opaque.  At height `0` only
+    base commands are related. -/
 @[expose] def EvalCommandEngAtE
     (π : String → Option (Procedure P (CmdExt P) Hdr))
     (R : ChoiceRecord P) : Nat → CallCmdRel P
@@ -168,6 +199,7 @@ abbrev CallBodyRel (P : PureExpr) :=
       CmdArmEng R fac σ c σ' emitted
       ∨ CallArmEng π
           (BodyExecEngOf R (EvalCommandEngAtE π R n)) fac σ c σ' emitted
+      ∨ AbstractCallArmEng π R fac σ c σ' emitted
 
 /-- Traced closure of the engine-realizable statement relation at height `n`. -/
 abbrev StepEngAtStarE
@@ -181,7 +213,7 @@ abbrev StepEngAtStarE
 abbrev callStepOf {m : Type → Type} [Monad m] [InterpEffects P m]
     [MonadExcept StopReason m] (π : String → Option (Procedure P (CmdExt P) Hdr)) (i j : Nat) :
     StepCmdM P (CmdExt P) m :=
-  fun _ env cmd => stepCmd π i j env cmd
+  fun _ env cmd => stepCmd π .contract i j env cmd
 
 /-! ## Runtime call marshalling against its semantic image
 
@@ -326,21 +358,22 @@ theorem evalCommandEngAtE_cmdDefsSound
     hc ▸ evalCmdE_cmdDefsSound _ _ _ _ _ h.toEvalCmdE
   rcases n with _ | n
   · exact hcmd
-  rintro _ _ _ _ _ (h | ⟨_, _, _, _, _, _, _, _, rfl, -, -, -, ⟨_, _, _, hup, -⟩, -⟩)
+  rintro _ _ _ _ _ (h | ⟨_, _, _, _, _, _, _, _, rfl, -, -, -, -, ⟨_, _, _, hup, -⟩, -⟩ |
+    ⟨_, _, _, _, _, _, _, rfl, -, -, -, -, ⟨_, _, _, hup, -⟩, -⟩)
   · exact hcmd _ _ _ _ _ h
-  exact fun x hx => .inl (UpdateStatesDefMonotone' (vs := [x])
+  all_goals exact fun x hx => .inl (UpdateStatesDefMonotone' (vs := [x])
     (fun _ hv => List.mem_singleton.1 hv ▸ hx) hup x (List.mem_singleton_self x))
 
 omit [LawfulMonad m] in
 /-- **A `.call` step, given its callee body run.**  A reference `.call` with entry frame `σAO`
     (`CallEntry`) and write-back from the callee's final store `σf` to `σ'` (`CallExit`), from a
     denoting caller environment `ρ` carrying the runtime factory of `F`, is performed by
-    `stepCmd π i j` at every large enough call-depth budget `i` and stepper index `j` from every
-    state `st` with `Pend st o`, reaching a denoting store that stands for `σ'`, leaving a state
-    with `Pend st' o'` and recording the call's events, given that: emitting runtime events whose
-    images satisfy `Q` succeeds, keeps `Pend` and prepends the events (`hemit`); the callee body
-    run (`runCallee`) from every denoting runtime frame standing for `σAO` reaches a denoting store
-    standing for `σf`, turning `Pend · o` into `Pend · o'` and recording `evB` (`hbody`); the
+    `stepCmd π .contract i j` at every large enough call-depth budget `i` and stepper index `j` from
+    every state `st` with `Pend st o`, reaching a denoting store that stands for `σ'`, leaving a
+    state with `Pend st' o'` and recording the call's events, given that: emitting runtime events
+    whose images satisfy `Q` succeeds, keeps `Pend` and prepends the events (`hemit`); the callee
+    body run (`runCallee`) from every denoting runtime frame standing for `σAO` reaches a denoting
+    store standing for `σf`, turning `Pend · o` into `Pend · o'` and recording `evB` (`hbody`); the
     call's events satisfy `Q`; the engine reaches the value of every input expression
     (`hargs`); the engine's typed write-back check passes (`hwb`); and the bounded evaluator is
     fuel-monotone. -/
@@ -355,7 +388,7 @@ theorem stepCmd_call_complete (obs : InterpObs P m)
     {nm : String} {args : List (CallArg P)} {md : MetaData P} {p : Procedure P (CmdExt P) Hdr}
     {tyArgs : Option (List P.Ty)}
     {σAO σf σ' : SemanticStore P} {evB : List (Event P)} {o o' : List P.Val}
-    (hπ : typeInstantiatedCallee π nm tyArgs = some p)
+    (hπ : typeInstantiatedCallee π nm tyArgs = some p) (hno : p.body.isOpaque = false)
     (hentry : CallEntry F (InterpLang.absStore F ρ.store.get) p args σAO)
     (hexit : CallExit F (InterpLang.absStore F ρ.store.get) p args σf σ')
     (hargs : CallArgsReach F (InterpLang.absStore F ρ.store.get) args)
@@ -363,7 +396,8 @@ theorem stepCmd_call_complete (obs : InterpObs P m)
     (hbody : ∀ er : RStore P, InterpLang.absStore F er = σAO → RStore.Denoting F er →
       ∀ st, Pend st o → ∃ (fb : Nat) (sf : RStore P) (st' : obs.St),
         InterpLang.absStore F sf = σf ∧ RStore.Denoting F sf ∧
-        (∀ i j, fb ≤ i → fb ≤ j → obs.run (runCallee (fun _ e c => stepCmd π i j e c) nm p.body
+        (∀ i j, fb ≤ i → fb ≤ j → obs.run (runCallee (fun _ e c => stepCmd π .contract i j e c) nm
+            p.body
           (InterpLang.rfactory F) j er) cfgr st = (.ok sf, st')) ∧
         Pend st' o' ∧ obs.TraceExt F st st' evB)
     (hq : ∀ ev ∈ defaultAssertEvents F σAO (checksAtCall md p.spec.preconditions) ++ evB ++
@@ -371,7 +405,8 @@ theorem stepCmd_call_complete (obs : InterpObs P m)
     (st : obs.St) (hst : Pend st o) :
     ∃ (f0 : Nat) (σi : IStore P) (st' : obs.St), InterpLang.absStore F σi.get = σ' ∧
       RStore.Denoting F σi.get ∧
-      (∀ i j, f0 ≤ i → f0 ≤ j → obs.run (stepCmd π i j ρ (.call nm tyArgs args md)) cfgr st
+      (∀ i j, f0 ≤ i → f0 ≤ j → obs.run (stepCmd π .contract i j ρ (.call nm tyArgs args md)) cfgr
+          st
         = (.ok (.terminal { ρ with store := σi }), st')) ∧ Pend st' o' ∧
       obs.TraceExt F st st' (defaultAssertEvents F σAO (checksAtCall md p.spec.preconditions) ++
         evB ++ defaultAssertEvents F σf p.spec.postconditions) := by
@@ -406,17 +441,103 @@ theorem stepCmd_call_complete (obs : InterpObs P m)
   · obtain ⟨i, rfl⟩ : ∃ k, i = k + 1 := ⟨i - 1, by omega⟩
     obtain ⟨j, rfl⟩ : ∃ k, j = k + 1 := ⟨j - 1, by omega⟩
     rw [stepCmd, stepCmdWith]
-    simp (disch := omega) [CmdExt.view, hπ₀, hinst, hf, hev, hro, hlin, hlout, hri.length_eq,
+    simp (disch := omega) [CmdExt.view, dispatchCall, callBody, hπ₀, hinst, hno,
+      CallMode.runsContract, -Body.isOpaque, hf, hev, hro, hlin, hlout, hri.length_eq,
       hrorel.length_eq, e1,
       hrun i j, e3, hms, hold, hwb, ReadValuesLength hrd, hbind.1, -List.forM_eq_forM]
   · simp only [List.map_append, rDefaultAssertEvents_abs, habs, hrb]
   · simp [t1, t2, t3]
 
+omit [LawfulMonad m] in
+/-- **A `.call` step to an opaque callee, given its havoc run.**  A reference `.call` to an
+    opaque callee (`p.body.isOpaque = true`) with entry frame `σAO` (`CallEntry`) and write-back
+    from the post-havoc frame `σO` to `σ'` (`CallExit`), from a denoting caller environment `ρ`
+    carrying the runtime factory of `F`, is performed by `stepCmd π .contract i j` at every large
+    enough call-depth budget `i` and stepper index `j` from every state `st` with `Pend st o`,
+    reaching a denoting store that stands for `σ'`, leaving a state with `Pend st' o'` and recording
+    the call's events, given that: emitting runtime events whose images satisfy `Q` succeeds, keeps
+    `Pend` and prepends the events (`hemit`); the havoc of the output formals (`havocVarList`)
+    from every denoting runtime frame standing for `σAO` reaches a denoting store standing for
+    `σO`, turning `Pend · o` into `Pend · o'` and recording no event (`hhavoc`); the call's events
+    satisfy `Q`; the engine reaches the value of every input expression (`hargs`); the engine's
+    typed write-back check passes (`hwb`); and the bounded evaluator is fuel-monotone. -/
+theorem stepCmd_abstractCall_complete (obs : InterpObs P m)
+    (π : String → Option (Procedure P (CmdExt P) Hdr)) (cfgr : obs.Cfg) {F : P.Factory}
+    (hMono : BoundedEvalMono P)
+    {Pend : obs.St → List P.Val → Prop} {Q : Event P → Prop}
+    (hemit : ∀ (revs : List (IEvent P)) o st, (∀ ev ∈ revs, Q (ev.abs F)) → Pend st o →
+      ∃ st', obs.run (revs.forM (InterpEffects.emit (P := P))) cfgr st = (.ok ⟨⟩, st') ∧
+        Pend st' o ∧ obs.trace st' = revs.reverse ++ obs.trace st)
+    {ρ : IEnv P} (hd : RStore.Denoting F ρ.store.get) (hf : ρ.factory = InterpLang.rfactory F)
+    {nm : String} {tyArgs : Option (List P.Ty)} {args : List (CallArg P)} {md : MetaData P}
+    {p : Procedure P (CmdExt P) Hdr} {σAO σO σ' : SemanticStore P} {o o' : List P.Val}
+    (hπ : typeInstantiatedCallee π nm tyArgs = some p) (hab : p.body.isOpaque = true)
+    (hentry : CallEntry F (InterpLang.absStore F ρ.store.get) p args σAO)
+    (hexit : CallExit F (InterpLang.absStore F ρ.store.get) p args σO σ')
+    (hargs : CallArgsReach F (InterpLang.absStore F ρ.store.get) args)
+    (hwb : WriteBackOK F (InterpLang.absStore F ρ.store.get) p args σO)
+    (hhavoc : ∀ er : RStore P, InterpLang.absStore F er = σAO → RStore.Denoting F er →
+      ∀ st, Pend st o → ∃ (fb : Nat) (sf : IStore P) (st' : obs.St),
+        InterpLang.absStore F sf.get = σO ∧ RStore.Denoting F sf.get ∧
+        (∀ j, fb ≤ j → obs.run (havocVarList j (InterpLang.rfactory F)
+          (ProcedureHeader.outputParams (P := P) p.header) (.ofStore er)) cfgr st = (.ok sf, st')) ∧
+        Pend st' o' ∧ obs.trace st' = obs.trace st)
+    (hq : ∀ ev ∈ defaultAssertEvents F σAO (checksAtCall md p.spec.preconditions) ++
+      assumeEvents F σO p.spec.postconditions, Q ev)
+    (st : obs.St) (hst : Pend st o) :
+    ∃ (f0 : Nat) (σi : IStore P) (st' : obs.St), InterpLang.absStore F σi.get = σ' ∧
+      RStore.Denoting F σi.get ∧
+      (∀ i j, f0 ≤ i → f0 ≤ j → obs.run (stepCmd π .contract i j ρ (.call nm tyArgs args md)) cfgr
+          st
+        = (.ok (.terminal { ρ with store := σi }), st')) ∧ Pend st' o' ∧
+      obs.TraceExt F st st' (defaultAssertEvents F σAO (checksAtCall md p.spec.preconditions) ++
+        assumeEvents F σO p.spec.postconditions) := by
+  obtain ⟨p₀, hπ₀, hinst⟩ : ∃ p₀, π nm = some p₀ ∧
+      ProcedureTypeInstantiation.instantiate p₀ (tyArgs.getD []) = some p :=
+    Option.bind_eq_some_iff.1 hπ
+  obtain ⟨vi, vo, hin, hout, hinit⟩ := hentry
+  obtain ⟨-, vs, hrd, hup, hrel⟩ := hexit
+  obtain ⟨N, ri, hri, hev⟩ := evalBoundedList_of_reach hMono (storeDenotes_absStore hd) hin hargs
+  obtain ⟨ro, hro, hrorel⟩ := readVarList_absStore _ _ (readVarList_of_readValues _ _ _ _ hout)
+  obtain ⟨hlin, hlout, rfl⟩ := callEntryStore_of_initCallFrame _ _ _ _ hinit
+  obtain ⟨habs, hden⟩ := callEntryStore_abs p hri hrorel
+  simp only [List.forall_mem_append] at hq
+  obtain ⟨hq1, hq3⟩ := hq
+  obtain ⟨s1, e1, p1, t1⟩ := hemit (rDefaultAssertEvents (InterpLang.rfactory F)
+    (callEntryStore p ri ro) (checksAtCall md p.spec.preconditions)) o st (fun ev hev =>
+      hq1 _ (habs ▸ rDefaultAssertEvents_abs F _ _ ▸ List.mem_map_of_mem hev)) hst
+  obtain ⟨fb, sf, s2, rfl, hdsf, hhv, p2, t2⟩ := hhavoc _ habs hden s1 p1
+  obtain ⟨s3, e3, p3, t3⟩ := hemit (rAssumeEvents (InterpLang.rfactory F) sf.get
+    p.spec.postconditions) o' s2 (fun ev hev =>
+      hq3 _ (rAssumeEvents_abs F _ _ ▸ List.mem_map_of_mem hev)) p2
+  obtain ⟨ms, hms, hmsrel⟩ :=
+    readVarList_absStore sf.get _ (readVarList_of_readValues _ _ _ _ hrd)
+  obtain ⟨olds, hold⟩ := readVarList_of_storedTy hrel
+  have hwb := hwb _ _ _ _ (storeDenotes_absStore hd) (storeDenotes_absStore hdsf) hold hms
+  have hbind := bindPositional_of_updateStates _ _ _ _ hup
+  refine ⟨N + fb + 1, ρ.store.bindPositional (CallArg.getLhs args) ms, s3, ?_, ?_,
+    fun i j hi hj => ?_, p3, ⟨rDefaultAssertEvents (InterpLang.rfactory F) (callEntryStore p ri ro)
+      (checksAtCall md p.spec.preconditions) ++
+      rAssumeEvents (InterpLang.rfactory F) sf.get p.spec.postconditions, ?_, ?_⟩⟩
+  · rw [IStore.get_bindPositional, absStore_bindPositional _ _ hmsrel, hbind.2]
+  · rw [IStore.get_bindPositional]
+    exact denoting_bindPositional _ hd hmsrel
+  · obtain ⟨i, rfl⟩ : ∃ k, i = k + 1 := ⟨i - 1, by omega⟩
+    obtain ⟨j, rfl⟩ : ∃ k, j = k + 1 := ⟨j - 1, by omega⟩
+    rw [stepCmd, stepCmdWith]
+    simp (disch := omega) [CmdExt.view, dispatchCall, callBody, hπ₀, hinst, hab,
+      CallMode.runsContract, -Body.isOpaque,
+      hf, hev, hro, hlin, hlout, hri.length_eq,
+      hrorel.length_eq, e1, runAbstractCallee, hhv j, e3, hms, hold, hwb, ReadValuesLength hrd,
+      hbind.1, -List.forM_eq_forM]
+  · simp only [List.map_append, rDefaultAssertEvents_abs, rAssumeEvents_abs, habs]
+  · simp [t1, t2, t3]
+
 /-- **Completeness of the call-aware command stepper for the command relation `E`**: every
     `E`-related command evaluation, from the store of an environment `ρ` to `σ'` emitting `evs`, is
-    performed by one `stepInterp` step over `stepCmd π i j` at every sufficiently large call-depth
-    budget `i`, stepper index `j` and driver fuel, landing in `.terminal { ρ with store := σ' }` and
-    prepending exactly `evs` to the trace. -/
+    performed by one `stepInterp` step over `stepCmd π .contract i j` at every sufficiently large
+    call-depth budget `i`, stepper index `j` and driver fuel, landing in
+    `.terminal { ρ with store := σ' }` and prepending exactly `evs` to the trace. -/
 @[expose] def CmdArmComplete (obs : InterpObs P m)
     (π : String → Option (Procedure P (CmdExt P) Hdr)) (cfgr : obs.Cfg) (F : P.Factory)
     (E : CallCmdRel P) : Prop :=
@@ -432,9 +553,9 @@ theorem stepCmd_call_complete (obs : InterpObs P m)
 
 omit [HasFvars P] in
 /-- `CmdArmComplete` holds for the base-command arm `CmdArmEng R` of the engine-realizable command
-    relation: every engine-realizable base-command evaluation is performed by `stepCmd π i j`, for
-    an observation whose `emit` always succeeds and whose `choose` resolves `R`, when the bounded
-    evaluator is fuel-monotone. -/
+    relation: every engine-realizable base-command evaluation is performed by
+    `stepCmd π .contract i j`, for an observation whose `emit` always succeeds and whose `choose`
+    resolves `R`, when the bounded evaluator is fuel-monotone. -/
 private theorem call_cmdArmComplete_cmd (obs : InterpObs P m)
     (π : String → Option (Procedure P (CmdExt P) Hdr)) (cfgr : obs.Cfg) {F : P.Factory} {R : ChoiceRecord P}
     (hemit : EmitTotal obs cfgr) (hchoose : ChooseResolves obs cfgr F R)
@@ -448,8 +569,9 @@ private theorem call_cmdArmComplete_cmd (obs : InterpObs P m)
 
 /-- `CmdArmComplete` holds for the `.call` arm whose callee body runs at call-nesting height `n`,
     given that every engine-realizable command evaluation at height `n` is performed by
-    `stepCmd π i j` at every large enough `i`, `j` and fuel (`ih`): every engine-realizable `.call`
-    evaluation is then so performed, for an observation whose `emit` always succeeds and whose
+    `stepCmd π .contract i j` at every large enough `i`, `j` and fuel (`ih`): every
+    engine-realizable `.call` evaluation is then so performed, for an observation whose `emit`
+    always succeeds and whose
     `choose` resolves `R`, when the bounded evaluator is fuel-monotone.  The call arm carries the
     engine's argument evaluation and write-back facts, and a CFG callee body's guard steps carry
     the engine's guard evaluation (`StepCFGEngE`). -/
@@ -462,11 +584,12 @@ private theorem call_cmdArmComplete_call (obs : InterpObs P m)
     CmdArmComplete obs π cfgr F
       (CallArmEng π (BodyExecEngOf R (EvalCommandEngAtE π R n))) := by
   rintro ρ _ _ _ st ⟨hd, hf⟩
-    ⟨nm, _, ⟨hdr, spec, body⟩, args, md, σAO, σf, evB, rfl, hπ, hentry, hB, hexit, rfl, hargs, hwb⟩
+    ⟨nm, _, ⟨hdr, spec, body⟩, args, md, σAO, σf, evB, rfl, hπ, hno, hentry, hB, hexit, rfl, hargs,
+      hwb⟩
   refine (stepCmd_call_complete obs π cfgr hMono (Pend := fun _ _ => True)
     (Q := fun _ => True) (o := []) (o' := []) (fun revs _ st _ _ =>
       (obs_forM_emit_complete obs cfgr hemit revs st).imp fun _ ⟨a, b⟩ => ⟨a, trivial, b⟩)
-    hd hf hπ hentry hexit hargs hwb (fun er habs hder st _ => ?_) (fun _ _ => trivial) st
+    hd hf hπ hno hentry hexit hargs hwb (fun er habs hder st _ => ?_) (fun _ _ => trivial) st
     trivial).imp
     fun _ ⟨σi, st', h1, h2, hrun, _, ht⟩ =>
       ⟨σi, st', h1, h2, fun i j _ hi hj _ => hrun i j hi hj, ht⟩
@@ -491,7 +614,7 @@ private theorem call_cmdArmComplete_call (obs : InterpObs P m)
     obtain ⟨f, s', y1, ⟨hyd, hy⟩, hr, -, ht⟩ := runInterpCFG_follows_fam obs cfgr F
       (fun _ _ => True) (Q := fun _ => True)
       (E := fun f σ c σ' evs _ _ => EvalCommandEngAtE π R n f σ c σ' evs)
-      (fun i j _ => StepCmdM.toStore (stepCmd π i) j)
+      (fun i j _ => StepCmdM.toStore (stepCmd π .contract i) j)
       (fun σ c σ' evs _ _ hσ hc _ st _ => by
         obtain ⟨f0, σi, s', hσi, hdi, hs, ht⟩ :=
           ih ⟨σ, InterpLang.rfactory F⟩ c σ' evs st ⟨hσ, rfl⟩ hc
@@ -511,11 +634,64 @@ private theorem call_cmdArmComplete_call (obs : InterpObs P m)
     · rw [InterpLang.absStore_project _ hder, habs]
       rfl
     · simp [runCallee, hr i j j hi hj hj]
+  | abstract => exact hB.elim
+
+omit [HasFvars P] [HasOldIdent P] in
+/-- An engine-realizable havoc of the names `xs` (`HavocEng`) from the image of a denoting
+    interpreter store `σ` is performed by `havocVarList` at every large enough fuel, from every
+    state, for an observation whose `emit` always succeeds and whose `choose` resolves `R`, when
+    the bounded evaluator is fuel-monotone: it reaches a denoting store standing for the havoc's
+    final store and records no event. -/
+theorem havocVarList_complete (obs : InterpObs P m) (cfgr : obs.Cfg) {F : P.Factory}
+    {R : ChoiceRecord P} (hemit : EmitTotal obs cfgr) (hchoose : ChooseResolves obs cfgr F R)
+    (hMono : BoundedEvalMono P) {σa : SemanticStore P} {xs : List P.Ident}
+    {σ' : SemanticStore P} (h : HavocEng R F σa xs σ') :
+    ∀ (σ : IStore P), InterpLang.absStore F σ.get = σa → RStore.Denoting F σ.get →
+      ∀ st : obs.St, ∃ (f0 : Nat) (σi : IStore P) (st' : obs.St),
+        InterpLang.absStore F σi.get = σ' ∧ RStore.Denoting F σi.get ∧
+        (∀ fuel, f0 ≤ fuel →
+          obs.run (havocVarList fuel (InterpLang.rfactory F) xs σ) cfgr st = (.ok σi, st')) ∧
+        obs.trace st' = obs.trace st := by
+  induction h with
+  | nil => exact fun σ h hd st => ⟨0, σ, st, h, hd, fun _ _ => obs.run_pure .., rfl⟩
+  | cons h1 _ ih =>
+    rintro σ rfl hd st
+    obtain ⟨n, σ1, s1, hσ1, hd1, hr1, revs, hrevs, t1⟩ :=
+      obs_stepBaseCmdStore_complete obs cfgr hemit hchoose hMono hd h1 st
+    obtain ⟨k, σi, s2, hσi, hdi, hr2, t2⟩ := ih σ1 hσ1 hd1 s1
+    refine ⟨n + k, σi, s2, hσi, hdi, fun fuel hf => ?_, ?_⟩
+    · simp only [havocVarList, obs.run_bind, hr1 fuel (by omega), hr2 fuel (by omega)]
+    · rw [t2, t1, List.map_eq_nil_iff.1 hrevs]
+      rfl
+
+/-- `CmdArmComplete` holds for the abstract-call arm `AbstractCallArmEng π R`: every
+    engine-realizable `.call` evaluation to an opaque callee is performed by
+    `stepCmd π .contract i j`, for an observation whose `emit` always succeeds and whose `choose`
+    resolves `R`, when the bounded evaluator is fuel-monotone. -/
+private theorem call_cmdArmComplete_abstract (obs : InterpObs P m)
+    (π : String → Option (Procedure P (CmdExt P) Hdr))
+    (cfgr : obs.Cfg) {F : P.Factory} {R : ChoiceRecord P}
+    (hemit : EmitTotal obs cfgr) (hchoose : ChooseResolves obs cfgr F R)
+    (hMono : BoundedEvalMono P) :
+    CmdArmComplete obs π cfgr F (AbstractCallArmEng π R) := by
+  rintro ρ _ _ _ st ⟨hd, hf⟩
+    ⟨nm, _, p, args, md, σAO, σO, rfl, hπ, hab, hentry, hH, hexit, rfl, hargs, hwb⟩
+  refine (stepCmd_abstractCall_complete obs π cfgr hMono (Pend := fun _ _ => True)
+    (Q := fun _ => True) (o := []) (o' := []) (fun revs _ st _ _ =>
+      (obs_forM_emit_complete obs cfgr hemit revs st).imp fun _ ⟨a, b⟩ => ⟨a, trivial, b⟩)
+    hd hf hπ hab hentry hexit hargs hwb (fun er habs hder st _ => ?_) (fun _ _ => trivial) st
+    trivial).imp
+    fun _ ⟨σi, st', h1, h2, hrun, _, ht⟩ =>
+      ⟨σi, st', h1, h2, fun i j _ hi hj _ => hrun i j hi hj, ht⟩
+  obtain ⟨f, σi, s', h1, h2, hr, ht⟩ := havocVarList_complete obs cfgr hemit hchoose hMono hH
+    (.ofStore er) (by simpa using habs) (by simpa using hder) st
+  exact ⟨f, σi, s', h1, h2, hr, trivial, ht⟩
 
 /-- At every call-nesting height `n`, `CmdArmComplete` holds for the engine-realizable command
     relation `EvalCommandEngAtE π R n`: every engine-realizable command evaluation, base command or
-    `.call`, is performed by `stepCmd π i j` at every sufficiently large call-depth budget `i`,
-    stepper index `j` and driver fuel, for an observation whose `emit` always succeeds and whose
+    `.call`, is performed by `stepCmd π .contract i j` at every sufficiently large call-depth budget
+    `i`, stepper index `j` and driver fuel, for an observation whose `emit` always succeeds and
+    whose
     `choose` resolves `R`, when the bounded evaluator is fuel-monotone. -/
 theorem call_cmdArmComplete_all (obs : InterpObs P m)
     (π : String → Option (Procedure P (CmdExt P) Hdr))
@@ -525,29 +701,31 @@ theorem call_cmdArmComplete_all (obs : InterpObs P m)
     ∀ n, CmdArmComplete obs π cfgr F (EvalCommandEngAtE π R n) :=
   have hcmd := call_cmdArmComplete_cmd _ π _ hemit hchoose hMono
   fun n => n.rec hcmd fun _ ih _ _ _ _ _ hd h =>
-    h.elim (hcmd _ _ _ _ _ hd)
-      (call_cmdArmComplete_call _ _ _ hemit hchoose hMono _ ih _ _ _ _ _
-        hd)
+    h.elim (hcmd _ _ _ _ _ hd) fun h => h.elim
+      (call_cmdArmComplete_call _ _ _ hemit hchoose hMono _ ih _ _ _ _ _ hd)
+      (call_cmdArmComplete_abstract _ _ _ hemit hchoose hMono _ _ _ _ _ hd)
 
 /-- Per-step completeness of the call-aware engine at call-nesting height `n`: every
     engine-realizable step over `EvalCommandEngAtE π R n` is performed by one
-    `stepInterp (stepCmd π d)` step at every sufficiently large call-depth limit `d` and fuel, from
-    every state (`StepInterpCompleteFam` of the family `fun d _ => stepCmd π d`), for an
-    observation whose `emit` always succeeds and whose `choose` resolves `R`, when the bounded
-    evaluator is fuel-monotone. -/
+    `stepInterp (stepCmd π .contract d)` step at every sufficiently large call-depth limit `d` and
+    fuel, from every state (`StepInterpCompleteFam` of the family
+    `fun d _ => stepCmd π .contract d`), for an observation whose `emit` always succeeds and whose
+    `choose` resolves `R`, when the bounded evaluator is fuel-monotone. -/
 private theorem call_stepInterpCompleteParam (obs : InterpObs P m)
     (π : String → Option (Procedure P (CmdExt P) Hdr))
     (cfgr : obs.Cfg) {F : P.Factory} {R : ChoiceRecord P}
     (hemit : EmitTotal obs cfgr) (hchoose : ChooseResolves obs cfgr F R)
     (hMono : BoundedEvalMono P)
     (n : Nat) :
-    StepInterpCompleteFam obs (fun d _ => stepCmd π d) cfgr F R (EvalCommandEngAtE π R n) :=
+    StepInterpCompleteFam obs (fun d _ => stepCmd π .contract d) cfgr F R (EvalCommandEngAtE π R n)
+        :=
   fun c _ _ st ht hd h =>
   have ⟨n, c', s, hrun, habs, hdn, htr, htrace⟩ := stepInterpCompleteFam_of_arms _ (callStepOf π) _
     hchoose hMono
     (call_cmdArmComplete_all _ π _ hemit hchoose hMono n)
     (evalCommandEngAtE_cmdDefsSound π R n) _ _ _ st ht hd h
-  have hstep : ∀ d f c, stepInterp (callStepOf (m := m) π d f) f c = stepInterp (stepCmd π d) f c :=
+  have hstep : ∀ d f c, stepInterp (callStepOf (m := m) π d f) f c = stepInterp (stepCmd π .contract
+      d) f c :=
     fun _ _ c => by induction c <;> simp [*, stepInterp]
   ⟨n, c', s, fun d _ f hd _ k => hstep d f c ▸ hrun d f f hd k k, habs, hdn, htr, htrace⟩
 
@@ -570,7 +748,7 @@ theorem call_runCallInterp_complete (obs : InterpObs P m)
     (st : obs.St) :
     ∃ (f0 : Nat) (final' : IConfig P (CmdExt P)) (st' : obs.St), final'.Denotes F final ∧
       (∀ fuel d, f0 ≤ fuel → f0 ≤ d →
-        obs.run (runCallInterp π fuel start d) cfgr st = (.ok final', st'))
+        obs.run (runCallInterp π .contract fuel start d) cfgr st = (.ok final', st'))
       ∧ obs.TraceExt F st st' evs :=
   (runInterp_complete_fam _ _ _ (call_stepInterpCompleteParam _ _ _ hemit hchoose hMono n) _ _ _
     htr hds hrun hdone st).imp fun f0 ⟨c, s, hc, a, b⟩ =>
@@ -597,15 +775,15 @@ theorem call_runCallInterp_complete_of_agree (obs : InterpObs P m)
     (hrun : StepStmtExtStarE π start evs final) (hdone : Config.Done final) (st : obs.St) :
     ∃ (f0 : Nat) (final' : IConfig P (CmdExt P)) (st' : obs.St), final'.Denotes F final ∧
       (∀ fuel d, f0 ≤ fuel → f0 ≤ d →
-        obs.run (runCallInterp π fuel istart d) cfgr st = (.ok final', st'))
+        obs.run (runCallInterp π .contract fuel istart d) cfgr st = (.ok final', st'))
       ∧ obs.TraceExt F st st' evs :=
   call_runCallInterp_complete _ _ _ hemit hchoose hMono n _ _ _ hstart.1
     hstart.2.1 (hstart.2.2 ▸ StepStmtStarE.toStepEngParamStarE hrun hag) hdone st
 
 /-- Every step of the engine-realizable command relation `EvalCommandEngAtE π R n` (each
     nondeterministic choice read off the choice record `R`, calls nested at most `n` deep) is
-    reproduced, at every large enough fuel and call-depth budget `d`, by a run of `stepCmd π d`
-    whose result is projected
+    reproduced, at every large enough fuel and call-depth budget `d`, by a run of
+    `stepCmd π .contract d` whose result is projected
     to its store, emitting exactly the step's events.  It assumes that the observation emits
     every event and resolves every choice recorded in `R`, and that the bounded evaluator is
     fuel-monotone. -/
@@ -620,7 +798,7 @@ theorem cfg_stepCmd_store_complete (obs : InterpObs P m)
     ∃ (f0 : Nat) (σi : IStore P) (st' : obs.St), InterpLang.absStore F σi.get = σ' ∧
       RStore.Denoting F σi.get ∧
       (∀ fuel d, f0 ≤ fuel → f0 ≤ d →
-        obs.run (StepCmdM.toStore (stepCmd π d) fuel (InterpLang.rfactory F) σ c) cfgr st
+        obs.run (StepCmdM.toStore (stepCmd π .contract d) fuel (InterpLang.rfactory F) σ c) cfgr st
           = (.ok σi, st'))
       ∧ obs.TraceExt F st st' emitted :=
   (call_cmdArmComplete_all _ _ _ hemit hchoose hMono n _ _ _ _ _ ⟨hd, rfl⟩
@@ -692,16 +870,28 @@ inductive OracleStepE (E : OracleCmdRel P) :
       ∃ x v, o = v :: o' ∧ σ' x = some v ∧
         ((∃ ty md, base = .init x ty .nondet md) ∨ ∃ md, base = .set x .nondet md))
 
+/-- The havoc of the names `xs` from the store `σ` to `σ'`, reading its values off an oracle: one
+    oracle-reading nondeterministic `set` per name, in order (`OracleCmdBase`), each popping the
+    value it writes, as the engine's `havocVarList` runs them. -/
+inductive HavocOracle (f : P.Factory) :
+    SemanticStore P → List P.Ident → SemanticStore P → List P.Val → List P.Val → Prop where
+  | nil {σ : SemanticStore P} {o : List P.Val} : HavocOracle f σ [] σ o o
+  | cons {σ σ₁ σ₂ : SemanticStore P} {x : P.Ident} {xs : List P.Ident} {o o₁ o₂ : List P.Val} :
+      OracleCmdBase f σ (.cmd (.set x .nondet MetaData.empty)) σ₁ [] o o₁ →
+      HavocOracle f σ₁ xs σ₂ o₁ o₂ → HavocOracle f σ (x :: xs) σ₂ o o₂
+
 /-- The call arm over the callee-command relation `E`: the reference `call_sem` rule, whose body
     run reads its choices off the oracle, plus the engine's facts about the call (`CallArgsReach`,
     `WriteBackOK`).  A structured callee body runs as `.block ""` through the oracle-reading
     statement relation; a CFG callee body runs from its entry block through the oracle-reading CFG
-    relation, and its final store is the halting store projected through the entry frame. -/
+    relation, and its final store is the halting store projected through the entry frame.  A call
+    to an opaque callee follows `call_abstract_sem`, its havoc reading its values off the oracle
+    (`HavocOracle`). -/
 @[expose] def OracleCallArm (π : String → Option (Procedure P (CmdExt P) Hdr))
     (E : OracleCmdRel P) : OracleCmdRel P := fun f σ c σ' evs o o' =>
   (∃ nm tyArgs p args md σAO ss ρ' bodyEvs,
     c = .call nm tyArgs args md ∧ typeInstantiatedCallee π nm tyArgs = some p ∧
-      p.body = .structured ss ∧
+      p.body = .structured ss false ∧
     CallEntry f σ p args σAO ∧
     ReflTransTrace (OracleStepE E)
       (.stmt (Stmt.block "" ss #[]) ⟨σAO, f⟩, o) bodyEvs (.terminal ρ', o') ∧
@@ -709,16 +899,25 @@ inductive OracleStepE (E : OracleCmdRel P) :
     evs = defaultAssertEvents f σAO (checksAtCall md p.spec.preconditions) ++ bodyEvs ++
       defaultAssertEvents f ρ'.store p.spec.postconditions ∧
     CallArgsReach f σ args ∧ WriteBackOK f σ p args ρ'.store) ∨
-  ∃ nm tyArgs p args md σAO g ρEnd bodyEvs,
+  (∃ nm tyArgs p args md σAO g ρEnd bodyEvs,
     c = .call nm tyArgs args md ∧ typeInstantiatedCallee π nm tyArgs = some p ∧
-      p.body = .cfg g ∧
+      p.body = .cfg g false ∧
     CallEntry f σ p args σAO ∧
     ReflTransTrace (OracleCFGStepE E)
       (.atBlock g g.entry ⟨σAO, f⟩, o) bodyEvs (.terminal ρEnd, o') ∧
     CallExit f σ p args (projectStore σAO ρEnd.store) σ' ∧
     evs = defaultAssertEvents f σAO (checksAtCall md p.spec.preconditions) ++ bodyEvs ++
       defaultAssertEvents f (projectStore σAO ρEnd.store) p.spec.postconditions ∧
-    CallArgsReach f σ args ∧ WriteBackOK f σ p args (projectStore σAO ρEnd.store)
+    CallArgsReach f σ args ∧ WriteBackOK f σ p args (projectStore σAO ρEnd.store)) ∨
+  ∃ nm tyArgs p args md σAO σO,
+    c = .call nm tyArgs args md ∧ typeInstantiatedCallee π nm tyArgs = some p ∧
+      p.body.isOpaque = true ∧
+    CallEntry f σ p args σAO ∧
+    HavocOracle f σAO (ProcedureHeader.outputParams (P := P) p.header) σO o o' ∧
+    CallExit f σ p args σO σ' ∧
+    evs = defaultAssertEvents f σAO (checksAtCall md p.spec.preconditions) ++
+      assumeEvents f σO p.spec.postconditions ∧
+    CallArgsReach f σ args ∧ WriteBackOK f σ p args σO
 
 /-- The oracle-reading command relation at call-nesting height `n`: base commands at every
     height, and calls whose callee body runs at height `n - 1`. -/
@@ -748,7 +947,8 @@ inductive OracleStepE (E : OracleCmdRel P) :
   | .block _ _ inner => Config.noNondetGuards inner
   | .seq inner ss => Config.noNondetGuards inner && Block.noNondetGuards ss
 
-/-- A call-aware command that resolves no choice: a deterministic base command, or a call. -/
+/-- A call-aware command that resolves no choice by itself: a deterministic base command, or a
+    call (whose choices are those of its callee). -/
 @[expose] def CmdExtDeterministic : CmdExt P → Bool
   | .cmd c => CmdDeterministic c
   | .call _ _ _ _ => true
@@ -756,14 +956,17 @@ inductive OracleStepE (E : OracleCmdRel P) :
 /-- **A deterministic call-aware program**: no `.nondet` guard and no nondeterministic base
     command, in the statements still to be executed in `c`, in every structured callee body of
     `π`, and in every block of every CFG callee body of `π`, at every instance a call can run
-    (`typeInstantiatedCallee`). -/
+    (`typeInstantiatedCallee`); and no opaque callee instance has an output formal, since a call
+    to an opaque callee havocs its output formals. -/
 @[expose] def ProgDeterministic (π : String → Option (Procedure P (CmdExt P) Hdr))
     (c : Config P (CmdExt P)) : Prop :=
   (Config.noNondetGuards c = true ∧ Config.allCmds CmdExtDeterministic c) ∧
-  (∀ n tyArgs p ss, typeInstantiatedCallee π n tyArgs = some p → p.body = .structured ss →
+  (∀ n tyArgs p ss opq, typeInstantiatedCallee π n tyArgs = some p → p.body = .structured ss opq →
     Block.noNondetGuards ss = true ∧ Block.allCmds CmdExtDeterministic ss = true) ∧
-  ∀ n tyArgs p g, typeInstantiatedCallee π n tyArgs = some p → p.body = .cfg g →
-    g.allCmds CmdExtDeterministic
+  (∀ n tyArgs p g opq, typeInstantiatedCallee π n tyArgs = some p → p.body = .cfg g opq →
+    g.allCmds CmdExtDeterministic) ∧
+  ∀ n tyArgs p, typeInstantiatedCallee π n tyArgs = some p → p.body.isOpaque = true →
+    ProcedureHeader.outputParams (P := P) p.header = []
 
 /-! ## The replay configuration of `genuine` -/
 

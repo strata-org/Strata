@@ -2,10 +2,12 @@
 
 `ion-java-1.11.11.jar` is the [ion-java](https://github.com/amazon-ion/ion-java)
 runtime used by the javac-gated tests in `../TestGen.lean` (`#testCompile`,
-`#testRoundtrip`, `#testCompileNested`). Those tests compile the Java emitted by
-`getIonSerializer%` against this jar, and `#testRoundtrip` additionally runs it to
-produce an Ion payload that Lean then decodes. Each test skips with a warning when
-javac or this jar is unavailable.
+`#testRoundtrip`, `#testCompileNested`, `#testCompileVoid`). Those tests compile
+the Java emitted by `getIonSerializer%` against this jar, and `#testRoundtrip`
+additionally runs it to produce an Ion payload that Lean then decodes. When javac
+or this jar is unavailable, each test skips with a warning in local development
+and fails in a Brazil or CI build, which must provide both. The Brazil build
+copies the jar here from the `IonJava` build tool.
 
 To refresh the jar:
 

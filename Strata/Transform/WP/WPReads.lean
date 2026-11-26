@@ -248,6 +248,16 @@ theorem wreads_kExpr (h : y ∈ wreads (kExpr κ)) : y ∈ RE.vars κ := by
   cases κ <;> simp_all [kExpr, wreads, RE.vars, WExpr.not, WExpr.and]
 
 include iHash in
+/-- A marker assumption `κ ⟹ a` (`kMarkImp`) reads the variables of `κ` and what `a` reads. -/
+theorem wreads_kMarkImp {a : WExpr P} (h : y ∈ wreads (kMarkImp κ a)) :
+    y ∈ RE.vars κ ∨ y ∈ wreads a := by
+  simp only [kMarkImp, wreads, List.mem_append] at h
+  rcases h with (h | h) | h
+  · exact .inl (wreads_kExpr (wreads_not (wreads_not h)))
+  · exact .inr h
+  · exact .inl (wreads_kExpr (wreads_not (wreads_not (wreads_not h))))
+
+include iHash in
 /-- `ite(κ, t, e)` reads the variables of `κ` and what `t` and `e` read. -/
 theorem wreads_kIte {t e : WExpr P} (h : y ∈ wreads (kIte κ t e)) :
     y ∈ RE.vars κ ∨ y ∈ wreads t ∨ y ∈ wreads e := by
@@ -433,8 +443,8 @@ theorem stmtReads_cmd (Lc : List P.Ident) (κ : RE P) (d : Nat) (f : Bool) (c : 
   all_goals obtain ⟨⟨⟨we, rd⟩, s1⟩, h1, rfl, hst⟩ := h
   all_goals
     rd_ok hst st' s1
-    grind [wRen_reads h1, Block.freeVars, Stmt.freeVars, Stmt.WellScoped, RE.vars, kImp, wreads,
-      → wreads_kIte]
+    grind [wRen_reads h1, Block.freeVars, Stmt.freeVars, Stmt.WellScoped, RE.vars, kImp, kAssume,
+      wreads, → wreads_kIte, → wreads_kMarkImp]
 
 /-! ## Exits and statements without a rule -/
 

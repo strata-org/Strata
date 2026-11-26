@@ -43,7 +43,7 @@ private def keywordVarsProg : Core.Program :=
         init "x" (var "old"),
         init "assert" (intLit 2),
         Statement.set "assert" (var "x") .empty,
-        Statement.assert "in" (.eq testLoc (var "assert") (var "const")) .empty] } #[]] }
+        Statement.assert "in" (.eq testLoc (var "assert") (var "const")) .empty] false } #[]] }
 
 /-- info: program Core;
 
@@ -69,7 +69,7 @@ private def stmtNames (p : Core.Program) : List String :=
   p.decls.flatMap fun
     | .proc proc _ =>
       match proc.body with
-      | .structured ss => ss.filterMap fun
+      | .structured ss _ => ss.filterMap fun
         | .cmd (.cmd (.init name ..)) => some name.name
         | .cmd (.cmd (.set name ..)) => some name.name
         | .cmd (.cmd (.assert label ..)) => some label

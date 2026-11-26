@@ -196,7 +196,7 @@ private def entryCmds (p : StrataDDM.Program) (n : Nat) : List Core.Command :=
   let proc := match corePgm.decls[n]? with
               | .some (.proc pr _) => pr | _ => Inhabited.default
   match proc.body with
-  | .cfg cfg => match cfg.blocks with
+  | .cfg cfg _ => match cfg.blocks with
                 | (_, b) :: _ => b.cmds
                 | []          => []
   | _ => []

@@ -272,7 +272,7 @@ private theorem ProcNamesWF.of_alphaVariant {P : Program} {fns : String → Prop
     exact hkeys
   refine ⟨hformals, ?_⟩
   cases hb : proc.body with
-  | cfg _ => trivial
+  | cfg _ | abstract => trivial
   | structured ss =>
     simp only [Procedure.renameTypeArgs, Procedure.mapTys, hb] at hbody
     exact StatementsNamesWF.of_mapStmtsTys _ ss hbody
@@ -287,11 +287,11 @@ theorem ProcNamesWF.of_procHasTypeExact {P : Program}
   · exact fun x hx hf => h.formalsNotFunctions x hx (hfns _ hf)
   · have hbody := h.bodyTyped
     cases hshape : proc.body with
-    | cfg _ => trivial
+    | cfg _ | abstract => trivial
     | structured _ =>
       rw [hshape] at hbody
       match hbody with
-      | .structured _ _ _ _ hss =>
+      | .structured _ _ _ _ _ hss =>
         exact StatementsNamesWF.of_statementsHasType
           (C := { C with rigidTypeVars := C.rigidTypeVars ++ proc.header.typeArgs }) hfns hss
 
@@ -398,7 +398,7 @@ theorem ProcNamesWF.mono {P P' : Program} {fns fns' : String → Prop}
   | structured ss =>
     rw [hb] at hbody
     exact StatementsNamesWF.mono hP hsub ss hbody
-  | cfg _ => trivial
+  | cfg _ | abstract => trivial
 
 /-! ### Names under type-annotation maps -/
 

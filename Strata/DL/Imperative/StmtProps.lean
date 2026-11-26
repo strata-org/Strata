@@ -7,6 +7,7 @@ module
 
 public import Strata.DL.Imperative.Stmt
 public import Strata.DL.Util.StringGen
+public import Strata.DL.Util.StringGenProps
 public import Strata.DL.Imperative.CmdCallFormals
 import Strata.Util.OrderedSetProps
 import all Strata.DL.Imperative.Stmt

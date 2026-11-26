@@ -9,7 +9,7 @@ public import Strata.Languages.Core.Function
 public import Strata.Languages.Core.Factory
 public import Strata.DL.Imperative.Cmd
 public import Strata.DL.Lambda.LExprEval
-public import Strata.Transform.FunctionInlining
+public import Strata.Transform.FunctionInlining.CallBody
 import all Strata.DL.Lambda.LExprWFProps
 
 /-! # Simplify: expressions, the value context, and base commands

@@ -845,33 +845,40 @@ private theorem runStmtsRec_removeLoop (ss : List Statement) :
   runStmtsRec_removeLoop_aux _ ss (Nat.lt_succ_self _)
 
 /-- `d'` is `d` with its procedure body, when it is a structured body `ss`, replaced by a list
-    `ss'` with `R ss ss'`; every other declaration, a procedure with a CFG body included, is
-    kept. -/
+    `ss'` with `R ss ss'`; every other declaration, a procedure with a CFG body and an abstract
+    procedure included, is kept. -/
 @[expose] def DeclBodyRel (R : Statements → Statements → Prop) : Decl → Decl → Prop
   | .proc proc md, d' => match proc.body with
-    | .structured ss => ∃ ss', R ss ss' ∧ d' = .proc { proc with body := .structured ss' } md
-    | .cfg _ => d' = .proc proc md
+    | .structured ss o => ∃ ss', R ss ss' ∧ d' = .proc { proc with body := .structured ss' o } md
+    | .cfg _ _ | .abstract => d' = .proc proc md
   | d, d' => d' = d
 
 /-- A procedure with a structured body `ss` is related to the procedures with a body `ss'` such
     that `R ss ss'`. -/
 private theorem declBodyRel_structured {R : Statements → Statements → Prop} {proc : Procedure}
-    {md : MetaData Expression} {ss : Statements} (hb : proc.body = .structured ss) {d' : Decl} :
+    {md : MetaData Expression} {ss : Statements} (hb : proc.body = .structured ss opq) {d' : Decl} :
     DeclBodyRel R (.proc proc md) d' ↔
-      ∃ ss', R ss ss' ∧ d' = .proc { proc with body := .structured ss' } md := by
+      ∃ ss', R ss ss' ∧ d' = .proc { proc with body := .structured ss' opq } md := by
   simp only [DeclBodyRel, hb]
 
 /-- A procedure with a CFG body is related only to itself. -/
 private theorem declBodyRel_cfg {R : Statements → Statements → Prop} {proc : Procedure}
-    {md : MetaData Expression} {g : Imperative.DetCFG Expression Command} (hb : proc.body = .cfg g)
+    {md : MetaData Expression} {g : Imperative.DetCFG Expression Command} (hb : proc.body = .cfg g
+        opq)
     {d' : Decl} : DeclBodyRel R (.proc proc md) d' ↔ d' = .proc proc md := by
+  simp only [DeclBodyRel, hb]
+
+/-- An abstract procedure is related only to itself. -/
+private theorem declBodyRel_abstract {R : Statements → Statements → Prop} {proc : Procedure}
+    {md : MetaData Expression} (hb : proc.body = .abstract) {d' : Decl} :
+    DeclBodyRel R (.proc proc md) d' ↔ d' = .proc proc md := by
   simp only [DeclBodyRel, hb]
 
 /-- The number of loops in the structured procedure body of a declaration. -/
 private def declNumLoops : Decl → Nat
   | .proc proc _ => match proc.body with
-    | .structured ss => Block.numLoops ss
-    | .cfg _ => 0
+    | .structured ss _ => Block.numLoops ss
+    | .cfg _ _ | .abstract => 0
   | _ => 0
 
 /-- The number of loops of a program is the sum of those of its declarations. -/
@@ -899,6 +906,7 @@ private theorem declBodyRel_refl :
         cases hb : proc.body
         · exact (declBodyRel_structured hb).2 ⟨_, .refl _, by rw [← hb]⟩
         · exact (declBodyRel_cfg hb).2 rfl
+        · exact (declBodyRel_abstract hb).2 rfl
       all_goals rfl) (declBodyRel_refl ds)
 
 /-- After one pass of `runProgram removeLoop`, a declaration whose procedure body is that of
@@ -911,19 +919,29 @@ private theorem declBodyRel_declStep {d₀ d : Decl} {r : Bool × Decl}
     cases hb : proc₀.body
     · rw [declBodyRel_structured hb] at h₁ ⊢
       obtain ⟨ss₁, hrel, rfl⟩ := h₁
-      rcases h₂ with ⟨ss, ss', hss, hq, hr⟩ | ⟨g, hg, -⟩
-      · obtain rfl : ss₁ = ss := Body.structured.inj hss
+      rcases h₂ with ⟨ss, ss', o, hss, hq, hr⟩ | ⟨g, o, hg, -⟩ | ⟨hg, -⟩
+      · obtain ⟨rfl, rfl⟩ := Body.structured.inj hss
         obtain ⟨c, d'⟩ := r
         cases c
         · exact ⟨ss₁, hrel, hr⟩
         · exact ⟨ss', hrel.trans hq.1, hr⟩
       · cases hg
+      · cases hg
     · -- A CFG body is kept.
       rw [declBodyRel_cfg hb] at h₁ ⊢
       subst h₁
-      rcases h₂ with ⟨ss, -, hss, -⟩ | ⟨-, -, rfl⟩
+      rcases h₂ with ⟨ss, _, _, hss, -⟩ | ⟨_, _, _, rfl⟩ | ⟨-, rfl⟩
       · rw [hb] at hss
         cases hss
+      · rfl
+      · rfl
+    · -- An abstract procedure is kept.
+      rw [declBodyRel_abstract hb] at h₁ ⊢
+      subst h₁
+      rcases h₂ with ⟨ss, _, _, hss, -⟩ | ⟨_, _, _, rfl⟩ | ⟨-, rfl⟩
+      · rw [hb] at hss
+        cases hss
+      · rfl
       · rfl
   all_goals
     obtain rfl := h₁
@@ -938,13 +956,13 @@ private theorem declStep_numLoops {d : Decl} {r : Bool × Decl}
       (r.1 = Bool.false → declNumLoops r.2 = 0) := by
   cases d
   case proc proc md =>
-    rcases h with ⟨ss, ss', hb, hq, hr⟩ | ⟨g, hb, rfl⟩
+    rcases h with ⟨ss, ss', o, hb, hq, hr⟩ | ⟨g, o, hb, rfl⟩ | ⟨hb, rfl⟩
     · obtain ⟨c, d'⟩ := r
       cases c <;> simp only [Bool.false_eq_true, ↓reduceIte] at hr <;> subst hr <;>
         simp only [declNumLoops, hb]
       · exact ⟨Nat.le_refl _, nofun, fun _ => hq.2.2.2 rfl⟩
       · exact ⟨Nat.le_of_lt (hq.2.2.1 rfl), fun _ => hq.2.2.1 rfl, nofun⟩
-    · simp [declNumLoops, hb]
+    all_goals simp [declNumLoops, hb]
   all_goals
     obtain rfl := h
     simp [declNumLoops]
@@ -1019,6 +1037,8 @@ theorem declBodyRel_blockRel {p p' : Program}
         exact ⟨ss', hrel.blockRel (by simp only [declNumLoops] at hn; omega), rfl⟩
       · rw [declBodyRel_cfg hb] at hd ⊢
         exact hd
+      · rw [declBodyRel_abstract hb] at hd ⊢
+        exact hd
     all_goals exact hd
 
 /-- **The Core pass eliminates loops as `Block.loopElim` does, up to loop numbers.**  When
@@ -1031,9 +1051,9 @@ theorem loopElim_blockRel {p p' : Program} {c : Bool} {σ σ' : Transform.CoreTr
     (h : loopElim p σ = (.ok (c, p'), σ')) :
     List.Rel₂ (fun d d' => match d with
       | .proc proc md => match proc.body with
-        | .structured ss =>
-          ∃ ss', BlockRel ss ss' ∧ d' = .proc { proc with body := .structured ss' } md
-        | .cfg _ => d' = d
+        | .structured ss o =>
+          ∃ ss', BlockRel ss ss' ∧ d' = .proc { proc with body := .structured ss' o } md
+        | .cfg _ _ | .abstract => d' = d
       | _ => d' = d) p.decls p'.decls :=
   have ⟨hrel, hn⟩ := Transform.runProgramUntil_post (fun _ hq => runProgram_removeLoop hq)
     (declBodyRel_refl p.decls) (Nat.lt_succ_self (numLoops p)) σ _ σ' h
@@ -1047,8 +1067,8 @@ theorem loopElim_blockRel {p p' : Program} {c : Bool} {σ σ' : Transform.CoreTr
 theorem loopElim_body_blockRel {p p' : Program} {c : Bool}
     {σ σ' : Transform.CoreTransformState} (h : loopElim p σ = (.ok (c, p'), σ'))
     {i : Nat} {proc : Procedure} {md : MetaData Expression} {ss : Statements}
-    (hproc : p.decls[i]? = some (.proc proc md)) (hbody : proc.body = .structured ss) :
-    ∃ ss', p'.decls[i]? = some (.proc { proc with body := .structured ss' } md) ∧
+    (hproc : p.decls[i]? = some (.proc proc md)) (hbody : proc.body = .structured ss opq) :
+    ∃ ss', p'.decls[i]? = some (.proc { proc with body := .structured ss' opq } md) ∧
       BlockRel ss ss' := by
   obtain ⟨d', hd', hrel⟩ := (loopElim_blockRel h).getElem?_some hproc
   simp only [hbody] at hrel

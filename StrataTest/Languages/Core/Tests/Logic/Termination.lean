@@ -148,14 +148,14 @@ private def spinParts :
     Core.Expression.Expr × Option Core.Expression.Expr ×
       List (String × Core.Expression.Expr) × MetaData Core.Expression :=
   match spinProc.body with
-  | .structured [Stmt.loop (.det g) m inv [] md] => (g, m, inv, md)
+  | .structured [Stmt.loop (.det g) m inv [] md] _ => (g, m, inv, md)
   | _ => default
 
 private def spinLoop : Core.Statement :=
   .loop (.det spinParts.1) spinParts.2.1 spinParts.2.2.1 [] spinParts.2.2.2
 
 /-- The translated body really is the single loop. -/
-private theorem spin_body_eq : spinProc.body = .structured [spinLoop] := by
+private theorem spin_body_eq : spinProc.body = .structured [spinLoop] false := by
   native_decide
 
 /-- The loop guard really is the literal `true`. -/
@@ -200,14 +200,14 @@ private def starProc : Core.Procedure := (starPgmAST.findProcByString? "Star").g
 private def starParts :
     Option Core.Expression.Expr × List (String × Core.Expression.Expr) × MetaData Core.Expression :=
   match starProc.body with
-  | .structured [Stmt.loop .nondet m inv [] md] => (m, inv, md)
+  | .structured [Stmt.loop .nondet m inv [] md] _ => (m, inv, md)
   | _ => default
 
 private def starLoop : Core.Statement :=
   .loop .nondet starParts.1 starParts.2.1 [] starParts.2.2
 
 /-- The translated body really is the single nondeterministic loop. -/
-private theorem star_body_eq : starProc.body = .structured [starLoop] := by
+private theorem star_body_eq : starProc.body = .structured [starLoop] false := by
   native_decide
 
 /-- **`while * { }` diverges** from every state: the execution that always
@@ -400,7 +400,7 @@ private def countParts :
       (Core.Expression.Expr × MetaData Core.Expression) :=
   match countProc.body with
   | .structured [Stmt.cmd (CmdExt.cmd (Cmd.init _ ty _ md0)),
-      Stmt.loop (.det g) m inv [Stmt.cmd (CmdExt.cmd (Cmd.set _ (.det e) md2))] md1] =>
+      Stmt.loop (.det g) m inv [Stmt.cmd (CmdExt.cmd (Cmd.set _ (.det e) md2))] md1] _ =>
     ((ty, md0), (g, m, inv, md1), (e, md2))
   | _ => default
 
@@ -415,7 +415,7 @@ private def countInit : Core.Statement :=
   Core.Statement.init countY countParts.1.1 (.det (Lambda.LExpr.intConst Core.valueLoc 0)) countParts.1.2
 
 /-- The translated body really is the declaration followed by the loop. -/
-private theorem count_body_eq : countProc.body = .structured [countInit, countLoop] := by
+private theorem count_body_eq : countProc.body = .structured [countInit, countLoop] false := by
   native_decide
 
 /-- `y` is declared at type `int`. -/
@@ -600,13 +600,13 @@ private def failProc : Core.Procedure := (failPgmAST.findProcByString? "Fail").g
 /-- The expression and metadata of the translated assertion. -/
 private def failParts : Core.Expression.Expr × MetaData Core.Expression :=
   match failProc.body with
-  | .structured [Stmt.cmd (.cmd (.assert "a" e md))] => (e, md)
+  | .structured [Stmt.cmd (.cmd (.assert "a" e md))] _ => (e, md)
   | _ => default
 
 private def failAssert : Core.Statement := .cmd (.cmd (.assert "a" failParts.1 failParts.2))
 
 /-- The translated body really is the single assertion. -/
-private theorem fail_body_eq : failProc.body = .structured [failAssert] := by
+private theorem fail_body_eq : failProc.body = .structured [failAssert] false := by
   native_decide
 
 /-- The asserted expression really is the literal `false`. -/
@@ -663,13 +663,13 @@ private def okProc : Core.Procedure := (okPgmAST.findProcByString? "Ok").get!
 /-- The expression and metadata of the translated assertion. -/
 private def okParts : Core.Expression.Expr × MetaData Core.Expression :=
   match okProc.body with
-  | .structured [Stmt.cmd (.cmd (.assert "b" e md))] => (e, md)
+  | .structured [Stmt.cmd (.cmd (.assert "b" e md))] _ => (e, md)
   | _ => default
 
 private def okAssert : Core.Statement := .cmd (.cmd (.assert "b" okParts.1 okParts.2))
 
 /-- The translated body really is the single assertion. -/
-private theorem ok_body_eq : okProc.body = .structured [okAssert] := by
+private theorem ok_body_eq : okProc.body = .structured [okAssert] false := by
   native_decide
 
 /-- The asserted expression really is the literal `true`. -/
@@ -781,7 +781,7 @@ private def exitProc : Core.Procedure := (exitPgmAST.findProcByString? "Exit").g
 /-- The metadata of the exit and the block, and the trailing assertion. -/
 private def exitParts : MetaData Core.Expression × MetaData Core.Expression × Core.Statement :=
   match exitProc.body with
-  | .structured [Stmt.block "name" [Stmt.exit "name" mdExit] mdBlock, after] =>
+  | .structured [Stmt.block "name" [Stmt.exit "name" mdExit] mdBlock, after] _ =>
     (mdExit, mdBlock, after)
   | _ => default
 
@@ -789,7 +789,7 @@ private def exitBlock : Core.Statement :=
   .block "name" [.exit "name" exitParts.1] exitParts.2.1
 
 /-- The translated body really is the block followed by the assertion. -/
-private theorem exit_body_eq : exitProc.body = .structured [exitBlock, exitParts.2.2] := by
+private theorem exit_body_eq : exitProc.body = .structured [exitBlock, exitParts.2.2] false := by
   native_decide
 
 /-- The configuration right after `exit name;` has stepped: the exit is still

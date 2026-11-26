@@ -213,7 +213,7 @@ private def assertLikeLemmaNoLocations : Core.Program :=
       | .lemma l _ => .lemma l .empty
       | .proc p md =>
         let body : List Core.Statement := [.cmd (.cmd (.assert "l1" (.boolConst Core.valueLoc true) .empty))]
-        .proc { p with body := .structured body } md
+        .proc { p with body := .structured body false } md
       | d => d }
 
 -- With only the assertion's result, that result is the one result matching the lemma, and

@@ -26,7 +26,9 @@ symtab2gb <basename>.symtab.json --goto-functions <basename>.goto.json --out out
 cbmc output.gb --function main --z3
 ```
 
-Both pipelines require a patched CBMC build (see "CBMC Patches" below).
+Both pipelines run on the CBMC version recorded in
+`StrataTest/Backends/CBMC/patches/CBMC_VERSION` (see "CBMC Version and Patches"
+below).
 
 ## Implemented Features
 
@@ -64,10 +66,13 @@ Both pipelines require a patched CBMC build (see "CBMC Patches" below).
   `struct_tag`, `regex`, `empty` — are silently skipped; see Known Limitations)
 - Distinct declarations (`Decl.distinct`) → pairwise `!=` ASSUME instructions
 - `Map.const` → GOTO `array_of` expression (constant-valued map/array)
-- Regex type → GOTO primitive type `regex`, CBMC maps to SMT-LIB `RegLan`
-- String/regex operations → `function_application` in GOTO; CBMC's string
-  solver patch maps these to the corresponding SMT-LIB theories
-  (`Str.Length` → `str.len`, `Re.Star` → `re.*`, etc.)
+- Regex type → GOTO primitive type `regex`, which CBMC's SMT2 backend maps to
+  SMT-LIB `RegLan`
+- String/regex operations → `function_application` in GOTO under Strata's
+  operator names (`Str.Length`, `Re.Star`, ...). CBMC's SMT2 backend lowers
+  only its own `cprover_string_*`/`cprover_regex_*` built-ins to the SMT-LIB
+  string theory, so these applications currently remain uninterpreted
+  functions (see "Skipped checks" in `StrataTest/Backends/CBMC/README.md`)
 - Multi-procedure programs: symbol table deduplication preserves proper code types
 - Output parameter types emitted in GOTO symbol table (not empty)
 - Source locations reconstructed from byte offsets in the source text and
@@ -92,8 +97,9 @@ the translation.
   functions in SMT. This is sound: the SMT solver considers all possible
   return values, which is an over-approximation (may produce false positives /
   spurious counterexamples, but never false negatives). String and regex
-  operations intentionally use `functionApplication` so that CBMC's string
-  solver patch maps them to the corresponding SMT-LIB theories.
+  operations use `functionApplication` under Strata's operator names, which
+  CBMC does not lower to the SMT-LIB string theory, so they are uninterpreted
+  and over-approximate.
 
 - **Unresolved `exit` statements abort.** If an `exit` targets a label with no
   matching enclosing block, `Stmts.toGotoTransform` returns an error rather than
@@ -211,25 +217,26 @@ same name (e.g., `maybe_except`), the type checker rejects the program with
 "Variable ... already in context." This affects `test_function_def_calls` in
 the Python pipeline.
 
-## CBMC Patches
+## CBMC Version and Patches
 
-The CI builds CBMC 6.8.0 from source with four patches applied:
+The CBMC version the tests run against, and any source patches on top of it,
+are recorded in `StrataTest/Backends/CBMC/patches/` (see
+`StrataTest/Backends/CBMC/README.md`). The checks currently enabled in the
+suites pass on unpatched CBMC 6.11.0; the string test and the contracts
+suite's verdict checks are skipped (README, "Skipped checks").
 
-1. **`cbmc-string-support.patch`** (`StrataTest/Backends/CBMC/`): Adds
-   `String` as a recognized type in CBMC's SMT2 backend, enabling string
-   constants and operations to be encoded in SMT-LIB.
+Known gaps on CBMC 6.11.0 that no suite covers (also listed under "Skipped
+checks" in the README):
 
-2. **`cbmc-bounds-check.patch`** (`StrataLaurel/Tests/CBMC`): Adjusts
-   bounds checking for the Laurel pipeline.
-
-3. **`cbmc-regex-support.patch`** (`StrataTest/Backends/CBMC/`): Adds `regex`
-   as a primitive type in CBMC, mapped to SMT-LIB `RegLan`.
-
-4. **`cbmc-quantifier-simplify.patch`** (`StrataTest/Backends/CBMC/`): Modifies
-   the simplifier's preorder traversal to only simplify the body (operand 1) of
-   quantifier expressions, leaving bound variables (operand 0) untouched. Without
-   this patch, the simplifier converts bound variable symbols into non-symbol
-   expressions, violating the `quantifier_exprt` invariant.
+- String and regex operations: CBMC lowers only its `cprover_string_*` and
+  `cprover_regex_*` built-ins to the SMT-LIB string theory, and Strata emits
+  its own operator names (see "Implemented Features").
+- Quantified assertions: CBMC 6.11.0 reports `FAILURE` for a true quantified
+  assertion such as `assert forall(x: int) => x + 1 > x`. A false quantified
+  assertion also reports `FAILURE`, so the gap is spurious failures, not
+  spurious successes. No suite asserts a quantified property.
+- Bounds checks on integer-indexed arrays: no suite exercises array indexing,
+  so CBMC 6.11.0's behaviour there is untested.
 
 Additionally, quantifier bound variables are emitted wrapped in a `tuple` node
 in the GOTO JSON to match CBMC's `binding_exprt` internal structure, which

@@ -22,7 +22,9 @@ open HoareUtils HoareTotalTest
 `HoareTotal.Procedure.call_of_contract` applied to `call z := CountUp()`, where `CountUp` is
 the counting loop of `HoareTotal.lean`, proved there to meet its total-correctness contract
 (`countUp_meets_contract_total`).  From an entry where `z` holds an integer, the call
-terminates with `z` holding `10` (`countUp_call_total`).
+terminates with `z` holding `10` (`countUp_call_total`). The same call to `CountUp` declared
+without a body, an abstract callee, gives the same result from the contract alone
+(`countUpAbs_call_total`).
 
 Besides the callee's contract, the rule asks for facts about every run of the callee's body:
 it writes only the output `y` (`up_body_frame`) and leaves `y` holding an integer
@@ -224,7 +226,7 @@ private theorem block_inv {f : Core.Expression.Factory} {l : String}
     ending in `σ'` is a big-step run of that block from `σ` to `σ'`. -/
 private theorem up_brun {σ : Core.CoreStore} {f : Core.Expression.Factory}
     {σ' : Core.CoreStore} {evs : List (Event Core.Expression)}
-    (h : Core.CoreBodyExecE π (.structured upBody) ⟨σ, f⟩ σ' evs) :
+    (h : Core.CoreBodyExecE π (.structured upBody false) ⟨σ, f⟩ σ' evs) :
     BRun f [Stmt.block "" upBody #[]] σ evs (.normal σ') := by
   cases h with
   | structured hrun =>
@@ -549,12 +551,15 @@ theorem countUp_call_total :
     (fun _ _ _ _ _ _ _ =>
       _root_.Core.Specification.axiomsBeforeProcedureDecl_of_noAxioms (by native_decide) _)
     ?_ ?_ ?_ ?_
+    (fun _ _ _ _ _ hlk ho _ => by
+      rw [Option.some.inj (hlk.symm.trans up_callee), up_body_eq] at ho; cases ho)
   · -- hentry: the contract precondition and the body's gate hold at the callee entry.
     intro ρ₀ proc σAO ⟨hfac, k, hz⟩ _ hlk hce
     obtain rfl : proc = upProc := Option.some.inj (hlk.symm.trans up_callee)
     obtain ⟨w, hzw, _, rfl⟩ := up_callEntry_inv hce
     obtain rfl : w = intOf ρ₀.factory k := Option.some.inj (hzw.symm.trans hz)
     rw [up_body_eq]
+    simp only [Imperative.Body.isOpaque, Bool.false_eq_true, ↓reduceIte]
     exact up_entry hfac k
   · -- hexit: the write-back puts `10` into `z`.
     intro ρ₀ proc ρ' σ' σAO ⟨hfac, _⟩ _ hlk hpost hout hρ' _ _ hcx
@@ -578,7 +583,7 @@ theorem countUp_call_total :
     obtain rfl : proc = upProc := Option.some.inj (hlk.symm.trans up_callee)
     exact ⟨_, up_callEntry hz (hwf.storeWellDefined zId _ hz)⟩
   · -- hbodyRun: some run of the body finishes from the callee entry.
-    intro ρ₀ proc σAO ⟨hfac, k, hz⟩ _ hlk hce
+    intro ρ₀ proc σAO ⟨hfac, k, hz⟩ _ hlk _ hce
     obtain rfl : proc = upProc := Option.some.inj (hlk.symm.trans up_callee)
     obtain ⟨w, hzw, _, rfl⟩ := up_callEntry_inv hce
     obtain rfl : w = intOf ρ₀.factory k := Option.some.inj (hzw.symm.trans hz)
@@ -593,5 +598,113 @@ theorem countUp_call_total :
     · rw [up_outputParams]; exact .read_some hw hwt.1 .read_none
     · exact .update_some (UpdateState.of_update hz) .update_none
     · exact .cons ⟨_, intLTy, hz, ⟨rfl, rfl⟩, hwt⟩ .nil
+
+/-! ## A call to an abstract callee
+
+The same call, in a program where `CountUp` keeps its contract but has no body (`absPgmAST`).
+The callee is then abstract, so the call runs its contract: it havocs `y` and assumes
+`ensures y == 10`. `HoareTotal.Procedure.call_of_contract` derives `z == 10` from that contract
+alone (`countUpAbs_call_total`); the premises about the body's runs hold vacuously, and the
+write-back from the callee entry store is the only fact the call needs to run. -/
+
+/-- `CountUp` without a body. -/
+private abbrev absProc : Core.Procedure := { upProc with body := .abstract }
+
+/-- `countPgmAST` with `CountUp` replaced by `absProc`. -/
+private def absPgmAST : Core.Program :=
+  { decls := countPgmAST.decls.map fun d => match d with
+      | .proc q md => if q.header.name.name = "CountUp" then .proc absProc md else d
+      | d => d }
+
+/-- The procedures of `absPgmAST`, by name. -/
+private abbrev πA : String → Option Core.Procedure := absPgmAST.findProcByString?
+
+/-- `CountUp` is found by name in `absPgmAST`, without its body. -/
+private theorem abs_find : πA "CountUp" = some absProc := by native_decide
+
+/-- A call to `CountUp` without type arguments runs `absProc`. -/
+private theorem abs_callee : Calls.typeInstantiatedCallee πA "CountUp" none = some absProc :=
+  (Core.Procedure.typeInstantiatedCallee_of_typeArgs_nil abs_find (by native_decide)).2 ⟨rfl, rfl⟩
+
+/-- `absPgmAST` declares no function, so its factory before `CountUp` is `Core.Factory`. -/
+private theorem abs_factory : absPgmAST.factoryBeforeProcedure "CountUp" = Core.Factory :=
+  Core.Program.factoryBeforeProcedure_eq_core_of_noFunctions (by native_decide)
+
+/-- **`call z := CountUp()` to the abstract `CountUp` meets a total-correctness triple**: from
+    an entry where `z` holds an integer, the call terminates with `z` holding `10`, by
+    `CountUp`'s contract alone. -/
+theorem countUpAbs_call_total :
+    Core.Logic.HoareTotal.Triple πA testParams CallPre
+      [Core.Statement.call "CountUp" none upCall .empty] CallPost
+      (factory := absPgmAST.factoryBeforeProcedure "CountUp") := by
+  have hfactory : countPgmAST.factoryBeforeProcedure "CountUp" = Core.Factory :=
+    Core.Program.factoryBeforeProcedure_eq_core_of_noFunctions (by native_decide)
+  have hop : Imperative.ProcedureHeader.outputParams (P := Core.Expression) absProc.header =
+      [yId] := up_outputParams
+  refine Core.Logic.HoareTotal.Procedure.call_of_contract absPgmAST testParams "CountUp"
+    upCall .empty CallPre CallPost
+    ⟨absProc, abs_find, fun tys proc hinst => ?_⟩ ⟨_, abs_callee⟩
+    (fun proc hlk _ _ _ _ hb => by
+      obtain rfl := Option.some.inj (hlk.symm.trans abs_callee)
+      cases hb)
+    (fun proc hlk _ _ _ _ _ _ hb => by
+      obtain rfl := Option.some.inj (hlk.symm.trans abs_callee)
+      cases hb)
+    ?_
+    (fun _ _ _ _ _ _ _ =>
+      _root_.Core.Specification.axiomsBeforeProcedureDecl_of_noAxioms (by native_decide) _)
+    ?_ ?_
+    (fun _ proc _ _ _ hlk ho _ => by
+      obtain rfl := Option.some.inj (hlk.symm.trans abs_callee)
+      cases ho)
+    (fun _ proc _ _ _ _ _ hlk _ hb => by
+      obtain rfl := Option.some.inj (hlk.symm.trans abs_callee)
+      cases hb)
+    ?_
+  · -- hcontract: `absProc` has no type parameters, its contract type-checks, and an abstract
+    -- body asks for nothing.
+    obtain ⟨rfl, rfl⟩ :=
+      (Core.Procedure.instantiateTypes_of_typeArgs_nil (by native_decide)).1 hinst
+    exact ⟨by native_decide, trivial⟩
+  · -- hentry: the contract precondition holds at the callee entry, as for `CountUp`.
+    intro ρ₀ proc σAO ⟨hfac, k, hz⟩ _ hlk hce
+    obtain rfl := Option.some.inj (hlk.symm.trans abs_callee)
+    obtain ⟨w, hzw, _, rfl⟩ := up_callEntry_inv hce
+    obtain rfl : w = intOf ρ₀.factory k := Option.some.inj (hzw.symm.trans hz)
+    have hpre := (up_entry hfac k).1
+    rw [hfactory] at hpre
+    rw [abs_factory]
+    exact ⟨hpre, trivial⟩
+  · -- hexit: the assumed postcondition puts `10` into `y`, which the write-back copies to `z`.
+    intro ρ₀ proc ρ' σ' σAO ⟨hfac, _⟩ _ hlk hpost hout hρ' _ _ hcx
+    obtain rfl := Option.some.inj (hlk.symm.trans abs_callee)
+    rw [abs_factory] at hpost
+    have hy := y10_of_post (show Pinned ρ' by rw [Pinned, hρ']; exact hfac) hpost hout
+    rw [hρ'] at hy
+    obtain ⟨_, vals, hRV, hUpd, -⟩ := hcx
+    rw [hop] at hRV
+    cases hRV with
+    | read_some hy' _ hRV2 =>
+      cases hRV2
+      obtain rfl := Option.some.inj (hy'.symm.trans hy)
+      cases hUpd with
+      | update_some hu hUpd2 =>
+        cases hUpd2
+        cases hu with
+        | update _ hnew _ => exact ⟨hfac, hnew⟩
+  · -- hcallEntry: the call has a callee entry store.
+    intro ρ₀ proc ⟨_, k, hz⟩ hwf hlk
+    obtain rfl := Option.some.inj (hlk.symm.trans abs_callee)
+    exact ⟨_, up_callEntry hz (hwf.storeWellDefined zId _ hz)⟩
+  · -- hcallExitOpaque: the entry store, where `y` holds `z`'s integer, writes back into `z`.
+    intro ρ₀ proc σAO ⟨_, k, hz⟩ _ hlk _ hce
+    obtain rfl := Option.some.inj (hlk.symm.trans abs_callee)
+    obtain ⟨w, hzw, _, rfl⟩ := up_callEntry_inv hce
+    obtain rfl : w = intOf ρ₀.factory k := Option.some.inj (hzw.symm.trans hz)
+    refine ⟨SemanticStore.update ρ₀.store zId (intOf ρ₀.factory k),
+      by simp [upCall, Imperative.CallArg.getLhs], [intOf ρ₀.factory k], ?_, ?_, ?_⟩
+    · rw [hop]; exact .read_some (by simp [SemanticStore.update]) rfl .read_none
+    · exact .update_some (UpdateState.of_update hz) .update_none
+    · exact .cons ⟨_, intLTy, hz, ⟨rfl, rfl⟩, ⟨rfl, rfl⟩⟩ .nil
 
 end Strata.HoareTotalCallTest

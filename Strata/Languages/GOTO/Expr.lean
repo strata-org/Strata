@@ -60,6 +60,10 @@ inductive Unary where
   | UnaryMinusOverflow
   /-- `dereference_exprt` (`*p`) -/
   | Dereference
+  /-- `member_exprt` (`s.componentName`) -/
+  | Member (componentName : String)
+  /-- `address_of_exprt` (`&e`) -/
+  | AddressOf
   deriving Repr, Inhabited, DecidableEq
 
 instance : ToFormat Unary where
@@ -73,6 +77,8 @@ instance : ToFormat Unary where
     | .Typecast => "typecast"
     | .UnaryMinusOverflow => "overflow-unary-"
     | .Dereference => "dereference"
+    | .Member c => f!"member({c})"
+    | .AddressOf => "address_of"
 
 /--
 Representation of identifiers specific to binary expressions,
@@ -166,6 +172,10 @@ inductive Multiary where
   | Mult
   /-- `plus_exprt` -/
   | Plus
+  /-- `array_exprt`: an array value with the operands as its elements, in order. -/
+  | Array
+  /-- `struct_exprt`: a struct value with the operands as its components, in order. -/
+  | Struct
   deriving Repr, Inhabited, DecidableEq
 
 instance : ToFormat Multiary where
@@ -174,6 +184,8 @@ instance : ToFormat Multiary where
     | .Or => "or"
     | .Mult => "*"
     | .Plus => "+"
+    | .Array => "array"
+    | .Struct => "struct"
 
 inductive SideEffect where
   /-- `side_effect_expr_nondett` -/
@@ -263,6 +275,9 @@ def formatExpr (e : Expr) : Format :=
   | .unary u, [op] => f!"(({u}{formatExpr op}) : {e.type})"
   | .binary b, [left, right] => f!"(({formatExpr left} {b} {formatExpr right}) : {e.type})"
   | .ternary .ite, [cond, then_expr, else_expr] => f!"(({formatExpr cond} ? {formatExpr then_expr} : {formatExpr else_expr}) : {e.type})"
+  | .multiary .Array, ops | .multiary .Struct, ops =>
+    let formatted := ops.map formatExpr
+    f!"({e.id}\{{Format.joinSep formatted ", "}} : {e.type})"
   | .multiary m, ops =>
     let formatted := ops.map formatExpr
     f!"(({Format.joinSep formatted f!" {m} "}) : {e.type})"
@@ -305,6 +320,11 @@ def constant (value : String) (type : Ty) : Expr :=
 def nondet (name : String) (type : Ty) : Expr :=
   { id := .nullary (.nondet name), type := type }
 
+/-- The nil expression, e.g. the left-hand side of a function call whose result
+    is discarded. -/
+def nil : Expr :=
+  { id := .nullary .nil, type := .Empty }
+
 /-- Unary minus -/
 def neg (operand : Expr) : Expr :=
   { id := .unary .UnaryMinus, type := operand.type, operands := [operand] }
@@ -336,6 +356,29 @@ def typecast (operand : Expr) (targetType : Ty) : Expr :=
 /-- Dereference (`*ptr`) yielding a value of type `pointee`. -/
 def dereference (ptr : Expr) (pointee : Ty) : Expr :=
   { id := .unary .Dereference, type := pointee, operands := [ptr] }
+
+/-- Access to the component `componentName` of the struct-typed `operand`,
+    yielding a value of the component's type `ty`. -/
+def member (operand : Expr) (componentName : String) (ty : Ty) : Expr :=
+  { id := .unary (.Member componentName), type := ty, operands := [operand] }
+
+/-- Address of the object `operand` (`&operand`), a pointer to its type. -/
+def addressOf (operand : Expr) : Expr :=
+  { id := .unary .AddressOf, type := .Pointer operand.type, operands := [operand] }
+
+/-- The array value with the elements `elems`, of the array type `ty`, whose size must be
+    the number of elements. -/
+def array (elems : List Expr) (ty : Ty) : Expr :=
+  { id := .multiary .Array, type := ty, operands := elems }
+
+/-- The struct value of the struct type `ty` with the components `comps`, in the order
+    of the struct's components. -/
+def struct (comps : List Expr) (ty : Ty) : Expr :=
+  { id := .multiary .Struct, type := ty, operands := comps }
+
+/-- The element `i` of the array `arr`, of type `ty` (`index_exprt`). -/
+def index (arr i : Expr) (ty : Ty) : Expr :=
+  { id := .binary .Index, type := ty, operands := [arr, i] }
 
 /-- Native dynamic-object allocation (`side_effect ID_allocate`): allocate
     `size` bytes, optionally zero-initialized, returning a pointer of type

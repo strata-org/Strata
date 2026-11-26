@@ -58,4 +58,32 @@ private def symbolKeys : Except String (List String) := do
 #guard_msgs in
 #eval symbolKeys
 
+
+/-- An abstract procedure (declared without a body) exports with an empty body. -/
+private def abstractTestPgm :=
+#strata
+program Core;
+
+procedure abstractTest(x : int, out ret : int)
+spec {
+  requires [x_positive]: int.gt(x, 0);
+  ensures [ret_x]: ret == x;
+};
+#end
+
+/-- The implementation symbol of `abstractTest` holds a `block` statement with no
+    sub-statements. -/
+private def abstractImplBody : Except String (String × Nat) := do
+  let ast := Strata.TransM.run Inhabited.default (Strata.translateProgram abstractTestPgm)
+  let some p := ast.fst.decls.head!.getProc? | throw "Expected procedure"
+  let json ← Lean.Json.parse (← Core.testSymbols p)
+  let value ← (← json.getObjVal? "abstractTest").getObjVal? "value"
+  let stmt ← (← (← value.getObjVal? "namedSub").getObjVal? "statement").getObjValAs? String "id"
+  let sub ← value.getObjValAs? (Array Lean.Json) "sub"
+  return (stmt, sub.size)
+
+/-- info: Except.ok ("block", 0) -/
+#guard_msgs in
+#eval abstractImplBody
+
 end StrataTest.CBMC.CoreToCBMC

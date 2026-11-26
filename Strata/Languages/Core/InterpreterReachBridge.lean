@@ -95,7 +95,7 @@ inductive Visits (π : String → Option Procedure) (c : CoreConfig) : CoreConfi
       {p : Procedure} {ss : Statements} {σAO : CoreStore} :
       Visits π c x → ActiveStmt x ρ (.cmd (.call n tyArgs args md)) →
         Calls.typeInstantiatedCallee π n tyArgs = some p →
-      p.body = .structured ss → CallEntry ρ.factory ρ.store p args σAO →
+      p.body = .structured ss opq → CallEntry ρ.factory ρ.store p args σAO →
       Visits π c (.stmt (Stmt.block "" ss #[]) ⟨σAO, ρ.factory⟩)
   /-- The entry of the structured body of a call heading the residual commands of a visited CFG
       configuration. -/
@@ -106,7 +106,7 @@ inductive Visits (π : String → Option Procedure) (c : CoreConfig) : CoreConfi
       {p : Procedure} {ss : Statements} {σAO : CoreStore} :
       VisitsCFG π c (.inBlock g t (.call n tyArgs args md :: cs) tr ρ) →
         Calls.typeInstantiatedCallee π n tyArgs = some p →
-      p.body = .structured ss → CallEntry ρ.factory ρ.store p args σAO →
+      p.body = .structured ss opq → CallEntry ρ.factory ρ.store p args σAO →
       Visits π c (.stmt (Stmt.block "" ss #[]) ⟨σAO, ρ.factory⟩)
 
 /-- `VisitsCFG π c d`: the reference semantics visits the CFG configuration `d` from `c`: by
@@ -123,7 +123,7 @@ inductive VisitsCFG (π : String → Option Procedure) (c : CoreConfig) :
       {p : Procedure} {g : Imperative.DetCFG Expression Command} {σAO : CoreStore} :
       Visits π c x → ActiveStmt x ρ (.cmd (.call n tyArgs args md)) →
         Calls.typeInstantiatedCallee π n tyArgs = some p →
-      p.body = .cfg g → CallEntry ρ.factory ρ.store p args σAO →
+      p.body = .cfg g opq → CallEntry ρ.factory ρ.store p args σAO →
       VisitsCFG π c (.atBlock g g.entry ⟨σAO, ρ.factory⟩)
   /-- The entry of the CFG body of a call heading the residual commands of a visited CFG
       configuration. -/
@@ -134,7 +134,7 @@ inductive VisitsCFG (π : String → Option Procedure) (c : CoreConfig) :
       {p : Procedure} {g : Imperative.DetCFG Expression Command} {σAO : CoreStore} :
       VisitsCFG π c (.inBlock g' t (.call n tyArgs args md :: cs) tr ρ) →
         Calls.typeInstantiatedCallee π n tyArgs = some p →
-      p.body = .cfg g → CallEntry ρ.factory ρ.store p args σAO →
+      p.body = .cfg g opq → CallEntry ρ.factory ρ.store p args σAO →
       VisitsCFG π c (.atBlock g g.entry ⟨σAO, ρ.factory⟩)
   /-- A reference CFG step from a visited CFG configuration. -/
   | step {x y : CFGConfig String Command Expression} {evs : List (Event Expression)} :
@@ -309,8 +309,8 @@ private def StmtCtx (π : String → Option Procedure) (Q : CoreConfig → Prop)
     ∀ n tyArgs args md p σAO, s = .cmd (.call n tyArgs args md) →
       Calls.typeInstantiatedCallee π n tyArgs = some p →
       CallEntry ρ.factory ρ.store p args σAO →
-      (∀ ss, p.body = .structured ss → Q (.stmt (Stmt.block "" ss #[]) ⟨σAO, ρ.factory⟩)) ∧
-        ∀ g, p.body = .cfg g → QC (.atBlock g g.entry ⟨σAO, ρ.factory⟩)
+      (∀ ss opq, p.body = .structured ss opq → Q (.stmt (Stmt.block "" ss #[]) ⟨σAO, ρ.factory⟩)) ∧
+        ∀ g opq, p.body = .cfg g opq → QC (.atBlock g g.entry ⟨σAO, ρ.factory⟩)
 
 /-- The context a reference step at `x` is taken in: every statement in active position of `x`
     is evaluated in the context `StmtCtx` relative to `Q` and `QC`. -/
@@ -438,24 +438,35 @@ private theorem oracleCmd {π : String → Option Procedure}
       obtain ⟨_, hx, _⟩ := hu
       exact ⟨[_], 0, fun _ => ⟨_, rfl, heng, .inr ⟨_, _, rfl, hx, .inr ⟨_, rfl⟩⟩⟩⟩
     | _ => exact ⟨[], 0, fun _ => ⟨_, rfl, heng, .inl ⟨rfl, rfl⟩⟩⟩
-  | call_sem hπ he _ hx ih =>
+  | call_sem hπ hno he _ hx ih =>
     rintro ⟨hargs, hbody⟩
     obtain ⟨hs, hg⟩ := hbody _ _ _ _ _ _ rfl hπ he
     have hreach := fun e he' => engEvalReach_of_computableEval (hargs e he')
     have hwb := Calls.writeBackOK_of_complete writeBackTypedComplete_core hx
-    rcases ih with ⟨ss, ρ', hss, rfl, hr⟩ | ⟨g, ρ', hcfg, rfl, hr⟩
-    · obtain ⟨cs, n, hn⟩ := oracle_star Calls.OracleStepE.imp hr
+    rcases ih with ⟨ss, ρ', o, hss, rfl, hr⟩ | ⟨g, ρ', o, hcfg, rfl, hr⟩
+    · obtain rfl : o = false := by simpa [hss] using hno
+      obtain ⟨cs, n, hn⟩ := oracle_star Calls.OracleStepE.imp hr
         (fun x e y hq hs => hQ x e y hq (hs.imp fun _ _ _ _ _ ⟨h, _⟩ => h))
         (fun x _ _ hq hs => oracleStep (fun _ _ _ _ _ ⟨_, hm⟩ => hm) hs (hctx x hq))
-        (hs ss hss)
+        (hs ss _ hss)
       exact ⟨cs, n + 1, fun r =>
         .inr (.inl ⟨_, _, _, _, _, _, _, _, _, rfl, hπ, hss, he, hn r, hx, rfl, hreach, hwb⟩)⟩
-    · obtain ⟨cs, n, hn⟩ := oracle_star Calls.OracleCFGStepE.imp hr
+    · obtain rfl : o = false := by simpa [hcfg] using hno
+      obtain ⟨cs, n, hn⟩ := oracle_star Calls.OracleCFGStepE.imp hr
         (fun x e y hq hs => hQC x e y hq (hs.imp fun _ _ _ _ _ ⟨h, _⟩ => h))
         (fun x _ _ hq hs => oracleCFGStep (fun _ _ _ _ _ ⟨_, hm⟩ => hm) hs (hctxC x hq))
-        (hg g hcfg)
+        (hg g _ hcfg)
       exact ⟨cs, n + 1, fun r =>
-        .inr (.inr ⟨_, _, _, _, _, _, _, _, _, rfl, hπ, hcfg, he, hn r, hx, rfl, hreach, hwb⟩)⟩
+        .inr (.inr (.inl ⟨_, _, _, _, _, _, _, _, _, rfl, hπ, hcfg, he, hn r, hx, rfl, hreach, hwb⟩))⟩
+  | call_abstract_sem hπ hb he hH hx =>
+    rintro ⟨hargs, -⟩
+    obtain ⟨cs, hcs⟩ := Calls.havocOracle_of_havocVars (fun f _ _ _ _ hu hty =>
+      evalCmdEngE_of_computable
+        (.eval_set_nondet hu hty (coreEvaluator_WellFormedSemanticEvalVar f))
+        (by simp [stmtEvalExprs])) hH
+    exact ⟨cs, 1, fun r => .inr (.inr (.inr ⟨_, _, _, _, _, _, _, rfl, hπ, hb, he, hcs r, hx, rfl,
+      fun e he' => engEvalReach_of_computableEval (hargs e he'),
+      Calls.writeBackOK_of_complete writeBackTypedComplete_core hx⟩))⟩
 
 /-- **Reference runs on computable evaluations have choice sequences** (reference ⇒ engine).  A
     reference run of `π` from `c` along which every evaluated expression is computable
@@ -466,15 +477,15 @@ theorem runChoices_of_evalsComputable (π : String → Option Procedure) {c c' :
     ∃ cs, Calls.RunChoices π c evs c' cs := by
   have hctx : ∀ x, Visits π c x → StepCtx π (Visits π c) (VisitsCFG π c) x := fun x hx ρ s ha =>
     ⟨hcomp.1 x hx ρ s ha, fun _ _ _ _ _ _ hs hp he =>
-      ⟨fun _ hb => .call hx (hs ▸ ha) hp hb he, fun _ hb => .call hx (hs ▸ ha) hp hb he⟩⟩
+      ⟨fun _ _ hb => .call hx (hs ▸ ha) hp hb he, fun _ _ hb => .call hx (hs ▸ ha) hp hb he⟩⟩
   have hctxC : ∀ x, VisitsCFG π c x → CFGCtx π (Visits π c) (VisitsCFG π c) x := by
     rintro (_ | ⟨_, _, _ | ⟨_, _⟩, _ | _, _⟩ | _) hx
     all_goals first
       | trivial
       | exact hcomp.2 _ hx _ (List.mem_singleton_self _)
       | exact ⟨hcomp.2 _ hx, fun _ _ _ _ _ _ hs hp he =>
-          ⟨fun _ hb => .cfgCall (Stmt.cmd.inj hs ▸ hx) hp hb he,
-            fun _ hb => .cfgCall (Stmt.cmd.inj hs ▸ hx) hp hb he⟩⟩
+          ⟨fun _ _ hb => .cfgCall (Stmt.cmd.inj hs ▸ hx) hp hb he,
+            fun _ _ hb => .cfgCall (Stmt.cmd.inj hs ▸ hx) hp hb he⟩⟩
   obtain ⟨cs, n, hn⟩ := oracle_star Calls.OracleStepE.imp h (fun _ _ _ hq hs => .step hq hs)
     (fun x _ _ hq hs => oracleStep (fun _ _ _ _ _ hc hx => oracleCmd
       (fun _ _ _ hq hs => .step hq hs) (fun _ _ _ hq hs => .step hq hs) hctx hctxC hc hx) hs

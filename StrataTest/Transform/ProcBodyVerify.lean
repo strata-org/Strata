@@ -100,7 +100,7 @@ info: ok: verify_Simple: {
   #end)
   "Simple"
 
-/-! ## Test 3: Free specifications (should be filtered out) -/
+/-! ## Test 3: Free specifications (a free postcondition becomes `assume true`) -/
 
 -- Show the transformed output
 /--
@@ -112,6 +112,7 @@ info: ok: verify_WithFree: {
   body_WithFree: {
     y := x;
   }
+  assume [WithFree_ensures_2]: true;
   assert [WithFree_ensures_3]: y == x;
 }
 -/

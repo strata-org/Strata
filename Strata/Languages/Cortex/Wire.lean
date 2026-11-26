@@ -118,6 +118,15 @@ structure Precondition where
   summary : Option String
   deriving Repr, Inhabited
 
+/-- A postcondition, checked when the procedure returns normally. It reads the parameters
+and the globals at return, an input at its entry value, and `old g` for a global `g`. -/
+structure Postcondition where
+  label : String
+  cond : Expr
+  summary : Option String
+  source : Strata.FileRange
+  deriving Repr, Inhabited
+
 structure Procedure where
   name : String
   inputs : List Param
@@ -127,6 +136,10 @@ structure Procedure where
   body : Option Body
   entry : Bool
   source : Strata.FileRange
+  /-- Whether the procedure models code that Strata does not see (`Cortex.Procedure.external`).
+  A message without the field reads as `false`. -/
+  external : Bool := false
+  ensures : List Postcondition := []
   deriving Repr, Inhabited
 
 structure Field where
@@ -273,6 +286,28 @@ def Procedure.toCortex (globals : List String) (p : Procedure) : Except String C
       for v in pre.cond.vars do
         if globals.contains v then
           throw s!"'{p.name}': the precondition of an entry procedure reads global '{v}', which starts at its initializer there"
+  -- A postcondition reads the parameters, an input at its entry value, the globals at
+  -- return, and the entry value `old g` of a global, and nothing else: a local of the body
+  -- is out of scope there. A parameter has no entry value of its own: no name is both an
+  -- input and an output here. The entry procedure's globals are locals of its body, out of
+  -- scope in its postconditions.
+  for post in p.ensures do
+    for v in post.cond.vars do
+      if ((p.inputs ++ p.outputs).map (·.name)).contains v then continue
+      if globals.contains v then
+        if p.entry then
+          throw s!"'{p.name}': the postcondition of an entry procedure reads global '{v}', \
+which is a local of its body there"
+      else if v.startsWith Core.CoreIdent.oldStr then
+        let g := (v.drop Core.CoreIdent.oldStr.length).toString
+        unless globals.contains g do
+          throw s!"'{p.name}': the postcondition reads the entry value of '{g}', \
+but only a global has one"
+        if p.entry then
+          throw s!"'{p.name}': the postcondition of an entry procedure reads the entry value \
+of global '{g}', which is a local of its body there"
+      else
+        throw s!"'{p.name}': the postcondition reads '{v}', which is not a parameter or a global"
   for b in p.body.toList do
     for blk in b.blocks do
       for c in blk.cmds do
@@ -281,13 +316,16 @@ def Procedure.toCortex (globals : List String) (p : Procedure) : Except String C
   let body ← p.body.mapM (Body.toCortex p.name)
   let md := mdOf p.source
   let md := if p.entry then md.pushElem MetaData.interpretEntry (.switch true) else md
+  let withSummary := fun (md : Cortex.MD) => fun
+    | some s => md.pushElem MetaData.propertySummary (.msg s)
+    | none => md
   let requires := p.requires.map fun pre =>
-    ({ cond := pre.cond.toCore,
-       md := match pre.summary with
-         | some s => (MetaData.empty : Cortex.MD).pushElem MetaData.propertySummary (.msg s)
-         | none => .empty } : Cortex.Precondition)
+    ({ cond := pre.cond.toCore, md := withSummary .empty pre.summary } : Cortex.Precondition)
+  let ensures := p.ensures.map fun post =>
+    ({ label := post.label, cond := post.cond.toCore,
+       md := withSummary (mdOf post.source) post.summary } : Cortex.Postcondition)
   return { name := p.name, inputs := params p.inputs, outputs := params p.outputs, throws := p.throws,
-           body, md, requires }
+           body, md, requires, ensures, external := p.external }
 
 def Program.checkCallArities (p : Program) : Except String Unit := do
   let arities : Std.HashMap String (Nat × Nat) :=

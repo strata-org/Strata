@@ -130,7 +130,7 @@ theorem wpLoopFree_runsOverapproximate (π : String → Option Procedure)
     (moreFns : Lambda.Factory CoreLParams),
     Core.typeCheck options program factory moreFns = .ok program' →
     program'.noPolymorphicProcedures = Bool.true →
-    ∀ p md body, Decl.proc p md ∈ program'.decls → p.body = .structured body →
+    ∀ p md body opq, Decl.proc p md ∈ program'.decls → p.body = .structured body opq →
       Statements.WellTyped (fun x => Tys.get? p.paramTys x) (p.contractWrapped body)
 
 /-! ## The pipeline phase -/

@@ -4633,31 +4633,31 @@ private theorem Program.typeCheck.goWith_proc_elaborated (p : Program)
 theorem Program.typeCheckIn_cfgCallsWellFormed {S : Std.HashSet String}
     {C : Expression.TyContext} {Env Env' : Expression.TyEnv} {program program' : Program}
     (h : Program.typeCheckIn S C Env program = .ok (program', Env')) :
-    ∀ q md (g : DetCFG), Decl.proc q md ∈ program'.decls → q.body = .cfg g →
+    ∀ q md (g : DetCFG) (o : Bool), Decl.proc q md ∈ program'.decls → q.body = .cfg g o →
       ∀ cs ∈ q.callSites, WF.WFcallProp program' cs.procName cs.args := by
   obtain ⟨out, hgo, rfl⟩ := Program.typeCheckIn_ok_inv S C Env Env' program program' h
-  intro q md g hmem hg cs hcs
+  intro q md g o hmem hg cs hcs
   have hnonProc : ∀ d : Decl, (d.kind == DeclKind.proc) = false →
-      ∀ q md (g : DetCFG), d = .proc q md → q.body = .cfg g →
+      ∀ q md (g : DetCFG) (o : Bool), d = .proc q md → q.body = .cfg g o →
         ∀ cs ∈ q.callSites, callError? program cs.procName cs.args = none := by
-    intro d hk q md g hd
+    intro d hk q md g o hd
     subst hd
     simp [Decl.kind] at hk
   have hproc : ∀ (sc ps : Thunk (Std.HashSet String)) (Cq : Expression.TyContext)
       (Tq Tq' : Expression.TyEnv) (proc proc' : Procedure) (mdp : MetaData Expression),
       Procedure.typeCheckIn sc ps Cq Tq program proc mdp = .ok (proc', Tq') →
-      ∀ q md (g : DetCFG), Decl.proc proc' mdp = .proc q md → q.body = .cfg g →
+      ∀ q md (g : DetCFG) (o : Bool), Decl.proc proc' mdp = .proc q md → q.body = .cfg g o →
         ∀ cs ∈ q.callSites, callError? program cs.procName cs.args = none := by
-    intro _ _ _ _ _ _ _ _ htc q md g hd hg
+    intro _ _ _ _ _ _ _ _ htc q md g o hd hg
     cases hd
     exact Procedure.typeCheckIn_cfgCallsChecked htc hg
-  have hacc : ∀ d ∈ ([] : Decls), ∀ q md (g : DetCFG), d = .proc q md → q.body = .cfg g →
-      ∀ cs ∈ q.callSites, callError? program cs.procName cs.args = none :=
+  have hacc : ∀ d ∈ ([] : Decls), ∀ q md (g : DetCFG) (o : Bool), d = .proc q md →
+      q.body = .cfg g o → ∀ cs ∈ q.callSites, callError? program cs.procName cs.args = none :=
     fun _ hd => absurd hd List.not_mem_nil
   have hchecked := Program.typeCheck.goWith_out_forall program
-    (fun d => ∀ q md (g : DetCFG), d = .proc q md → q.body = .cfg g →
+    (fun d => ∀ q md (g : DetCFG) (o : Bool), d = .proc q md → q.body = .cfg g o →
       ∀ cs ∈ q.callSites, callError? program cs.procName cs.args = none)
-    hnonProc hproc _ _ C _ program.decls [] out Env' hgo hacc _ hmem q md g rfl hg cs hcs
+    hnonProc hproc _ _ C _ program.decls [] out Env' hgo hacc _ hmem q md g o rfl hg cs hcs
   have hwf := (callError?_eq_none_iff program cs.procName cs.args).mp hchecked
   obtain ⟨q1, hq1⟩ := Option.isSome_iff_exists.mp hwf.defined
   obtain ⟨md1, hmem1, hname1⟩ := Program.Procedure.find?_mem_decls program _ q1 hq1

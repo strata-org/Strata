@@ -262,6 +262,19 @@ one session. -/
 private def walk (solver : String) : Core.VerifyOptions :=
   { batch solver with incremental := true, vcgen := .wp }
 
+/-- The phase names of the default order of `options` with contextual rewriting after
+`betaReduce`. -/
+private def withRewriteNames (options : Core.VerifyOptions) : List String :=
+  (Strata.Core.corePipelinePhases options).map Strata.Core.phaseName |>.flatMap fun n =>
+    if n == "betaReduce" then [n, "contextualRewrite"] else [n]
+
+/-- The default order of `options` with contextual rewriting after `betaReduce`
+(`withRewriteNames`), checked to compose. -/
+private def withRewrite (options : Core.VerifyOptions) :
+    IO (Core.ValidatedPipeline Core.ProgramFactSet.empty) :=
+  IO.ofExcept (Strata.Core.splicePhasesAfter "betaReduce" [Strata.Core.passContextualRewrite]
+    (Strata.Core.corePipelinePhases options) >>= Strata.Core.validatePipeline)
+
 /-- The three ways a check reaches the solver, by name. The walk comes first: when its solver
 fails, the solver it starts in its place may still be starting as the run returns, and finds
 the stand-in installed while the other two run. -/
@@ -508,6 +521,52 @@ run_elab do
       unless has (← IO.FS.readFile files.head!) s!"-- Solver's answer: unsat ({gloss})\n" do
         throw <| IO.userError s!"`plain` does not report its `unsat` as `{gloss}` ({backend})"
 
+/-! The walk with contextual rewriting after `betaReduce` (`withRewrite`). A check the phase
+proves from the assumptions on its path reaches no solver and is not exported; the others are
+walked as with the phase off. For each program, the first line gives the number of checks the
+stand-in answers with the phase on and the checks exported; the second, each check's verdict
+with cvc5 with the phase off and on (`other` for a cover and for a check whose encoding fails).
+The phase proves both checks of `validProgram` and `plain`; every verdict is the same with the
+phase off and on. -/
+/--
+info: valid: stand-in answered 0, exported []
+valid: off [first pass, second pass], on [first pass, second pass]
+refuted: stand-in answered 2, exported [low, high]
+refuted: off [low fail, high fail], on [low fail, high fail]
+twoArm: stand-in answered 4, exported [thenSum, thenBound, elseSum, elseBound]
+twoArm: off [thenSum pass, thenBound pass, elseSum pass, elseBound pass], on [thenSum pass, thenBound pass, elseSum pass, elseBound pass]
+notExported: stand-in answered 1, exported []
+notExported: off [reachable other, unencodable other, plain pass], on [reachable other, unencodable other, plain pass]
+-/
+#guard_msgs in
+run_elab do
+  let lines ← liftM (m := IO) (IO.mkRef (#[] : Array String))
+  liftM (m := IO) <| withSolver fun standIn => IO.FS.withTempDir fun root => do
+    let verdict (result : Core.VCResult) : String :=
+      let v := if result.isSuccess then "pass" else if result.isFailure then "fail" else "other"
+      s!"{result.obligation.label} {v}"
+    for (name, program) in [("valid", validProgram), ("refuted", refutedProgram),
+        ("twoArm", twoArmProgram), ("notExported", notExportedProgram)] do
+      let (config, dir, _) ← newConfig root s!"rewrite-{name}"
+      let options := { walk standIn.solver with leanExport := some config }
+      let pipeline ← withRewrite options
+      let (_, results) ← IO.FS.withIsolatedStreams (isolateStderr := true) <|
+        Strata.Core.verify program (options := options) (pipeline := some pipeline)
+      let names ← entries dir
+      let exported := (results.toList.map (·.obligation.label)).filter fun label =>
+        names.any (isFileOf label)
+      let answered ← standIn.answered
+      lines.modify (·.push s!"{name}: stand-in answered {answered}, exported {exported}")
+      let mut verdicts : List String := []
+      for phase in [false, true] do
+        let pipeline ← if phase then some <$> withRewrite (walk "cvc5") else pure none
+        let (_, results) ← IO.FS.withIsolatedStreams (isolateStderr := true) <|
+          Strata.Core.verify program (options := walk "cvc5") (pipeline := pipeline)
+        let setting := if phase then "on" else "off"
+        verdicts := verdicts ++ [s!"{setting} {results.toList.map verdict}"]
+      lines.modify (·.push s!"{name}: {", ".intercalate verdicts}")
+  logInfo ("\n".intercalate (← liftM (m := IO) lines.get).toList)
+
 /-! A check Strata decides by evaluation is not handed to the solver and is not exported, in
 the scope `all` either. -/
 #guard_msgs in
@@ -624,14 +683,19 @@ two: neither check is exported and each is reported, on the per-obligation path 
 by the incremental backend. With another function name both checks are exported. Walked by the
 incremental backend under `--vcgen symexec`, which puts the two checks into one session and
 merges paths, no phase names common subexpressions, so both checks are exported with every
-function name. -/
+function name. With contextual rewriting after `betaReduce` in that order (`rewrite`, through
+`--phases`), the phase proves `b` from the assumption `h`, so only `a` reaches the solver and is
+exported. -/
 #guard_msgs in
 run_elab do
   liftM (m := IO) <| withSolver fun standIn => IO.FS.withTempDir fun root => do
     for (name, backend) in [("batch", #[]), ("alone", #["--incremental"]),
-        ("walk", #["--incremental", "--vcgen", "symexec"])] do
+        ("walk", #["--incremental", "--vcgen", "symexec"]),
+        ("rewrite", #["--incremental", "--vcgen", "symexec", "--phases", ",".intercalate
+          (withRewriteNames { Core.VerifyOptions.quiet with symExec := some .always })])] do
       for function in ["$__cse.0", "$__cse.1", "c"] do
-        let exported := if name == "walk" || function == "c" then ["a", "b"] else []
+        let exported := if name == "rewrite" then ["a"]
+          else if name == "walk" || function == "c" then ["a", "b"] else []
         let source := root / s!"shadow-{function}.core.st"
         IO.FS.writeFile source s!"program Core;\n\
           function {function}() : bool \{ false }\n\

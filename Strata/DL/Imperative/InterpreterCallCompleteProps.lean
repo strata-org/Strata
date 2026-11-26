@@ -96,6 +96,17 @@ private theorem evGood_rDefault {F : P.Factory} {σ : RStore P} (hd : RStore.Den
   split at h <;> cases h
   exact ⟨rfl, hd⟩
 
+omit [HasBoolOps P] [HasFvar P] [HasFvars P] [DecidableEq P.Expr] [DecidableEq P.Ident]
+  [HasOldIdent P] in
+/-- The assumption events of a call's postconditions at the runtime factory of `F` from a
+    denoting store are well formed. -/
+private theorem evGood_rAssume {F : P.Factory} {σ : RStore P} (hd : RStore.Denoting F σ)
+    (checks : ListMap String (Check P)) :
+    ∀ ev ∈ rAssumeEvents (InterpLang.rfactory F) σ checks, EvGood F ev := by
+  simp only [rAssumeEvents, List.mem_map]
+  rintro _ ⟨_, -, rfl⟩
+  exact ⟨rfl, hd⟩
+
 /-! ## Following the choice sequence of a run, over any observation -/
 
 section Follows
@@ -158,10 +169,10 @@ private theorem oracleCmdEngE_followsG {F : P.Factory} {R : ChoiceRecord P} {Q :
 
 omit [HasFvars P] in
 /-- A base command of an oracle-reading run, from a denoting environment `ρ`, is performed by one
-    `stepCmd π i j` step from every state `st` with `Pending st o`, at every large enough `i`, `j`
-    and fuel, reaching a denoting store that stands for `σ'`, recording its events and leaving a
-    state `st'` with `Pending st' o'`: a deterministic command keeps the pending choices, a
-    nondeterministic `.init`/`.set` consumes the value it writes.  Assumes `emit` succeeds on the
+    `stepCmd π .contract i j` step from every state `st` with `Pending st o`, at every large enough
+    `i`, `j` and fuel, reaching a denoting store that stands for `σ'`, recording its events and
+    leaving a state `st'` with `Pending st' o'`: a deterministic command keeps the pending choices,
+    a nondeterministic `.init`/`.set` consumes the value it writes.  Assumes `emit` succeeds on the
     well-formed events satisfying `Q`, `choose` follows the choices `R` allows, every
     engine-realizable base-command step with typed choices is one with choices in `R`, and the
     bounded evaluator is fuel-monotone. -/
@@ -192,9 +203,9 @@ omit [LawfulMonad m] in
 /-- `stepCmd_call_complete` with `emit` required to succeed on well-formed events only: a reference
     `.call` with entry frame `σAO` and write-back from the callee's final store `σf` to `σ'`, from a
     denoting caller environment `ρ` carrying the runtime factory of `F`, is performed by
-    `stepCmd π i j` at every large enough `i` and `j` from every state `st` with `Pend st o`,
-    reaching a denoting store that stands for `σ'`, leaving a state with `Pend st' o'` and
-    recording the call's events, given that: emitting well-formed runtime events whose images
+    `stepCmd π .contract i j` at every large enough `i` and `j` from every state `st` with
+    `Pend st o`, reaching a denoting store that stands for `σ'`, leaving a state with `Pend st' o'`
+    and recording the call's events, given that: emitting well-formed runtime events whose images
     satisfy `Q` succeeds, keeps `Pend` and prepends the events (`hemit`); the callee body run from
     every denoting runtime frame standing for `σAO` reaches a denoting store standing for `σf`,
     turning `Pend · o` into `Pend · o'` and recording `evB` (`hbody`); the call's events satisfy
@@ -211,7 +222,7 @@ private theorem stepCmd_call_completeG
     {nm : String} {args : List (CallArg P)} {md : MetaData P} {p : Procedure P (CmdExt P) Hdr}
     {tyArgs : Option (List P.Ty)}
     {σAO σf σ' : SemanticStore P} {evB : List (Event P)} {o o' : List P.Val}
-    (hπ : typeInstantiatedCallee π nm tyArgs = some p)
+    (hπ : typeInstantiatedCallee π nm tyArgs = some p) (hno : p.body.isOpaque = false)
     (hentry : CallEntry F (InterpLang.absStore F ρ.store.get) p args σAO)
     (hexit : CallExit F (InterpLang.absStore F ρ.store.get) p args σf σ')
     (hargs : CallArgsReach F (InterpLang.absStore F ρ.store.get) args)
@@ -219,7 +230,8 @@ private theorem stepCmd_call_completeG
     (hbody : ∀ er : RStore P, InterpLang.absStore F er = σAO → RStore.Denoting F er →
       ∀ st, Pend st o → ∃ (fb : Nat) (sf : RStore P) (st' : obs.St),
         InterpLang.absStore F sf = σf ∧ RStore.Denoting F sf ∧
-        (∀ i j, fb ≤ i → fb ≤ j → obs.run (runCallee (fun _ e c => stepCmd π i j e c) nm p.body
+        (∀ i j, fb ≤ i → fb ≤ j → obs.run (runCallee (fun _ e c => stepCmd π .contract i j e c) nm
+            p.body
           (InterpLang.rfactory F) j er) cfgr st = (.ok sf, st')) ∧
         Pend st' o' ∧ obs.TraceExt F st st' evB)
     (hq : ∀ ev ∈ defaultAssertEvents F σAO (checksAtCall md p.spec.preconditions) ++ evB ++
@@ -227,7 +239,8 @@ private theorem stepCmd_call_completeG
     (st : obs.St) (hst : Pend st o) :
     ∃ (f0 : Nat) (σi : IStore P) (st' : obs.St), InterpLang.absStore F σi.get = σ' ∧
       RStore.Denoting F σi.get ∧
-      (∀ i j, f0 ≤ i → f0 ≤ j → obs.run (stepCmd π i j ρ (.call nm tyArgs args md)) cfgr st
+      (∀ i j, f0 ≤ i → f0 ≤ j → obs.run (stepCmd π .contract i j ρ (.call nm tyArgs args md)) cfgr
+          st
         = (.ok (.terminal { ρ with store := σi }), st')) ∧ Pend st' o' ∧
       obs.TraceExt F st st' (defaultAssertEvents F σAO (checksAtCall md p.spec.preconditions) ++
         evB ++ defaultAssertEvents F σf p.spec.postconditions) := by
@@ -264,11 +277,133 @@ private theorem stepCmd_call_completeG
   · obtain ⟨i, rfl⟩ : ∃ k, i = k + 1 := ⟨i - 1, by omega⟩
     obtain ⟨j, rfl⟩ : ∃ k, j = k + 1 := ⟨j - 1, by omega⟩
     rw [stepCmd, stepCmdWith]
-    simp (disch := omega) [CmdExt.view, hπ₀, hinst, hf, hev, hro, hlin, hlout, hri.length_eq,
+    simp (disch := omega) [CmdExt.view, dispatchCall, callBody, hπ₀, hinst, hno,
+      CallMode.runsContract, -Body.isOpaque, hf, hev, hro, hlin, hlout, hri.length_eq,
       hrorel.length_eq, e1, hrun i j, e3, hms, hold, hwb, ReadValuesLength hrd, hbind.1,
       -List.forM_eq_forM]
   · simp only [List.map_append, rDefaultAssertEvents_abs, habs, hrb]
   · simp [t1, t2, t3]
+
+omit [LawfulMonad m] in
+/-- `stepCmd_abstractCall_complete` with `emit` required to succeed on well-formed events only: a
+    reference `.call` to an opaque callee with entry frame `σAO` and write-back from the
+    post-havoc frame `σO` to `σ'`, from a denoting caller environment `ρ` carrying the runtime
+    factory of `F`, is performed by `stepCmd π .contract i j` at every large enough `i` and `j` from
+    every state `st` with `Pend st o`, reaching a denoting store that stands for `σ'`, leaving a
+    state with `Pend st' o'` and recording the call's events, given that: emitting well-formed
+    runtime events whose images satisfy `Q` succeeds, keeps `Pend` and prepends the events
+    (`hemit`); the havoc of the output formals (`havocVarList`) from every denoting runtime frame
+    standing for
+    `σAO` reaches a denoting store standing for `σO`, turning `Pend · o` into `Pend · o'` and
+    recording no event (`hhavoc`); the call's events satisfy `Q`; the engine reaches the value of
+    every input expression (`hargs`); the engine's typed write-back check passes (`hwb`); and the
+    bounded evaluator is fuel-monotone. -/
+private theorem stepCmd_abstractCall_completeG
+    (π : String → Option (Procedure P (CmdExt P) Hdr)) {F : P.Factory}
+    (hMono : BoundedEvalMono P)
+    {Pend : obs.St → List P.Val → Prop} {Q : Event P → Prop}
+    (hemit : ∀ (revs : List (IEvent P)) o st, (∀ ev ∈ revs, EvGood F ev ∧ Q (ev.abs F)) →
+      Pend st o → ∃ st', obs.run (revs.forM (InterpEffects.emit (P := P))) cfgr st = (.ok ⟨⟩, st')
+        ∧ Pend st' o ∧ obs.trace st' = revs.reverse ++ obs.trace st)
+    {ρ : IEnv P} (hd : RStore.Denoting F ρ.store.get) (hf : ρ.factory = InterpLang.rfactory F)
+    {nm : String} {tyArgs : Option (List P.Ty)} {args : List (CallArg P)} {md : MetaData P}
+    {p : Procedure P (CmdExt P) Hdr} {σAO σO σ' : SemanticStore P} {o o' : List P.Val}
+    (hπ : typeInstantiatedCallee π nm tyArgs = some p) (hab : p.body.isOpaque = true)
+    (hentry : CallEntry F (InterpLang.absStore F ρ.store.get) p args σAO)
+    (hexit : CallExit F (InterpLang.absStore F ρ.store.get) p args σO σ')
+    (hargs : CallArgsReach F (InterpLang.absStore F ρ.store.get) args)
+    (hwb : WriteBackOK F (InterpLang.absStore F ρ.store.get) p args σO)
+    (hhavoc : ∀ er : RStore P, InterpLang.absStore F er = σAO → RStore.Denoting F er →
+      ∀ st, Pend st o → ∃ (fb : Nat) (sf : IStore P) (st' : obs.St),
+        InterpLang.absStore F sf.get = σO ∧ RStore.Denoting F sf.get ∧
+        (∀ j, fb ≤ j → obs.run (havocVarList j (InterpLang.rfactory F)
+          (ProcedureHeader.outputParams (P := P) p.header) (.ofStore er)) cfgr st = (.ok sf, st')) ∧
+        Pend st' o' ∧ obs.trace st' = obs.trace st)
+    (hq : ∀ ev ∈ defaultAssertEvents F σAO (checksAtCall md p.spec.preconditions) ++
+      assumeEvents F σO p.spec.postconditions, Q ev)
+    (st : obs.St) (hst : Pend st o) :
+    ∃ (f0 : Nat) (σi : IStore P) (st' : obs.St), InterpLang.absStore F σi.get = σ' ∧
+      RStore.Denoting F σi.get ∧
+      (∀ i j, f0 ≤ i → f0 ≤ j → obs.run (stepCmd π .contract i j ρ (.call nm tyArgs args md)) cfgr
+          st
+        = (.ok (.terminal { ρ with store := σi }), st')) ∧ Pend st' o' ∧
+      obs.TraceExt F st st' (defaultAssertEvents F σAO (checksAtCall md p.spec.preconditions) ++
+        assumeEvents F σO p.spec.postconditions) := by
+  obtain ⟨p₀, hπ₀, hinst⟩ : ∃ p₀, π nm = some p₀ ∧
+      ProcedureTypeInstantiation.instantiate p₀ (tyArgs.getD []) = some p :=
+    Option.bind_eq_some_iff.1 hπ
+  obtain ⟨vi, vo, hin, hout, hinit⟩ := hentry
+  obtain ⟨-, vs, hrd, hup, hrel⟩ := hexit
+  obtain ⟨N, ri, hri, hev⟩ := evalBoundedList_of_reach hMono (storeDenotes_absStore hd) hin hargs
+  obtain ⟨ro, hro, hrorel⟩ := readVarList_absStore _ _ (readVarList_of_readValues _ _ _ _ hout)
+  obtain ⟨hlin, hlout, rfl⟩ := callEntryStore_of_initCallFrame _ _ _ _ hinit
+  obtain ⟨habs, hden⟩ := callEntryStore_abs p hri hrorel
+  simp only [List.forall_mem_append] at hq
+  obtain ⟨hq1, hq3⟩ := hq
+  obtain ⟨s1, e1, p1, t1⟩ := hemit (rDefaultAssertEvents (InterpLang.rfactory F)
+    (callEntryStore p ri ro) (checksAtCall md p.spec.preconditions)) o st (fun ev hev =>
+      ⟨evGood_rDefault hden _ ev hev,
+        hq1 _ (habs ▸ rDefaultAssertEvents_abs F _ _ ▸ List.mem_map_of_mem hev)⟩) hst
+  obtain ⟨fb, sf, s2, rfl, hdsf, hhv, p2, t2⟩ := hhavoc _ habs hden s1 p1
+  obtain ⟨s3, e3, p3, t3⟩ := hemit (rAssumeEvents (InterpLang.rfactory F) sf.get
+    p.spec.postconditions) o' s2 (fun ev hev => ⟨evGood_rAssume hdsf _ ev hev,
+      hq3 _ (rAssumeEvents_abs F _ _ ▸ List.mem_map_of_mem hev)⟩) p2
+  obtain ⟨ms, hms, hmsrel⟩ :=
+    readVarList_absStore sf.get _ (readVarList_of_readValues _ _ _ _ hrd)
+  obtain ⟨olds, hold⟩ := readVarList_of_storedTy hrel
+  have hwb := hwb _ _ _ _ (storeDenotes_absStore hd) (storeDenotes_absStore hdsf) hold hms
+  have hbind := bindPositional_of_updateStates _ _ _ _ hup
+  refine ⟨N + fb + 1, ρ.store.bindPositional (CallArg.getLhs args) ms, s3, ?_, ?_,
+    fun i j hi hj => ?_, p3, ⟨rDefaultAssertEvents (InterpLang.rfactory F) (callEntryStore p ri ro)
+      (checksAtCall md p.spec.preconditions) ++
+      rAssumeEvents (InterpLang.rfactory F) sf.get p.spec.postconditions, ?_, ?_⟩⟩
+  · rw [IStore.get_bindPositional, absStore_bindPositional _ _ hmsrel, hbind.2]
+  · rw [IStore.get_bindPositional]
+    exact denoting_bindPositional _ hd hmsrel
+  · obtain ⟨i, rfl⟩ : ∃ k, i = k + 1 := ⟨i - 1, by omega⟩
+    obtain ⟨j, rfl⟩ : ∃ k, j = k + 1 := ⟨j - 1, by omega⟩
+    rw [stepCmd, stepCmdWith]
+    simp (disch := omega) [CmdExt.view, dispatchCall, callBody, hπ₀, hinst, hab,
+      CallMode.runsContract, -Body.isOpaque,
+      hf, hev, hro, hlin, hlout, hri.length_eq,
+      hrorel.length_eq, e1, runAbstractCallee, hhv j, e3, hms, hold, hwb, ReadValuesLength hrd,
+      hbind.1, -List.forM_eq_forM]
+  · simp only [List.map_append, rDefaultAssertEvents_abs, rAssumeEvents_abs, habs]
+  · simp [t1, t2, t3]
+
+omit [HasFvars P] [HasOldIdent P] in
+/-- An oracle-reading havoc of the names `xs` (`HavocOracle`) from the image of a denoting
+    interpreter store `σ` is performed by `havocVarList` at every large enough fuel from every
+    state `st` with `Pending st o`, reaching a denoting store standing for the havoc's final store,
+    recording no event and leaving a state `st'` with `Pending st' o'`, given that `choose`
+    follows the choices `R` allows, every engine-realizable base-command step with typed choices
+    is one with choices in `R`, and the bounded evaluator is fuel-monotone. -/
+private theorem havocOracle_followsG {F : P.Factory} {R : ChoiceRecord P}
+    (hf : ChooseFollows obs cfgr F R Pending) (hMono : BoundedEvalMono P)
+    (hlift : ∀ f σ c σ' evs, EvalCmdEngE P (ChoiceRecord.typed P) f σ c σ' evs →
+      EvalCmdEngE P R f σ c σ' evs)
+    {σa : SemanticStore P} {xs : List P.Ident} {σ' : SemanticStore P} {o o' : List P.Val}
+    (h : HavocOracle F σa xs σ' o o') :
+    ∀ (σ : IStore P), InterpLang.absStore F σ.get = σa → RStore.Denoting F σ.get →
+      ∀ st : obs.St, Pending st o → ∃ (f0 : Nat) (σi : IStore P) (st' : obs.St),
+        InterpLang.absStore F σi.get = σ' ∧ RStore.Denoting F σi.get ∧
+        (∀ fuel, f0 ≤ fuel →
+          obs.run (havocVarList fuel (InterpLang.rfactory F) xs σ) cfgr st = (.ok σi, st')) ∧
+        Pending st' o' ∧ obs.trace st' = obs.trace st := by
+  induction h with
+  | nil => exact fun σ h hd st hst => ⟨0, σ, st, h, hd, fun _ _ => obs.run_pure .., hst, rfl⟩
+  | cons h1 _ ih =>
+    rintro σ rfl hd st hst
+    obtain ⟨_, he, he', hdt⟩ := h1
+    cases he
+    obtain ⟨n, σ1, s1, hσ1, hd1, hr1, p1, revs, hrevs, t1⟩ := oracleCmdEngE_follows obs cfgr
+      (Q := fun _ => False) Pending (fun _ _ _ h => h.elim) hf hMono hd ⟨hlift _ _ _ _ _ he', hdt⟩
+      nofun st hst
+    obtain ⟨k, σi, s2, hσi, hdi, hr2, p2, t2⟩ := ih σ1 hσ1 hd1 s1 p1
+    refine ⟨n + k, σi, s2, hσi, hdi, fun fuel hfu => ?_, p2, ?_⟩
+    · simp only [havocVarList, obs.run_bind, hr1 fuel (by omega), hr2 fuel (by omega)]
+    · rw [t2, t1, List.map_eq_nil_iff.1 hrevs]
+      rfl
 
 omit [DecidableEq P.Expr] in
 /-- An oracle-reading command evaluation at any call-nesting height defines only the names
@@ -283,15 +418,16 @@ private theorem oracleCmdAt_defines (π : String → Option (Procedure P (CmdExt
   rintro (_ | n) _ _ _ _ _ _ _ h
   · exact hb h
   rcases h with h | ⟨_, _, _, _, _, _, _, _, _, rfl, -, -, -, -, ⟨_, _, _, hup, -⟩, -⟩ |
-    ⟨_, _, _, _, _, _, _, _, _, rfl, -, -, -, -, ⟨_, _, _, hup, -⟩, -⟩
+    ⟨_, _, _, _, _, _, _, _, _, rfl, -, -, -, -, ⟨_, _, _, hup, -⟩, -⟩ |
+    ⟨_, _, _, _, _, _, _, rfl, -, -, -, -, ⟨_, _, _, hup, -⟩, -⟩
   · exact hb h
   all_goals exact fun x hx => .inl (UpdateStatesDefMonotone' (vs := [x])
     (fun _ hv => List.mem_singleton.1 hv ▸ hx) hup x (List.mem_singleton_self x))
 
 /-- Every command of an oracle-reading run, calls included, at every call-nesting height `n`, is
-    performed by one `stepCmd π i j` step that follows its choices (`CmdFollowsFam` of the stepper
-    family `callStepOf π`), under the same assumptions as for a base command (`emit` succeeding
-    on the well-formed events satisfying `Q`). -/
+    performed by one `stepCmd π .contract i j` step that follows its choices (`CmdFollowsFam` of the
+    stepper family `callStepOf π`), under the same assumptions as for a base command (`emit`
+    succeeding on the well-formed events satisfying `Q`). -/
 private theorem oracleCmdAt_followsG {F : P.Factory}
     (π : String → Option (Procedure P (CmdExt P) Hdr))
     {R : ChoiceRecord P} {Q : Event P → Prop}
@@ -315,10 +451,18 @@ private theorem oracleCmdAt_followsG {F : P.Factory}
       fun h ev hev => h ev (by simp [hev])
     rcases hcall with ⟨nm, _, p, args, md, σAO, ss, ρ', bodyEvs, rfl, hπ, hss, hentry, hbody, hexit,
         rfl, hargs, hwb⟩ |
-      ⟨nm, _, p, args, md, σAO, gr, ρEnd, bodyEvs, rfl, hπ, hgr, hentry, hbody, hexit, rfl, hargs,
-        hwb⟩
+      ⟨nm, _, p, args, md, σAO, gr, ρEnd, bodyEvs, rfl, hπ, hss, hentry, hbody, hexit, rfl, hargs,
+        hwb⟩ |
+      ⟨nm, _, p, args, md, σAO, σO, rfl, hπ, hab, hentry, hH, hexit, rfl, hargs, hwb⟩
+    rotate_left 2
+    · exact (stepCmd_abstractCall_completeG obs cfgr π hMono hem hdρ hfρ hπ hab hentry hexit hargs
+        hwb (fun er habs hder s1 p1 => havocOracle_followsG obs cfgr Pending hf hMono hlift hH
+          (.ofStore er) (by simpa using habs) (by simpa using hder) s1 p1) hq st hst).imp
+        fun _ ⟨σi, s, h1, h2, hr, hp, ht⟩ =>
+          ⟨σi, s, h1, h2, fun i j _ hi hj _ => hr i j hi hj, hp, ht⟩
     all_goals
-      refine (stepCmd_call_completeG obs cfgr π hMono hem hdρ hfρ hπ hentry hexit hargs hwb
+      refine (stepCmd_call_completeG obs cfgr π hMono hem hdρ hfρ hπ (by simp [hss]) hentry hexit
+        hargs hwb
         (fun er habs hder s1 p1 => ?_) hq st hst).imp fun _ ⟨σi, s, h1, h2, hr, hp, ht⟩ =>
           ⟨σi, s, h1, h2, fun i j _ hi hj _ => hr i j hi hj, hp, ht⟩
     · obtain ⟨f, cy, s2, ⟨hcd, -, hcy⟩, hb, p2, t2⟩ := runInterp_complete_follows_fam obs
@@ -335,7 +479,7 @@ private theorem oracleCmdAt_followsG {F : P.Factory}
         simp [ICFGConfig.abs, IEnv.abs, habs]
       obtain ⟨f, s2, y1, ⟨hyd, hy⟩, hb, p2, t2⟩ := runInterpCFG_follows_fam obs cfgr F Pending
         (Q := Q) (E := OracleCmdAt π n)
-        (fun i j _ => StepCmdM.toStore (stepCmd π i) j)
+        (fun i j _ => StepCmdM.toStore (stepCmd π .contract i) j)
         (fun σ c σ' evs o o' hσ hc hq st hst => by
           obtain ⟨f0, σi, s', hσi, hdi, hs, hp, ht⟩ :=
             ih ⟨σ, InterpLang.rfactory F⟩ c σ' evs o o' ⟨hσ, rfl⟩ hc hq st hst
@@ -354,13 +498,13 @@ private theorem oracleCmdAt_followsG {F : P.Factory}
         p2, t2⟩
       · rw [InterpLang.absStore_project _ hder, habs]
         rfl
-      · simp [runCallee, hgr, hb i j j hi hj hj]
+      · simp [runCallee, hss, hb i j j hi hj hj]
 
 /-- Every command of an oracle-reading run, calls included, at every call-nesting height `n`, is
-    performed by one `stepCmd π i j` step that follows its choices (`CmdFollowsFam` of the stepper
-    family `callStepOf π`), when `emit` succeeds on the events satisfying `Q`, `choose` follows the
-    choices `R` allows, every engine-realizable base-command step with typed choices is one with
-    choices in `R`, `R` allows `tt` and `ff` as Booleans, and the bounded evaluator is
+    performed by one `stepCmd π .contract i j` step that follows its choices (`CmdFollowsFam` of the
+    stepper family `callStepOf π`), when `emit` succeeds on the events satisfying `Q`, `choose`
+    follows the choices `R` allows, every engine-realizable base-command step with typed choices is
+    one with choices in `R`, `R` allows `tt` and `ff` as Booleans, and the bounded evaluator is
     fuel-monotone. -/
 private theorem oracleCmdAt_follows {F : P.Factory}
     (π : String → Option (Procedure P (CmdExt P) Hdr))
@@ -376,11 +520,12 @@ private theorem oracleCmdAt_follows {F : P.Factory}
 
 omit [HasFvars P] [LawfulMonad m] in
 /-- The per-command law along a choice sequence for the stepper family `callStepOf π` gives it
-    for the call-aware stepper family `fun d _ => stepCmd π d` of the driver `runCallInterp`. -/
+    for the call-aware stepper family `fun d _ => stepCmd π .contract d` of the driver
+    `runCallInterp`. -/
 private theorem cmdFollowsFam_stepCmd (π : String → Option (Procedure P (CmdExt P) Hdr))
     {F : P.Factory} {Q : Event P → Prop} {E : OracleCmdRel P}
     (h : CmdFollowsFam obs (callStepOf (m := m) π) cfgr F Pending Q E) :
-    CmdFollowsFam obs (fun d _ => stepCmd (m := m) π d) cfgr F Pending Q E :=
+    CmdFollowsFam obs (fun d _ => stepCmd (m := m) π .contract d) cfgr F Pending Q E :=
   fun ρ c σ' evs o o' hd hc hq st hst =>
     have ⟨f0, σi, s, a, b, c, d, e⟩ := h ρ c σ' evs o o' hd hc hq st hst
     ⟨f0, σi, s, a, b, fun i _ fuel hi _ hfu => c i fuel fuel hi hfu hfu, d, e⟩
@@ -414,13 +559,13 @@ private theorem call_runCallInterp_follows_prefixG (obs : InterpObs P m)
     (hrun : RunChoices π (start.abs F) evs final cs)
     (hq : ∀ ev ∈ evs, Q ev) (st : obs.St) (hst : Pending st cs) :
     ∃ (k f0 : Nat) (cy : IConfig P (CmdExt P)) (st' : obs.St),
-      (∀ fuel d, f0 ≤ fuel → f0 ≤ d → obs.run (runCallInterp π (fuel + k) start d) cfgr st
-        = obs.run (runCallInterp π fuel cy d) cfgr st')
+      (∀ fuel d, f0 ≤ fuel → f0 ≤ d → obs.run (runCallInterp π .contract (fuel + k) start d) cfgr st
+        = obs.run (runCallInterp π .contract fuel cy d) cfgr st')
       ∧ cy.abs F = final ∧ cy.Denoting F ∧ cy.Tracked ∧ Pending st' [] ∧
       obs.TraceExt F st st' evs := by
   obtain ⟨n, hn⟩ := hrun
   obtain ⟨k, f0, cy, st', h, hy, hdy, hty, hp, ht⟩ := runInterp_follows_prefix_fam obs
-    (fun d _ => stepCmd π d) cfgr Pending hf hMono
+    (fun d _ => stepCmd π .contract d) cfgr Pending hf hMono
     (cmdFollowsFam_stepCmd obs cfgr Pending π (oracleCmdAt_followsG obs cfgr Pending π hemit hf
       hMono hlift hbool n)) (oracleCmdAt_defines π n)
     ((List.append_nil cs ▸ hn []).imp fun _ _ _ => OracleStepE.toParam hbool) hq st hst start
@@ -457,8 +602,8 @@ theorem call_runCallInterp_follows_prefix (obs : InterpObs P m)
     (hrun : RunChoices π (start.abs F) evs final cs)
     (hq : ∀ ev ∈ evs, Q ev) (st : obs.St) (hst : Pending st cs) :
     ∃ (k f0 : Nat) (cy : IConfig P (CmdExt P)) (st' : obs.St),
-      (∀ fuel d, f0 ≤ fuel → f0 ≤ d → obs.run (runCallInterp π (fuel + k) start d) cfgr st
-        = obs.run (runCallInterp π fuel cy d) cfgr st')
+      (∀ fuel d, f0 ≤ fuel → f0 ≤ d → obs.run (runCallInterp π .contract (fuel + k) start d) cfgr st
+        = obs.run (runCallInterp π .contract fuel cy d) cfgr st')
       ∧ cy.abs F = final ∧ cy.Denoting F ∧ cy.Tracked ∧ obs.TraceExt F st st' evs := by
   obtain ⟨k, f0, cy, st', h, hy, hdy, hty, -, ht⟩ := call_runCallInterp_follows_prefixG obs π cfgr
     Pending (fun ev st _ h => hemit F ev st h) hf hMono hlift hbool hds htr hrun hq st hst
@@ -494,11 +639,11 @@ theorem call_runCallInterp_complete_follows (obs : InterpObs P m)
     (hdone : Config.Done final) (hq : ∀ ev ∈ evs, Q ev) (st : obs.St) (hst : Pending st cs) :
     ∃ (f0 : Nat) (final' : IConfig P (CmdExt P)) (st' : obs.St), final'.Denotes F final ∧
       (∀ fuel d, f0 ≤ fuel → f0 ≤ d →
-        obs.run (runCallInterp π fuel start d) cfgr st = (.ok final', st'))
+        obs.run (runCallInterp π .contract fuel start d) cfgr st = (.ok final', st'))
       ∧ obs.TraceExt F st st' evs := by
   obtain ⟨n, hn⟩ := hrun
   obtain ⟨f0, cy, st', hcy, h, -, ht⟩ := runInterp_complete_follows_fam obs
-    (fun d _ => stepCmd π d) cfgr Pending hf hMono
+    (fun d _ => stepCmd π .contract d) cfgr Pending hf hMono
     (cmdFollowsFam_stepCmd obs cfgr Pending π (oracleCmdAt_follows obs cfgr Pending π hemit hf
       hMono hlift hbool n)) (oracleCmdAt_defines π n)
     ((List.append_nil cs ▸ hn []).imp fun _ _ _ => OracleStepE.toParam hbool) hdone hq st hst start
@@ -523,7 +668,7 @@ theorem call_runCallInterp_complete_follows_chk (obs : InterpObs P m)
     (hdone : Config.Done final) (hq : ∀ ev ∈ evs, Q ev) (st : obs.St) (hst : Pending st cs) :
     ∃ (f0 : Nat) (final' : IConfig P (CmdExt P)) (st' : obs.St), final'.Denotes F final ∧
       (∀ fuel d, f0 ≤ fuel → f0 ≤ d →
-        obs.run (runCallInterp π fuel start d) cfgr st = (.ok final', st'))
+        obs.run (runCallInterp π .contract fuel start d) cfgr st = (.ok final', st'))
       ∧ obs.TraceExt F st st' evs :=
   call_runCallInterp_complete_follows obs π cfgr Pending hemit hf hMono
     (fun _ _ _ _ _ he => hchk _ _ _ _ _ he.toEvalCmdE) hbool hds htr hrun hdone hq st hst
@@ -563,7 +708,7 @@ theorem call_replayRun_complete (π : String → Option (Procedure P (CmdExt P) 
     (hty : OracleTyped F (ChoiceRecord.typed P) rs cs) :
     ∃ (f0 : Nat) (final' : IConfig P (CmdExt P)) (st' : ReplayState P), final'.Denotes F final ∧
       (∀ fuel d, f0 ≤ fuel → f0 ≤ d →
-        replayRun (runCallInterp π fuel start d) cfg st = (.ok final', st'))
+        replayRun (runCallInterp π .contract fuel start d) cfg st = (.ok final', st'))
       ∧ (obsReplay (P := P)).TraceExt F st st' evs :=
   call_runCallInterp_complete_follows obsReplay π cfg (Q := fun _ => True) _
     (fun _ _ _ _ => emitTotal_replay cfg hcfg _ _) (chooseFollows_replay cfg F) hMono
@@ -695,6 +840,20 @@ private theorem gBridge_stepBaseCmdStore (fuel : Nat) (factory : InterpLang.RFac
   bridge_ind gBridge
 
 omit [HasFvar P] [HasFvars P] [HasOldIdent P] in
+/-- `GBridge` (the run only extends the trace) holds for `havocVarList`. -/
+private theorem gBridge_havocVarList (f : Nat) (factory : InterpLang.RFactory P) :
+    ∀ (names : List P.Ident) (store : IStore P) (cfg : ReplayCfg P) (st : ReplayState P),
+    GBridge (havocVarList (m := ReplayM P) f factory names store) cfg st := by
+  intro names
+  induction names with
+  | nil => intro _ _ _; apply gBridge_pure
+  | cons _ _ ih =>
+    intro _ _ _
+    unfold havocVarList
+    apply gBridge_bind' (hg := fun a _ => ih a _ _)
+    apply gBridge_stepBaseCmdStore
+
+omit [HasFvar P] [HasFvars P] [HasOldIdent P] in
 /-- `GBridge` holds for `stepInterp` over a command stepper satisfying it. -/
 private theorem gBridge_stepInterp {CmdT : Type} [CmdDefs P CmdT]
     (stepCmd : StepCmdM P CmdT (ReplayM P))
@@ -744,19 +903,22 @@ private theorem gBridge_runCallee (step : StepCmdM P (CmdExt P) (ReplayM P))
     bridge_close gBridge
   · unfold runCallee
     bridge_close gBridge
+  · unfold runCallee
+    bridge_close gBridge
 
 omit [HasFvars P] in
 /-- `GBridge` holds for `stepCmd π`. -/
 private theorem gBridge_stepCmd (π : String → Option (Procedure P (CmdExt P) Hdr)) :
     ∀ (k d : Nat) (env : IEnv P) (cmd : CmdExt P) (cfg : ReplayCfg P) (st : ReplayState P),
-      GBridge (stepCmd π d k env cmd) cfg st := by bridge_ind gBridge
+      GBridge (stepCmd π .contract d k env cmd) cfg st := by bridge_ind gBridge
 
 omit [HasFvars P] in
 /-- The trace of a run of `runCallInterp π` under any configuration extends the trace of its start
     state. -/
 private theorem gBridge_runCallInterp (π : String → Option (Procedure P (CmdExt P) Hdr))
     (fuel : Nat) (start : IConfig P (CmdExt P)) (d : Nat) (cfg : ReplayCfg P)
-    (st : ReplayState P) : GBridge (runCallInterp (m := ReplayM P) π fuel start d) cfg st :=
+    (st : ReplayState P) : GBridge (runCallInterp (m := ReplayM P) π .contract fuel start d) cfg st
+        :=
   gBridge_runInterp _ (fun k => gBridge_stepCmd π k d) ..
 
 /-! ### Completeness of the replay verdict -/
@@ -879,13 +1041,14 @@ private theorem oracleCmdAt_mono (π : String → Option (Procedure P (CmdExt P)
     intro m hm _ _ _ _ _ _ _ h
     obtain ⟨m, rfl⟩ : ∃ k, m = k + 1 := ⟨m - 1, by omega⟩
     rcases h with h | ⟨nm, _, p, a, md, σAO, ss, ρ', be, rfl, hp, hs, he, hb, hx, rfl, hr, hw⟩ |
-      ⟨nm, _, p, a, md, σAO, g, ρE, be, rfl, hp, hs, he, hb, hx, rfl, hr, hw⟩
+      ⟨nm, _, p, a, md, σAO, g, ρE, be, rfl, hp, hs, he, hb, hx, rfl, hr, hw⟩ | h
     · exact .inl h
     · exact .inr (.inl ⟨nm, _, p, a, md, σAO, ss, ρ', be, rfl, hp, hs, he,
         hb.imp fun _ _ _ => OracleStepE.imp fun _ _ _ _ _ _ _ => ih (by omega), hx, rfl, hr, hw⟩)
-    · exact .inr (.inr ⟨nm, _, p, a, md, σAO, g, ρE, be, rfl, hp, hs, he,
+    · exact .inr (.inr (.inl ⟨nm, _, p, a, md, σAO, g, ρE, be, rfl, hp, hs, he,
         hb.imp fun _ _ _ => OracleCFGStepE.imp fun _ _ _ _ _ _ _ => ih (by omega), hx, rfl, hr,
-          hw⟩)
+          hw⟩))
+    · exact .inr (.inr (.inr h))
 
 
 omit [DecidableEq P.Expr] in
@@ -982,12 +1145,31 @@ private theorem oracleCFG_of_star
       ((hb r).imp fun _ _ _ =>
         OracleCFGStepE.imp fun _ _ _ _ _ _ _ => oracleCmdAt_mono π (by omega))
 
+omit [HasFvars P] [DecidableEq P.Expr] [HasOldIdent P] in
+/-- A reference havoc of the names `xs` (`HavocVars`) reads its values off an oracle
+    (`HavocOracle`), popping the values it writes in order, when every nondeterministic `set` of a
+    bound slot to a value of its stored type passes the engine's value checks (`hhavoc`). -/
+private theorem havocOracle_of_havocVars
+    (hhavoc : ∀ f σ x v σ', UpdateState P σ x v σ' → HasVal.valueOfStoredTy (P := P) f σ x v →
+      EvalCmdEngE P (ChoiceRecord.typed P) f σ (.set x .nondet MetaData.empty) σ' [])
+    {f : P.Factory} {σ σ' : SemanticStore P} {xs : List P.Ident} (h : HavocVars f σ xs σ') :
+    ∃ cs, ∀ rest, HavocOracle f σ xs σ' (cs ++ rest) rest := by
+  induction h with
+  | update_none => exact ⟨[], fun _ => .nil⟩
+  | update_some hu hty _ ih =>
+    obtain ⟨cs, hcs⟩ := ih
+    have he := hhavoc _ _ _ _ _ hu hty
+    obtain ⟨_, hx, _⟩ := hu
+    exact ⟨_ :: cs, fun r => .cons ⟨_, rfl, he, .inr ⟨_, _, rfl, hx, .inr ⟨_, rfl⟩⟩⟩ (hcs r)⟩
+
 omit [DecidableEq P.Expr] in
 /-- **Every reference run has a choice sequence.**  A run of the call-aware reference semantics
     has a choice sequence (`RunChoices`), when the bounded evaluator reaches every reference value
     (`hEvalComplete`), runtime guard values agree with the reference ones (`hGuards`), the runtime
-    value checks are complete for typed write-back (`hWB`) and every reference base-command
-    evaluation passes the engine's value checks with typed choices (`hchk`). -/
+    value checks are complete for typed write-back (`hWB`), every reference base-command
+    evaluation passes the engine's value checks with typed choices (`hchk`), and so does every
+    nondeterministic `set` of a bound slot to a value of its stored type, as a call to an abstract
+    callee performs on its output formals (`hhavoc`). -/
 theorem runChoices_of_stepStmtExtStarE
     (π : String → Option (Procedure P (CmdExt P) Hdr))
     (hEvalComplete : BoundedEvalComplete P)
@@ -995,6 +1177,8 @@ theorem runChoices_of_stepStmtExtStarE
     (hWB : WriteBackTypedComplete P)
     (hchk : ∀ f σ c σ' evs, EvalCmdE (P := P) f σ c σ' evs →
       EvalCmdEngE P (ChoiceRecord.typed P) f σ c σ' evs)
+    (hhavoc : ∀ f σ x v σ', UpdateState P σ x v σ' → HasVal.valueOfStoredTy (P := P) f σ x v →
+      EvalCmdEngE P (ChoiceRecord.typed P) f σ (.set x .nondet MetaData.empty) σ' [])
     {c c' : Config P (CmdExt P)} {evs : List (Event P)}
     (h : StepStmtExtStarE π c evs c') :
     ∃ cs, RunChoices π c evs c' cs := by
@@ -1016,18 +1200,24 @@ theorem runChoices_of_stepStmtExtStarE
           .inr ⟨_, _, rfl, hx, .inr ⟨_, rfl⟩⟩⟩⟩
       | _ => exact ⟨[], 0, fun _ => ⟨_, rfl, hchk _ _ _ _ _ (by constructor <;> assumption),
           .inl ⟨rfl, rfl⟩⟩⟩
-    | call_sem hπ he _ hx ih =>
-      obtain ⟨ss, ρ', hss, rfl, hr⟩ | ⟨g, ρE, hg, rfl, hr⟩ := ih
-      · obtain ⟨cs, n, hn⟩ :=
+    | call_sem hπ hno he _ hx ih =>
+      obtain ⟨ss, ρ', o, hss, rfl, hr⟩ | ⟨g, ρE, o, hg, rfl, hr⟩ := ih
+      · obtain rfl : o = false := by simpa [hss] using hno
+        obtain ⟨cs, n, hn⟩ :=
           runChoices_of_star π hEvalComplete hGuards (fun _ _ _ _ _ ⟨_, hm⟩ => hm) hr
         exact ⟨cs, n + 1, fun r =>
           .inr (.inl ⟨_, _, _, _, _, _, _, _, _, rfl, hπ, hss, he, hn r, hx, rfl,
             fun _ _ => hEvalComplete.reach, writeBackOK_of_complete hWB hx⟩)⟩
-      · obtain ⟨cs, n, hn⟩ :=
+      · obtain rfl : o = false := by simpa [hg] using hno
+        obtain ⟨cs, n, hn⟩ :=
           oracleCFG_of_star π hEvalComplete hGuards (fun _ _ _ _ _ ⟨_, hm⟩ => hm) hr
         exact ⟨cs, n + 1, fun r =>
-          .inr (.inr ⟨_, _, _, _, _, _, _, _, _, rfl, hπ, hg, he, hn r, hx, rfl,
-            fun _ _ => hEvalComplete.reach, writeBackOK_of_complete hWB hx⟩)⟩
+          .inr (.inr (.inl ⟨_, _, _, _, _, _, _, _, _, rfl, hπ, hg, he, hn r, hx, rfl,
+            fun _ _ => hEvalComplete.reach, writeBackOK_of_complete hWB hx⟩))⟩
+    | call_abstract_sem hπ hb he hH hx =>
+      obtain ⟨cs, hcs⟩ := havocOracle_of_havocVars hhavoc hH
+      exact ⟨cs, 1, fun r => .inr (.inr (.inr ⟨_, _, _, _, _, _, _, rfl, hπ, hb, he, hcs r, hx, rfl,
+        fun _ _ => hEvalComplete.reach, writeBackOK_of_complete hWB hx⟩))⟩
   exact runChoices_of_star π hEvalComplete hGuards hcmd h
 
 /-! ## Deterministic programs resolve no choice -/
@@ -1107,11 +1297,15 @@ theorem runChoices_nil_of_deterministic {π : String → Option (Procedure P (Cm
     | zero => exact fun _ _ _ _ _ _ _ => oracleCmdBase_det
     | succ n ih =>
       rintro _ _ _ _ _ _ _ (h | ⟨_, _, _, _, _, _, ss, _, _, rfl, hp, hs, -, hb, -, rfl, -⟩ |
-        ⟨_, _, _, _, _, _, g, _, _, rfl, hp, hg, -, hb, -, rfl, -⟩) hd
+        ⟨_, _, _, _, _, _, g, _, _, rfl, hp, hg, -, hb, -, rfl, -⟩ |
+        ⟨_, _, _, _, _, _, _, rfl, hp, hab, -, hH, -, rfl, -⟩) hd
       · exact oracleCmdBase_det h hd
       · exact (oracleStar_det ih hb (by simpa [Config.noNondetGuards, Stmt.noNondetGuards,
-          Config.allCmds, Stmt.allCmds] using hdet.2.1 _ _ _ _ hp hs)).1
-      · exact (oracleCFG_det ih hb (hdet.2.2 _ _ _ _ hp hg)).1
+          Config.allCmds, Stmt.allCmds] using hdet.2.1 _ _ _ _ _ hp hs)).1
+      · exact (oracleCFG_det ih hb (hdet.2.2.1 _ _ _ _ _ hp hg)).1
+      · rw [hdet.2.2.2 _ _ _ hp hab] at hH
+        cases hH
+        rfl
   obtain ⟨n, hn⟩ := h
   exact (oracleStar_det (hcmd n) (List.append_nil cs ▸ hn []) hdet.1).1.symm
 

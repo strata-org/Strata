@@ -100,7 +100,7 @@ private def eraseLocsCFG (cfg : Core.DetCFG) : Core.DetCFG :=
 private def eraseProc (proc : Core.Procedure) : Core.Procedure :=
   let q := Core.Procedure.mapExprs Core.eraseLocs proc
   match q.body with
-  | .cfg c => { q with body := .cfg (eraseLocsCFG c) }
+  | .cfg c _ => { q with body := .cfg (eraseLocsCFG c) false }
   | _ => q
 
 /-- Expression source locations are normalized to `Core.valueLoc` so the tests'
@@ -116,7 +116,8 @@ private def cstToAST (p : Program) : Core.Program :=
 
 private def sumToNAST := cstToAST sumToNPgm
 private def sumToNProc : Core.Procedure := (sumToNAST.findProcByString? "sum_to_n").get!
-private def sumToNCFG : Core.DetCFG := match sumToNProc.body with | .cfg cfg => cfg | _ => default
+private def sumToNCFG : Core.DetCFG :=
+  match sumToNProc.body with | .cfg cfg false => cfg | _ => default
 
 /-! ## Identifiers and expression shapes -/
 
@@ -396,7 +397,7 @@ private theorem set_pre {π : String → Option Core.Procedure} {fac : Core.Expr
     {e : Core.Expression.Expr} {md : MetaData Core.Expression} {emitted}
     (h : Core.EvalCommandE π fac σ (.cmd (.set x (.det e) md)) σ' emitted) :
     (σ x).isSome = true := by
-  rcases h with ⟨hbase⟩
+  have hbase := Imperative.evalCmdExtE_cmd_iff.mp h
   cases hbase with
   | eval_set heval hupdate _ _ =>
     cases hupdate with
@@ -408,7 +409,7 @@ private theorem init_inv {π : String → Option Core.Procedure} {fac : Core.Exp
     {ty : Lambda.LTy} {md : MetaData Core.Expression} {emitted}
     (h : Core.EvalCommandE π fac σ (.cmd (.init x ty .nondet md)) σ' emitted) :
     (∀ y, x ≠ y → σ' y = σ y) ∧ emitted = [] := by
-  rcases h with ⟨hbase⟩
+  have hbase := Imperative.evalCmdExtE_cmd_iff.mp h
   cases hbase with
   | eval_init_unconstrained hinit _ _ =>
     cases hinit with
@@ -581,7 +582,7 @@ private theorem run_preserves {π : String → Option Core.Procedure} {F : Core.
 private def testParams : Core.Logic.InitEnvWFParams := ⟨[], [], [], fun _ => true⟩
 
 /-- The translated `sum_to_n` has a CFG body, namely `sumToNCFG`. -/
-private theorem sumToN_body : sumToNProc.body = .cfg sumToNCFG := by native_decide
+private theorem sumToN_body : sumToNProc.body = .cfg sumToNCFG false := by native_decide
 
 /-- The procedure named `sum_to_n` resolves to `sumToNProc` in the translated AST. -/
 private theorem sumToN_find : sumToNAST.findProcByString? "sum_to_n" = some sumToNProc := by
@@ -754,7 +755,7 @@ private def falseEnsPgm : Core.Program := cstToAST falseEnsPgmSrc
 private def falseEnsProc : Core.Procedure := (falseEnsPgm.findProcByString? "false_ens").get!
 /-- The `false_ens` CFG body, projected out of the translated procedure. -/
 private def falseEnsCFG : Core.DetCFG :=
-  match falseEnsProc.body with | .cfg cfg => cfg | _ => default
+  match falseEnsProc.body with | .cfg cfg false => cfg | _ => default
 
 /-! The hand-spelled command and CFG shapes used by the `false_ens` and `copy`
 semantic proofs carry metadata projected from the translated CFG. Equality with
@@ -765,7 +766,7 @@ private def falseEnsInitT : Core.Command :=
   .cmd (.init tId intLTy .nondet (cmdMdOf falseEnsCFG "entry" 0))
 
 /-- The translated `false_ens` body is the CFG `falseEnsCFG`. -/
-private theorem falseEns_body : falseEnsProc.body = .cfg falseEnsCFG := by native_decide
+private theorem falseEns_body : falseEnsProc.body = .cfg falseEnsCFG false := by native_decide
 /-- The translated `false_ens` entry block holds the single `var t : int`
     declaration and a `finish` transfer. -/
 private theorem falseEns_entry_lookup :
@@ -875,7 +876,7 @@ theorem false_ens_contract_refuted :
   subst hpe
   obtain ⟨_htyped, htriple⟩ := hinsts [] _
     ((Core.Procedure.instantiateTypes_of_typeArgs_nil (by native_decide)).2 ⟨rfl, rfl⟩)
-  have hbody : falseEnsProc.body = .cfg falseEnsCFG := falseEns_body
+  have hbody : falseEnsProc.body = .cfg falseEnsCFG false := falseEns_body
   rw [hbody] at htriple
   have hout : Core.Logic.Hoare.Procedure.outputAsPredicate falseEnsProc (ρ0N model) := by
     intro id ty hmem
@@ -957,7 +958,7 @@ private def copyPgm : Core.Program := cstToAST copyPgmSrc
 private def copyProc : Core.Procedure := (copyPgm.findProcByString? "copy").get!
 /-- The `copy` CFG body, projected out of the translated procedure. -/
 private def copyCFG : Core.DetCFG :=
-  match copyProc.body with | .cfg cfg => cfg | _ => default
+  match copyProc.body with | .cfg cfg false => cfg | _ => default
 
 /-- The callee body command `result := x` (metadata projected from DDM). -/
 private def copySet : Core.Command :=
@@ -970,7 +971,7 @@ private theorem copy_callee :
     Imperative.Calls.typeInstantiatedCallee copyPgm.findProcByString? "copy" none = some copyProc :=
   (Core.Procedure.typeInstantiatedCallee_of_typeArgs_nil copy_find (by native_decide)).2 ⟨rfl, rfl⟩
 /-- The translated `copy` procedure has CFG body `copyCFG`. -/
-private theorem copy_body : copyProc.body = .cfg copyCFG := by native_decide
+private theorem copy_body : copyProc.body = .cfg copyCFG false := by native_decide
 /-- The translated `copy` CFG's entry label is `"entry"`. -/
 private theorem copy_entry : copyCFG.entry = "entry" := by native_decide
 /-- The translated `copy` entry block contains the copy assignment and returns. -/
@@ -1441,6 +1442,7 @@ theorem copy_call_triple :
     obtain ⟨hAOx, ⟨vz, hAOr, hzvz, hvzval⟩, hwfAO⟩ :=
       copy_callentry_facts ha hce
     rw [copy_body]
+    simp only [Imperative.Body.isOpaque, Bool.false_eq_true, ↓reduceIte]
     refine ⟨⟨?_, hfac.trans hfactory.symm, ?_, ?_, ?_⟩, ?_⟩
     · intro label check hmem
       rw [show copyProc.spec.preconditions.toList = [] from by native_decide] at hmem

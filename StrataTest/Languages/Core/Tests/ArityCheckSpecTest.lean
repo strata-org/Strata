@@ -675,7 +675,7 @@ private def yPre (ann : LMonoTy) : Procedure.Check := { expr := yEqZero Core.cor
 private def yProc (ann : LMonoTy) : Procedure :=
   { header := { name := ⟨"p", ()⟩, typeArgs := [], inputs := [(yId, .int)], outputs := [] },
     spec := { preconditions := [("pre", yPre ann)], postconditions := [] },
-    body := .structured [] }
+    body := .structured [] false }
 
 /-- The precondition of `yProc ann` is among its preconditions. -/
 private theorem yPre_mem (ann : LMonoTy) : yPre ann ∈ (yProc ann).spec.preconditions.values := by

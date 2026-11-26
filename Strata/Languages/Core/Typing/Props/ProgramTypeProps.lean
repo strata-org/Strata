@@ -252,10 +252,11 @@ theorem ProcBodyWellTyped.of_find? {P : Program} {C : LContext CoreLParams}
     {ts ts' : TypeScopes} {body : Procedure.Body} (hfind : ∀ y, ts'.find? y = ts.find? y)
     (h : ProcBodyWellTyped P C ts body) : ProcBodyWellTyped P C ts' body := by
   cases h with
-  | structured ss C' tsOut hss =>
+  | structured ss C' tsOut o hss =>
     obtain ⟨tsOut', hss', -⟩ := StatementsWellTyped.of_findEq hss hfind
-    exact .structured ss C' tsOut' hss'
-  | cfg c => exact .cfg c
+    exact .structured ss C' tsOut' o hss'
+  | cfg c o => exact .cfg c o
+  | abstract => exact .abstract
 
 /-- A well-typed procedure stays well typed from variable scopes with the same lookups. -/
 theorem ProcWellTyped.of_find? {P : Program} {C : LContext CoreLParams}
@@ -271,6 +272,7 @@ theorem ProcWellTyped.of_find? {P : Program} {C : LContext CoreLParams}
       oldNamesFresh := h.oldNamesFresh
       typeArgsNodup := h.typeArgsNodup
       noUndeclaredVars := h.noUndeclaredVars
+      declTyVarsBound := h.declTyVarsBound
       signatureWellKinded := h.signatureWellKinded
       modRights := h.modRights
       preconditionsTyped := fun c hc => (h.preconditionsTyped c hc).of_find? hin

@@ -10,9 +10,11 @@ test_arithmetic.lr.st
   [main.3] line 16 assert: SUCCESS
   [main.4] line 19 assert: SUCCESS
 
+# identity32 and identity8 are opaque and have no postcondition, so main knows nothing of
+# their results: a == 7 and b == 255 do not follow from their contracts.
 test_bitvector_types.lr.st
-  [main.1] line 26 assert: SUCCESS
-  [main.2] line 28 assert: SUCCESS
+  [main.1] line 26 assert: FAILURE
+  [main.2] line 28 assert: FAILURE
   [main.3] line 30 assert: SUCCESS
   [main.4] line 31 assert: FAILURE
 
@@ -30,6 +32,24 @@ test_control_flow.lr.st
 
 test_failing_assert.lr.st
   [main.1] line 5 assert: FAILURE
+
+# ident is generic and opaque: main sees it only through its contract, which says nothing of its
+# result, so a == 3 fails. ident's body is checked at the type main calls it at (int), and its
+# assert false fails.
+test_generic_opaque.lr.st
+  [main.1] line 15 assert: FAILURE
+  [main.2] line 7 assert: FAILURE
+
+# main sees half only through its contract: the precondition holds at the call, r > 0 follows
+# from the postcondition, and a == 4 does not. half's body is checked on its own, under its
+# precondition: x > 1 fails for x = 1, and the postcondition holds.
+test_opaque_callee.lr.st
+  [main.1] line 17 precondition: SUCCESS
+  [main.2] line 18 assert: SUCCESS
+  [main.3] line 19 assert: FAILURE
+  [main.4] line 9 assert: SUCCESS
+  [main.5] line 10 assert: FAILURE
+  [main.6] line 7 postcondition: SUCCESS
 
 test_operators.lr.st
   [main.1] line 7 assert: SUCCESS

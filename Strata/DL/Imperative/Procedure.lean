@@ -30,43 +30,92 @@ labeled deterministic basic blocks with string labels. -/
 abbrev DetCFG (P : PureExpr) (C : Type) :=
   CFG String (DetBlock String C P)
 
-/-- The body of a procedure: either structured (a list of statements) or
-unstructured (a control-flow graph of basic blocks). An empty structured body
-(`structured []`) represents an abstract/bodyless procedure. -/
+/-- The body of a procedure: structured (a list of statements), unstructured
+(a control-flow graph of basic blocks), or absent (`abstract`: the procedure
+has no implementation and is reasoned about only via its contract). An empty
+structured body (`structured [] _`) is a real body that does nothing. A structured or CFG body
+carries an *opaque* flag: callers of an opaque procedure know it only through its contract, while
+its body is still verified against that contract and can still be executed. An abstract body is
+opaque (`Body.isOpaque`). -/
 inductive Body (P : PureExpr) (C : Type) where
-  /-- A structured body: a sequential list of statements. -/
-  | structured : List (Stmt P C) → Body P C
-  /-- An unstructured body: a control-flow graph of deterministic basic blocks. -/
-  | cfg        : DetCFG P C → Body P C
+  /-- A structured body: a sequential list of statements, and whether it is opaque. -/
+  | structured : List (Stmt P C) → Bool → Body P C
+  /-- An unstructured body: a control-flow graph of deterministic basic blocks, and whether it is
+      opaque. -/
+  | cfg        : DetCFG P C → Bool → Body P C
+  /-- No body: the procedure is known only through its contract. -/
+  | abstract   : Body P C
 
-instance : Inhabited (Body P C) := ⟨.structured []⟩
+instance : Inhabited (Body P C) := ⟨.abstract⟩
 
 instance [DecidableEq C] [DecidableEq P.Expr] [DecidableEq P.Ident] [DecidableEq P.Ty]
     [DecidableEq P.ExprMetadata] : DecidableEq (Body P C) := fun a b =>
   match a, b with
-  | .structured x, .structured y => decidable_of_iff (x = y) (by simp)
-  | .cfg x, .cfg y => decidable_of_iff (x = y) (by simp)
-  | .structured _, .cfg _ => isFalse (by simp)
-  | .cfg _, .structured _ => isFalse (by simp)
+  | .structured x o, .structured y o' => decidable_of_iff (x = y ∧ o = o') (by simp)
+  | .cfg x o, .cfg y o' => decidable_of_iff (x = y ∧ o = o') (by simp)
+  | .abstract, .abstract => isTrue rfl
+  | .structured _ _, .cfg _ _ | .structured _ _, .abstract | .cfg _ _, .structured _ _
+  | .cfg _ _, .abstract | .abstract, .structured _ _ | .abstract, .cfg _ _ => isFalse (by simp)
 
-/-- Extract the structured statements, or error if the body is a CFG. -/
+/-- Extract the structured statements, or error if the body is a CFG or abstract. -/
 @[simp, expose]
 def Body.getStructured : Body P C → Except String (List (Stmt P C))
-  | .structured ss => .ok ss
-  | .cfg _ => .error "expected structured body, got CFG"
+  | .structured ss _ => .ok ss
+  | .cfg _ _ => .error "expected structured body, got CFG"
+  | .abstract => .error "expected structured body, got an abstract procedure"
 
-/-- Extract the CFG, or error if the body is structured. -/
+/-- Extract the CFG, or error if the body is structured or abstract. -/
 @[simp]
 def Body.getCfg : Body P C → Except String (DetCFG P C)
-  | .cfg c => .ok c
-  | .structured _ => .error "expected CFG body, got structured"
+  | .cfg c _ => .ok c
+  | .structured _ _ => .error "expected CFG body, got structured"
+  | .abstract => .error "expected CFG body, got an abstract procedure"
 
-/-- Is this body abstract (no implementation)? Only empty structured bodies
-    are abstract. CFG bodies always have an implementation. -/
+/-- The statements of a structured body, the empty list for an abstract one, which has no
+    statements, or an error for a CFG. -/
 @[simp]
+def Body.getStructuredOrEmpty : Body P C → Except String (List (Stmt P C))
+  | .abstract => .ok []
+  | b => b.getStructured
+
+/-- Is this body abstract (no implementation)? -/
+@[simp, expose]
 def Body.isAbstract : Body P C → Bool
-  | .structured ss => ss.isEmpty
-  | .cfg _ => false
+  | .abstract => true
+  | _ => false
+
+/-- Is this body opaque, so that callers know the procedure only through its contract? An abstract
+    body is opaque, and a structured or CFG body is opaque when its flag says so. -/
+@[simp, expose]
+def Body.isOpaque : Body P C → Bool
+  | .structured _ o => o
+  | .cfg _ o => o
+  | .abstract => true
+
+/-- Is this body the implementation of an opaque procedure: a structured or CFG body whose flag
+    marks it opaque? Such a body is checked on its own, since callers know the procedure only
+    through its contract. -/
+@[simp, expose]
+def Body.isOpaqueWithBody : Body P C → Bool
+  | .structured _ o => o
+  | .cfg _ o => o
+  | .abstract => false
+
+/-- How an interpreter runs a call to an opaque callee (`Body.isOpaque`). `contract` runs it as
+    its contract, as the reference semantics does (`EvalCmdExtE.call_abstract_sem`). `execute`
+    runs the body of an opaque callee that has one, and the contract of an abstract callee
+    (`Body.abstract`). -/
+inductive CallMode where
+  | contract
+  | execute
+  deriving DecidableEq, Repr, Inhabited
+
+/-- Whether a call in mode `mode` to a callee with body `b` runs the callee's contract instead of
+    its body: under `contract`, exactly when `b` is opaque; under `execute`, exactly when `b` is
+    abstract. -/
+@[simp, expose] def CallMode.runsContract : CallMode → Body P C → Bool
+  | .contract, b => b.isOpaque
+  | .execute, b => b.isAbstract
 
 /-- Does this body have a structured implementation? -/
 @[simp]
@@ -81,8 +130,9 @@ def Body.isStructured (b : Body P C) : Bool := b.getStructured.isOk
     have no inherent order, so the result is a set of statements rather than an
     ordered sequence. -/
 @[expose] def Body.statements : Body P C → List (Stmt P C)
-  | .structured ss => ss
-  | .cfg g => g.blocks.flatMap fun (_, blk) => blk.cmds.map .cmd
+  | .structured ss _ => ss
+  | .cfg g _ => g.blocks.flatMap fun (_, blk) => blk.cmds.map .cmd
+  | .abstract => []
 
 @[expose] def Body.allStatements (f : List (Stmt P C) → Bool) (body : Body P C) : Bool :=
   f body.statements
@@ -92,8 +142,8 @@ def Body.isStructured (b : Body P C) : Bool := b.getStructured.isOk
 def Body.isCfg (b : Body P C) : Bool := b.getCfg.isOk
 
 def Body.structuredLength : Body P C → Nat
-  | .structured ss => ss.length
-  | .cfg _ => 0
+  | .structured ss _ => ss.length
+  | .cfg _ _ | .abstract => 0
 
 /--
 Attribute controlling whether a specification clause is checked or free.
@@ -166,7 +216,7 @@ structure Procedure (P : PureExpr) (C : Type) (Hdr : Type)
     [DecidableEq Hdr] [Inhabited Hdr] where
   header : Hdr
   spec   : Spec P
-  body   : Body P C := .structured []
+  body   : Body P C := .abstract
 
 variable {Hdr : Type} [DecidableEq Hdr] [Inhabited Hdr]
 
@@ -219,16 +269,19 @@ instance [HasFvars P] [HasVarsImp P C] : HasVarsImp P (DetCFG P C) where
 conditional-transfer guards through the `HasVarsImp (DetCFG P C)` instance. -/
 @[simp] def Body.readVars [HasFvars P] [HasVarsImp P C] :
     Body P C → List P.Ident
-  | .structured ss => ss.flatMap HasVarsImp.readVars
-  | .cfg cfgBody => HasVarsImp.readVars cfgBody
+  | .structured ss _ => ss.flatMap HasVarsImp.readVars
+  | .cfg cfgBody _ => HasVarsImp.readVars cfgBody
+  | .abstract => []
 
 instance [HasFvars P] [HasVarsImp P C] : HasVarsImp P (Body P C) where
   definedVars b excludeScoped := match b with
-    | .structured ss => HasVarsImp.definedVars ss excludeScoped
-    | .cfg cfgBody => HasVarsImp.definedVars cfgBody excludeScoped
+    | .structured ss _ => HasVarsImp.definedVars ss excludeScoped
+    | .cfg cfgBody _ => HasVarsImp.definedVars cfgBody excludeScoped
+    | .abstract => []
   modifiedVars b := match b with
-    | .structured ss => HasVarsImp.modifiedVars ss
-    | .cfg cfgBody => HasVarsImp.modifiedVars cfgBody
+    | .structured ss _ => HasVarsImp.modifiedVars ss
+    | .cfg cfgBody _ => HasVarsImp.modifiedVars cfgBody
+    | .abstract => []
   readVars := Body.readVars
 
 /-- A procedure reads the free variables of its contract clauses and the read
@@ -246,25 +299,33 @@ instance [HasFvars P] [HasVarsImp P C] [ProcedureHeader P Hdr] :
   modifiedVars p := ProcedureHeader.outputParams p.header
   readVars := Procedure.getVars
 
-/-- The statement list that checks `body` against the contract of `p`: an `assume` of each
-    precondition, then `body`, then an `assert` of each postcondition. A free postcondition is
-    not checked: it becomes `assume true`, its label and expression kept in the metadata, with
-    the message `FreePostCondition`. -/
-@[expose] def Procedure.contractWrapped [HasBool P] [HasPassiveCmds P C] (p : Procedure P C Hdr)
-    (body : List (Stmt P C)) : List (Stmt P C) :=
-  let pre := p.spec.preconditions.map fun (label, check) =>
-    Stmt.cmd (HasPassiveCmds.assume label check.expr check.md)
-  let post := p.spec.postconditions.map fun (label, check) =>
+/-- An `assume` of each clause of `checks`, free or not. -/
+@[expose] def Check.assumes {P : PureExpr} {C : Type} [HasPassiveCmds P C]
+    (checks : ListMap String (Check P)) : List C :=
+  checks.toList.map fun (label, check) => HasPassiveCmds.assume label check.expr check.md
+
+/-- An `assert` of each clause of `checks`. A free clause is not checked: it becomes
+    `assume true`, its label and expression kept in the metadata, with the message
+    `FreePostCondition`. -/
+@[expose] def Check.asserts {P : PureExpr} {C : Type} [HasBool P] [HasPassiveCmds P C]
+    (checks : ListMap String (Check P)) : List C :=
+  checks.toList.map fun (label, check) =>
     match check.attr with
     | .Free =>
       -- TODO: Perhaps introduce an "opaque" expression construct that hides the expression from
       -- the evaluator, allowing us to retain the postcondition body instead of replacing it
       -- with "true".
-      Stmt.cmd (HasPassiveCmds.assume label HasBool.tt
+      HasPassiveCmds.assume label HasBool.tt
         ((MetaData.pushElem (MetaData.pushElem #[] (.label label) (.expr check.expr))
-          (.label label) (.msg "FreePostCondition"))))
-    | _ => Stmt.cmd (HasPassiveCmds.assert label check.expr check.md)
-  pre ++ body ++ post
+          (.label label) (.msg "FreePostCondition")))
+    | .Default => HasPassiveCmds.assert label check.expr check.md
+
+/-- The statement list that checks `body` against the contract of `p`: an `assume` of each
+    precondition, then `body`, then an `assert` of each postcondition (`Check.asserts`). -/
+@[expose] def Procedure.contractWrapped [HasBool P] [HasPassiveCmds P C] (p : Procedure P C Hdr)
+    (body : List (Stmt P C)) : List (Stmt P C) :=
+  (Check.assumes p.spec.preconditions).map Stmt.cmd ++ body ++
+    (Check.asserts p.spec.postconditions).map Stmt.cmd
 
 end
 

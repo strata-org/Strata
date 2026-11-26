@@ -2020,9 +2020,19 @@ def translateProcBindings (bindings : TransBindings) (bop : Arg) :
     LExpr.fvar translateLoc id ty)
   return (inputs, outputs, { bindings with boundVars := bindings.boundVars ++ param_bindings })
 
+/-- The opaque flag of a procedure body: `true` when the optional `opaque` mark is present. -/
+def translateOptionOpaque (arg : Arg) : TransM Bool := do
+  let .option _ opq := arg
+    | TransM.error s!"translateOptionOpaque unexpected {repr arg}"
+  match opq with
+  | some f =>
+    let _ ← checkOpArg f q`Core.opaque_mark 0
+    return true
+  | none => return false
+
 def translateProcedure (p : Program) (bindings : TransBindings) (op : Operation) :
   TransM (Core.Decl × TransBindings) := do
-  let _ ← @checkOp (Core.Decl × TransBindings) op q`Core.command_procedure 6
+  let _ ← @checkOp (Core.Decl × TransBindings) op q`Core.command_procedure 7
   let annotsArg := op.args[0]!
   let pname ← translateIdent Core.CoreIdent op.args[1]!
   let typeArgs ← translateTypeArgs op.args[2]!
@@ -2032,9 +2042,14 @@ def translateProcedure (p : Program) (bindings : TransBindings) (op : Operation)
     | TransM.error s!"translateProcedure spec. expected here: {repr op.args[4]!}"
   let (requires, ensures) ←
     if speca.isSome then translateSpec p pname bindings speca.get! else pure ([], [])
-  let .option _ bodya := op.args[5]!
-    | TransM.error s!"translateProcedure body expected here: {repr op.args[5]!}"
-  let (body, bindings) ← if bodya.isSome then translateBlock p bindings bodya.get! else pure ([], bindings)
+  let opq ← translateOptionOpaque op.args[5]!
+  let .option _ bodya := op.args[6]!
+    | TransM.error s!"translateProcedure body expected here: {repr op.args[6]!}"
+  -- A procedure without a body is abstract, and so opaque, with or without the mark.
+  let (body, bindings) ← if bodya.isSome then
+      let (ss, bindings) ← translateBlock p bindings bodya.get!
+      pure (Imperative.Body.structured ss opq, bindings)
+    else pure (.abstract, bindings)
   let origBindings := { origBindings with gen := bindings.gen }
   let md ← getMetaDataWithAnn op annotsArg
   return (.proc { header := { name := pname,
@@ -2043,7 +2058,7 @@ def translateProcedure (p : Program) (bindings : TransBindings) (op : Operation)
                               outputs := ret },
                   spec := { preconditions := requires,
                             postconditions := ensures },
-                  body := .structured body
+                  body := body
                 }
                 md,
           origBindings)
@@ -2063,7 +2078,7 @@ def translateBlockCommand (p : Program) (bindings : TransBindings) (op : Operati
                               outputs := [] },
                   spec := { preconditions := [],
                             postconditions := [] },
-                  body := .structured body
+                  body := .structured body false
                 }
                 md,
           { bindings with gen := blockBindings.gen })
@@ -2180,7 +2195,7 @@ partial def translateCFGBody (p : Program) (bindings : TransBindings) (arg : Arg
 /-- Translate a procedure with CFG body -/
 def translateCFGProcedure (p : Program) (bindings : TransBindings) (op : Operation) :
   TransM (Core.Decl × TransBindings) := do
-  let _ ← @checkOp (Core.Decl × TransBindings) op q`Core.command_cfg_procedure 6
+  let _ ← @checkOp (Core.Decl × TransBindings) op q`Core.command_cfg_procedure 7
   let annotsArg := op.args[0]!
   let pname ← translateIdent Core.CoreIdent op.args[1]!
   let typeArgs ← translateTypeArgs op.args[2]!
@@ -2190,7 +2205,8 @@ def translateCFGProcedure (p : Program) (bindings : TransBindings) (op : Operati
     | TransM.error s!"translateCFGProcedure spec expected: {repr op.args[4]!}"
   let (requires, ensures) ←
     if speca.isSome then translateSpec p pname bindings speca.get! else pure ([], [])
-  let (cfg, bindings) ← translateCFGBody p bindings op.args[5]!
+  let opq ← translateOptionOpaque op.args[5]!
+  let (cfg, bindings) ← translateCFGBody p bindings op.args[6]!
   let origBindings := { origBindings with gen := bindings.gen }
   let md ← getMetaDataWithAnn op annotsArg
   return (.proc { header := { name := pname,
@@ -2199,7 +2215,7 @@ def translateCFGProcedure (p : Program) (bindings : TransBindings) (op : Operati
                               outputs := ret },
                   spec := { preconditions := requires,
                             postconditions := ensures },
-                  body := .cfg cfg
+                  body := .cfg cfg opq
                 }
                 md,
           origBindings)

@@ -77,8 +77,8 @@ def FuncNamesWF (fns : String → Prop) (f : Function) : Prop :=
 def ProcNamesWF (P : Program) (fns : String → Prop) (p : Procedure) : Prop :=
   (∀ x ∈ p.header.inputs.keys ++ p.header.outputs.keys, VarNotFunc fns x) ∧
   match p.body with
-  | .structured ss => StatementsNamesWF P fns ss
-  | .cfg _ => True
+  | .structured ss _ => StatementsNamesWF P fns ss
+  | .cfg _ _ | .abstract => True
 
 /-- The names in a declaration are valid, with `fns` the functions in scope before it. The
     functions of a recursive block are in scope for the whole block. -/

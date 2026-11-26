@@ -301,6 +301,7 @@ private theorem procCollect_renameTypeArgs {β : Type} (fe : Expression.Expr →
   cases proc.body with
   | structured ss =>
     simp only [stmtsCollect_mapStmtsTys fe ft _ g hfe hft]
+  | abstract => simp
   | cfg c =>
     have hc := fun cmd => cmdCollect_mapCmdTys fe ft _ g hfe hft cmd
     simp only [DetCFG.mapCmdsGuards, List.flatMap_map, List.map_flatMap, List.map_append, hc]

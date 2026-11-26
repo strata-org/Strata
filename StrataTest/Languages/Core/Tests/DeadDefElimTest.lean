@@ -187,7 +187,7 @@ def progOf (ss : Statements) : Program :=
   { decls := [.proc {
       header := { name := id' "P", typeArgs := [], inputs := [], outputs := [] },
       spec := { preconditions := [], postconditions := [] },
-      body := .structured ss } .empty] }
+      body := .structured ss false } .empty] }
 
 #guard match Strata.Core.resolvePhases (Strata.Core.nameablePhases Core.VerifyOptions.quiet)
     ["deadDefElim"] with

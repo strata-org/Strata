@@ -116,7 +116,7 @@ theorem Procedure.checkAsPredicate_of_exprEq
 theorem Procedure.contractTriple_of (p : Core.Program) (params : InitEnvWFParams)
     (procName : String) (proc : Procedure) (bss : Statements)
     (hproc : p.findProcByString? procName = some proc)
-    (hbody : proc.body = .structured bss)
+    (hbody : proc.body = .structured bss opq)
     (hchecksTyped : Procedure.contractChecksTyped proc)
     (h : Triple p.findProcByString? params
         (Procedure.preAsPredicate (p.factoryBeforeProcedure procName) proc)
@@ -137,7 +137,7 @@ theorem Procedure.contractTriple_of (p : Core.Program) (params : InitEnvWFParams
 theorem Procedure.contractTriple_of_core (p : Core.Program) (params : InitEnvWFParams)
     (procName : String) (proc : Procedure) (bss : Statements)
     (hproc : p.findProcByString? procName = some proc)
-    (hbody : proc.body = .structured bss)
+    (hbody : proc.body = .structured bss opq)
     (hchecksTyped : Procedure.contractChecksTyped proc)
     (h : Triple p.findProcByString? params
         (fun ρ => Procedure.preAsPredicate (p.factoryBeforeProcedure procName) proc ρ ∧
@@ -161,7 +161,7 @@ theorem Procedure.contractTriple_of_core_typed_axioms (p : Core.Program)
     (params : InitEnvWFParams) (procName : String) (proc : Procedure)
     (bss : Statements)
     (hproc : p.findProcByString? procName = some proc)
-    (hbody : proc.body = .structured bss)
+    (hbody : proc.body = .structured bss opq)
     (hchecksTyped : Procedure.contractChecksTyped proc)
     (h : Triple p.findProcByString? params
         (fun ρ => Procedure.contractPre (p.factoryBeforeProcedure procName) proc ρ ∧
@@ -182,7 +182,7 @@ theorem Procedure.contractTriple_of_core_typed (p : Core.Program)
     (params : InitEnvWFParams) (procName : String) (proc : Procedure)
     (bss : Statements)
     (hproc : p.findProcByString? procName = some proc)
-    (hbody : proc.body = .structured bss)
+    (hbody : proc.body = .structured bss opq)
     (hchecksTyped : Procedure.contractChecksTyped proc)
     (h : Triple p.findProcByString? params
         (Procedure.contractPre (p.factoryBeforeProcedure procName) proc)
@@ -203,7 +203,7 @@ theorem Procedure.contractTripleTotal_of_core_typed (p : Core.Program)
     (params : InitEnvWFParams) (procName : String) (proc : Procedure)
     (bss : Statements)
     (hproc : p.findProcByString? procName = some proc)
-    (hbody : proc.body = .structured bss)
+    (hbody : proc.body = .structured bss opq)
     (hchecksTyped : Procedure.contractChecksTyped proc)
     (h : HoareTotal.Triple p.findProcByString? params
         (Procedure.contractPre (p.factoryBeforeProcedure procName) proc)
@@ -234,6 +234,7 @@ theorem Procedure.contractTriple_of_contractTripleTotal {p : Core.Program}
   | cfg cfg =>
     rw [hbody] at htriple
     exact fun ρEntry => Strata.Logic.HoareTotal.TripleWith.to_partial (htriple ρEntry)
+  | abstract => trivial
 
 /-- **A total-correctness contract is a partial-correctness contract and termination.**
     For either body kind, `contractTripleTotal` holds exactly when `contractTriple` does and
@@ -257,6 +258,7 @@ theorem Procedure.contractTripleTotal_iff (p : Core.Program) (params : InitEnvWF
     | cfg cfg =>
       rw [hbody] at htriple
       exact fun ρ hpre hinit => (htriple ρ ρ ⟨hpre, rfl⟩ hinit).1
+    | abstract => trivial
   · rintro ⟨⟨proc₀, hproc, hinsts⟩, proc₀', hproc', hterms⟩
     obtain rfl : proc₀' = proc₀ := Option.some.inj (hproc'.symm.trans hproc)
     refine ⟨proc₀', hproc, fun tys proc' hinst => ?_⟩
@@ -272,6 +274,7 @@ theorem Procedure.contractTripleTotal_iff (p : Core.Program) (params : InitEnvWF
       rw [hbody] at htriple hterm
       exact fun ρEntry ρ hpre hinit =>
         ⟨hterm ρ hpre.1 hinit, (htriple ρEntry ρ hpre hinit).2⟩
+    | abstract => trivial
 
 /-- A contract of a procedure without type parameters whose every non-`free` `ensures` is
     literally one of the `requires` is met by an empty body: nothing runs, so the precondition still
@@ -279,7 +282,7 @@ theorem Procedure.contractTripleTotal_iff (p : Core.Program) (params : InitEnvWF
 theorem Procedure.contractTriple_nil (p : Core.Program) (params : InitEnvWFParams)
     (procName : String) (proc : Procedure)
     (hproc : p.findProcByString? procName = some proc)
-    (hbody : proc.body = .structured [])
+    (hbody : proc.body = .structured [] opq)
     (hchecksTyped : Procedure.contractChecksTyped proc)
     (himp : ∀ (label : CoreLabel) (check : Procedure.Check),
       (label, check) ∈ proc.spec.postconditions.toList →
@@ -307,7 +310,7 @@ theorem Procedure.contractTriple_nil (p : Core.Program) (params : InitEnvWFParam
 theorem Procedure.contractTriple_nil_of_ensuresAmongRequires
     (p : Core.Program) (params : InitEnvWFParams) (procName : String) (proc : Procedure)
     (hproc : p.findProcByString? procName = some proc)
-    (hbody : proc.body = .structured [])
+    (hbody : proc.body = .structured [] opq)
     (hchecksTyped : Procedure.contractChecksTyped proc)
     (h : Procedure.ensuresAmongRequires proc = Bool.true)
     (hmono : proc.header.typeArgs = [] := by first | rfl | decide) :
@@ -357,7 +360,7 @@ private theorem triple_block_singleton_cmd
 theorem Procedure.contractTriple_singleton_cmd (p : Core.Program)
     (params : InitEnvWFParams) (procName : String) (proc : Procedure)
     (hproc : p.findProcByString? procName = some proc) (c : Command)
-    (hbody : proc.body = .structured [Stmt.cmd c])
+    (hbody : proc.body = .structured [Stmt.cmd c] opq)
     (hchecksTyped : Procedure.contractChecksTyped proc)
     (hsem : ∀ ρ₀ σ' emitted,
       Procedure.contractPre (p.factoryBeforeProcedure procName) proc ρ₀ →

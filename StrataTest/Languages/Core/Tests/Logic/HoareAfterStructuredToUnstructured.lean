@@ -94,7 +94,7 @@ private abbrev cdBody : Core.Statements :=
    .loop (.det gtE) none [] [Core.Statement.set rId subE (loc 712 731)] (loc 685 735)]
 
 /-- The translated body really is the assignment followed by the loop. -/
-private theorem cd_body_eq : cdProc.body = .structured cdBody := by native_decide
+private theorem cd_body_eq : cdProc.body = .structured cdBody false := by native_decide
 
 /-! ## The lowered CFG, spelled out -/
 

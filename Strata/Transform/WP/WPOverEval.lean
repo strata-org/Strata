@@ -442,6 +442,46 @@ theorem ev_kImp_fails (hF : WellFormedSemanticEvalBase F) (hC : WellFormedStore 
     P.eval F σ x = some (HasBool.ttVal F) :=
   ev_kIte_fails hF hC hκ h (fun _ => ev_res_true hF) (valueOfTy_of_bool (.inl rfl)) ha.ty hκb
 
+include iIL in
+/-- The condition of a marker assumption (`kMarkImp`) for a reach context `κ` that holds
+    evaluates to `tt`. -/
+private theorem ev_markCond_holds (hF : WellFormedSemanticEvalBase F) (hC : WellFormedStore σ F)
+    {κ : RE P} (hκ : κ.Holds F σ) :
+    ∀ c', resolveE tys tyOf (kExpr κ).not.not = .ok c' → P.eval F σ c' = some (HasBool.ttVal F) :=
+  fun _ h => ev_not_ff hF h fun _ h' => ev_not_tt hF h' fun _ h'' => ev_kExpr_holds hF hC hκ h''
+
+include iIL in
+/-- The condition of a marker assumption (`kMarkImp`) for a false reach context `κ` whose
+    variables hold Booleans evaluates to `ff`. -/
+private theorem ev_markCond_fails (hF : WellFormedSemanticEvalBase F) (hC : WellFormedStore σ F)
+    {κ : RE P} (hκ : κ.Fails F σ)
+    (hκb : ∀ y ∈ RE.vars κ, σ y = some (HasBool.ttVal F) ∨ σ y = some (HasBool.ffVal F)) :
+    ∀ c', resolveE tys tyOf (kExpr κ).not.not = .ok c' → P.eval F σ c' = some (HasBool.ffVal F) :=
+  fun _ h => ev_not_tt hF h fun _ h' => ev_not_ff hF h' fun _ h'' => ev_kExpr_fails hF hC hκ hκb h''
+
+include iIL in
+/-- A marker assumption `κ ⟹ a` (`kMarkImp`) for a reach context `κ` that holds evaluates like
+    `a`, when `a` is Boolean. -/
+theorem ev_kMarkImp_holds (hF : WellFormedSemanticEvalBase F) (hC : WellFormedStore σ F)
+    {κ : RE P} (hκ : κ.Holds F σ) {a : WExpr P} {v : P.Val}
+    (h : resolveE tys tyOf (kMarkImp κ a) = .ok x)
+    (ha : ∀ a', resolveE tys tyOf a = .ok a' → P.eval F σ a' = some v)
+    (hv : v = HasBool.ttVal F ∨ v = HasBool.ffVal F) : P.eval F σ x = some v :=
+  ev_res_ite_tt h (ev_markCond_holds hF hC hκ) ha (valueOfTy_of_bool hv) fun _ h' =>
+    ⟨_, ev_not_tt hF h' (ev_markCond_holds hF hC hκ), valueOfTy_of_bool (.inr rfl)⟩
+
+include iIL in
+/-- A marker assumption `κ ⟹ a` (`kMarkImp`) for a false reach context `κ` evaluates to `tt`,
+    when `a` is Boolean and the variables of `κ` hold Booleans. -/
+theorem ev_kMarkImp_fails (hF : WellFormedSemanticEvalBase F) (hC : WellFormedStore σ F)
+    {κ : RE P} (hκ : κ.Fails F σ)
+    {a : WExpr P} (h : resolveE tys tyOf (kMarkImp κ a) = .ok x) (ha : ResBool F σ tys tyOf a)
+    (hκb : ∀ y ∈ RE.vars κ, σ y = some (HasBool.ttVal F) ∨ σ y = some (HasBool.ffVal F)) :
+    P.eval F σ x = some (HasBool.ttVal F) :=
+  ev_res_ite_ff h (ev_markCond_fails hF hC hκ hκb)
+    (fun _ h' => ev_not_ff hF h' (ev_markCond_fails hF hC hκ hκb)) (valueOfTy_of_bool (.inl rfl))
+    ha.ty
+
 end -- public section
 
 end WP

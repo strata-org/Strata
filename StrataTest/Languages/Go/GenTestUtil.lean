@@ -7,6 +7,7 @@ module
 
 public meta import Lean.Elab.Command
 public meta import Strata.Go.Gen
+public import StrataTest.Util.ExternalTools
 
 namespace Strata.Go.TestUtil
 
@@ -22,46 +23,17 @@ public meta def fileNamed (files : GeneratedFiles) (name : String) :
     return ""
 
 /--
-Whether the Go checks must run rather than skip: inside a Brazil build, or under
-CI (`CI` set, as GitHub Actions and most CI systems do).
-
-Test files under `StrataTestExtra/` run as `lean <file>` children of the test
-driver, which prints only `PASS: <module>` for a zero exit. A skip warning is
-therefore invisible to everyone but a developer running the file by hand, and on
-a CI run it would turn every Go suite into a silent pass.
--/
-public def goChecksRequired : IO Bool := do
-  if (← IO.getEnv "BRAZIL_BUILD_HOME").isSome then return true
-  match ← IO.getEnv "CI" with
-  | some v => return !v.isEmpty && v != "0" && v.toLower != "false"
-  | none => return false
-
-/--
 Whether a working Go toolchain is on `PATH`.
 
 Local development may omit Go and skip the generated-code checks. A Brazil build
 must provide Go through `build-tools`, and a CI run must install it; in both an
-absent toolchain is a hard failure (see `goChecksRequired`).
+absent toolchain is a hard failure (see
+`Strata.TestUtil.externalToolChecksRequired`).
 -/
 public def haveGo : IO Bool := do
-  let required ← goChecksRequired
-  let result ←
-    try
-      pure (some (← IO.Process.output { cmd := "go", args := #["version"] }))
-    catch _ =>
-      pure none
-  match result with
-  | some r =>
-    if r.exitCode == 0 then return true
-    if required then
-      throw <| IO.userError s!"Go is required in Brazil and CI builds, but \
-        `go version` exited {r.exitCode}:\n{r.stdout}\n{r.stderr}"
-    return false
-  | none =>
-    if required then
-      throw <| IO.userError s!"Go is required in Brazil and CI builds but is not \
-        available on PATH"
-    return false
+  let some reason ← Strata.TestUtil.toolUnavailable? "go" #["version"] | return true
+  Strata.TestUtil.requireTool "Go" reason
+  return false
 
 /-- Run a command in `cwd`, returning a failure report when it exits nonzero. -/
 public def runTool (cmd : String) (args : Array String) (cwd : System.FilePath) :
@@ -152,7 +124,7 @@ public def writeGoModule (dir : System.FilePath) (moduleName : String) :
       let reason := s!"ion-go could not be resolved, so the Go checks cannot \
                        run: `brazil-path` did not supply it and `go mod tidy` \
                        failed:\n{err}"
-      if ← goChecksRequired then
+      if ← Strata.TestUtil.externalToolChecksRequired then
         throw <| IO.userError reason
       return some reason
 

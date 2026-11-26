@@ -24,28 +24,38 @@ public section
 
 variable {P : PureExpr} {CmdT : Type}
 
-/-- Predecessor map: for each label, the labels that jump to it. Every block
-label and every transfer target is a key, so the keys are exactly the labels
-only when every target names a block. -/
-def predMap (cfg : CFG String (DetBlock String CmdT P)) :
+/-- Predecessor map of labelled blocks, given each block's successors: for each
+label, the labels that jump to it, most recent first, a label once per edge.
+Every block label and every successor is a key. -/
+def predMapWith {B : Type} (succs : B → List String) (blocks : List (String × B)) :
     Std.HashMap String (List String) := Id.run do
   let mut m : Std.HashMap String (List String) := {}
-  for (l, _) in cfg.blocks do
+  for (l, _) in blocks do
     if !m.contains l then m := m.insert l []
-  for (l, blk) in cfg.blocks do
-    for s in blk.transfer.targets do
+  for (l, blk) in blocks do
+    for s in succs blk do
       let cur := m.getD s []
       m := m.insert s (l :: cur)
   return m
 
+/-- Successor map of labelled blocks, given each block's successors. Assumes
+unique labels: for a repeated label, the last block wins. -/
+def succMapWith {B : Type} (succs : B → List String) (blocks : List (String × B)) :
+    Std.HashMap String (List String) :=
+  blocks.foldl (fun m (l, blk) => m.insert l (succs blk)) {}
+
+/-- Predecessor map: for each label, the labels that jump to it. Every block
+label and every transfer target is a key, so the keys are exactly the labels
+only when every target names a block. -/
+def predMap (cfg : CFG String (DetBlock String CmdT P)) :
+    Std.HashMap String (List String) :=
+  predMapWith (·.transfer.targets) cfg.blocks
+
 /-- Successor map: each label ↦ its transfer successors. Assumes unique labels:
 for a repeated label, the last block wins. -/
 def succMap (cfg : CFG String (DetBlock String CmdT P)) :
-    Std.HashMap String (List String) := Id.run do
-  let mut m : Std.HashMap String (List String) := {}
-  for (l, blk) in cfg.blocks do
-    m := m.insert l blk.transfer.targets
-  return m
+    Std.HashMap String (List String) :=
+  succMapWith (·.transfer.targets) cfg.blocks
 
 /-- The labels reachable in one or more steps from `start`, using a successor map
 `succs` and a breadth-first search bound `fuel`. A search of at least the node

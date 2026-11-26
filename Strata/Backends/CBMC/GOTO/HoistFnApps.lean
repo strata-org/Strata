@@ -303,7 +303,7 @@ where
         | some (_, tmp) => (tmp, st)
         | none =>
           let (tmp, st) := freshTemp pname e.type st
-          let calleeSym := Expr.symbol name (Ty.mkCode (ops.map (·.type)) e.type)
+          let calleeSym := Expr.symbol name (Ty.mkFunctionType (ops.map (·.type)) e.type)
           let declInst : Instruction :=
             { type := .DECL, code := .decl tmp, sourceLoc := srcLoc }
           let callInst : Instruction :=

@@ -437,7 +437,7 @@ procedure proofStepNotMentioningBoundVar()
   opaque
 {
   assert forall(x: int) { G(x) } => { assert 1 == 1; G(x) >= 0 }
-//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion could not be proved
+//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
 };
 #end
 

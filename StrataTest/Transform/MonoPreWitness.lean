@@ -112,7 +112,7 @@ theorem monoPre_witness : MonoPre witnessState witnessProgram := by
     simp only [fragmentOpNames, List.mem_cons, List.not_mem_nil, or_false] at hn
     rcases hn with rfl | rfl | rfl | rfl | rfl | rfl | rfl <;> simp [fragFn]
   refine ⟨?noProcs, ?distinct, ?unmangled, ?typed, ?evals, ?noConstr, ?fragOps, ?ground,
-    ?sigTypeArgs, ?plainAnnots, ?fragment, ?baseEvalSound, ?datatypesProvable,
+    ?sigTypeArgs, ?fragment, ?baseEvalSound, ?datatypesProvable,
     ?monoOpsAnnotated⟩
   case noProcs => simp [Specification.Analysis.NoProcedures, witnessProgram, Decl.kind]
   case unmangled =>
@@ -120,8 +120,8 @@ theorem monoPre_witness : MonoPre witnessState witnessProgram := by
     rcases hC f hf with ⟨n, hn, rfl⟩ | rfl
     · simp only [fragmentOpNames, List.mem_cons, List.not_mem_nil, or_false] at hn
       rcases hn with rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
-        exact ⟨by decide, by simp [fragFn]⟩
-    · refine ⟨by decide, ?_⟩
+        exact ⟨notCopyName_of_not_monoPrefix (by decide), by simp [fragFn]⟩
+    · refine ⟨notCopyName_of_not_monoPrefix (by decide), ?_⟩
       intro e he
       simp only [LFuncDefined.toLFunc, idFn, Option.toList_some, List.append_nil, List.mem_cons,
         List.not_mem_nil, or_false] at he
@@ -164,11 +164,6 @@ theorem monoPre_witness : MonoPre witnessState witnessProgram := by
     rfl
   case sigTypeArgs =>
     simp only [sigTypeArgsB, Bool.and_eq_true, List.all_eq_true]
-    refine ⟨by decide, fun f hf => ?_⟩
-    obtain ⟨n, -, rfl⟩ := hF f (Array.mem_toList_iff.mp hf)
-    rfl
-  case plainAnnots =>
-    simp only [plainAnnotsB, Bool.and_eq_true, List.all_eq_true]
     refine ⟨by decide, fun f hf => ?_⟩
     obtain ⟨n, -, rfl⟩ := hF f (Array.mem_toList_iff.mp hf)
     rfl

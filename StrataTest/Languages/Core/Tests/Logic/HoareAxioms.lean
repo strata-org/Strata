@@ -94,7 +94,7 @@ private theorem ensures_among_axioms :
     hold: a model may interpret `c` as `0`. -/
 theorem witness_meets_contract :
     Core.Logic.Hoare.Procedure.contractTriple axiomAST testParams "Witness" := by
-  refine Core.Logic.Hoare.Procedure.contractTriple_of_core_typed_axioms
+  refine Core.Logic.Hoare.Procedure.contractTriple_of_core_typed_axioms (opq := false)
       (hmono := by native_decide) axiomAST testParams
     "Witness" witnessProc [] (by native_decide) (by native_decide) (by native_decide) ?_
   refine Core.Logic.Hoare.consequence _ _
@@ -112,7 +112,7 @@ theorem witness_meets_contract :
     environment that satisfies the axiom, every finished run of the body, followed by
     the postcondition as an assertion, is assertion-valid. -/
 theorem witness_contract (ss : Core.Statements)
-    (hbody : witnessProc.body = .structured ss)
+    (hbody : witnessProc.body = .structured ss false)
     (ρ₀ ρ' : Imperative.Env Core.Expression) (trace : Imperative.Trace Core.Expression)
     (hentry : Core.Specification.ProcEntryEnv testParams "Witness" axiomAST witnessProc ρ₀)
     (hrun : (Core.Logic.EventLang.coreBlock axiomAST.findProcByString?).TerminatesAt
@@ -128,7 +128,7 @@ theorem witness_contract (ss : Core.Statements)
     `Core.Specification.ProcedureAssertsValidOnTraces.denote`, from
     `Core.Specification.procedureAssertsValidOnTraces_of_contractTriple`. -/
 theorem witness_procedureAssertsValidOnTraces (ss : Core.Statements)
-    (hbody : witnessProc.body = .structured ss) :
+    (hbody : witnessProc.body = .structured ss false) :
     Core.Specification.ProcedureAssertsValidOnTraces.denote testParams "Witness" axiomAST :=
   Core.Specification.procedureAssertsValidOnTraces_of_contractTriple witness_meets_contract
     (by native_decide) hbody (by native_decide)
@@ -139,7 +139,7 @@ theorem witness_procedureAssertsValidOnTraces (ss : Core.Statements)
     cannot all hold. -/
 private theorem contractTriple_of_entry_absurd (p : Core.Program) (n : String)
     (hproc : p.findProcByString? n = some (procOf p n))
-    (hbody : (procOf p n).body = .structured [])
+    (hbody : (procOf p n).body = .structured [] false)
     (htyped : Core.Logic.Hoare.Procedure.contractChecksTyped (procOf p n))
     (habsurd : ∀ ρ, ¬ Core.Specification.AxiomsBeforeProcedureDecl n p ρ)
     (hmono : (procOf p n).header.typeArgs = [] := by native_decide) :
@@ -157,7 +157,7 @@ private theorem contractTriple_of_entry_absurd (p : Core.Program) (n : String)
 private theorem not_contractTriple_ensures_false (p : Core.Program) (n : String)
     (hfactory : p.factoryBeforeProcedure n = Core.Factory)
     (hproc : p.findProcByString? n = some (procOf p n))
-    (hbody : (procOf p n).body = .structured [])
+    (hbody : (procOf p n).body = .structured [] false)
     (hpre : (procOf p n).spec.preconditions.toList = [])
     (hinout : ListMap.keys (procOf p n).header.getInoutParams = [])
     (hinputs : (procOf p n).header.inputs.toList = [])

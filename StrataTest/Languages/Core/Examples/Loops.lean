@@ -28,8 +28,9 @@ def singleCFG (p : Program) (n : Nat) : Imperative.CFG String
   let proc := match corePgm.decls[n]? with
               | .some (.proc p _) => p | _ => Inhabited.default
   match proc.body with
-  | .structured ss => Imperative.stmtsToCFG ss
-  | .cfg cfg => cfg
+  | .structured ss _ => Imperative.stmtsToCFG ss
+  | .cfg cfg _ => cfg
+  | .abstract => Imperative.stmtsToCFG []
 
 ---------------------------------------------------------------------
 

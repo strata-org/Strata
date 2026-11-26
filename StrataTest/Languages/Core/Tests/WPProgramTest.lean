@@ -52,7 +52,7 @@ def proc (params : List String) (ss : Statements) : Procedure := {
     header := { name := id' "P", typeArgs := [],
                 inputs := params.map (fun x => (id' x, (.int : LMonoTy))), outputs := [] }
     spec := { preconditions := [], postconditions := [] }
-    body := .structured ss }
+    body := .structured ss false }
 
 /-- Translate `ss` with integer parameters `params`: the WP phase, the SSA phase, then
     dead-definition elimination. -/
@@ -582,7 +582,7 @@ def procBody (n : String) (r : Except String Program) : Except String Statements
     | .proc q _ => if q.header.name.name == n then some q.body else none
     | _ => none
   match body? with
-  | some (.structured ss) => pure ss
+  | some (.structured ss _) => pure ss
   | _ => throw s!"no procedure {n}"
 
 #guard show' (procBody "P" (wpSSAProgramWith Lambda.Factory.default []

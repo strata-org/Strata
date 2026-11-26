@@ -239,7 +239,7 @@ def issue586_pgm : Program := { decls := [
           body := .structured [
             Statement.init "s" (.forAll [] .string) (.det eb[#hello]) .empty,
             Statement.init "r" (.forAll [] .string) (.det eb[(~foo s)]) .empty
-          ]
+          ] false
   } .empty
 ]}
 

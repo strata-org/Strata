@@ -31,8 +31,8 @@ by `evalBounded` (`evalBounded_refines_evalFully`), are in `Core/InterpreterProp
 
 The stepper handles `.call` as an **exact run-to-completion** of the callee body in
 the same monad (so callee nondeterminism resolves through that monad's `choose`).
-The `.call` branch mirrors the reference semantics' `EvalCommandE.call_sem`.  The three
-properties the branch reproduces:
+The `.call` branch mirrors the reference semantics' `EvalCommandE.call_sem` (for an abstract
+callee, `EvalCommandE.call_abstract_sem`).  The three properties the branch reproduces:
 
 * **Spec clauses are emitted, never adjudicated.**  The non-`free` preconditions
   are emitted as assert events at the callee entry snapshot, each with its site
@@ -54,11 +54,10 @@ Faithful-mirror choices:
   entry block through the CFG driver.
 * Call arguments are evaluated with the fuel-bounded `evalBounded`, for engine
   consistency, not the unbounded `Expression.eval`.
-
-Not covered: the `EvalCommandContractE` havoc semantics for a *genuinely*
-contract-only callee.  A `.structured []` body is run as an ordinary (trivial) body,
-so a contract-only procedure whose outputs must be havoc'd and whose postconditions
-must be *assumed* is not handled here. -/
+* The replay stepper runs in `CallMode.contract`: a call to an opaque callee (`Body.isOpaque`,
+  an abstract one included) mirrors `EvalCommandE.call_abstract_sem` instead of running a body: its output formals are havocked through `choose`, and its
+  postconditions, free ones included, are emitted as assume events at the post-havoc snapshot.
+  A `.structured []` body is an ordinary (trivial) body. -/
 
 namespace Core
 
@@ -231,20 +230,22 @@ abbrev evalBoundedList (fuel : Nat) (factory : Lambda.Factory CoreLParams)
   Calls.evalBoundedList fuel factory store es
 
 /-- Core's command stepper, generic over the effect monad `m`: the call-aware stepper
-    `Calls.stepCmd` at `Expression`.  `depth` is the remaining call-depth budget. -/
+    `Calls.stepCmd` at `Expression`, in `CallMode.contract` (an opaque callee runs as its
+    contract, as in the reference semantics).  `depth` is the remaining call-depth budget. -/
 abbrev replayStepCmd {m : Type → Type} [Monad m] [InterpEffects Expression m]
     [MonadExcept StopReason m] (π : String → Option Procedure) (depth : Nat) :
     StepCmdM Expression Command m :=
-  Calls.stepCmd π depth
+  Calls.stepCmd π .contract depth
 
 /-- Core's run loop, generic over the effect monad `m`: the call-aware driver
-    `Calls.runCallInterp` at `Expression`, nesting at most `maxCallDepth` calls.  Each instance
+    `Calls.runCallInterp` at `Expression` in `CallMode.contract`, nesting at most `maxCallDepth`
+    calls.  Each instance
     only chooses `m` (for replay, `m := ReplayM Expression`). -/
 abbrev runCoreInterp {m : Type → Type} [Monad m] [InterpEffects Expression m]
     [MonadExcept StopReason m] (π : String → Option Procedure)
     (fuel : Nat) (cfg : IConfig Expression Command)
     (maxCallDepth : Nat := defaultMaxCallDepth) : m (IConfig Expression Command) :=
-  Calls.runCallInterp π fuel cfg maxCallDepth
+  Calls.runCallInterp π .contract fuel cfg maxCallDepth
 
 /-- Target-id match of an event (`Calls.targetReached` at `Expression`): an `.assert` or `.cover`
     whose `label` and metadata match `target`, with no evaluation of the condition. -/

@@ -611,7 +611,7 @@ private def storedAliasProgram : Program :=
       body := .structured
         [Statement.init "u" (.forAll [] .bool) .nondet .empty,
          Statement.call "r" (some [.forAll [] .int])
-           [.inArg (.fvar Core.coreLoc "u" none), .inArg (.intConst Core.coreLoc 0)] .empty] }
+           [.inArg (.fvar Core.coreLoc "u" none), .inArg (.intConst Core.coreLoc 0)] .empty] false }
   { decls :=
       [.type (.syn { name := "MyInt", typeArgs := [], type := .int }) .empty,
        .func { name := "opR", typeArgs := ["a"], inputs := [("x", tvA)], output := .bool } .empty,

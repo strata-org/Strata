@@ -903,6 +903,23 @@ cfg entry {
   | (.ok (_, p), _) => (Std.format p).pretty 96
   | (.error e, _) => s!"error: {e.message}")
 
+---------------------------------------------------------------------
+-- The concrete programs above, under the passive VC generators
+---------------------------------------------------------------------
+
+-- `--vcgen usp` and `uwp` run the simplifier too, which unfolds a recursive call on values,
+-- so these checks pass there as well: none is reported otherwise.
+/-- info: [] -/
+#guard_msgs in
+#eval show IO Unit from do
+  let mut notPassed : List String := []
+  for p in [mutualIntRecConcretePgm, factorialConcretePgm, quantArgUnfoldPgm,
+            quantInConstrArgUnfoldPgm] do
+    for m in [Core.VCGenMode.usp, .uwp] do
+      let r ← Strata.Core.verify p (options := { Core.VerifyOptions.quiet with vcgen := m })
+      notPassed := notPassed ++ (r.toList.filter (!·.isSuccess)).map (·.obligation.label)
+  IO.println notPassed
+
 end Strata.IntRecursionTermCheckTest
 
 end

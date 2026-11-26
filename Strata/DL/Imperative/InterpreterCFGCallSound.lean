@@ -45,11 +45,11 @@ variable {m : Type → Type} [imo : Monad m] [ime : InterpEffects P m]
     [imx : MonadExcept StopReason m]
 
 /-- The call-aware store-stepper for the CFG driver at call-depth budget `d`: run one
-    `CmdExt P` to completion with the structured call stepper `Calls.stepCmd π d` (a `.call`
-    runs its callee body inside), then project the resulting store. -/
+    `CmdExt P` to completion with the structured call stepper `Calls.stepCmd π .contract d` (a
+    `.call` runs its callee body inside), then project the resulting store. -/
 @[expose] def cfgStepCmd (π : String → Option (Procedure P (CmdExt P) Hdr)) (d : Nat) :
     StepCmdStoreM P (CmdExt P) m :=
-  StepCmdM.toStore (stepCmd π d)
+  StepCmdM.toStore (stepCmd π .contract d)
 
 include iclwf in
 /-- At a well-formed factory `F` (`FactoryWF`), from an in-block configuration whose running

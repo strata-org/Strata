@@ -110,7 +110,7 @@ private abbrev walkBody : Core.Statements :=
    .loop .nondet none [] [.ite .nondet [innerIte] [stepUp] mdOut] mdL]
 
 /-- The translated body really is the assignment followed by the nondeterministic loop. -/
-private theorem walk_body_eq : walkProc.body = .structured walkBody := by native_decide
+private theorem walk_body_eq : walkProc.body = .structured walkBody false := by native_decide
 
 /-! ## The deterministic encoding -/
 
@@ -162,7 +162,8 @@ private def walkOut : Core.Program := match walkRun.1 with
 /-- **The Core pass encodes the body.**  The run of `Core.NondetElim.nondetElim` on the
     program succeeds, and the program it returns has the procedure with the body `walkTgt`. -/
 theorem walk_out : (∃ c σ', walkRun = (.ok (c, walkOut), σ')) ∧
-    Core.Decl.proc { walkProc with body := .structured walkTgt } walkDeclMd ∈ walkOut.decls := by
+    Core.Decl.proc { walkProc with body := .structured walkTgt false } walkDeclMd ∈ walkOut.decls :=
+        by
   have h : (match walkRun.1 with | .ok _ => true | .error _ => false) = true := by
     native_decide
   have hrun : ∃ c σ', walkRun = (.ok (c, walkOut), σ') := by

@@ -122,23 +122,20 @@ theorem overapproximatesTraces (params : InitEnvWFParams) :
 /-- **Assertion validity transported back through loop elimination.**  For an interpretation `I`
     under which every condition that evaluates to `true` under a factory satisfying
     `WellFormedSemanticEval` holds (such as evaluation to `true`, by
-    `evalInterp_trueStutterHolds`), and a call-free Core statement list `ss` whose loops
-    `Block.loopElim` eliminates into `ss'`: if every occurrence of the assertion `aid` holds
-    under its preceding assumptions on every trace of `ss'` from every environment satisfying
-    `BlockInitEnvWF params ss'`, the same holds for `ss` from every environment satisfying
-    `BlockInitEnvWF` of `ss` at `params` with `Core.loopElimPrefix` reserved for block
-    labels. -/
-theorem assertValid (params : InitEnvWFParams) {ss ss' : Statements}
-    (ht : Imperative.Block.loopElim ss = some ss') (hnc : Statements.noCalls ss = Bool.true)
-    {I : ConditionInterp Expression}
-    (htrue : I.TrueStutterHolds (WellFormedSemanticEval (P := Expression)))
-    {aid : AssertId Expression}
-    (hvalid : AssertValidOnTracesWhen (EventLang.coreBlock π) I
-      (BlockInitEnvWF params ss') ss' aid) :
-    AssertValidOnTracesWhen (EventLang.coreBlock π) I
-      (BlockInitEnvWF (params.extendBlockLabels [loopElimPrefix]) ss) ss aid :=
-  assertValid_of_blockRel π params [loopElimPrefix] (fun _ => blockRel_of_loopElim ht) hnc
-    htrue hvalid
+    `evalInterp_trueStutterHolds`), `Block.loopElim` preserves assertion validity on call-free
+    Core statement lists: if every occurrence of an assertion holds under its preceding
+    assumptions on every trace of the output `ss'` from every environment satisfying
+    `BlockInitEnvWF params ss'`, the same holds for the input `ss` from every environment
+    satisfying `BlockInitEnvWF` of `ss` at `params` with `Core.loopElimPrefix` reserved for
+    block labels. -/
+theorem assertValid (params : InitEnvWFParams) {I : ConditionInterp Expression}
+    (htrue : I.TrueStutterHolds (WellFormedSemanticEval (P := Expression))) :
+    AssertValidityPreservedWhen I (EventLang.coreBlock π) (EventLang.coreBlock π)
+      (fun ss => Imperative.Block.loopElim ss) (fun ss => Statements.noCalls ss = Bool.true)
+      (params.extendBlockLabels [loopElimPrefix]) params :=
+  fun _ _ _ ht hnc hvalid =>
+    assertValid_of_blockRel π params [loopElimPrefix] (fun _ => blockRel_of_loopElim ht) hnc
+      htrue hvalid
 
 /-- Evaluation to `true` holds for every condition that evaluates to `true`. -/
 theorem evalInterp_trueStutterHolds (allowed : Expression.Factory → Prop) :
@@ -173,8 +170,8 @@ body exiting to a label starting with `Core.loopElimPrefix`. -/
 theorem overapproximatesTraces_coreProgram (params : InitEnvWFParams) {p p' : Program} {c : Bool}
     {σ σ' : Transform.CoreTransformState} (h : loopElim p σ = (.ok (c, p'), σ'))
     {i : Nat} {proc : Procedure} {md : Imperative.MetaData Expression} {ss : Statements}
-    (hproc : p.decls[i]? = some (.proc proc md)) (hbody : proc.body = .structured ss) :
-    ∃ ss', p'.decls[i]? = some (.proc { proc with body := .structured ss' } md) ∧
+    (hproc : p.decls[i]? = some (.proc proc md)) (hbody : proc.body = .structured ss opq) :
+    ∃ ss', p'.decls[i]? = some (.proc { proc with body := .structured ss' opq } md) ∧
       OverapproximatesTraces2UptoWhen
         (Trace.HasExtraEvents
           (Trace.PreservesLastEvent (RComp Trace.MayDropEvents
@@ -193,24 +190,22 @@ theorem overapproximatesTraces_coreProgram (params : InitEnvWFParams) {p p' : Pr
   ⟨ss', hd, overapproximatesTraces_of_blockRel π params [] (single_blockRel fun _ _ => hrel)⟩
 
 /-- **The Core pass transports assertion validity back to each procedure body.**  When
-    `Core.loopElim p` succeeds with `p'`, a call-free structured body `ss` of a procedure of `p`
-    has, at its position in `p'`, a body `ss'` such that, for an interpretation `I` as in
-    `assertValid`, validity of the assertion `aid` on `ss'` from every environment satisfying
-    `BlockInitEnvWF params ss'` gives its validity on `ss` from every environment satisfying
-    `BlockInitEnvWF params ss`. -/
+    `Core.loopElim p` succeeds with `p'`, a procedure of `p` with a structured body `ss` has, at
+    its position in `p'`, a body `ss'` such that, for an interpretation `I` as in
+    `assertValid`, sending `ss` to `ss'` preserves assertion validity when `ss` is call-free,
+    from every environment satisfying `BlockInitEnvWF` at `params`. -/
 theorem assertValid_coreProgram (params : InitEnvWFParams) {p p' : Program} {c : Bool}
     {σ σ' : Transform.CoreTransformState} (h : loopElim p σ = (.ok (c, p'), σ'))
     {i : Nat} {proc : Procedure} {md : Imperative.MetaData Expression} {ss : Statements}
-    (hproc : p.decls[i]? = some (.proc proc md)) (hbody : proc.body = .structured ss)
-    (hnc : Statements.noCalls ss = Bool.true) :
-    ∃ ss', p'.decls[i]? = some (.proc { proc with body := .structured ss' } md) ∧
+    (hproc : p.decls[i]? = some (.proc proc md)) (hbody : proc.body = .structured ss opq) :
+    ∃ ss', p'.decls[i]? = some (.proc { proc with body := .structured ss' opq } md) ∧
       ∀ {I : ConditionInterp Expression},
         I.TrueStutterHolds (WellFormedSemanticEval (P := Expression)) →
-      ∀ {aid : AssertId Expression},
-        AssertValidOnTracesWhen (EventLang.coreBlock π) I (BlockInitEnvWF params ss') ss' aid →
-        AssertValidOnTracesWhen (EventLang.coreBlock π) I (BlockInitEnvWF params ss) ss aid :=
+        AssertValidityPreservedWhen I (EventLang.coreBlock π) (EventLang.coreBlock π)
+          (fun (s : Statements) => if s = ss then some ss' else none)
+          (fun s => Statements.noCalls s = Bool.true) params params :=
   have ⟨ss', hd, hrel⟩ := loopElim_body_blockRel h hproc hbody
-  ⟨ss', hd, fun {_} htrue {_} hvalid =>
+  ⟨ss', hd, fun {_} htrue => assertValidityPreservedWhen_single _ fun hnc _ hvalid =>
     assertValid_of_blockRel π params [] (fun _ _ => hrel) hnc htrue hvalid⟩
 
 /-- **The Core pass transports Hoare triples back to each procedure body.**  When
@@ -221,9 +216,9 @@ theorem assertValid_coreProgram (params : InitEnvWFParams) {p p' : Program} {c :
 theorem triple_coreProgram (params : InitEnvWFParams) {p p' : Program} {c : Bool}
     {σ σ' : Transform.CoreTransformState} (h : loopElim p σ = (.ok (c, p'), σ'))
     {i : Nat} {proc : Procedure} {md : Imperative.MetaData Expression} {ss : Statements}
-    (hproc : p.decls[i]? = some (.proc proc md)) (hbody : proc.body = .structured ss)
+    (hproc : p.decls[i]? = some (.proc proc md)) (hbody : proc.body = .structured ss opq)
     (hnc : Statements.noCalls ss = Bool.true) :
-    ∃ ss', p'.decls[i]? = some (.proc { proc with body := .structured ss' } md) ∧
+    ∃ ss', p'.decls[i]? = some (.proc { proc with body := .structured ss' opq } md) ∧
       ∀ {F : Lambda.Factory CoreLParams} {Pre Post : Env Expression → Prop},
         (∀ ρ₀, Pre ρ₀ → ρ₀.factory.factory = F) →
         Core.Logic.Hoare.Triple π params Pre ss' Post F →
@@ -241,9 +236,9 @@ theorem triple_coreProgram (params : InitEnvWFParams) {p p' : Program} {c : Bool
 theorem validOnTracesVerifier_coreProgram (params : InitEnvWFParams) {p p' : Program} {c : Bool}
     {σ σ' : Transform.CoreTransformState} (h : loopElim p σ = (.ok (c, p'), σ'))
     {i : Nat} {proc : Procedure} {md : Imperative.MetaData Expression} {ss : Statements}
-    (hproc : p.decls[i]? = some (.proc proc md)) (hbody : proc.body = .structured ss)
+    (hproc : p.decls[i]? = some (.proc proc md)) (hbody : proc.body = .structured ss opq)
     (hnc : Statements.noCalls ss = Bool.true) :
-    ∃ ss', p'.decls[i]? = some (.proc { proc with body := .structured ss' } md) ∧
+    ∃ ss', p'.decls[i]? = some (.proc { proc with body := .structured ss' opq } md) ∧
       ∀ {I : ConditionInterp Expression},
         I.TrueStutterHolds (WellFormedSemanticEval (P := Expression)) →
       ∀ {analyze : Statements → Bool},

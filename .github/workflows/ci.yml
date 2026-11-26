@@ -28,6 +28,9 @@ jobs:
     env:
       # Run Strata's tests with cvc5's `--safe-mode=stable`.
       CVC5_SAFE_MODE: stable
+    outputs:
+      # The Lake cache prefix this job saves under; the cbmc job restores it.
+      lake-key-prefix: lake-cvc5-${{ env.CVC5_SAFE_MODE }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -155,3 +158,5 @@ jobs:
     permissions:
       contents: read
     uses: ./.github/workflows/cbmc.yml
+    with:
+      lake-key-prefix: ${{ needs.build_and_test_lean.outputs.lake-key-prefix }}

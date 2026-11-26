@@ -66,7 +66,10 @@ def directEff (gs : List String) (p : Procedure) : Eff :=
     -- must reach the procedure like the ones its body reads.
     let exprs := cmds.flatMap cmdExprs ++ b.cfg.blocks.flatMap (fun (_, blk) => transferExprs blk.transfer)
       ++ p.requires.map (·.cond)
-    let reads := gs.filter fun g => exprs.any fun e => (fvarsOf e).contains g
+    let ensures := p.ensures.map (·.cond)
+    let reads := gs.filter fun g => exprs.any (fvarsOf · |>.contains g) ||
+      ensures.any fun e =>
+        (fvarsOf e).contains g || (fvarsOf e).contains (Core.CoreIdent.mkOld g).name
     let writes := gs.filter fun g => cmds.any fun c => (cmdWrites c).contains g
     { reads, writes }
 
@@ -103,6 +106,12 @@ def isEntry (p : Procedure) : Bool :=
   | some { value := .switch true, .. } => true
   | _ => false
 
+/-- The program with its globals passed as parameters: a procedure takes as inputs the
+globals it or its callees read or write, or its postconditions read, and as outputs the
+globals they write, a global that is both an input and an output being one variable. In a
+postcondition, `old g` becomes `g` for a global `g` that the procedure reads and does not
+write. The entry procedure initializes the globals it uses, and its postconditions may not
+read `old g`. -/
 def run (prog : UnorderedProgram) : Except String UnorderedProgram :=
   if prog.globals.isEmpty then .ok prog else do
   prog.refuseVirtualCalls "LowerGlobals"
@@ -144,6 +153,15 @@ def run (prog : UnorderedProgram) : Except String UnorderedProgram :=
     if pre.isEmpty then return { b with cfg := { b.cfg with blocks } }
     let entry := freshLabel "$globalsEntry" (blocks.map (·.1))
     return { b with cfg := { entry, blocks := (entry, { cmds := pre, transfer := .goto b.cfg.entry }) :: blocks } }
+  let olds := order.map fun g => (Core.CoreIdent.mkOld g).name
+  -- The entry procedure's globals are locals of its body, out of scope in its postconditions.
+  let gsAndOlds := order ++ olds
+  if let some p := prog.procedures.find? fun p =>
+      isEntry p && p.ensures.any fun post => (fvarsOf post.cond).any gsAndOlds.contains then
+    throw s!"the postconditions of the entry procedure '{p.name}' read a global"
+  let readOnlyOlds := fun (n : String) =>
+    ((insOf n).filter (!(outsOf n).contains ·)).map fun g =>
+      ((Core.CoreIdent.mkOld g).name, mkFvar g)
   let procs := prog.procedures.map fun p =>
     if isEntry p then
       { p with body := p.body.map (lowerBody ((p.inputs ++ p.outputs).map (·.1.name)) (prog.globalInit.map .cmd)) }
@@ -151,6 +169,8 @@ def run (prog : UnorderedProgram) : Except String UnorderedProgram :=
     { p with
       inputs := p.inputs ++ (insOf p.name).map fun g => (ident g, gty g)
       outputs := p.outputs ++ (outsOf p.name).map fun g => (ident g, gty g)
+      ensures := p.ensures.map fun post =>
+        { post with cond := substFvars (readOnlyOlds p.name) post.cond }
       body := p.body.map (lowerBody ((p.inputs ++ p.outputs).map (·.1.name)) []) }
   .ok { prog with procedures := procs, globals := [], globalInit := [] }
 

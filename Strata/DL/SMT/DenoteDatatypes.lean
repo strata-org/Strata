@@ -31,8 +31,8 @@ declaration of a name is therefore never used. `Denote.denoteQuery` refuses
 declarations that repeat a name, as SMT-LIB does.
 
 The arguments of a value are a first-order list, so a field of function sort has
-no representation. This matches SMT-LIB, and the encoder rejects such datatypes
-before a query is built.
+no representation. The encoder sends such a field as an SMT array, and
+`Denote.denoteQuery` refuses its datatype (`dtFieldsDenotable`).
 -/
 
 public section

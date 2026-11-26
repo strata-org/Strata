@@ -395,7 +395,7 @@ private def bodyPgm (ss : List Statement) (typeArgs : List TyIdentifier := [])
     (inputs : @LMonoTySignature Unit := []) : Program := { decls := [
   .proc { header := { name := "P", typeArgs, inputs, outputs := [] },
           spec := { preconditions := [], postconditions := [] },
-          body := .structured ss } .empty ]}
+          body := .structured ss false } .empty ]}
 
 /-- The procedure checker's error on body `ss`, or the declared types of the elaborated body. -/
 private def procVerdict (ss : List Statement) : Format :=
@@ -405,8 +405,9 @@ private def procVerdict (ss : List Statement) : Format :=
     match p.decls with
     | [.proc pr _] =>
       match pr.body with
-      | .structured b => f!"ok, declared types: {Format.joinSep (stmtsDeclTys b) ", "}"
-      | .cfg _ => "unexpected control-flow-graph body"
+      | .structured b _ => f!"ok, declared types: {Format.joinSep (stmtsDeclTys b) ", "}"
+      | .cfg _ _ => "unexpected control-flow-graph body"
+      | .abstract => "unexpected abstract body"
     | _ => "unexpected declarations"
 
 /-- Declares `T` and solves the type variable `b` to `T` through `y`. -/
@@ -454,6 +455,12 @@ private def outerTypeInnerSolveBody : List Statement :=
 /-- `outerTypeInnerSolveBody` wrapped in an outer block. -/
 private def outerTypeInnerSolveStmts : List Statement :=
   [ .block "outer" outerTypeInnerSolveBody .empty ]
+
+/-- As `outerTypeInnerSolveStmts`, with the outer block then assigning `z` an integer. -/
+private def outerTypeInnerSolveFixedStmts : List Statement :=
+  [ .block "outer"
+      (outerTypeInnerSolveBody ++ [Statement.set "z" (LExpr.intConst Core.coreLoc 1) .empty])
+      .empty ]
 
 /-- An inner block declares `T` and solves its `b` to it, inside an outer block that then
     declares a variable at a `b` of its own, initialized with an integer. -/
@@ -513,17 +520,27 @@ info: ok, declared types: [x : T, y : T], [x : T, y : T]
 #guard_msgs (whitespace := lax) in
 #eval procVerdict siblingBlocksSolvingTyVarStmts
 
+-- Several tests below are rejected: a declared variable stays unsolved and `P` has no type
+-- parameter for it. The `Fixed` variants solve the variable, which shows the declared types.
 /--
-info: ok, declared types: [x : T, y : T], z : b_1
+info: Procedure 'P': local 'z' is declared at type variable 'b_1',
+which is not a type parameter of the procedure
 -/
 #guard_msgs (whitespace := lax) in
 #eval procVerdict outerTypeInnerSolveBody
 
 /--
-info: ok, declared types: [[x : T, y : T], z : b_1]
+info: Procedure 'P': local 'z' is declared at type variable 'b_1',
+which is not a type parameter of the procedure
 -/
 #guard_msgs (whitespace := lax) in
 #eval procVerdict outerTypeInnerSolveStmts
+
+/--
+info: ok, declared types: [[x : T, y : T], z : int]
+-/
+#guard_msgs (whitespace := lax) in
+#eval procVerdict outerTypeInnerSolveFixedStmts
 
 /--
 info: ok, declared types: [[x : T, y : T], z : int]
@@ -589,6 +606,10 @@ private def outerAssignedLaterTyVarStmts : List Statement :=
       .empty,
     declNondet "v" tyB, Statement.set "u" (var "v") .empty ]
 
+/-- As `outerAssignedLaterTyVarStmts`, then `u` is assigned an integer, which fixes its type. -/
+private def outerAssignedLaterFixedStmts : List Statement :=
+  outerAssignedLaterTyVarStmts ++ [Statement.set "u" (LExpr.intConst Core.coreLoc 1) .empty]
+
 /-- An outer `w : c` assigned, inside a block, a variable at the block's `b`; after the block a
     `b` of its own is solved to `int`. -/
 private def outerSolvedToBlockTyVarStmts : List Statement :=
@@ -599,6 +620,12 @@ private def outerSolvedToBlockTyVarStmts : List Statement :=
 /-- As `outerSolvedToBlockTyVarStmts`, with `w` then assigned a Boolean. -/
 private def outerSolvedToBlockTyVarFixedStmts : List Statement :=
   outerSolvedToBlockTyVarStmts ++ [Statement.set "w" (LExpr.boolConst Core.coreLoc true) .empty]
+
+/-- As `redeclaredTypeAfterUnsolvedBlockStmts`, with the block assigning `y` an integer. -/
+private def redeclaredTypeAfterFixedBlockStmts : List Statement :=
+  [ .block "blk" [.typeDecl tyT .empty, declNondet "y" tyB,
+      Statement.set "y" (LExpr.intConst Core.coreLoc 1) .empty] .empty,
+    .typeDecl tyT .empty, declNondet "t" (.tcons "T" []), declInit "z" tyB (var "t") ]
 
 /-- A block solving its `b` to `int`, followed by a `b` of its own solved to `bool`. -/
 private def blockIntThenOuterBoolStmts : List Statement :=
@@ -646,19 +673,36 @@ info: ok, declared types: [x : T, y : T], t : T, z : T
 #eval procVerdict redeclaredTypeAfterBlockStmts
 
 /--
-info: ok, declared types: [y : b], t : T, z : T
+info: Procedure 'P': local 'y' is declared at type variable 'b',
+which is not a type parameter of the procedure
 -/
 #guard_msgs (whitespace := lax) in
 #eval procVerdict redeclaredTypeAfterUnsolvedBlockStmts
 
 /--
-info: ok, declared types: u : b_1, [x : T, y : T], v : b_1
+info: ok, declared types: [y : int], t : T, z : T
+-/
+#guard_msgs (whitespace := lax) in
+#eval procVerdict redeclaredTypeAfterFixedBlockStmts
+
+/--
+info: Procedure 'P': local 'u' is declared at type variable 'b_1', which is not a type
+parameter of the procedure; local 'v' is declared at type variable 'b_1', which is not a type
+parameter of the procedure
 -/
 #guard_msgs (whitespace := lax) in
 #eval procVerdict outerAssignedLaterTyVarStmts
 
 /--
-info: ok, declared types: w : b, [y : b], escaped : int
+info: ok, declared types: u : int, [x : T, y : T], v : int
+-/
+#guard_msgs (whitespace := lax) in
+#eval procVerdict outerAssignedLaterFixedStmts
+
+/--
+info: Procedure 'P': local 'w' is declared at type variable 'b', which is not a type
+parameter of the procedure; local 'y' is declared at type variable 'b', which is not a type
+parameter of the procedure
 -/
 #guard_msgs (whitespace := lax) in
 #eval procVerdict outerSolvedToBlockTyVarStmts
@@ -763,7 +807,7 @@ private def typeDeclInBlockPgm : Program := { decls := [
               .typeDecl { name := "MyT", params := [] } .empty,
               Statement.init "x" (.forAll [] (.tcons "MyT" [])) .nondet .empty
             ] .empty
-          ] } .empty
+          ] false } .empty
 ]}
 
 /-- The type declared in the block of `typeDeclInBlockPgm` and the type of the variable after it,
@@ -772,7 +816,7 @@ private def blockTypeAndVar (p : Program) : Std.Format :=
   match p.decls with
   | [.proc proc _] =>
     match proc.body with
-    | .structured [.block _ [.typeDecl d _, .cmd (.cmd (.init x ty _ _))] _] =>
+    | .structured [.block _ [.typeDecl d _, .cmd (.cmd (.init x ty _ _))] _] _ =>
       f!"type {d.name}; var {x} : {ty}"
     | _ => "unexpected shape"
   | _ => "unexpected shape"
@@ -991,8 +1035,8 @@ def bodyOf (ds : List Core.Decl) : List Core.Statement :=
   match ds.find? (fun d => match d with | .proc _ _ => true | _ => false) with
   | some (.proc d _) =>
     match d.body with
-    | .structured ss => ss
-    | .cfg _ => []
+    | .structured ss _ => ss
+    | .cfg _ _ | .abstract => []
   | _ => []
 
 /-- The starting context extended with every declared function. -/
@@ -1195,7 +1239,7 @@ private def testProc : Procedure :=
       inputs := [(⟨"x", ()⟩, .int)],
       outputs := [(⟨"x", ()⟩, .int), (⟨"y", ()⟩, .int)] },
     spec := { preconditions := [], postconditions := [] },
-    body := .structured [] }
+    body := .structured [] false }
 
 private def testProgram : Program :=
   { decls := [.proc testProc .empty] }

@@ -358,6 +358,57 @@ procedure NestedCaller ()
 #guard_msgs in
 #eval inlinedTypeCheck nestedInoutPgm
 
+-- An abstract callee (no body) is inlined as its contract: its non-free precondition is
+-- asserted, the free one is not; the inout parameter is havocked, the output-only parameter
+-- starts from its nondet init; the postconditions, free ones included, are assumed.
+private def abstractCalleePgm :=
+#strata
+program Core;
+
+procedure AbsCallee(inout X : int, out Y : int)
+spec {
+  requires [pre]: int.gt(X, 0);
+  free requires [freePre]: int.lt(X, 100);
+  ensures [post]: Y == old X;
+  free ensures [freePost]: int.gt(X, old X);
+};
+
+procedure AbsCaller(out R : int)
+{
+  var X : int := 1;
+  call AbsCallee(inout X, out R);
+};
+#end
+
+/--
+info: ok: program Core;
+
+procedure AbsCallee (inout X : int, out Y : int)
+spec {
+  requires [pre]: int.gt(X, 0);
+  free requires [freePre]: int.lt(X, 100);
+  ensures [post]: Y == old X;
+  free ensures [freePost]: int.gt(X, old X);
+  } ;
+procedure AbsCaller (out R : int)
+{
+  var X : int := 1;
+  $__inline1_AbsCallee$inlined: {
+    var $__inline1_X : int := X;
+    var $__inline1$old_X : int := $__inline1_X;
+    var $__inline1_Y : int;
+    assert [$__inline1_pre]: int.gt($__inline1_X, 0);
+    havoc $__inline1_X;
+    assume [$__inline1_post]: $__inline1_Y == $__inline1$old_X;
+    assume [$__inline1_freePost]: int.gt($__inline1_X, $__inline1$old_X);
+    X := $__inline1_X;
+    R := $__inline1_Y;
+  }
+};
+-/
+#guard_msgs in
+#eval inlinedTypeCheck abstractCalleePgm
+
 end Strata.ProcedureInliningOldInout
 
 end

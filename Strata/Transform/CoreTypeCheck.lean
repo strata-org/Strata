@@ -50,7 +50,8 @@ def typeCheck (options : VerifyOptions) (program : Program)
 
 /-- Type-checking pipeline phase: runs `Core.typeCheck` on the program against
     `factory` (`none`: the built-in functions) and the extra functions `moreFns`. Every call of
-    its output is well formed, and every expression is annotated. -/
+    its output is well formed and every expression is annotated. Its output records the prefixes
+    of its internal names and of the internal names of the functions it is checked against. -/
 def typeCheckPipelinePhase
     (options : VerifyOptions := VerifyOptions.default)
     (factory : Option (@Lambda.Factory CoreLParams) := none)
@@ -69,7 +70,13 @@ def typeCheckPipelinePhase
                          .noPolymorphicFunctions, .noInits, .noCFGCycles])
     fun prog => do
       match Core.typeCheck options prog factory moreFns with
-      | .ok prog' => return (true, prog')
+      | .ok prog' =>
+        -- The input's recorded prefixes are kept.
+        let fns := (factory.getD Core.Factory).toArray.toList ++ moreFns.toArray.toList
+        let fnPrefixes := (fns.map (·.name.name)).filter Strata.Name.isInternal
+          |>.map Strata.Name.internalPrefixOf
+        return (true, { prog' with usedIdentPrefixes := prog.usedIdentPrefixes }
+          |>.withCollectedIdentPrefixes |>.addIdentPrefixes fnPrefixes)
       | .error err => throw { err with message := s!"❌ Type checking error.\n{err.message}" }
 
 end -- public section

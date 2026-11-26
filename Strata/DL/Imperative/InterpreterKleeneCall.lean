@@ -34,12 +34,12 @@ variable [DecidableEq P.Ident] [HasOldIdent P]
 variable [HasBool P] [DecidableEq P.Expr] [InterpLang P] [HasFvar P]
 
 /-- The call-aware Kleene command stepper at call-depth budget `depth`: run
-    `Calls.stepCmd π depth` from the `(store, factory)` env and project the resulting terminal
-    configuration to its store. -/
+    `Calls.stepCmd π .contract depth` from the `(store, factory)` env and project the resulting
+    terminal configuration to its store. -/
 def stepKleeneCmd {m : Type → Type} [Monad m] [InterpEffects P m] [MonadExcept StopReason m]
     (π : String → Option (Procedure P (CmdExt P) Hdr)) (depth : Nat) :
     StepCmdStoreM P (CmdExt P) m :=
-  StepCmdM.toStore (Calls.stepCmd π depth)
+  StepCmdM.toStore (Calls.stepCmd π .contract depth)
 
 /-- The call-aware Kleene driver: `runInterpKleene` over `stepKleeneCmd π maxCallDepth`,
     nesting at most `maxCallDepth` calls. -/
