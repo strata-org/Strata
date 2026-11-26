@@ -947,5 +947,34 @@ Result: ✅ pass
 #guard_msgs in
 #eval Strata.Core.verify seqCheckedTotalOobPgm (options := .quiet)
 
+-- An axiom gets no bounds check, so there the rewrite changes what is assumed. The
+-- axiom `apart` tells the two forms apart out of range, which Core's model does not:
+-- there each pair is one function. After `SeqTotalize` it reads
+-- `select!(g, 5) != select!(g, 5)`, the axioms contradict each other, and every
+-- assertion passes.
+
+private def seqAxiomApartPgm :=
+#strata
+program Core;
+
+const g : Sequence int;
+axiom [g_len]: Sequence.length(g) == 2;
+axiom [apart]: Sequence.select(g, 5) != Sequence.select!(g, 5);
+
+procedure R()
+{
+  assert [anything]: false;
+};
+#end
+
+/--
+info:
+Obligation: anything
+Property: assert
+Result: ✅ pass
+-/
+#guard_msgs in
+#eval Strata.Core.verify seqAxiomApartPgm (options := .quiet)
+
 end
 ----------------------------------------------------------------------

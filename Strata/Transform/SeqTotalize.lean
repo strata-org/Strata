@@ -21,7 +21,17 @@ This pass runs after `PrecondElim` and rewrites every checked operation in the
 program to its total twin, so that everything downstream, the symbolic
 evaluator, the encoders and the factory axioms (stated over the total forms),
 sees one symbol per operation and a fact proved about either form applies to
-the other. Nothing else about the program changes.
+the other.
+
+The rewrite commits the program to each pair being one function everywhere,
+out of range included. Core's model interprets them so (`Core.factoryInterp`),
+but the factory axioms say less: they make the two forms agree in range only.
+In procedure bodies, lemmas and function bodies `PrecondElim` has already
+emitted the bounds check, so an out-of-range use is reported whatever the
+rewrite does. Axioms and `distinct` declarations get no such check, and there
+the rewrite changes what is assumed: an axiom that tells the two forms apart out
+of range, false in Core's model, becomes a contradiction. `Seq.lean` pins that
+case.
 -/
 
 public section
@@ -52,21 +62,14 @@ private def totalizeFunction (f : Function) : Function :=
     preconditions := f.preconditions.map fun pc => { pc with expr := totalize pc.expr }
     measure := f.measure.map totalize }
 
-/-- Rewrite the commands and the branch conditions of a CFG body. -/
-private def totalizeCFG (g : DetCFG) : DetCFG :=
-  { g with blocks := g.blocks.map fun (l, b) =>
-      (l, { b with
-        cmds := b.cmds.map (Command.mapExpr totalize)
-        transfer := match b.transfer with
-          | .condGoto e lt lf md => .condGoto (totalize e) lt lf md
-          | t => t }) }
-
-/-- Rewrite the contract and the body of a procedure, whether the body is structured
-    or a CFG. -/
+/-- Rewrite the contract and the body of a procedure: a structured body through
+    `Procedure.mapExprs`, and for a CFG the commands, the branch guards and the loop
+    invariants in the block metadata. -/
 private def totalizeProcedure (proc : Procedure) : Procedure :=
   let proc := proc.mapExprs totalize
   match proc.body with
-  | .cfg g o => { proc with body := .cfg (totalizeCFG g) o }
+  | .cfg g o =>
+    { proc with body := .cfg (DetCFG.mapCmdsGuards g (Command.mapExpr totalize) totalize) o }
   | _ => proc
 
 /-- Rewrite every expression of the program, and report whether anything changed.
@@ -89,7 +92,8 @@ end Core.SeqTotalize
 
 /-- SeqTotalize pipeline phase: after the bounds obligations of the checked
     sequence operations have been emitted, replace each by its total twin.
-    Model-preserving: the two forms denote the same function. Renaming an
+    Model-preserving: Core's model interprets the two forms as one function,
+    out of range included (see the module docstring for axioms). Renaming an
     operator changes no statement, binder or redex, so every fact carries
     over; `noPrecondsFromFuncs` is required because the obligations must
     already be in place when the checked form disappears. -/

@@ -19,18 +19,22 @@ that uses that function. The `SeqTotalize` phase rewrites every checked operatio
 its total twin before encoding, so no query uses `Sequence.select` and the agreement
 axiom is never sent, whichever selectors the program is written with. Each program
 below prints, for its one query, how many asserted formulas mention both
-selectors. -/
+selectors. A pipeline without `SeqTotalize` shows the axiom is still sent when a
+query uses both. -/
 
 namespace Core.SeqAgreementEmission.Tests
 
 /-- The `assert` commands of the queries written for `pgm`, each joined into one line. -/
-private def asserts (pgm : StrataDDM.Program) : IO (List String) := do
+private def asserts (pgm : StrataDDM.Program)
+    (pipeline : Option (Core.ValidatedPipeline Core.ProgramFactSet.empty) := none) :
+    IO (List String) := do
   let vcDir : System.FilePath := "_test_vcs_seq_agreement_emission"
   if ← vcDir.pathExists then
     IO.FS.removeDirAll vcDir
   IO.FS.createDirAll vcDir
   let _ ← Strata.Core.verify pgm (options := { Core.VerifyOptions.quiet with
     skipSolver := true, vcDirectory := vcDir, alwaysGenerateSMT := true })
+    (pipeline := pipeline)
   let mut out := []
   for e in ← vcDir.readDir do
     if e.fileName.endsWith ".smt2" then
@@ -49,8 +53,10 @@ private def mentions (a op : String) : Bool := (a.splitOn op).length > 1
 
 /-- The number of asserted formulas, in the queries written for `pgm`, that mention
     both `Sequence.select!` and `Sequence.select`. -/
-private def agreementAsserts (pgm : StrataDDM.Program) : IO Unit := do
-  let n := (← asserts pgm).filter (fun a =>
+private def agreementAsserts (pgm : StrataDDM.Program)
+    (pipeline : Option (Core.ValidatedPipeline Core.ProgramFactSet.empty) := none) :
+    IO Unit := do
+  let n := (← asserts pgm pipeline).filter (fun a =>
     mentions a "Sequence.select!" && mentions a "Sequence.select#") |>.length
   IO.println s!"agreement asserts: {n}"
 
@@ -104,6 +110,19 @@ procedure P()
 /-- info: agreement asserts: 0 -/
 #guard_msgs in
 #eval agreementAsserts bothSelectorsPgm
+
+/-- The default order without `SeqTotalize`. -/
+private def withoutSeqTotalize : Option (Core.ValidatedPipeline Core.ProgramFactSet.empty) :=
+  (Core.ValidatedPipeline.ofList
+    ((Core.corePipelinePhases Core.VerifyOptions.quiet).filter
+      fun p => p.phase.name != "seqTotalize")).toOption
+
+-- Without `SeqTotalize` the same query uses both selectors, and the agreement axiom
+-- is sent.
+
+/-- info: agreement asserts: 1 -/
+#guard_msgs in
+#eval agreementAsserts bothSelectorsPgm (pipeline := withoutSeqTotalize)
 
 /-- Only checked operations appear in the source. After `SeqTotalize` the query
 uses the unchecked operations only, so the quantified formulas that mention one are
