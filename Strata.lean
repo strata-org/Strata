@@ -30,7 +30,9 @@ import Strata.Util.WorklistProps
 
 /- Strata Languages -/
 import Strata.Languages.Core.BitVecEvalProps
+import Strata.Languages.Core.BoolEvalProps
 import Strata.Languages.Core.IntEvalProps
+import Strata.Languages.Core.SeqEvalProps
 import Strata.Languages.Core.InstWellFormedSemanticsEval
 import Strata.Languages.Core.InstExprTyping
 import Strata.Languages.Core.FactoryWF
