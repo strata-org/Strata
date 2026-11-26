@@ -502,7 +502,8 @@ private def diamondChain (k : Nat) : Option Procedure :=
   some { header := { name := id "P", typeArgs := [], inputs := [(id "x", .int)],
                      outputs := [(id "r", .int)] }
          spec := { preconditions := [], postconditions := [] }
-         body := .cfg { entry := "e0", blocks := blocks ++ [(s!"e{k}", blk [] (.finish #[]))] } }
+         body := .cfg { entry := "e0", blocks := blocks ++ [(s!"e{k}", blk [] (.finish #[]))] }
+             false }
 
 /-- A body whose only block jumps to `$__symexec_exit`, which is no block (the type checker
     refuses this). The explorer wraps a CFG body in a new entry and exit block whose labels are
@@ -512,7 +513,8 @@ private def danglingExit : Option Procedure :=
   some { header := { name := ⟨"P", ()⟩, typeArgs := [], inputs := [], outputs := [] }
          spec := { preconditions := [], postconditions := [] }
          body := .cfg { entry := "s",
-                        blocks := [("s", { cmds := [], transfer := .goto "$__symexec_exit" })] } }
+                        blocks := [("s", { cmds := [], transfer := .goto "$__symexec_exit" })] }
+                            false }
 
 /-- info: some { finished := 0, stopped := 1, obligations := 0, merges := 0, unreached := 0 } -/
 #guard_msgs in
@@ -525,7 +527,7 @@ private def danglingEntry : Option Procedure :=
   some { header := { name := ⟨"P", ()⟩, typeArgs := [], inputs := [], outputs := [] }
          spec := { preconditions := [], postconditions := [] }
          body := .cfg { entry := "$__symexec_exit",
-                        blocks := [("s", { cmds := [], transfer := .finish #[] })] } }
+                        blocks := [("s", { cmds := [], transfer := .finish #[] })] } false }
 
 /-- info: some { finished := 0, stopped := 1, obligations := 0, merges := 0, unreached := 0 } -/
 #guard_msgs in
@@ -538,7 +540,7 @@ private def danglingSelfEntry : Option Procedure :=
   some { header := { name := ⟨"P", ()⟩, typeArgs := [], inputs := [], outputs := [] }
          spec := { preconditions := [], postconditions := [] }
          body := .cfg { entry := "$__symexec_entry",
-                        blocks := [("s", { cmds := [], transfer := .finish #[] })] } }
+                        blocks := [("s", { cmds := [], transfer := .finish #[] })] } false }
 
 /--
 info: some (Core.SymExec.Completeness.notAnalyzed ["a path stopped: CFG: missing block label"])
@@ -650,10 +652,10 @@ cfg entry {
 #guard_msgs in
 #eval verifyCFG pricePgm (.pathsAbove 2)
 
--- Without `--vcgen symexec`, the verifier refuses a CFG body (`assertNoCFGBodies`).
+-- Without `--vcgen symexec`, the legacy symbolic evaluator cannot verify a CFG body, and the
+-- verifier refuses it.
 /--
-info: error: ❌ Expected every procedure body to be structured, but found procedure Price with a CFG
-  body.
+info: error: ❌ Expected every procedure body to be structured, but found procedure Price with a CFG body. To verify it, pass --vcgen symexec (for an acyclic one) or --vcgen usp (or uwp).
 -/
 #guard_msgs (whitespace := lax) in
 #eval do
@@ -1028,8 +1030,8 @@ private def passedAt (g : Core.DetCFG) (j l : String) : Bool :=
 /-- `p` with its structured body lowered to a CFG (`Core.stmtsToCFG`). -/
 private def lowered (p : Option Procedure) : Option Procedure :=
   p.bind fun p => match p.body with
-    | .structured ss => (Core.stmtsToCFG ss).map fun g => { p with body := .cfg g }
-    | .cfg _ => none
+    | .structured ss _ => (Core.stmtsToCFG ss).map fun g => { p with body := .cfg g false }
+    | .cfg _ _ | .abstract => none
 
 /-- Paths finished and merges of `run p` under `MergePolicy.always`. -/
 private def counts (p : Option Procedure) : Option (Nat × Nat) :=

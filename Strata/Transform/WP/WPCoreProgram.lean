@@ -64,17 +64,21 @@ public section
   wpEntry G p.paramTys ss
 
 /-- The WP phase of one procedure: the same header, an empty contract, the guarded program of
-    its loop-free statement list as body, the same metadata. -/
+    its loop-free statement list as body with the same opaque flag, the same metadata. An
+    abstract procedure has no body to check, and call elimination has removed every call to it,
+    so it produces no declaration (`none`). -/
 @[expose] def wpProc (G : IdSet Expression) (p : Procedure) (md : Imperative.MetaData Expression) :
-    Except String Decl := do
+    Except String (Option Decl) := do
   match p.body with
-  | .cfg _ => throw s!"WP: procedure '{p.header.name.name}' has a CFG body"
-  | .structured body =>
+  | .cfg _ _ => throw s!"WP: procedure '{p.header.name.name}' has a CFG body; pass \
+    --vcgen symexec (for an acyclic one) or --vcgen usp (or uwp) to verify it"
+  | .structured body opq =>
     let w ← wpLoopFree G p (p.contractWrapped body)
-    pure (Decl.proc {
+    pure (some (Decl.proc {
         header := p.header,
         spec := { preconditions := [], postconditions := [] },
-        body := .structured w.lay } md)
+        body := .structured w.lay opq } md))
+  | .abstract => pure none
 
 /-- The global names the procedures of `wpProcsProgram reserved program` avoid: the names of
     `reserved` and those `program` declares, kept when they can equal an introduced name
@@ -88,24 +92,24 @@ public section
 @[expose] def isObligationUnit (p : Procedure) : Bool :=
   match p.header.typeArgs, p.header.inputs, p.header.outputs, p.spec.preconditions,
       p.spec.postconditions, p.body with
-  | [], [], [], [], [], .structured [.cmd (.cmd (.assert _ _ _))]
-  | [], [], [], [], [], .structured [.cmd (.cmd (.cover _ _ _))] => true
+  | [], [], [], [], [], .structured [.cmd (.cmd (.assert _ _ _))] false
+  | [], [], [], [], [], .structured [.cmd (.cmd (.cover _ _ _))] false => true
   | _, _, _, _, _, _ => false
 
 /-- **The WP phase of a program**: every procedure that is not an obligation unit
-    (`isObligationUnit`) becomes its guarded procedure (`wpProc`, with the same header); every
-    other declaration is kept, in order.  An obligation unit is already an obligation procedure,
-    whose free variables are those of a lemma's obligation, not parameters.  The names the
-    procedures introduce avoid the names `program` declares (`declNames`) and the names of
-    `reserved` (the functions of the factory the obligations are encoded with), as one hash set
-    built once. -/
+    (`isObligationUnit`) becomes its guarded procedure (`wpProc`, with the same header), an
+    abstract procedure is dropped, and every other declaration is kept, in order. An obligation
+    unit is already an obligation procedure, whose free variables are those of a lemma's
+    obligation, not parameters. The names the procedures introduce avoid the names `program`
+    declares (`declNames`) and the names of `reserved` (the functions of the factory the
+    obligations are encoded with), as one hash set built once. -/
 @[expose] def wpProcsProgram (reserved : List Expression.Ident) (program : Program) :
     Except String Program := do
   let G := IdSet.ofList (programGlobals reserved program)
   let decls ← program.decls.mapM fun d => match d with
-    | .proc p md => if isObligationUnit p then pure d else wpProc G p md
-    | d => pure d
-  pure { decls := decls }
+    | .proc p md => if isObligationUnit p then pure (some d) else wpProc G p md
+    | d => pure (some d)
+  pure { decls := decls.filterMap id }
 
 /-- The declaration phase of a program (`declObligationsProgramWith`), then its WP phase
     (`wpProcsProgram`). -/

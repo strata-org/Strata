@@ -183,7 +183,7 @@ def callElimCall (taken takenVars : Std.HashSet String) (vt : TypeSpec.TypeScope
                   (Procedure.Spec.updateCheckExprs postconditions proc.spec.postconditions)
                   (ret_subst ++ arg_subst_filtered)
                   md
-                  callElimAssumePrefix
+                  (if proc.body.isOpaque then callElimPostPrefix else callElimAssumePrefix)
   -- Update cached CallGraph
   let σ ← get
   match σ.cachedAnalyses.callGraph, σ.currentProcedureName with
@@ -197,6 +197,16 @@ def callElimCall (taken takenVars : Std.HashSet String) (vt : TypeSpec.TypeScope
         cachedAnalyses := { σ.cachedAnalyses with callGraph := .none }}
   | _, _ => set σ
 
+  -- A call that havocs outputs of a callee that is not opaque and has no postconditions gets one
+  -- marked assumption `true` after the havocs (`callElimHavocPrefix`), as if the callee had
+  -- `ensures true`, so that a path through the havocked outputs carries a call-elimination
+  -- marker. A call without outputs havocs
+  -- nothing and gets none, and so does a call to an opaque callee: callers know it only through
+  -- its contract, which is the call semantics.
+  let assumes ← if assumes.isEmpty && !proc.body.isOpaque && !lhs.isEmpty then do
+      let havocMark ← genIdent "call" (fun s => s!"{callElimHavocPrefix}{s}")
+      pure [.cmd (.assume havocMark.toPretty (Lambda.LExpr.true default) md)]
+    else pure assumes
   return argInit ++ outInit ++ oldInit ++ asserts ++ havocs ++ assumes
 
 /-- Call elimination on a single command: a `call` is replaced by its callee's contract
@@ -236,18 +246,25 @@ end CallElim
 /-- Call-elimination pipeline phase: the transform replaces procedure calls
     with assert/havoc/assume sequences, in structured bodies and in CFG blocks. If the
     obligation's path includes labels from call elimination, the callee body was replaced by
-    its contract, which is an over-approximation. The `init`s that replace a call in a CFG block
-    on a cycle are rejected by `CFG.typeCheck` (`checkNoLoopInits`) if the body is checked
-    again. -/
+    its contract, which is an over-approximation. A call to an opaque procedure (`Body.isOpaque`)
+    is not: its contract is its call semantics, so its postcondition assumptions carry
+    `callElimPostPrefix`, which is not a marker. A marker of a havoc (`callElimHavocPrefix`) has
+    the condition `true`, so where `--vcgen wp` keeps it under its reach condition
+    (`markerGuards`), a counterexample that falsifies that condition does not pass the call; a
+    postcondition assumption is a marker on every path that keeps it. The `init`s that replace a call in a CFG block on a
+    cycle are rejected by `CFG.typeCheck` (`checkNoLoopInits`) if the body is checked again. -/
 def callElimPipelinePhase : PipelinePhase where
   transform p := do
     rejectMarkerLabels "call elimination" CallElim.callElimAssumePrefix p
+    rejectMarkerLabels "call elimination" CallElim.callElimHavocPrefix p
     CallElim.callElim' p
   phase.name := "callElim"
+  phase.validationPrefixes := [CallElim.callElimAssumePrefix]
+  -- A call to a callee without postconditions becomes a bare `havoc` of its outputs.
+  phase.leavesUnmarkedAbstractions := true
   phase.getValidation obligation :=
-    if obligationHasLabelPrefix obligation CallElim.callElimAssumePrefix then
-      .modelToValidate (fun _ => /- TODO -/ false)
-    else .modelPreserving
+    markerValidation obligation [CallElim.callElimAssumePrefix, CallElim.callElimHavocPrefix]
+      (guarded := [CallElim.callElimHavocPrefix])
   phase.getAssertDescription label :=
     if label.startsWith CallElim.callElimAssertPrefix then
       let stripped := label.drop CallElim.callElimAssertPrefix.length |>.toString

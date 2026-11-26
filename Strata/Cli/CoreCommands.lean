@@ -101,8 +101,8 @@ structure PipelineResolver where
         let phases ← Strata.Core.resolvePhases (Strata.Core.nameablePhases options)
           (names.splitToList (· == ','))
           (hint := "Use --display-phases to see the available phases.")
-        let vp ← Strata.Core.validatePipeline phases
-        pure { pipeline := some vp }
+        let (vp, notes) ← Strata.Core.validatePipelineRepairing phases
+        pure { pipeline := some vp, notes }
   /-- Every phase this resolver accepts a name for. `--display-phases` lists these, so a
       resolver overriding `resolve` states here what it will accept, or its help text and
       what it takes would drift apart. -/
@@ -401,12 +401,19 @@ def verifyCommand (dialects : LoadedDialects)
         println! f!"Skipping verification."
       else
         let provedGoalCount := (vcResults.filter Core.VCResult.isSuccess).size
-        let failedGoalCount := (vcResults.filter Core.VCResult.isNotSuccess).size
+        -- Goals a run stopped at its first error did not check are counted on their own.
+        let notCheckedCount := (vcResults.filter Core.VCResult.isNotChecked).size
+        let failedGoalCount := (vcResults.filter Core.VCResult.isNotSuccess).size - notCheckedCount
         -- Encoding failures, solver crashes, or per-check SMT errors (exit 3)
         let hasImplError := vcResults.any (fun r => r.isImplementationError || r.hasSMTError)
         -- Assertion violations that are not timeouts or internal errors (exit 2)
-        let hasFailure := vcResults.any (fun r => !r.isSuccess && !r.isTimeout && !r.isImplementationError && !r.hasSMTError)
-        println! f!"Finished with {provedGoalCount} goals passed, {failedGoalCount} failed."
+        -- A goal not checked is not a failure: the goal the run stopped at decides the exit code.
+        let hasFailure := vcResults.any fun r =>
+          !r.isSuccess && !r.isTimeout && !r.isImplementationError && !r.hasSMTError &&
+            !r.isNotChecked
+        let notChecked := if notCheckedCount == 0 then "" else s!", {notCheckedCount} not checked"
+        println! f!"Finished with {provedGoalCount} goals passed, \
+          {failedGoalCount} failed{notChecked}."
         if hasImplError then
           IO.Process.exit ExitCode.internalError
         else if hasFailure then

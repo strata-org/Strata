@@ -64,7 +64,10 @@ public theorem modBvCorrect : smtVCsCorrect modBvPgm := by
   all_goals bv_decide
 
 /--
-info: 'Strata.modBvCorrect' depends on axioms: [propext, Classical.choice, Lean.ofReduceBool, Lean.trustCompiler, Quot.sound]
+info: 'Strata.modBvCorrect' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ modBvCorrect._native.native_decide.ax_1_1]
 -/
 #guard_msgs in
 #print axioms modBvCorrect

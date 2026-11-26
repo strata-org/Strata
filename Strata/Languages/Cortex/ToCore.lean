@@ -8,6 +8,7 @@ module
 public import Strata.Languages.Cortex.Module
 public import Strata.Languages.Core.Statement
 public import Strata.Languages.Core.Procedure
+public import Strata.Languages.Core.MarkerLabels
 
 /-!
 # Cortex to Core
@@ -98,11 +99,14 @@ def procedureHeader (p : Procedure) : Except String Core.Procedure.Header := do
   let outputs ← p.outputs.mapM fun (x, t) => do return (x, ← toMono t)
   return { name := ⟨p.name, ()⟩, typeArgs := [], inputs, outputs }
 
-/-- A procedure's preconditions as Core's, labelled `requires_<i>`. -/
+/-- A procedure's preconditions as Core's, labelled `requires_<i>`, and its
+postconditions as Core's, with their own labels. -/
 def procedureSpec (p : Procedure) : Core.Procedure.Spec :=
   let preconditions := (p.requires.zipIdx).map fun (pre, i) =>
     ((s!"requires_{i}" : Core.CoreLabel), ({ expr := pre.cond, md := pre.md } : Core.Procedure.Check))
-  { preconditions, postconditions := [] }
+  let postconditions := p.ensures.map fun post =>
+    ((post.label : Core.CoreLabel), ({ expr := post.cond, md := post.md } : Core.Procedure.Check))
+  { preconditions, postconditions }
 
 /-- A Cortex CFG as a Core CFG with the same labels and transfers. -/
 private def cfgToCore (sigs : Std.HashMap String Sig) (cfg : LCFG) : Except String Core.DetCFG := do
@@ -111,19 +115,42 @@ private def cfgToCore (sigs : Std.HashMap String Sig) (cfg : LCFG) : Except Stri
     return (l, ({ cmds, transfer := b.transfer } : DetBlock String Core.Command Core.Expression))
   return { entry := cfg.entry, blocks }
 
-/-- A Cortex procedure as a Core procedure with a CFG body. A procedure without
-a body gets a structured body that assumes `true`. -/
+/-- A Cortex procedure as a Core procedure with a CFG body. A procedure without a body is an
+abstract Core procedure (`.abstract`): a call to it means its contract. -/
 def procedureToCore (sigs : Std.HashMap String Sig) (p : Procedure) : Except String Core.Procedure := do
   let header ← procedureHeader p
   let body ← match p.body with
-    | none => pure (.structured [Core.Statement.assume "assume_true" (.true Core.valueLoc) .empty])
+    | none => pure .abstract
     | some b => do
       b.refuseHandlers "Core"
-      pure (.cfg (← cfgToCore sigs b.cfg))
+      pure (.cfg (← cfgToCore sigs b.cfg) false)
   return { header, spec := procedureSpec p, body }
 
-/-- An ordered Cortex program as a Core program whose procedure bodies
-are CFGs. -/
+/-- `p` with every call to a procedure named in `externals` followed by the marker
+`assume [$__externalAssume_N]: true` (`Core.externalAssumePrefix`), `N` counting the markers. An
+external procedure (`Procedure.external`) models code that Strata does not see: the call means
+its contract, so a counterexample through the call may come from the model. -/
+def markExternalCalls (externals : Std.HashSet String) (p : Core.Program) : Core.Program :=
+  let markCmd (c : Core.Command) : StateM Nat (List Core.Command) := match c with
+    | .call q _ _ md =>
+      if externals.contains q then do
+        let n ← modifyGet fun n => (n, n + 1)
+        pure [c, .cmd (.assume s!"{Core.externalAssumePrefix}{n}" (Lambda.LExpr.true default) md)]
+      else pure [c]
+    | c => pure [c]
+  let markDecl (d : Core.Decl) : StateM Nat Core.Decl := match d with
+    | .proc q md => match q.body with
+      | .cfg g o => do
+        let blocks ← g.blocks.mapM fun (l, b) => do
+          return (l, { b with cmds := ← b.cmds.flatMapM markCmd })
+        pure (.proc { q with body := .cfg { g with blocks } o } md)
+      | _ => pure d
+    | d => pure d
+  { p with decls := (p.decls.mapM markDecl).run' 0 }
+
+/-- An ordered Cortex program as a Core program whose procedure bodies are CFGs, with each call
+to an external procedure marked (`markExternalCalls`). The marker prefix is reserved for those
+markers: a program that already has a label with it is rejected (`Core.rejectMarkerLabels`). -/
 def programToCore : Program → Except String Core.Program
   | .unordered _ => .error "Internal error: Cortex must be ordered by the Ordering pass before Core"
   | .ordered prog => do
@@ -135,7 +162,14 @@ def programToCore : Program → Except String Core.Program
       | .opaqueType tc => pure (Core.Decl.type (.con tc) .empty)
       | .function f => pure (Core.Decl.recFuncBlock [f.toFunc] .empty)
       | .procedure p => do return Core.Decl.proc (← procedureToCore sigs p) p.md
-    return { decls }
+    let core : Core.Program := { decls }
+    if let .error e := Core.Transform.run core
+        (Core.rejectMarkerLabels "the lowering of Cortex to Core" Core.externalAssumePrefix) then
+      throw (toString e.message)
+    let externals := Std.HashSet.ofList <| prog.decls.filterMap fun
+      | .procedure p => if p.external then some p.name else none
+      | _ => none
+    return markExternalCalls externals core
 
 end
 

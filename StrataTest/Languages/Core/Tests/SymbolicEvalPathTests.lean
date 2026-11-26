@@ -34,7 +34,7 @@ info: some [ASSIGN ERROR] Variable u has not been declared yet, so it cannot be 
         .block "L"
           [.ite (.det eb[b]) [.exit "L" .empty] [Statement.set "u" eb[#1] .empty] .empty]
           .empty,
-        Statement.assert "after" eb[#false] .empty] }
+        Statement.assert "after" eb[#false] .empty] false }
   Std.format E.error
 
 end Core

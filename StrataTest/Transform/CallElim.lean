@@ -64,8 +64,8 @@ procedure h(i : bool, inout j : bool, k : bool) {
   assert [callElimAssert_f_requires_0_5]: (tmp_arg_0 == (!tmp_arg_2));
   havoc j;
   havoc b;
-  assume [$__callElimAssume_f_ensures_1_6]: (b == tmp_arg_2);
-  assume [$__callElimAssume_f_ensures_2_7]: (b == j);
+  assume [callElimPost_f_ensures_1_6]: (b == tmp_arg_2);
+  assume [callElimPost_f_ensures_2_7]: (b == j);
 };
 #end
 
@@ -106,8 +106,8 @@ procedure h(i : bool, inout j : bool, k : bool, l : bool) {
   assert [callElimAssert_f_requires_0_8]: tmp_arg_0 == !tmp_arg_3;
   havoc j;
   havoc b;
-  assume [$__callElimAssume_f_ensures_1_9]: b == (tmp_arg_2 && old_j_7);
-  assume [$__callElimAssume_f_ensures_2_10]: b == old_j_7;
+  assume [callElimPost_f_ensures_1_9]: b == (tmp_arg_2 && old_j_7);
+  assume [callElimPost_f_ensures_2_10]: b == old_j_7;
 };
 #end
 
@@ -148,8 +148,8 @@ procedure h(i : bool, inout j : bool, k : bool, l : bool) {
   assert [callElimAssert_f_requires_0_8]: tmp_arg_0 == !tmp_arg_3;
   havoc j;
   havoc b;
-  assume [$__callElimAssume_f_ensures_1_9]: b == (tmp_arg_2 && old_j_7);
-  assume [$__callElimAssume_f_ensures_2_10]: b == old_j_7;
+  assume [callElimPost_f_ensures_1_9]: b == (tmp_arg_2 && old_j_7);
+  assume [callElimPost_f_ensures_2_10]: b == old_j_7;
 };
 #end
 
@@ -188,7 +188,7 @@ procedure h(inout j : bool, k : bool) {
   assert [callElimAssert_f_requires_1_5]: (tmp_arg_2 == tmp_arg_0);
   havoc j;
   havoc b;
-  assume [$__callElimAssume_f_ensures_2_6]: (b == tmp_arg_2);
+  assume [callElimPost_f_ensures_2_6]: (b == tmp_arg_2);
 };
 #end
 
@@ -250,9 +250,7 @@ procedure f (x : int, inout j : int, out y : int)
 spec {
   ensures [f_ensures_0]: y == x;
   ensures [f_ensures_1]: j == old j;
-  } {
-  
-};
+  } ;
 procedure h (inout j : int)
 {
   var tmp_arg_0 : int := 5;
@@ -265,8 +263,8 @@ procedure h (inout j : int)
   var old_j_7 : int := j;
   havoc j;
   havoc b;
-  assume [$__callElimAssume_f_ensures_0_8]: b == tmp_arg_1;
-  assume [$__callElimAssume_f_ensures_1_9]: j == old_j_7;
+  assume [callElimPost_f_ensures_0_8]: b == tmp_arg_1;
+  assume [callElimPost_f_ensures_1_9]: j == old_j_7;
   var old_j_6 : int := 7;
 };
 -/
@@ -483,24 +481,13 @@ procedure Caller ()
 #eval IO.println (toString (callElim (qTyArgsProg qReflDecl (some [.forAll [] .int]))))
 #guard (callElim (qTyArgsProg qReflDecl (some [.forAll [] .int]))).allExprs LExpr.fullyAnnotated
 
--- Call elimination on the checked program: the stored type argument of `a` is a generated type
--- variable, so `a` gets an opaque type.
+-- `q<a>()` has no arguments, so the call does not determine `a`, and the checker rejects the
+-- caller. The unchecked `qProg` test above shows the opaque type call elimination gives `a`.
 /--
-info: program Core;
-
-type $__cety_0;
-procedure q<a> ()
-spec {
-  requires [q_requires_0]: forall y : a :: y == y;
-  } {
-  
-};
-procedure Caller ()
-{
-  assert [callElimAssert_q_requires_0_1]: forall y : $__cety_0 :: y == y;
-};
+info: Procedure 'Caller': the call to 'q' does not determine one of its type
+parameters
 -/
-#guard_msgs in
+#guard_msgs (whitespace := lax) in
 #eval match Core.typeCheck .quiet (qProg qReflDecl) with
   | .ok p => IO.println (toString (callElim p).stripMetaData)
   | .error e => IO.println e.message
@@ -897,7 +884,8 @@ end CallInstanceTests
 
 A program may declare a type named like the opaque type call elimination gives a callee type
 parameter that the call does not determine. Here the axiom makes `$__cety_0` a singleton, under
-which the precondition of `Q` holds, so the precondition must be checked at another type. -/
+which the precondition of `Q` holds, so the precondition must be checked at another type. The
+checker rejects such a call, so the pass is run directly on the unchecked program. -/
 section CallInstanceAvoidsTypeNames
 open Core.CallFixtures Core.TestUtil
 
@@ -922,33 +910,34 @@ procedure P ()
 };
 -/
 #guard_msgs in
+#eval IO.println (toString (callElim capturedCallTypePgm).stripMetaData)
+
+/--
+info: Procedure 'P': the call to 'Q' does not determine one of its type
+parameters
+-/
+#guard_msgs (whitespace := lax) in
 #eval match Core.typeCheck .quiet capturedCallTypePgm with
   | .ok p => IO.println (toString (callElim p).stripMetaData)
   | .error e => IO.println e.message
-
-/--
-info:
-Obligation: callElimAssert_Q_requires_0_2
-Property: assert
-Result: ❓ unknown
--/
-#guard_msgs in
-#eval EIO.toIO (fun s => IO.userError s)
-  (Core.verifyProgram capturedCallTypePgm { Core.VerifyOptions.default with verbose := .quiet })
-
 
 /-- A type declared inside a procedure body is avoided as well. Here the assumption makes the
     local `$__cety_0` a singleton, so the precondition of `Q` must be checked at another type. -/
 def capturedLocalCallTypePgm : Program :=
   capturedLocalTypeProg "$__cety_0" [singletonAll (tv "a")] []
 
+-- The printed program cannot be shown with `#guard_msgs`: the local type declaration has no
+-- printable form, so the printer reports a conversion error with a scope dump after the program.
+-- Check the generated type directly: the assertion is at `$__cety_1`, not at the declared type.
+#guard ((toString (callElim capturedLocalCallTypePgm).stripMetaData).splitOn
+  "forall x : $__cety_1 ::").length > 1
+
 /--
-info:
-Obligation: callElimAssert_Q_requires_0_2
-Property: assert
-Result: ❓ unknown
+error: ❌ Type checking error.
+Procedure 'P': the call to 'Q' does not determine one of its type
+parameters
 -/
-#guard_msgs in
+#guard_msgs (whitespace := lax) in
 #eval EIO.toIO (fun s => IO.userError s)
   (Core.verifyProgram capturedLocalCallTypePgm
     { Core.VerifyOptions.default with verbose := .quiet })
@@ -993,9 +982,7 @@ procedure Inc (x : int, out y : int)
 spec {
   requires [inc_pre]: int.ge(x, 0);
   ensures [inc_post]: y == int.add(x, 1);
-  } {
-
-};
+  } ;
 procedure P (a : int, out b : int, out c : int)
 cfg entry {
   entry: {
@@ -1004,12 +991,12 @@ cfg entry {
     var tmp_c_1 : int := c;
     assert [callElimAssert_inc_pre_2]: int.ge(tmp_arg_0, 0);
     havoc c;
-    assume [$__callElimAssume_inc_post_3]: c == int.add(tmp_arg_0, 1);
+    assume [callElimPost_inc_post_3]: c == int.add(tmp_arg_0, 1);
     var tmp_arg_4 : int := c;
     var tmp_b_5 : int := b;
     assert [callElimAssert_inc_pre_6]: int.ge(tmp_arg_4, 0);
     havoc b;
-    assume [$__callElimAssume_inc_post_7]: b == int.add(tmp_arg_4, 1);
+    assume [callElimPost_inc_post_7]: b == int.add(tmp_arg_4, 1);
     assert [b_big]: int.gt(b, a);
     goto check;
   }
@@ -1018,7 +1005,7 @@ cfg entry {
     var tmp_c_9 : int := c;
     assert [callElimAssert_inc_pre_10]: int.ge(tmp_arg_8, 0);
     havoc c;
-    assume [$__callElimAssume_inc_post_11]: c == int.add(tmp_arg_8, 1);
+    assume [callElimPost_inc_post_11]: c == int.add(tmp_arg_8, 1);
     branch (int.gt(c, b)) goto up else goto down;
   }
   up: {
@@ -1048,7 +1035,8 @@ private def cfgOutTyProg : Program :=
                         outputs := [] },
             spec := { preconditions := [], postconditions := [] },
             body := .cfg { entry := "entry",
-                           blocks := [("entry", blk), ("up", fin), ("down", fin)] } } .empty] }
+                           blocks := [("entry", blk), ("up", fin), ("down", fin)] } false } .empty]
+                           }
 
 /--
 info: program Core;
@@ -1064,6 +1052,7 @@ cfg entry {
     var tmp_arg_0 : int := n;
     var tmp_r_1 : bool := r;
     havoc r;
+    assume [$__callElimHavoc_call_2]: true;
     branch (r) goto up else goto down;
   }
   up: {

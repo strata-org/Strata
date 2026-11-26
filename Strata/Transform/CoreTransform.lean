@@ -131,9 +131,10 @@ def callArgType? (vt : TypeSpec.TypeScopes) : Expression.Expr → Option Lambda.
 /-- The type instance of a call to `proc` whose stored type arguments are `tyArgs`: the instance
     `Procedure.callTypeArgs` gives; every other parameter gets a fresh opaque type at
     `prefixStr` that is not in `taken`, and so does every parameter when the matching fails. On a
-    type-checked program the matching cannot fail; the fallback serves callers that pass a
-    program that was not type-checked. An error means the stored `tyArgs` disagree with the
-    argument types. -/
+    type-checked program the matching cannot fail, and the checker rejects a call that leaves a
+    callee type parameter undetermined (`ProcWellTyped.declTyVarsBound`), so the fresh opaque
+    types serve only programs that were not type-checked. An error means the stored `tyArgs`
+    disagree with the argument types. -/
 def callTypeSubst (prefixStr : String) (taken : Std.HashSet String) (vt : TypeSpec.TypeScopes)
     (proc : Procedure) (callArgs : List (Imperative.CallArg Expression))
     (tyArgs : Option (List Expression.Ty)) : CoreGenM (Except String Lambda.Subst) := do
@@ -255,9 +256,9 @@ def bumpCounter (key : String) : CoreTransformM Nat := do
 
 /-- Runs `t`, then declares at the start of its output a nullary type for
     each name the generator drew at `prefixStr` during the run (the opaque
-    types of `callTypeSubst`), except the names in `taken`, which the generator
-    drew and skipped. `taken` is the input program's type names with
-    `prefixStr`; `t` must keep the program's type names. -/
+    types of `callTypeSubst`), except the names in `taken`, which the generator drew and
+    skipped. `taken` is the input program's type names with `prefixStr`; `t` must keep the
+    program's type names. -/
 def declareGeneratedTypes (prefixStr : String) (taken : Std.HashSet String)
     (t : CoreTransformM (Bool × Program)) :
     CoreTransformM (Bool × Program) := do
@@ -560,7 +561,8 @@ A CFG body is rewritten whole by `cfgBody` when it is `some k` (`k proc g` retur
 changed `g` and the new graph), else command by command by `cfgCmd` when it is `some h` (`h`
 is run on each command of its blocks, `runCFGCmds`), with the current procedure and program set
 as for a structured body; `cfgCmd` is not used when `cfgBody` is given. When both are `none`, a
-CFG body in a listed procedure is an error.
+CFG body in a listed procedure is an error. An abstract body has no statements and is left
+unchanged.
 
 The returned boolean is false if neither `f`, `cfgCmd` nor `cfgBody` reported a change in any
 procedure of `p` that is a member of `targetProcList` (if it is `.some ..`). The requirement on
@@ -596,18 +598,19 @@ def runProgramTyped
         })
 
         let (changed, newBody) ← match proc.body, cfgBody, cfgCmd with
-          | .structured ss, _, _ => do
+          | .structured ss o, _, _ => do
             let (changed, ss') ← runStmtsRecTyped f (TypeSpec.procBodyScopes [] proc) ss
-            pure (changed, Procedure.Body.structured ss')
-          | .cfg g, some k, _ => do
+            pure (changed, Procedure.Body.structured ss' o)
+          | .cfg g o, some k, _ => do
             let (changed, g') ← k proc g
-            pure (changed, Procedure.Body.cfg g')
-          | .cfg _, none, none => throw (Strata.Message.fromString
+            pure (changed, Procedure.Body.cfg g' o)
+          | .cfg _ _, none, none => throw (Strata.Message.fromString
               s!"runProgram: cannot apply statement-level transform to CFG body (procedure '{proc.header.name.1}')")
-          | .cfg g, none, some h => do
+          | .cfg g o, none, some h => do
             let (changed, g') ← runCFGCmdsTyped h
               ((TypeSpec.procBodyScopes [] proc).addCFGInits g) g
-            pure (changed, Procedure.Body.cfg g')
+            pure (changed, Procedure.Body.cfg g' o)
+          | .abstract, _, _ => pure (false, Procedure.Body.abstract)
 
         if changed then
           newDecls := newDecls.set i (Decl.proc { proc with body := newBody } md)

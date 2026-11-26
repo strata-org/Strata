@@ -71,7 +71,7 @@ private theorem ffE_eval (n : Nat) (F : Lambda.Factory CoreLParams) (σr : RStor
 def wProc : Procedure :=
   { header := { name := ⟨"w", ()⟩, typeArgs := [], inputs := [], outputs := [] },
     spec := { preconditions := [], postconditions := [] },
-    body := .structured [.cmd (.cmd (.assert "fail" ffE md))] }
+    body := .structured [.cmd (.cmd (.assert "fail" ffE md))] false }
 
 /-- The procedure table: `"w"` resolves to `wProc`. -/
 def wPi : String → Option Procedure := fun n => if n = "w" then some wProc else none
@@ -137,7 +137,7 @@ def hProc : Procedure :=
   { header := { name := ⟨"h", ()⟩, typeArgs := [], inputs := [], outputs := [] },
     spec := { preconditions := [], postconditions := [] },
     body := .structured [.cmd (.cmd (.init bId HasBool.boolTy .nondet md)),
-      .cmd (.cmd (.assert "neg" bE md))] }
+      .cmd (.cmd (.assert "neg" bE md))] false }
 
 /-- The procedure table: `"h"` resolves to `hProc`. -/
 def hPi : String → Option Procedure := fun n => if n = "h" then some hProc else none
@@ -290,7 +290,7 @@ def wCallee : Procedure :=
         inputs := [(vid "a", Lambda.LMonoTy.bool)],
         outputs := [(vid "b", Lambda.LMonoTy.bool)] },
     spec := { preconditions := [], postconditions := [] },
-    body := .structured [.cmd (.cmd (.set (vid "b") (.det (rd "a")) mdE))] }
+    body := .structured [.cmd (.cmd (.set (vid "b") (.det (rd "a")) mdE))] false }
 
 /-- The procedure table: `"w"` resolves to `wCallee`, every other name to nothing. -/
 def wPi : String → Option Procedure := fun n => if n = "w" then some wCallee else none

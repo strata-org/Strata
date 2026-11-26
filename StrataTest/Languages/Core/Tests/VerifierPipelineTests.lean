@@ -38,7 +38,7 @@ private def proc (name : String) (body : List Statement)
     spec := {
       preconditions := pre.zipIdx.map fun (e, i) => (s!"{name}_requires_{i}", { expr := e })
       postconditions := post.zipIdx.map fun (e, i) => (s!"{name}_ensures_{i}", { expr := e }) }
-    body := .structured body } md
+    body := .structured body false } md
 
 /-- The verifier's results for `p` under `options`. -/
 private def verify (p : Program) (options : VerifyOptions := .quiet) : IO Core.VCResults :=
@@ -116,8 +116,8 @@ Result: ❌ fail
 
 /-! ## A callee type parameter that a call does not determine
 
-`q<a>` has no argument of type `a`, so a call to it leaves `a` open. Each call gets its own
-declared opaque type for `a`, and the program verifies. -/
+`q<a>` has no argument of type `a`, so a call to it leaves `a` open. The checker rejects the
+caller, because the call's stored type argument is not one of its type parameters. -/
 
 private def reflexive : Expression.Expr :=
   .quant Core.coreLoc .all "y" (some (.ftvar "a")) (LExpr.noTrigger Core.coreLoc)
@@ -132,36 +132,19 @@ private def checkThenCallElim : List PipelinePhase :=
   [ProgramFact.assertPhase .noCFGBodies, typeCheckPipelinePhase .quiet, callElimPipelinePhase]
 
 /--
-info: program Core;
-
-type $__cety_0;
-type $__cety_2;
-procedure q<a> ()
-spec {
-  requires [q_requires_0]: forall y : a :: y == y;
-  } {
-  
-};
-procedure caller ()
-{
-  assert [callElimAssert_q_requires_0_1]: forall y : $__cety_0 :: y == y;
-  assert [callElimAssert_q_requires_0_3]: forall y : $__cety_2 :: y == y;
-};
+info: error: ❌ Type checking error.
+Procedure 'caller': the call to 'q' does not determine one of its type
+parameters
 -/
-#guard_msgs in
+#guard_msgs (whitespace := lax) in
 #eval transformed undetermined checkThenCallElim
 
 /--
-info:
-Obligation: callElimAssert_q_requires_0_1
-Property: assert
-Result: ✅ pass
-
-Obligation: callElimAssert_q_requires_0_3
-Property: assert
-Result: ✅ pass
+error: ❌ Type checking error.
+Procedure 'caller': the call to 'q' does not determine one of its type
+parameters
 -/
-#guard_msgs in
+#guard_msgs (whitespace := lax) in
 #eval verify undetermined
 
 /-! ## A function precondition at the caller's own type parameter

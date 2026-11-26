@@ -782,17 +782,27 @@ Interpret a single procedure call.
 Importantly, this creates a separate Env to execute the body of the procedure with,
 which initially only contains input/output variables.
 The resulting Env is the original passed in Env with the output variables copied back into it.
+The call mode `mode` decides how a call to an opaque procedure (`Body.isOpaque`) runs
+(`CallMode.runsContract`): under `CallMode.contract` it runs as its contract, under
+`CallMode.execute` its body runs; a call to an abstract procedure runs as its contract in both
+modes. A call run as its contract asserts the callee's non-free preconditions, and a failing one is
+an assertion failure as for any `assert`. Then, for a callee none of whose postconditions reads an
+output (inout or output-only), each output gets a fresh value, distinct for each call and each
+output, and the postconditions, which read only inputs and the call-time values `old X` of the
+input and inout parameters, are assumed (skipped, like every assumption, when the environment
+ignores assumptions). A callee with a postcondition that reads an output stops the run with an
+error naming that output: the run chooses no value for it, so the contract cannot be followed
+concretely. This error does not depend on whether assumptions are ignored, so a postcondition on
+an output is never dropped.
 -/
-def Command.runCall (lhs : List Expression.Ident) (procName : String) (args : List Expression.Expr)
-    (fuel : Nat) (E : Env) : Env :=
+def Command.runCall (mode : Imperative.CallMode) (lhs : List Expression.Ident)
+    (procName : String) (args : List Expression.Expr) (fuel : Nat) (E : Env) : Env :=
     match fuel with
     | 0 => { E with error := some .OutOfFuel }
     | fuel' + 1 =>
     match Program.Procedure.find? E.program ⟨procName, ()⟩ with
     | none => CmdEval.updateError E (.Misc s!"procedure '{procName}' not found")
     | some proc =>
-      if proc.body.isAbstract then CmdEval.updateError E (.Misc s!"procedure '{proc.header.name}' has no body")
-      else
         match args.mapM (Lambda.LExpr.run E.exprEnv) with
         | .error s => CmdEval.updateError E (.Misc s)
         | .ok argVals =>
@@ -802,9 +812,13 @@ def Command.runCall (lhs : List Expression.Ident) (procName : String) (args : Li
           if argVals.length != proc.header.inputs.keys.length then
             CmdEval.updateError E (.Misc s!"procedure '{procName}': expected {proc.header.inputs.keys.length} arguments, got {argVals.length}")
           else
+            -- An output formal starts from the caller's current value of the variable it is
+            -- written back to, as `Imperative.CallEntry` reads the caller's `out` variables.
             let outputBindings : List (CoreIdent × (Option Lambda.LMonoTy × Expression.Expr)) :=
-              proc.header.outputs.keys.zip proc.header.outputs.values
-              |>.map fun (name, ty) => (name, (some ty, Lambda.LExpr.fvar evalLoc name none))
+              (proc.header.outputs.keys.zip proc.header.outputs.values).zipIdx.map
+                fun ((name, ty), i) =>
+                  let val := (lhs[i]? >>= E.exprEnv.state.find?).map (·.snd)
+                  (name, (some ty, val.getD (Lambda.LExpr.fvar evalLoc name none)))
             let callEnv : Env := { E with
               exprEnv := { E.exprEnv with
                 state := [formalBindings ++ outputBindings] } }
@@ -814,23 +828,59 @@ def Command.runCall (lhs : List Expression.Ident) (procName : String) (args : Li
               -- the value, only the `==` with the located literal `HasBool.tt`).
               evalExpr := fun E e =>
                 some ((Lambda.LExpr.evalWithLState E.exprEnv.config.fuel E.exprEnv e).fst.replaceMetadata (fun _ => valueLoc))
-              evalCmd := Command.run fuel'
+              evalCmd := Command.run mode fuel'
               pushScope := fun E => E.pushEmptyScope
               popScope := fun E => E.popScope
               hasError := fun E => E.error.isSome
               addError := fun E msg => CmdEval.updateError E (.Misc msg)
             }
+            -- The kind of a callee run as its contract, for diagnostics.
+            let kind := if proc.body.isAbstract then "abstract" else "opaque"
+            -- The callee's contract, run in place of its body.
+            let runContract (_ : Unit) : Imperative.RunConfig Expression Command Env :=
+              let constrained := proc.header.outputs.keys.find? fun o =>
+                proc.spec.postconditions.values.any fun check =>
+                  (Lambda.LExpr.freeVars check.expr).any (·.1 == o)
+              let refusal : Option String := constrained.map fun (o : CoreIdent) =>
+                s!"its postcondition constrains the havocked output '{o.name}'"
+              match refusal with
+              | none =>
+                -- `old X` of an input or inout parameter `X` denotes its value at the call, as in
+                -- call elimination.
+                let oldBindings := formalBindings.map
+                  fun ((name, v) : CoreIdent × (Option Lambda.LMonoTy × Expression.Expr)) =>
+                    (CoreIdent.mkOld name.name, v)
+                let contract := proc.contractStmts proc.header.outputs.keys #[]
+                Imperative.runStmt ops fuel' (.stmts contract { callEnv with
+                  exprEnv := { callEnv.exprEnv with
+                    state := [formalBindings ++ outputBindings ++ oldBindings] } })
+              | some reason =>
+                match Imperative.runStmt ops fuel' (.stmts proc.preconditionAsserts callEnv) with
+                | .terminal callEnv' =>
+                  if callEnv'.error.isSome then .terminal callEnv' else
+                  .terminal (CmdEval.updateError callEnv' (.Misc
+                    s!"cannot concretely execute the call to the {kind} procedure '{procName}': \
+                      {reason}"))
+                | cfg => cfg
             let configAfter := match proc.body with
-              | .structured ss =>
+              | .structured ss _ =>
+                if mode.runsContract proc.body then runContract () else
                 let config : Imperative.RunConfig Expression Command Env :=
                   .stmts ss callEnv
                 Imperative.runStmt ops fuel' config
-              | .cfg _ =>
+              | .cfg _ _ =>
+                if mode.runsContract proc.body then runContract () else
                 .terminal (CmdEval.updateError callEnv
                   (.Misc "CFG bodies not supported yet"))
+              | .abstract => runContract ()
             match configAfter with
             | .terminal callEnv' =>
-              let E := { E with assertFailures := callEnv'.assertFailures }
+              -- The names the call generated stay used, so a later call cannot generate them again.
+              let E := { E with
+                assertFailures := callEnv'.assertFailures
+                havocOrigins := callEnv'.havocOrigins
+                exprEnv := { E.exprEnv with config := { E.exprEnv.config with
+                  names := callEnv'.exprEnv.config.names } } }
               match callEnv'.error with
               | some _ => { E with error := callEnv'.error }
               | none =>
@@ -840,13 +890,23 @@ def Command.runCall (lhs : List Expression.Ident) (procName : String) (args : Li
                   let outputVals := proc.header.outputs.keys.map fun name =>
                     (callEnv'.exprEnv.state.findD name (none,
                         Lambda.LExpr.fvar evalLoc name none)).snd
+                  -- The fresh value the output of a callee run as its contract gets is remembered
+                  -- with the call, for a later diagnostic that reads it.
+                  let fresh : List (CoreIdent × String × String × String) :=
+                    (proc.header.outputs.keys.zip outputVals).filterMap fun (o, v) =>
+                      match v with
+                      | .fvar _ x _ => some (x, kind, procName, o.name)
+                      | _ => none
+                  let E := if mode.runsContract proc.body then
+                      { E with havocOrigins := fresh ++ E.havocOrigins }
+                    else E
                   lhs.zip outputVals |>.foldl (fun env (name, val) =>
                     env.insertInContext (name, none) val) E
             | cfg => CmdEval.updateError
                 { E with assertFailures := cfg.state.assertFailures }
                 (.Misc "failed to terminate")
 
-def Command.run (fuel : Nat) (E : Env) (c : Command) : Env :=
+def Command.run (mode : Imperative.CallMode) (fuel : Nat) (E : Env) (c : Command) : Env :=
   match c with
   | .cmd c =>
     Imperative.Cmd.run E c
@@ -854,7 +914,7 @@ def Command.run (fuel : Nat) (E : Env) (c : Command) : Env :=
     if let some msg := callError? E.program pname args then
       CmdEval.updateError E (.Misc (illFormedCallText msg))
     else
-    Command.runCall (CallArg.getLhs args) pname (CallArg.getInputExprs args) fuel E
+    Command.runCall mode (CallArg.getLhs args) pname (CallArg.getInputExprs args) fuel E
 
 end
 

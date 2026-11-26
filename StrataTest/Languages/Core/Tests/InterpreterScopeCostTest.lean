@@ -49,7 +49,7 @@ private def countProc : Procedure := {
               inputs := [(id "n", (.int : Lambda.LMonoTy))],
               outputs := [(id "r", (.int : Lambda.LMonoTy))] }
   spec := { preconditions := [], postconditions := [] }
-  body := .structured [initS "j" (int 0), countLoop "j" (v "n"), setS "r" (v "j")] }
+  body := .structured [initS "j" (int 0), countLoop "j" (v "n"), setS "r" (v "j")] false }
 
 /-- Procedure environment resolving `Count`. -/
 private def piEnv : String → Option Procedure :=

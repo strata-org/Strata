@@ -8,6 +8,8 @@ module
 public import Strata.Languages.Core.Logic.ContractToHoareTripleProps
 import Strata.DL.Imperative.CFGSemanticsProps
 import Strata.DL.Imperative.StmtCFGCallSemanticsProps
+import Strata.DL.Imperative.InterpreterCallProps
+import Strata.DL.Imperative.CmdSemanticsProps
 import all Strata.Languages.Core.Logic.ContractToHoareTripleProps
 
 /-! # Hoare rule for Core procedure calls
@@ -68,6 +70,25 @@ specified by its signature. -/
     Procedure.outputAsPredicate proc
       { store := σ_exit, factory := fac }
 
+/-- A havoc keeps the declared sort of every variable: a value of sort `ty` before the havoc
+    becomes a value of the same sort after it, since each havocked value shares a type with the
+    value it replaces. -/
+private theorem sortAt_of_havocVars {fac : Expression.Factory} {σ σ' : CoreStore}
+    {xs : List Expression.Ident} (h : HavocVars fac σ xs σ') :
+    ∀ id ty, (∃ v, σ id = some v ∧ Procedure.valueHasType ty v) →
+      ∃ v, σ' id = some v ∧ Procedure.valueHasType ty v := by
+  induction h with
+  | update_none => exact fun _ _ h => h
+  | @update_some τ x v τ' _ _ _ hu hst _ ih =>
+    intro id ty ⟨w, hw, hty⟩
+    refine ih id ty ?_
+    obtain ⟨_, hx', hfr⟩ := hu
+    rcases Classical.em (x = id) with rfl | hne
+    · obtain ⟨prev, ty', hprev, ⟨-, hp⟩, ⟨-, hv⟩⟩ := hst
+      cases hprev.symm.trans hw
+      exact ⟨v, hx', (Option.some.inj (hv.symm.trans hp)).trans hty⟩
+    · exact ⟨w, (hfr id hne).trans hw, hty⟩
+
 /-- **A procedure call meets a Hoare triple built from its callee's contract.**
 
     When the callee named `procName` meets its `contractTriple` and every execution
@@ -87,7 +108,10 @@ specified by its signature. -/
     so it may relate caller actuals to preserved input-only formals before deriving the
     caller's postcondition. The CFG `contractTriple` already checks its
     postcondition on the projected final store, so no separate projection
-    hypothesis is needed. -/
+    hypothesis is needed. For an opaque callee (`Body.isOpaque`) the call havocs the outputs and
+    assumes the postconditions: the havoc keeps the declared output types that `contractPre`
+    gives at the entry store, and the assumed postconditions give the contract postcondition, so
+    `hentry` asks nothing more of an opaque callee. -/
 theorem Procedure.call_of_contract (p : Core.Program) (params : InitEnvWFParams)
     (procName : String) {tyArgs : Option (List Expression.Ty)}
     (callArgs : List (Imperative.CallArg Expression)) (md : Imperative.MetaData Expression)
@@ -107,13 +131,15 @@ theorem Procedure.call_of_contract (p : Core.Program) (params : InitEnvWFParams)
       CallEntry ρ₀.factory ρ₀.store proc callArgs σAO →
       Procedure.contractPre (p.factoryBeforeProcedure procName) proc
           { store := σAO, factory := ρ₀.factory } ∧
-        match proc.body with
-        | .structured bss =>
-            BlockInitEnvWF params [Imperative.Stmt.block "" bss #[]]
-              { store := σAO, factory := ρ₀.factory }
-        | .cfg cfg =>
-            CFGInitEnvWF params cfg
-              { store := σAO, factory := ρ₀.factory })
+        if proc.body.isOpaque = Bool.true then True
+        else match proc.body with
+          | .structured bss _ =>
+              BlockInitEnvWF params [Imperative.Stmt.block "" bss #[]]
+                { store := σAO, factory := ρ₀.factory }
+          | .cfg cfg _ =>
+              CFGInitEnvWF params cfg
+                { store := σAO, factory := ρ₀.factory }
+          | .abstract => True)
     (haxioms : ∀ (ρ₀ : Imperative.Env Expression) (proc : Procedure)
         (σAO : CoreStore),
       Pre ρ₀ → InitEnvWF params (Statement.call procName tyArgs callArgs md) ρ₀ →
@@ -142,7 +168,7 @@ theorem Procedure.call_of_contract (p : Core.Program) (params : InitEnvWFParams)
     Pre Post (fun ρ₀ σ' emitted hpre hwf hstep => ?_)
   let I := DenoteBasedInterp (p.factoryBeforeProcedure procName)
   cases hstep with
-  | @call_sem _ _ _ cproc _ _ _ _ _ _ σAO hcproc hcallentry hbodyE hcallexit =>
+  | @call_sem _ _ _ cproc _ _ _ _ _ _ σAO hcproc hno hcallentry hbodyE hcallexit =>
     -- The call runs an instance of the callee, which meets the callee's contract.
     obtain ⟨-, htriple⟩ : Procedure.contractChecksTyped cproc ∧ _ := by
       have hinst := hcproc
@@ -203,6 +229,7 @@ theorem Procedure.call_of_contract (p : Core.Program) (params : InitEnvWFParams)
           (htb.2 (Trace.Reachable.right_of_append I
             (Trace.Reachable.left_of_append I hreach)))
           houtputsρ hρpostfac hcallentry hframeρ hcallexitρ
+    simp only [hno, Bool.false_eq_true, ↓reduceIte] at hbodyWF
     cases hcbody : cproc.body with
     | structured cbss =>
       rw [hcbody] at hbodyE htriple hbodyWF
@@ -230,6 +257,36 @@ theorem Procedure.call_of_contract (p : Core.Program) (params : InitEnvWFParams)
           ρ' _ ⟨⟨hcontractPre, hax⟩, rfl⟩ hbodyWF (Or.inl hrun)
         exact finish { ρ' with store := Imperative.projectStore σAO ρ'.store } _
           hρ'fac houtputsRel hframeRel hcallexit htb
+    | abstract =>
+      rw [hcbody] at hbodyE
+      cases hbodyE
+  | @call_abstract_sem _ σO _ _ cproc _ _ _ _ σAO hcproc hab hcallentry hhavoc hcallexit =>
+    obtain ⟨hcontractPre, -⟩ := hentry ρ₀ cproc _ hpre hwf hcproc hcallentry
+    have hout : Procedure.outputAsPredicate cproc { store := σO, factory := ρ₀.factory } :=
+      fun id ty hmem => sortAt_of_havocVars hhavoc id ty (hcontractPre.2.2.2.2 id ty hmem)
+    have hvalidA :
+        Trace.AssertionsValid Expression I
+          (defaultAssertEvents ρ₀.factory σAO (Calls.checksAtCall md cproc.spec.preconditions)) :=
+      assertionsValid_defaultAssertEvents I ρ₀.factory σAO _
+        (fun label check hmem _ => by
+          obtain ⟨c₀, hmem₀, hexpr, -⟩ := Calls.mem_checksAtCall hmem
+          exact Procedure.checkAsPredicate_of_exprEq label check hcontractPre.2.1 hexpr.symm
+            (hcontractPre.1 label c₀ hmem₀))
+    refine ⟨Trace.AssertionsValid.append_of_reachable_left I hvalidA
+      (fun _ => Trace.AssertionsValidFrom.of_forall_assume I fun _ he => by
+        simp only [Calls.assumeEvents, List.mem_map] at he
+        obtain ⟨_, -, rfl⟩ := he
+        exact ⟨_, rfl⟩), fun ⟨w, hw⟩ => ?_⟩
+    refine hexit ρ₀ cproc { store := σO, factory := ρ₀.factory } σ' σAO hpre hwf hcproc
+      (fun label check hmem _ world => ?_) hout rfl hcallentry
+      (invStoresExceptComm (InvStoresExceptHavocVars InvStoresExceptEmpty hhavoc)) hcallexit
+    have hmem' : Event.assume ⟨ρ₀.factory, σO, label, check.expr, check.md⟩ ∈
+        assumeEvents ρ₀.factory σO cproc.spec.postconditions := by
+      simp only [assumeEvents, Calls.assumeEvents]
+      exact List.mem_map.2 ⟨_, hmem, rfl⟩
+    rcases hw _ (List.mem_append_right _ hmem') with h | ⟨hne, -⟩
+    · exact .inl h
+    · exact absurd hcontractPre.2.1 hne
 
 end Hoare
 
@@ -243,11 +300,18 @@ namespace HoareTotal
     gives the validity of the assertions a call emits.  A call runs its callee's body to
     completion within one step, so the call then terminates with valid assertions as soon as it
     can execute.  The further premises make sure it can: `hcallee` that the call's type
-    arguments instantiate the callee (`Calls.typeInstantiatedCallee`), `hcallEntry` gives
-    a callee entry store, `hbodyRun` a finished run of the body from it, and `hcallExit` a
-    write-back from the final store of every such run.  The callee's other runs do not
-    matter to the call's termination; a proof of `hbodyRun` may use the callee's
-    `contractTripleTotal`, which gives a finished run when no `assume` of the body can fail. -/
+    arguments instantiate the callee (`Calls.typeInstantiatedCallee`), and `hcallEntry` that
+    the call has a callee entry store. For a callee that is not opaque (`Body.isOpaque`), the
+    call runs its body: `hbodyRun` gives a finished run of the body from the entry store, and
+    `hcallExit` a write-back from the final store of every such run.  The callee's other runs
+    do not matter to the call's termination; a proof of `hbodyRun` may use the callee's
+    `contractTripleTotal`, which gives a finished run when no `assume` of the body can fail.
+    For an opaque callee, the call runs its contract (`EvalCmdExtE.call_abstract_sem`): the
+    havoc of the outputs can keep their entry values, since each of them holds a value of its
+    declared type at the entry store (`contractPre`, with the store values that `InitEnvWF`
+    makes well formed), and `hcallExitOpaque` gives a write-back from that store. The
+    postconditions are assumed, and an assumption does not block a run, so the call terminates
+    without any premise on them. -/
 theorem Procedure.call_of_contract (p : Core.Program) (params : InitEnvWFParams)
     (procName : String) {tyArgs : Option (List Expression.Ty)}
     (callArgs : List (Imperative.CallArg Expression)) (md : Imperative.MetaData Expression)
@@ -268,13 +332,15 @@ theorem Procedure.call_of_contract (p : Core.Program) (params : InitEnvWFParams)
       CallEntry ρ₀.factory ρ₀.store proc callArgs σAO →
       Hoare.Procedure.contractPre (p.factoryBeforeProcedure procName) proc
           { store := σAO, factory := ρ₀.factory } ∧
-        match proc.body with
-        | .structured bss =>
-            BlockInitEnvWF params [Imperative.Stmt.block "" bss #[]]
-              { store := σAO, factory := ρ₀.factory }
-        | .cfg cfg =>
-            CFGInitEnvWF params cfg
-              { store := σAO, factory := ρ₀.factory })
+        if proc.body.isOpaque = Bool.true then True
+        else match proc.body with
+          | .structured bss _ =>
+              BlockInitEnvWF params [Imperative.Stmt.block "" bss #[]]
+                { store := σAO, factory := ρ₀.factory }
+          | .cfg cfg _ =>
+              CFGInitEnvWF params cfg
+                { store := σAO, factory := ρ₀.factory }
+          | .abstract => True)
     (haxioms : ∀ (ρ₀ : Imperative.Env Expression) (proc : Procedure)
         (σAO : CoreStore),
       Pre ρ₀ → InitEnvWF params (Statement.call procName tyArgs callArgs md) ρ₀ →
@@ -300,6 +366,7 @@ theorem Procedure.call_of_contract (p : Core.Program) (params : InitEnvWFParams)
     (hbodyRun : ∀ (ρ₀ : Imperative.Env Expression) (proc : Procedure) (σAO : CoreStore),
       Pre ρ₀ → InitEnvWF params (Statement.call procName tyArgs callArgs md) ρ₀ →
       Calls.typeInstantiatedCallee p.findProcByString? procName tyArgs = some proc →
+      proc.body.isOpaque = Bool.false →
       CallEntry ρ₀.factory ρ₀.store proc callArgs σAO →
       ∃ σEnd bodyEvents,
         CoreBodyExecE p.findProcByString? proc.body ⟨σAO, ρ₀.factory⟩ σEnd bodyEvents)
@@ -309,7 +376,13 @@ theorem Procedure.call_of_contract (p : Core.Program) (params : InitEnvWFParams)
       Calls.typeInstantiatedCallee p.findProcByString? procName tyArgs = some proc →
       CallEntry ρ₀.factory ρ₀.store proc callArgs σAO →
       CoreBodyExecE p.findProcByString? proc.body ⟨σAO, ρ₀.factory⟩ σEnd bodyEvents →
-      ∃ σ', CallExit ρ₀.factory ρ₀.store proc callArgs σEnd σ') :
+      ∃ σ', CallExit ρ₀.factory ρ₀.store proc callArgs σEnd σ')
+    (hcallExitOpaque : ∀ (ρ₀ : Imperative.Env Expression) (proc : Procedure) (σAO : CoreStore),
+      Pre ρ₀ → InitEnvWF params (Statement.call procName tyArgs callArgs md) ρ₀ →
+      Calls.typeInstantiatedCallee p.findProcByString? procName tyArgs = some proc →
+      proc.body.isOpaque = Bool.true →
+      CallEntry ρ₀.factory ρ₀.store proc callArgs σAO →
+      ∃ σ', CallExit ρ₀.factory ρ₀.store proc callArgs σAO σ') :
     Triple p.findProcByString? params Pre
       [Statement.call procName tyArgs callArgs md] Post
       (factory := p.factoryBeforeProcedure procName) :=
@@ -317,9 +390,26 @@ theorem Procedure.call_of_contract (p : Core.Program) (params : InitEnvWFParams)
     (fun ρ₀ hpre hwf => by
       obtain ⟨cproc, hcproc⟩ := hcallee
       obtain ⟨σAO, hce⟩ := hcallEntry ρ₀ cproc hpre hwf hcproc
-      obtain ⟨σEnd, bodyEvents, hb⟩ := hbodyRun ρ₀ cproc σAO hpre hwf hcproc hce
-      obtain ⟨σ', hcx⟩ := hcallExit ρ₀ cproc σAO σEnd bodyEvents hpre hwf hcproc hce hb
-      exact ⟨σ', _, .call_sem hcproc hce hb hcx⟩)
+      cases ho : cproc.body.isOpaque
+      · obtain ⟨σEnd, bodyEvents, hb⟩ := hbodyRun ρ₀ cproc σAO hpre hwf hcproc ho hce
+        obtain ⟨σ', hcx⟩ := hcallExit ρ₀ cproc σAO σEnd bodyEvents hpre hwf hcproc hce hb
+        exact ⟨σ', _, .call_sem hcproc ho hce hb hcx⟩
+      · obtain ⟨σ', hcx⟩ := hcallExitOpaque ρ₀ cproc σAO hpre hwf hcproc ho hce
+        obtain ⟨⟨-, -, -, -, hout⟩, -⟩ := hentry ρ₀ cproc σAO hpre hwf hcproc hce
+        have htyped : ∀ x ∈ ProcedureHeader.outputParams (P := Expression) cproc.header,
+            ∃ v ty, σAO x = some v ∧ HasVal.valueOfTy ρ₀.factory v ty := by
+          obtain ⟨ins, outs, hev, hrd, hfr⟩ := hce
+          obtain ⟨-, -, rfl⟩ := Imperative.Calls.callEntryStore_of_initCallFrame cproc ins outs _ hfr
+          have hws := Imperative.Calls.wellFormedStore_callEntryStore (f := ρ₀.factory) cproc ins
+            outs (evalExpressions_values hwf.val hwf.storeWellDefined hev) (readValues_values hrd)
+          intro x hx
+          have hk : x ∈ ListMap.keys cproc.header.outputs := hx
+          obtain ⟨⟨_, ty⟩, hmem, rfl⟩ := List.mem_map.1 (ListMap.keys_eq_map_fst _ ▸ hk)
+          obtain ⟨v, hv, hvt⟩ := hout _ ty hmem
+          exact ⟨v, .forAll [] ty, hv, hws _ v hv, by
+            simp only [Hoare.Procedure.valueHasType] at hvt
+            simp [hvt, Lambda.LTy.toMonoType?]⟩
+        exact ⟨σ', _, .call_abstract_sem hcproc ho hce (HavocVarsId htyped) hcx⟩)
     (Hoare.Procedure.call_of_contract p params procName callArgs md Pre Post hcontract hframe
       houtputs hentry haxioms hexit)
 

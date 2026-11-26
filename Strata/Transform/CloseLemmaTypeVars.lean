@@ -9,7 +9,6 @@ public import Strata.Languages.Core.Program
 public import Strata.DL.Lambda.LExprWF
 public import Strata.Util.Name
 public import Strata.Languages.Core.NameMangling
-public import Strata.Transform.FreshPlainNameSanitize
 
 /-! # Closing a lemma's type variables
 

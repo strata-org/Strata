@@ -463,7 +463,7 @@ def otherDecls : List Core.Decl :=
    .proc { header := { name := ⟨"Q", ()⟩, typeArgs := [], inputs := [],
                        outputs := [] },
            spec := { preconditions := [], postconditions := [] },
-           body := .structured [] } .empty]
+           body := .structured [] false } .empty]
 
 /-- `function f<a> (x : a) : int { x }`, recursive when `isRecursive`. -/
 def rigidF (isRecursive : Bool) : Core.Function :=
@@ -515,7 +515,7 @@ def rigidP : Core.Procedure :=
   { header := { name := ⟨"P", ()⟩, typeArgs := ["a"],
                 inputs := [(⟨"x", ()⟩, .ftvar "a")], outputs := [] },
     spec := { preconditions := [], postconditions := [] },
-    body := .structured [] }
+    body := .structured [] false }
 
 -- A type `$__rigid_P_a` the body declares differs from the rigid type of `a`.
 /-- info: REJECTED: Procedure 'P': Rigid type variable 'a' was refined to '$__rigid_P_a' -/
@@ -525,7 +525,7 @@ def rigidP : Core.Procedure :=
       body := .structured [
         .typeDecl { name := "$__rigid_P_a", params := [] } .empty,
         Core.Statement.init ⟨"y", ()⟩ (.forAll [] rigidPA) .nondet .empty,
-        Core.Statement.set ⟨"y", ()⟩ (.fvar Core.coreLoc ⟨"x", ()⟩ none) .empty] }
+        Core.Statement.set ⟨"y", ()⟩ (.fvar Core.coreLoc ⟨"x", ()⟩ none) .empty] false }
       .empty] }
 
 -- A type `$__rigid_P_a` the body declares is not taken for the rigid type of
@@ -535,7 +535,7 @@ def rigidP : Core.Procedure :=
 #eval coreVerdict
   { decls := [.proc { rigidP with
       body := .structured
-        [.typeDecl { name := "$__rigid_P_a", params := [] } .empty] }
+        [.typeDecl { name := "$__rigid_P_a", params := [] } .empty] false }
       .empty] }
 
 -- A precondition annotated `$__rigid_P_a` is not taken for the type of `a`.
@@ -609,7 +609,7 @@ type constructor that is not registered in the known types.
 #eval firstLineOf <| coreVerdict
   { decls := [.proc { rigidP with
       body := .structured
-        [Core.Statement.assert "a" (rigidLitProp "P") .empty] }
+        [Core.Statement.assert "a" (rigidLitProp "P") .empty] false }
     .empty] }
 
 -- A literal over an undeclared rigid-looking sort is rejected in a lemma.
@@ -639,7 +639,7 @@ registered in the known types.
   { decls := [rigidDeclared "P",
     .proc { rigidP with
       body := .structured
-        [Core.Statement.assert "a" (rigidLitProp "P") .empty] }
+        [Core.Statement.assert "a" (rigidLitProp "P") .empty] false }
     .empty] }
 
 -- The same holds for a literal in a lemma.
@@ -678,7 +678,7 @@ refined to '$__rigid_P_a'
   { decls := [rigidDeclared "P",
     .proc { rigidPMap with
       body := .structured [Core.Statement.assert "a"
-        (.eq Core.coreLoc (.fvar Core.coreLoc ⟨"m", ()⟩ none) (rigidLit "P")) .empty] }
+        (.eq Core.coreLoc (.fvar Core.coreLoc ⟨"m", ()⟩ none) (rigidLit "P")) .empty] false }
     .empty] }
 
 -- The same holds for a lemma over a map bound at the type of `a`.

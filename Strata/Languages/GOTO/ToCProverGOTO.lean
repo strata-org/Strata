@@ -259,6 +259,16 @@ def emitLabel {T : Type} (label : String) (srcLoc : SourceLocation)
   { trans with instructions := trans.instructions.push inst,
                nextLoc := trans.nextLoc + 1 }
 
+/-- Emit `lhs := callee(args)` as a `FUNCTION_CALL`; `lhs` is `Expr.nil` when
+    the result is not assigned. -/
+def emitFunctionCall {T : Type} (lhs callee : Expr) (args : List Expr)
+    (srcLoc : SourceLocation) (trans : GotoTransform T) : GotoTransform T :=
+  let inst : Instruction :=
+    { type := .FUNCTION_CALL, locationNum := trans.nextLoc, sourceLoc := srcLoc,
+      code := Code.functionCall lhs callee args }
+  { trans with instructions := trans.instructions.push inst,
+               nextLoc := trans.nextLoc + 1 }
+
 /-- Patch the targets of previously-emitted GOTO instructions.
     Each pair `(idx, targetLoc)` sets the target of the instruction at array
     index `idx` to location number `targetLoc`. -/

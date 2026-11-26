@@ -1391,12 +1391,12 @@ private def firstAssertCond (prog : Core.Program) : Option Core.Expression.Expr 
     match d with
     | .proc pr _ =>
       match pr.body with
-      | .structured ss =>
+      | .structured ss _ =>
         ss.findSome? fun s =>
           match s with
           | .cmd (.cmd (.assert _ e _)) => some e
           | _ => none
-      | .cfg _ => none
+      | .cfg _ _ | .abstract => none
     | _ => none
 
 /-- Simplify that condition with the expansion budget set to `fuel`. -/
@@ -2118,7 +2118,7 @@ private def deadNotInit : Core.Program :=
     | s => s
   { p with decls := p.decls.map fun
       | .proc pr md => match pr.body with
-        | .structured ss => .proc { pr with body := .structured (ss.map swap) } md
+        | .structured ss _ => .proc { pr with body := .structured (ss.map swap) false } md
         | _ => .proc pr md
       | d => d }
 

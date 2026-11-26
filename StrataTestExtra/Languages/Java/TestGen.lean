@@ -8,6 +8,7 @@ module
 public meta import Lean.Elab.Command
 public meta import Strata.Java.Gen
 public meta import Strata.Util.IonDeserializer
+public meta import StrataTest.Util.ExternalTools
 public meta import StrataTest.Util.TestDir
 -- Non-meta as well: the deserializer tests below bind readers as top-level
 -- `partial def`s, which recursive types require.
@@ -19,6 +20,24 @@ open Strata.TestUtil
 namespace Strata.Java.Test
 
 meta def check (s sub : String) : Bool := (s.splitOn sub).length > 1
+
+/-- The ion-java runtime jar the `javac`-gated tests compile against. -/
+meta def jarPath : String := "StrataTestExtra/Languages/Java/testdata/ion-java-1.11.11.jar"
+
+/-- Whether `javac` and the ion-java jar are available to the test named `test`.
+Without them the test is skipped with a warning in local development, and fails
+in a Brazil or CI build, which must provide both (see
+`Strata.TestUtil.externalToolChecksRequired`). -/
+meta def javaToolsAvailable (test : String) : Lean.Elab.Command.CommandElabM Bool := do
+  let reason? ← match ← Strata.TestUtil.toolUnavailable? "javac" #["--version"] with
+    | some reason => pure (some reason)
+    | none =>
+      if ← System.FilePath.pathExists jarPath then pure none
+      else pure (some s!"the ion-java jar is not at {jarPath}")
+  let some reason := reason? | return true
+  Strata.TestUtil.requireTool s!"javac with the ion-java jar (for {test})" reason
+  Lean.logWarning s!"{test} skipped: {reason}"
+  return false
 
 -- Test types
 structure Point where
@@ -213,15 +232,7 @@ elab "#testWriteFiles" : command => do
 
 -- Test 9: Generated Java compiles (requires javac + ion-java jar)
 elab "#testCompile" : command => do
-  let javacCheck ← IO.Process.output { cmd := "javac", args := #["--version"] }
-  if javacCheck.exitCode != 0 then
-    Lean.logWarning "Test skipped: javac not found"
-    return
-
-  let jarPath := "StrataTestExtra/Languages/Java/testdata/ion-java-1.11.11.jar"
-  if !(← System.FilePath.pathExists jarPath) then
-    Lean.logWarning s!"Test skipped: ion-java jar not found at {jarPath}"
-    return
+  unless ← javaToolsAvailable "#testCompile" do return
 
   withTestDir fun dir => do
     let shapeFiles := getIonSerializer% Shape "com.test"
@@ -251,15 +262,7 @@ elab "#testCompile" : command => do
 
 -- Test 10: Roundtrip - Java serializes Ion, Lean deserializes it
 elab "#testRoundtrip" : command => do
-  let javacCheck ← IO.Process.output { cmd := "javac", args := #["--version"] }
-  if javacCheck.exitCode != 0 then
-    Lean.logWarning "Roundtrip test skipped: javac not found"
-    return
-
-  let jarPath := "StrataTestExtra/Languages/Java/testdata/ion-java-1.11.11.jar"
-  if !(← System.FilePath.pathExists jarPath) then
-    Lean.logWarning s!"Roundtrip test skipped: ion-java jar not found at {jarPath}"
-    return
+  unless ← javaToolsAvailable "#testRoundtrip" do return
 
   withTestDir fun dir => do
     let pointFiles := getIonSerializer% Point "com.test"
@@ -360,15 +363,7 @@ elab "#testLeague" : command => do
 
 -- Test 13: Generated Java for nested containers compiles
 elab "#testCompileNested" : command => do
-  let javacCheck ← IO.Process.output { cmd := "javac", args := #["--version"] }
-  if javacCheck.exitCode != 0 then
-    Lean.logWarning "Test skipped: javac not found"
-    return
-
-  let jarPath := "StrataTestExtra/Languages/Java/testdata/ion-java-1.11.11.jar"
-  if !(← System.FilePath.pathExists jarPath) then
-    Lean.logWarning s!"Test skipped: ion-java jar not found at {jarPath}"
-    return
+  unless ← javaToolsAvailable "#testCompileNested" do return
 
   withTestDir fun dir => do
     let files := getIonSerializer% League "com.test"
@@ -415,15 +410,7 @@ elab "#testVoid" : command => do
 -- asserts on the emitted text; this pins that the text is *valid Java*, which
 -- string assertions alone cannot establish.
 elab "#testCompileVoid" : command => do
-  let javacCheck ← IO.Process.output { cmd := "javac", args := #["--version"] }
-  if javacCheck.exitCode != 0 then
-    Lean.logWarning "Test skipped: javac not found"
-    return
-
-  let jarPath := "StrataTestExtra/Languages/Java/testdata/ion-java-1.11.11.jar"
-  if !(← System.FilePath.pathExists jarPath) then
-    Lean.logWarning s!"Test skipped: ion-java jar not found at {jarPath}"
-    return
+  unless ← javaToolsAvailable "#testCompileVoid" do return
 
   withTestDir fun dir => do
     let files := getIonSerializer% Void "com.test"

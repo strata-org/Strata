@@ -99,6 +99,10 @@ inductive StopReason where
   | unsupportedNondetSet
   /-- A call whose callee name the callee environment does not resolve. -/
   | unsupportedCalleeNotFound (procName : String)
+  /-- A callee body run (`Calls.runCallee`) on an abstract body, which has no statements to run;
+      a call to an abstract callee runs its contract instead (`Calls.runAbstractCallee`), in
+      every call mode. -/
+  | unsupportedAbstractBody (procName : String)
   /-- A CFG transfer to a label that the CFG has no block for. -/
   | unsupportedMissingBlockLabel
   -- replay verdict
@@ -148,6 +152,7 @@ def StopReason.describe : StopReason → String
   | .unsupportedNondetSet =>
     "set-nondet: the type of the assigned variable's current value is unknown"
   | .unsupportedCalleeNotFound procName => s!"callee {procName} not found"
+  | .unsupportedAbstractBody procName => s!"callee {procName} is abstract and has no body to run"
   | .unsupportedMissingBlockLabel => "CFG: missing block label"
   | .assumptionFalseUnderReplay label =>
       s!"assumption ({label}) is false under replay environment"

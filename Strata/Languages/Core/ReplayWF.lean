@@ -305,14 +305,35 @@ private theorem runCallee_closed {sc : StepCmdM Expression Command (ReplayM Expr
     split
     · exact .pure (projectStore_closed hc)
     · exact .throw _
+  · exact .throw _
+
+/-- A successful `Calls.havocVarList` run from a closed store returns a closed store. -/
+private theorem havocVarList_closed (k : Nat) (factory : Lambda.Factory CoreLParams) :
+    ∀ (xs : List Expression.Ident) {σ : IStore Expression}, StoreClosed σ.get →
+      OkPost (Calls.havocVarList (m := ReplayM Expression) k factory xs σ) (StoreClosed ·.get)
+  | [], _, h => .pure h
+  | _ :: xs, _, h =>
+    .bind (stepBaseCmdStore_closed _ _ h _) fun _ h => havocVarList_closed k factory xs h
+
+/-- A successful contract run of an abstract callee (`Calls.runAbstractCallee`) from a callee
+    entry frame built from closed values returns a closed store. -/
+private theorem runAbstractCallee_closed (k : Nat) (factory : Lambda.Factory CoreLParams)
+    (xs : List Expression.Ident) (post : ListMap String (Imperative.Check Expression))
+    (p : Procedure) {inputVals outOnlyVals : List Expression.Expr}
+    (hi : ∀ v ∈ inputVals, Lambda.LExpr.LExpr.getVars v = [])
+    (ho : ∀ v ∈ outOnlyVals, Lambda.LExpr.LExpr.getVars v = []) :
+    OkPost (Calls.runAbstractCallee (m := ReplayM Expression) k factory xs post
+      (Calls.callEntryStore p inputVals outOnlyVals)) StoreClosed :=
+  .bind (havocVarList_closed k factory xs (by simpa using callEntryStore_closed p hi ho))
+    fun _ h => .bind (.true _) fun _ _ => .pure h
 
 /-- From a closed store, every successful step of Core's command stepper yields a terminal
     configuration with the caller's factory and a closed store. -/
 private theorem replayStepCmd_closed (π : String → Option Procedure) :
     ∀ (d k : Nat) (env : IEnv Expression) (cmd : Command), StoreClosed env.store.get →
       OkPost (replayStepCmd (m := ReplayM Expression) π d k env cmd)
-        (fun c => ∃ ρ, c = .terminal ρ ∧ ρ.factory = env.factory ∧ StoreClosed ρ.store.get) :=
-    fun _ _ _ _ h => by
+        (fun c => ∃ ρ, c = .terminal ρ ∧ ρ.factory = env.factory ∧ StoreClosed ρ.store.get) := by
+  intro d k
   have hbp (s : IStore Expression) (ns : List Expression.Ident) (vs : List Expression.Expr)
       (hs : StoreClosed s.get) (hvs : ∀ v ∈ vs, Lambda.LExpr.LExpr.getVars v = []) :
       StoreClosed (s.bindPositional ns vs).get := by
@@ -320,17 +341,47 @@ private theorem replayStepCmd_closed (π : String → Option Procedure) :
     · rename_i ih
       exact ih (by simpa using hs.update _ (hvs _ (.head _))) fun v hv => hvs v (.tail _ hv)
     · exact hs
-  unfold replayStepCmd Calls.stepCmd
-  fun_induction Calls.stepCmdWith <;> rename_i ih <;> (try dsimp +zetaDelta only) <;> repeat' first
-    | exact absurd ‹Calls.CmdExt.view _ = Calls.CmdView.ext _› (Calls.CmdExt.view_ne_ext _ _)
-    | with_reducible exact .bind (stepBaseCmdStore_closed _ _ h _) fun _ h => .pure ⟨_, rfl, rfl, h⟩
-    | split
-    | refine .bind (runCallee_closed (fun _ => (ih · · · |>.mono fun _ ⟨_, e, _, h⟩ => e ▸ h)) _ _ _ _
-        (callEntryStore_closed _ (evalBoundedList_closed ‹_›) (readVarList_closed h ‹_›)))
-          fun _ _ => ?_
-    | with_reducible refine .bind (.true _) fun _ _ => ?_
-    | exact .pure ⟨_, rfl, rfl, hbp _ _ _ h (readVarList_closed ‹_› ‹_›)⟩
-    | nofun
+  induction k generalizing d with
+  | zero =>
+    intro env cmd h
+    cases cmd <;>
+      (unfold replayStepCmd Calls.stepCmd Calls.stepCmdWith; simp only [Calls.CmdExt.view])
+    · exact .bind (stepBaseCmdStore_closed _ _ h _) fun _ h => .pure ⟨_, rfl, rfl, h⟩
+    · exact .throw _
+  | succ k ih =>
+    intro env cmd h
+    cases cmd with
+    | cmd c =>
+      unfold replayStepCmd Calls.stepCmd Calls.stepCmdWith; simp only [Calls.CmdExt.view]
+      exact .bind (stepBaseCmdStore_closed _ _ h _) fun _ h => .pure ⟨_, rfl, rfl, h⟩
+    | call n tyArgs args md =>
+      cases d with
+      | zero =>
+        unfold replayStepCmd Calls.stepCmd Calls.stepCmdWith; simp only [Calls.CmdExt.view]
+        exact .throw _
+      | succ d =>
+        unfold replayStepCmd Calls.stepCmd Calls.stepCmdWith
+        simp only [Calls.CmdExt.view, Calls.dispatchCall, Calls.callBody]
+        (try dsimp +zetaDelta only)
+        repeat' first
+          | split
+          | refine .bind
+              (runCallee_closed (fun _ => (ih d · · · |>.mono fun _ ⟨_, e, _, h⟩ => e ▸ h))
+              _ _ _ _ (callEntryStore_closed _ (evalBoundedList_closed ‹_›)
+                (readVarList_closed h ‹_›))) fun _ _ => ?_
+          | with_reducible refine .bind (x := List.forM _ _) (.true _) fun _ _ => ?_
+          | exact .pure ⟨_, rfl, rfl, hbp _ _ _ h (readVarList_closed ‹_› ‹_›)⟩
+          | exact .throw _
+          | (with_reducible_and_instances
+               refine .bind (R := StoreClosed) (x := Calls.runAbstractCallee (P := Expression) ..)
+                 ?_ ?_
+             · exact runAbstractCallee_closed _ _ _ _ _ (evalBoundedList_closed ‹_›)
+                 (readVarList_closed h ‹_›)
+             intro _ _)
+          | (with_reducible
+               refine .bind (x := Pure.pure _) (R := (· = _)) (.pure rfl) fun _ hEq => ?_
+             subst hEq)
+          | nofun
 
 /-! ## Steps keep configurations well-formed -/
 

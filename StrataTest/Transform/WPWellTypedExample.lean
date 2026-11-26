@@ -49,7 +49,7 @@ def inc : Procedure where
               outputs := [(id' "y", LMonoTy.int)] }
   spec := { preconditions := [("pos", ⟨incPre, .Default, #[]⟩)],
             postconditions := [("grows", ⟨incPost, .Default, #[]⟩)] }
-  body := .structured incBody
+  body := .structured incBody false
 
 /-- An expression whose free-variable occurrences are annotated with `int` is typed at a ground
     type `τ` when the type checker of annotated expressions gives it the type `τ`. -/
@@ -68,7 +68,8 @@ theorem annotates_of {Γ : VarTyping Expression} {occs : List (Expression.Ident 
     types of its parameters, the premise `htyp` of `wpLoopFree_runsOverapproximate`. -/
 theorem inc_wellTyped :
     Statements.WellTyped (fun x => Tys.get? inc.paramTys x) (inc.contractWrapped incBody) := by
-  simp only [inc, incBody, Procedure.contractWrapped, List.map, Statements.WellTyped,
+  simp only [inc, incBody, Procedure.contractWrapped, Check.assumes, Check.asserts, ListMap.toList,
+    List.map, Statements.WellTyped,
     Block.WellTyped, Block.ExprsTyped, Block.fvarTypesWellAnnotated, Stmt.fvarTypesWellAnnotated,
     HasPassiveCmds.assume, HasPassiveCmds.assert, List.cons_append, List.nil_append]
   refine ⟨⟨⟨⟨⟩, ⟨_, by decide, typed rfl (by decide) rfl⟩, ⟨⟩, ⟨⟩⟩,
@@ -115,9 +116,9 @@ private meta def eraseMd (p : Procedure) : Procedure :=
     spec := { preconditions := p.spec.preconditions.map ck,
               postconditions := p.spec.postconditions.map ck }
     body := match p.body with
-      | .structured ss => .structured (ss.map fun
+      | .structured ss _ => .structured (ss.map fun
         | .cmd (.cmd (.set x (.det e) _)) => .cmd (.cmd (.set x (.det (Core.eraseLocs e)) #[]))
-        | s => s)
+        | s => s) false
       | b => b }
 
 -- Type checking the parsed program gives `inc`, up to metadata.

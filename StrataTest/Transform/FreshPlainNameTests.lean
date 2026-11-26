@@ -8,7 +8,6 @@ module
 import StrataDDM.Integration.Lean
 meta import Strata.Languages.Core
 meta import Strata.Languages.Core.DDMTransform.Translate
-meta import Strata.Transform.FreshPlainNameSanitize
 meta import Strata.Transform.GenOpaqueTypeParams
 meta import StrataTest.Languages.Core.Tests.TestUtil
 

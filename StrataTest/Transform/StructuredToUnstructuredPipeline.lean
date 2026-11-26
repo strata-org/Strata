@@ -39,8 +39,8 @@ def coreBody (p : StrataDDM.SourcedProgram) : List Core.Statement :=
   let corePgm : Core.Program := (TransM.run Inhabited.default (translateProgram p)).fst
   match corePgm.decls.findSome? Decl.getProc? with
   | some proc => match proc.body with
-                 | .structured ss => ss
-                 | .cfg _ => []
+                 | .structured ss _ => ss
+                 | .cfg _ _ | .abstract => []
   | none => []
 
 /-- Strip the `CmdExt` wrapper from a Core statement down to the bare imperative

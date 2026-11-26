@@ -108,10 +108,12 @@ structure CoreEntry where
 @[expose] def coreStart (p : Program) (w : CoreEntry) :
     (i : Program × Bool) × (coreEventLang i).CfgT :=
   match w.proc.body with
-  | .structured ss =>
+  | .structured ss _ =>
     ⟨(p, true), (Core.Logic.EventLang.core p.findProcByString?).stmtCfg (Stmt.block "" ss #[]) w.ρ₀⟩
-  | .cfg c =>
+  | .cfg c _ =>
     ⟨(p, false), (Core.Logic.EventLang.coreCFG p.findProcByString?).stmtCfg c w.ρ₀⟩
+  | .abstract =>
+    ⟨(p, true), (Core.Logic.EventLang.core p.findProcByString?).stmtCfg (Stmt.block "" [] #[]) w.ρ₀⟩
 
 /-- `w` is an entry of `p`: it names a procedure of `p` and an environment its
     body may start from (under some `InitEnvWFParams`). -/

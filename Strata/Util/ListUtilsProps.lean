@@ -2093,4 +2093,14 @@ theorem Std.HashSet.mem_insertMany_of_cover {α : Type} [BEq α] [Hashable α] [
   · exact Or.inl (hcov n hold)
   · exact Or.inr (List.contains_iff_mem.mpr hnew)
 
+
+/-- A property of every element of the list a `foldl` carries in its second component holds at
+    the end, when it holds at the start and each step keeps it. -/
+theorem List.foldl_snd_forall {α β γ : Type} {P : γ → Prop} (g : α × List γ → β → α × List γ)
+    (hg : ∀ x n, (∀ r ∈ x.2, P r) → ∀ r ∈ (g x n).2, P r) :
+    ∀ (names : List β) (init : α × List γ), (∀ r ∈ init.2, P r) →
+      ∀ r ∈ (names.foldl g init).2, P r
+  | [], _, h => h
+  | n :: ns, init, h => List.foldl_snd_forall g hg ns _ (hg init n h)
+
 end

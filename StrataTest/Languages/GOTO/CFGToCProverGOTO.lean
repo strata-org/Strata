@@ -106,6 +106,7 @@ instance : Imperative.HasIntOps LExprTP where
 instance : Imperative.HasBoolOps LExprTP where
   not e := .app md (.op md ⟨"Bool.Not", ()⟩ none) e
   and e1 e2 := .app md (.app md (.op md ⟨"Bool.And", ()⟩ none) e1) e2
+  or e1 e2 := .app md (.app md (.op md ⟨"Bool.Or", ()⟩ none) e1) e2
   imp e1 e2 := .app md (.app md (.op md ⟨"Bool.Imp", ()⟩ none) e1) e2
 
 -------------------------------------------------------------------------------
@@ -345,6 +346,105 @@ info: error: [detCFGToGotoTransform] Unresolved label 'also_missing' referenced 
     { entry := "entry", blocks := [("entry", blk)] }
   let ans ← Imperative.detCFGToGotoTransform Lambda.TEnv.default "test" cfg
   return format ans.instructions
+
+-------------------------------------------------------------------------------
+
+/-! ### Test: `detCFGToGotoTransformWith` with a command translator that emits calls
+
+A command type of its own: an `Imperative.Cmd`, or a call `lhs := callee(args)`,
+which the translator emits with `emitFunctionCall`. -/
+
+private inductive CallCmd where
+  /-- An ordinary command. -/
+  | cmd (c : Imperative.Cmd LExprTP)
+  /-- `lhs := callee(args)`, or `callee(args)` without a left-hand side. -/
+  | call (lhs : Option String) (callee : String) (args : List (Lambda.LExprT TestParams.mono))
+
+private def callCmdToGoto (c : CallCmd) (trans : Imperative.GotoTransform LExprTP.TyEnv) :
+    Except Format (Imperative.GotoTransform LExprTP.TyEnv) :=
+  match c with
+  | .cmd c => Imperative.Cmd.toGotoInstructions trans.T "test" c trans
+  | .call lhs callee args => do
+    let args ← args.mapM fun (a : Lambda.LExprT TestParams.mono) => a.toGotoExpr
+    let lhs : CProverGOTO.Expr := match lhs with
+      | some x => .symbol x (.UnsignedBV 32)
+      | none => .nil
+    let callee := CProverGOTO.Expr.symbol callee
+      (CProverGOTO.Ty.mkFunctionType (args.map (·.type)) lhs.type)
+    return Imperative.emitFunctionCall lhs callee args .nil trans
+
+/-- `x := 0; x := f(7); if true then g()`, as three blocks: the entry block
+    holds the call to `f` and branches, and both branches `finish`. -/
+private def callCfg : Imperative.CFG String (Imperative.DetBlock String CallCmd LExprTP) :=
+  let bv32 (n : BitVec 32) : Lambda.LExprT TestParams.mono :=
+    .const { underlying := (), type := mty[bv32] } (.bitvecConst 32 n)
+  let trueExpr : LExprTP.Expr :=
+    .const { underlying := (), type := mty[bool] } (.boolConst true)
+  { entry := "entry",
+    blocks := [
+      ("entry", { cmds := [.cmd (.init (Lambda.Identifier.mk "x" ()) mty[bv32] (.det (bv32 0)) {}),
+                           .call (some "x") "f" [bv32 7]],
+                  transfer := .condGoto trueExpr "then" "else" .empty }),
+      ("then", { cmds := [.call none "g" []], transfer := .finish .empty }),
+      ("else", { cmds := [], transfer := .finish .empty })] }
+
+-- Each call is one `FUNCTION_CALL`; with `finishJumpsToEnd`, each `finish` is a
+-- GOTO to the location after the last block (11), where the caller emits the
+-- function's exit.
+/--
+info: ok: #[LOCATION 0,
+ DECL (decl (x : unsignedbv[32])),
+ ASSIGN (assign (x : unsignedbv[32]) (0 : unsignedbv[32])),
+ FUNCTION_CALL (function_call (x : unsignedbv[32]) (f : (code unsignedbv[32] unsignedbv[32])) ((arguments (7 : unsignedbv[32])) : empty)),
+ GOTO 9 [((not(true : bool)) : bool)],
+ GOTO 6,
+ LOCATION 6,
+ FUNCTION_CALL (function_call (nil : empty) (g : (code empty)) (arguments : empty)),
+ GOTO 11,
+ LOCATION 9,
+ GOTO 11]
+-/
+#guard_msgs in
+#eval do
+  let ans ← Imperative.detCFGToGotoTransformWith Lambda.TEnv.default "test" callCmdToGoto callCfg
+    (finishJumpsToEnd := true)
+  return format ans.instructions
+
+-- Every instruction, the calls included, takes the next location number.
+/-- info: ok: #[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10] -/
+#guard_msgs in
+#eval do
+  let ans ← Imperative.detCFGToGotoTransformWith Lambda.TEnv.default "test" callCmdToGoto callCfg
+    (finishJumpsToEnd := true)
+  return ans.instructions.map fun (i : CProverGOTO.Instruction) => i.locationNum
+
+-- Without `finishJumpsToEnd`, a `finish` emits nothing, as in `detCFGToGotoTransform`.
+/--
+info: ok: #[LOCATION 0,
+ DECL (decl (x : unsignedbv[32])),
+ ASSIGN (assign (x : unsignedbv[32]) (0 : unsignedbv[32])),
+ FUNCTION_CALL (function_call (x : unsignedbv[32]) (f : (code unsignedbv[32] unsignedbv[32])) ((arguments (7 : unsignedbv[32])) : empty)),
+ GOTO 8 [((not(true : bool)) : bool)],
+ GOTO 6,
+ LOCATION 6,
+ FUNCTION_CALL (function_call (nil : empty) (g : (code empty)) (arguments : empty)),
+ LOCATION 8]
+-/
+#guard_msgs in
+#eval do
+  let ans ← Imperative.detCFGToGotoTransformWith Lambda.TEnv.default "test" callCmdToGoto callCfg
+  return format ans.instructions
+
+-- On a CFG of `Imperative.Cmd`s, `detCFGToGotoTransform` is `detCFGToGotoTransformWith`
+-- with `Cmd.toGotoInstructions` as the command translator.
+/-- info: ok: true -/
+#guard_msgs in
+#eval do
+  let cfg := Imperative.stmtsToCFG iteCmds
+  let a ← Imperative.detCFGToGotoTransform Lambda.TEnv.default "test" cfg
+  let b ← Imperative.detCFGToGotoTransformWith Lambda.TEnv.default "test"
+    (fun cmd trans => Imperative.Cmd.toGotoInstructions trans.T "test" cmd trans) cfg
+  return toString (format a.instructions) == toString (format b.instructions)
 
 -------------------------------------------------------------------------------
 

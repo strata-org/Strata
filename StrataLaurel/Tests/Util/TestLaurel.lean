@@ -359,7 +359,8 @@ assume makes the assert unreachable) must set `skipCoreInterpreter := true`. -/
     unmapped labels so neither signal is lost. -/
 private def runLaurelInterpretCore (core : Core.Program) (fuel : Nat := 10000) :
     IO (Array Strata.Message) := do
-  let outcome ← match Core.Program.interpretEntries core (Core.Program.entryProcedures core) fuel with
+  let outcome ← match Core.Program.interpretEntries .execute core (Core.Program.entryProcedures
+      core) fuel with
     | .error diag => throw <| IO.userError s!"interpreter setup failed: {diag.message}"
     | .ok outcome => pure outcome
   let dms := outcome.diagnostics

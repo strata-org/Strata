@@ -43,7 +43,7 @@ private def proc (a : String) (declTy : LMonoTy) (ty : Option LMonoTy) : Procedu
     spec := { preconditions := [("pre", { expr := eqOne ty })], postconditions := [] },
     body := .structured
       [Statement.init y (.forAll [] declTy) (.det (lam ty)) #[],
-       Imperative.Stmt.ite (.det (eqOne ty)) [] [] #[]] }
+       Imperative.Stmt.ite (.det (eqOne ty)) [] [] #[]] false }
 
 private def prog (a : String) (declTy : LMonoTy) (ty : Option LMonoTy) : Program :=
   { decls := [.proc (proc a declTy ty) #[]] }
@@ -95,7 +95,7 @@ private def constProg (n : Int) : Program :=
               spec := { preconditions := [], postconditions := [] },
               body := .structured
                 [Statement.assert "a" (.eq coreLoc (.fvar coreLoc x none)
-                  (.const coreLoc (.intConst n))) #[]] } #[] ] }
+                  (.const coreLoc (.intConst n))) #[]] false } #[] ] }
 
 -- A change to a constant is not an annotation change.
 /--
@@ -117,10 +117,10 @@ private def callProg (tyArgs : Option (List LTy)) : Program :=
     [ .proc { header := { name := p, typeArgs := ["a"], inputs := [(x, .ftvar "a")],
                           outputs := [] },
               spec := { preconditions := [], postconditions := [] },
-              body := .structured [] } #[],
+              body := .structured [] false } #[],
       .proc { header := { name := ⟨"q", ()⟩, typeArgs := [], inputs := [], outputs := [] },
               spec := { preconditions := [], postconditions := [] },
-              body := .structured [.cmd (.call "p" tyArgs [.inArg one] #[])] } #[] ] }
+              body := .structured [.cmd (.call "p" tyArgs [.inArg one] #[])] false } #[] ] }
 
 -- The type arguments of a call are reset to `none`.
 /--
@@ -147,7 +147,7 @@ private def loopProg (ty : Option LMonoTy) : Program :=
               spec := { preconditions := [], postconditions := [] },
               body := .structured
                 [Imperative.Stmt.loop (.det (eqOne ty)) (some (lam ty)) [("inv", eqOne ty)]
-                  [] #[]] } #[] ] }
+                  [] #[]] false } #[] ] }
 
 -- The guard, measure and invariants of a loop are erased.
 /--
@@ -178,7 +178,7 @@ private def cfgProg (declTy : LMonoTy) (ty : Option LMonoTy) : Program :=
                   blocks :=
                     [("l0", ⟨[.cmd (.init y (.forAll [] declTy) (.det (lam ty)) #[])],
                         .condGoto (eqOne ty) "l1" "l1" #[], #[]⟩),
-                     ("l1", ⟨[], .finish #[], #[]⟩)] } } #[] ] }
+                     ("l1", ⟨[], .finish #[], #[]⟩)] } false } #[] ] }
 
 -- The commands and branch guards of a control flow graph are erased.
 /--

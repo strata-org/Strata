@@ -211,6 +211,18 @@ theorem Trace.AssertionsValid.of_all_assertionValid
     Trace.AssertionsValid P I trace :=
   Trace.AssertionsValidFrom.of_all_assertionValidFrom I hvalid
 
+/-- A trace whose events are all assumptions has valid assertions after any accumulated
+assumptions: it has no assertion. -/
+theorem Trace.AssertionsValidFrom.of_forall_assume
+    {P : PureExpr} (I : ConditionInterp P) {assumptions trace : Trace P}
+    (h : ∀ e ∈ trace, ∃ c, e = .assume c) :
+    Trace.AssertionsValidFrom P I assumptions trace := by
+  induction trace generalizing assumptions with
+  | nil => trivial
+  | cons e rest ih =>
+    obtain ⟨c, rfl⟩ := h e (.head _)
+    exact ih fun e he => h e (.tail _ he)
+
 /-! ## Assumption-prefix algebra -/
 
 /-- Appending one assumption extends `AssumptionsHold` by exactly that

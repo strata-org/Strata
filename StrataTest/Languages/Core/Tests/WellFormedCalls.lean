@@ -66,7 +66,7 @@ private def interpretResult (p : StrataDDM.SourcedProgram) : String :=
   match Program.Procedure.find? prog ⟨"caller", ()⟩ with
   | none => "no caller"
   | some caller =>
-    match Core.Program.interpretEntries prog [caller] 1000 with
+    match Core.Program.interpretEntries .execute prog [caller] 1000 with
     | .error e => toString e.message
     | .ok o => s!"errors={o.errors.toList.map fun (n, e) => s!"{n}: {Std.format e}"} \
                   failures={o.diagnostics.size + o.unmapped.size}"

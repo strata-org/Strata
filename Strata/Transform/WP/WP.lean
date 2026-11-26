@@ -341,6 +341,20 @@ abbrev WM (P : PureExpr) [DecidableEq P.Ident] [BEq P.Ident] [LawfulBEq P.Ident]
 /-- `κ ⟹ a`. -/
 @[expose] def kImp (κ : RE P) (a : WExpr P) : WExpr P := kIte κ a (.lit true)
 
+/-- `κ ⟹ a` as `ite(¬¬κ, a, ¬¬¬κ)`, the form of a marker assumption (`WPOps.keepsTrueAssume`),
+    from which the model check of the marker reads its reach condition (`Core.markerGuards`).
+    The form has to survive the simplifications after WP for that condition to reach the
+    obligation: its arms differ even when `a` is `true`, so it does not fold to one arm, and its
+    condition is not a bare variable, so no rewrite narrows its arms by the value of the
+    condition. -/
+@[expose] def kMarkImp (κ : RE P) (a : WExpr P) : WExpr P :=
+  .ite (kExpr κ).not.not a (kExpr κ).not.not.not
+
+/-- The assumption `a` labelled `l` under the reach context `κ`: `kMarkImp κ a` for a marker
+    assumption (`WPOps.keepsTrueAssume`), `kImp κ a` for any other. -/
+@[expose] def kAssume (l : String) (κ : RE P) (a : WExpr P) : WExpr P :=
+  if WPOps.keepsTrueAssume (P := P) l then kMarkImp κ a else kImp κ a
+
 /-- Make the context `κ` equal `X` (`X` implies the enclosing context of `κ`). -/
 @[expose] def setReach (κ : RE P) (X : WExpr P) : Rope (WItem P) :=
   match κ with
@@ -447,7 +461,7 @@ mutual
     if !f then return {}
     let (wa, rd) ← wRen a
     liveAdd (rd ++ RE.vars κ)
-    return { out := .one (.assume l (kImp κ wa) md), R := Std.HashSet.ofList rd }
+    return { out := .one (.assume l (kAssume l κ wa) md), R := Std.HashSet.ofList rd }
   | .cmd (.cmd (.assert l e md)) => do
     let (we, rd) ← wRen e
     liveAdd (rd ++ RE.vars κ)

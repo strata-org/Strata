@@ -66,7 +66,7 @@ variable [HasBool P] [DecidableEq P.Expr] [DecidableEq P.Ident] [InterpLang P] [
 private theorem stepInterp_embedIConfig
     (π : String → Option (Procedure P (CmdExt P) Hdr)) (d fuel : Nat) :
     ∀ c : IConfig P (Cmd P),
-      stepInterp (stepCmd (m := m) π d) fuel (embedIConfig c)
+      stepInterp (stepCmd (m := m) π .contract d) fuel (embedIConfig c)
         = embedIConfig <$> stepInterp (baseStepCmd (m := m)) fuel c := fun c => by
   have hrec : ∀ (fr : ScopeFrame P) (c : IConfig P (Cmd P)),
       fr.record (embedIConfig c).levelCmd? = fr.record c.levelCmd? := fun fr c => by
@@ -100,7 +100,7 @@ theorem runInterp_embedIConfig
     (hmapThrow : ∀ {α β : Type} (f : α → β) (e : StopReason), f <$> (throw e : m α) = throw e)
     (π : String → Option (Procedure P (CmdExt P) Hdr)) (d : Nat) :
     ∀ (fuel : Nat) (c : IConfig P (Cmd P)),
-      runInterp (stepCmd (m := m) π d) fuel (embedIConfig c)
+      runInterp (stepCmd (m := m) π .contract d) fuel (embedIConfig c)
         = embedIConfig <$> runInterp (baseStepCmd (m := m)) fuel c := fun f c => by
   fun_induction runInterp <;> (try first | rw [runInterp.eq_3] | rw [runInterp.eq_4]) <;>
     simp_all only [embedIConfig, runInterp_terminal, map_pure, runInterp_exiting, imp_false,
@@ -136,7 +136,7 @@ private theorem replayRun_map {α β : Type} (f : α → β) (x : ReplayM P α) 
     `embedIConfig`. -/
 private theorem runReplayRun_embedIConfig (π : String → Option (Procedure P (CmdExt P) Hdr))
     (fuel : Nat) (c : IConfig P (Cmd P)) (cfg : ReplayCfg P) (oracle : List P.Expr) (d : Nat) :
-    runReplayRun (runCallInterp (m := ReplayM P) π fuel (embedIConfig c) d) cfg oracle
+    runReplayRun (runCallInterp (m := ReplayM P) π .contract fuel (embedIConfig c) d) cfg oracle
       = ((runReplayRun (runInterp (baseStepCmd (m := ReplayM P)) fuel c) cfg oracle).1.map
             embedIConfig,
          (runReplayRun (runInterp (baseStepCmd (m := ReplayM P)) fuel c) cfg oracle).2) := by
@@ -149,7 +149,7 @@ private theorem runReplayRun_embedIConfig (π : String → Option (Procedure P (
 theorem runReplay_embedConfig (π : String → Option (Procedure P (CmdExt P) Hdr))
     (fuel : Nat) (c : IConfig P (Cmd P)) (cfg : ReplayCfg P) (haltOn : IEvent P → Bool)
     (oracle : List P.Expr) (d : Nat) :
-    runReplay (runCallInterp (m := ReplayM P) π fuel (embedIConfig c) d) cfg haltOn
+    runReplay (runCallInterp (m := ReplayM P) π .contract fuel (embedIConfig c) d) cfg haltOn
         oracle
       = runReplay (runInterp (baseStepCmd (m := ReplayM P)) fuel c) cfg haltOn
         oracle := by

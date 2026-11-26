@@ -191,10 +191,11 @@ class LawfulHasBool (P : PureExpr) [HasBool P] [HasFvars P] where
   tt_getFvars : HasFvars.getFvars (P := P) HasBool.tt = []
   ff_getFvars : HasFvars.getFvars (P := P) HasBool.ff = []
 
-/-- Boolean operations: not, and, imp. -/
+/-- Boolean operations: not, and, or, imp. -/
 class HasBoolOps (P : PureExpr) extends HasBool P where
   not : P.Expr → P.Expr
   and : P.Expr → P.Expr → P.Expr
+  or : P.Expr → P.Expr → P.Expr
   imp : P.Expr → P.Expr → P.Expr
 
 /-! ## Typing of expressions

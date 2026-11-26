@@ -135,6 +135,19 @@ private theorem dBridge_stepBaseCmdStore (fuel : Nat) (factory : InterpLang.RFac
     DBridge (stepBaseCmdStore (m := ReplayM P) fuel factory store base) cfg st := by
   bridge_ind dBridge
 
+/-- `DBridge` (the stop hook only truncates the run) holds for `havocVarList`. -/
+private theorem dBridge_havocVarList (f : Nat) (factory : InterpLang.RFactory P) :
+    ∀ (names : List P.Ident) (store : IStore P) (cfg : ReplayCfg P) (st : ReplayState P),
+    DBridge (havocVarList (m := ReplayM P) f factory names store) cfg st := by
+  intro names
+  induction names with
+  | nil => intro _ _ _; apply dBridge_pure
+  | cons _ _ ih =>
+    intro _ _ _
+    unfold havocVarList
+    apply dBridge_bind' (hg := fun a _ => ih a _ _)
+    apply dBridge_stepBaseCmdStore
+
 /-- `DBridge` (the stop hook only truncates the run) holds for `stepInterp` over a command stepper
     satisfying it. -/
 theorem dBridge_stepInterp {CmdT : Type} [CmdDefs P CmdT]
@@ -189,6 +202,8 @@ private theorem dBridge_runCallee (step : StepCmdM P (CmdExt P) (ReplayM P))
     bridge_close dBridge
   · unfold runCallee
     bridge_close dBridge
+  · unfold runCallee
+    bridge_close dBridge
 
 /-- `DBridge` (the stop hook only truncates the run) holds for `stepCmd π`, for every callee table
     `π`. -/
@@ -196,7 +211,7 @@ theorem dBridge_stepCmd [HasFvar P] [HasOldIdent P]
     (π : String → Option (Procedure P (CmdExt P) Hdr)) :
     ∀ (k d : Nat) (env : IEnv P) (cmd : CmdExt P)
       (cfg : ReplayCfg P) (st : ReplayState P),
-      DBridge (stepCmd π d k env cmd) cfg st := by bridge_ind dBridge
+      DBridge (stepCmd π .contract d k env cmd) cfg st := by bridge_ind dBridge
 
 /-- The interrupt-on run of `runCallInterp π` matches its interrupt-off run (`DBridge`): the
     interrupt-on trace is a suffix of the interrupt-off trace, a non-throwing interrupt-on run
@@ -204,7 +219,7 @@ theorem dBridge_stepCmd [HasFvar P] [HasOldIdent P]
 theorem dBridge_runCallInterp [HasFvar P] [HasOldIdent P]
     (π : String → Option (Procedure P (CmdExt P) Hdr)) (fuel : Nat)
     (start : IConfig P (CmdExt P)) (d : Nat) (cfg : ReplayCfg P) (st : ReplayState P) :
-    DBridge (runCallInterp (m := ReplayM P) π fuel start d) cfg st :=
+    DBridge (runCallInterp (m := ReplayM P) π .contract fuel start d) cfg st :=
   dBridge_runInterp _ (fun k => dBridge_stepCmd π k d) ..
 
 /-- **Interrupt-on genuine ⟹ interrupt-off genuine**: if the interrupt-on run of
@@ -215,9 +230,9 @@ theorem runReplay_genuine_of_interruptOn [HasFvar P] [HasOldIdent P]
     (start : IConfig P (CmdExt P)) (d : Nat) (cfg : ReplayCfg P)
     (haltOn : IEvent P → Bool)
     (oracle : List P.Expr)
-    (h : (runReplay (runCallInterp (m := ReplayM P) π fuel start d) cfg haltOn oracle).1
+    (h : (runReplay (runCallInterp (m := ReplayM P) π .contract fuel start d) cfg haltOn oracle).1
         = .genuine) :
-    (runReplay (runCallInterp (m := ReplayM P) π fuel start d)
+    (runReplay (runCallInterp (m := ReplayM P) π .contract fuel start d)
         (interruptOff cfg) haltOn oracle).1 = .genuine := by
   rw [runReplay_genuine_iff] at *
   obtain ⟨⟨hsuf, -⟩, -⟩ := dBridge_runCallInterp π fuel start d cfg { remaining := oracle }
@@ -305,6 +320,21 @@ private theorem feasBridge_stepBaseCmdStore (target : AssertId P) (fuel : Nat)
     FeasBridge target fuel (stepBaseCmdStore (m := ReplayM P) f factory store base) cfg st := by
   bridge_ind feasBridge
 
+/-- `FeasBridge` (an `.ok` or interrupted run keeps the trace path-feasible) holds for
+    `havocVarList`. -/
+private theorem feasBridge_havocVarList (target : AssertId P) (fuel : Nat) (f : Nat)
+    (factory : InterpLang.RFactory P) :
+    ∀ (names : List P.Ident) (store : IStore P) (cfg : ReplayCfg P) (st : ReplayState P),
+    FeasBridge target fuel (havocVarList (m := ReplayM P) f factory names store) cfg st := by
+  intro names
+  induction names with
+  | nil => intro _ _ _; apply feasBridge_pure
+  | cons _ _ ih =>
+    intro _ _ _
+    unfold havocVarList
+    apply feasBridge_bind' (hg := fun a _ => ih a _ _)
+    apply feasBridge_stepBaseCmdStore
+
 /-- `FeasBridge` (an `.ok` or interrupted run keeps the trace path-feasible) holds for `stepInterp`
     over a command stepper satisfying it. -/
 theorem feasBridge_stepInterp {CmdT : Type} [CmdDefs P CmdT]
@@ -366,6 +396,8 @@ private theorem feasBridge_runCallee (target : AssertId P) (fuel : Nat)
     bridge_close feasBridge
   · unfold runCallee
     bridge_close feasBridge
+  · unfold runCallee
+    bridge_close feasBridge
 
 /-- `FeasBridge` (an `.ok` or interrupted run keeps the trace path-feasible) holds for `stepCmd π`,
     for every callee table `π`. -/
@@ -374,7 +406,7 @@ theorem feasBridge_stepCmd [HasFvar P] [HasOldIdent P] (target : AssertId P)
     (π : String → Option (Procedure P (CmdExt P) Hdr)) :
     ∀ (k d : Nat) (env : IEnv P) (cmd : CmdExt P)
       (cfg : ReplayCfg P) (st : ReplayState P),
-      FeasBridge target fuel (stepCmd π d k env cmd) cfg st := by bridge_ind feasBridge
+      FeasBridge target fuel (stepCmd π .contract d k env cmd) cfg st := by bridge_ind feasBridge
 
 /-- `FeasBridge` (an `.ok` or interrupted run keeps the trace path-feasible) holds for
     `runCallInterp π`, for every callee table `π`. -/
@@ -382,7 +414,7 @@ theorem feasBridge_runCallInterp [HasFvar P] [HasOldIdent P]
     (target : AssertId P) (fuel : Nat)
     (π : String → Option (Procedure P (CmdExt P) Hdr)) (dfuel : Nat)
     (start : IConfig P (CmdExt P)) (d : Nat) (cfg : ReplayCfg P) (st : ReplayState P) :
-    FeasBridge target fuel (runCallInterp (m := ReplayM P) π dfuel start d) cfg st := by
+    FeasBridge target fuel (runCallInterp (m := ReplayM P) π .contract dfuel start d) cfg st := by
   apply feasBridge_runInterp
   exact fun k => feasBridge_stepCmd target fuel π k d
 
@@ -393,9 +425,9 @@ theorem pathFeasible_of_runReplayRun_enforce [HasFvar P] [HasOldIdent P]
     (target : AssertId P) (fuel : Nat)
     (π : String → Option (Procedure P (CmdExt P) Hdr)) (start : IConfig P (CmdExt P)) (d : Nat)
     (oracle : List P.Expr)
-    (hok : OkOrInterrupt (runReplayRun (runCallInterp (m := ReplayM P) π fuel start d)
+    (hok : OkOrInterrupt (runReplayRun (runCallInterp (m := ReplayM P) π .contract fuel start d)
       { oracleConfig := .strict, interruptOn := enforceInterrupt target fuel } oracle).1) :
-    PathFeasible fuel (runReplayRun (runCallInterp (m := ReplayM P) π fuel start d)
+    PathFeasible fuel (runReplayRun (runCallInterp (m := ReplayM P) π .contract fuel start d)
       { oracleConfig := .strict, interruptOn := enforceInterrupt target fuel }
         oracle).2.traceRev :=
   feasBridge_runCallInterp _ _ _ _ _ _ _ _ rfl _ _ rfl hok nofun
@@ -484,6 +516,21 @@ private theorem stopBridge_stepBaseCmdStore (target : AssertId P) (fuel : Nat)
     StopBridge target fuel (stepBaseCmdStore (m := ReplayM P) f factory store base) cfg st := by
   bridge_ind stopBridge
 
+/-- `StopBridge` (a newly recorded failing target event interrupts the run) holds for
+    `havocVarList`. -/
+private theorem stopBridge_havocVarList (target : AssertId P) (fuel : Nat) (f : Nat)
+    (factory : InterpLang.RFactory P) :
+    ∀ (names : List P.Ident) (store : IStore P) (cfg : ReplayCfg P) (st : ReplayState P),
+    StopBridge target fuel (havocVarList (m := ReplayM P) f factory names store) cfg st := by
+  intro names
+  induction names with
+  | nil => intro _ _ _; apply stopBridge_pure
+  | cons _ _ ih =>
+    intro _ _ _
+    unfold havocVarList
+    apply stopBridge_bind' (hg := fun a _ => ih a _ _)
+    apply stopBridge_stepBaseCmdStore
+
 /-- `StopBridge` (a newly recorded failing target event interrupts the run) holds for `stepInterp`
     over a command stepper satisfying it. -/
 theorem stopBridge_stepInterp {CmdT : Type} [CmdDefs P CmdT]
@@ -545,6 +592,8 @@ private theorem stopBridge_runCallee (target : AssertId P) (fuel : Nat)
     bridge_close stopBridge
   · unfold runCallee
     bridge_close stopBridge
+  · unfold runCallee
+    bridge_close stopBridge
 
 /-- `StopBridge` (a newly recorded failing target event interrupts the run) holds for `stepCmd π`,
     for every callee table `π`. -/
@@ -553,7 +602,7 @@ theorem stopBridge_stepCmd [HasFvar P] [HasOldIdent P] (target : AssertId P)
     (π : String → Option (Procedure P (CmdExt P) Hdr)) :
     ∀ (k d : Nat) (env : IEnv P) (cmd : CmdExt P)
       (cfg : ReplayCfg P) (st : ReplayState P),
-      StopBridge target fuel (stepCmd π d k env cmd) cfg st := by bridge_ind stopBridge
+      StopBridge target fuel (stepCmd π .contract d k env cmd) cfg st := by bridge_ind stopBridge
 
 /-- `StopBridge` (a newly recorded failing target event interrupts the run) holds for
     `runCallInterp π`, for every callee table `π`. -/
@@ -561,7 +610,7 @@ theorem stopBridge_runCallInterp [HasFvar P] [HasOldIdent P]
     (target : AssertId P) (fuel : Nat)
     (π : String → Option (Procedure P (CmdExt P) Hdr)) (dfuel : Nat)
     (start : IConfig P (CmdExt P)) (d : Nat) (cfg : ReplayCfg P) (st : ReplayState P) :
-    StopBridge target fuel (runCallInterp (m := ReplayM P) π dfuel start d) cfg st := by
+    StopBridge target fuel (runCallInterp (m := ReplayM P) π .contract dfuel start d) cfg st := by
   apply stopBridge_runInterp
   exact fun k => stopBridge_stepCmd target fuel π k d
 
@@ -639,6 +688,19 @@ private theorem coBridge_stepBaseCmdStore (f : Nat)
     CoBridge (stepBaseCmdStore (m := ReplayM P) f factory store base) cfg st := by
   bridge_ind coBridge
 
+/-- `CoBridge` (the stop hook can only stop the run at its last event) holds for `havocVarList`. -/
+private theorem coBridge_havocVarList (f : Nat) (factory : InterpLang.RFactory P) :
+    ∀ (names : List P.Ident) (store : IStore P) (cfg : ReplayCfg P) (st : ReplayState P),
+    CoBridge (havocVarList (m := ReplayM P) f factory names store) cfg st := by
+  intro names
+  induction names with
+  | nil => intro _ _ _; apply coBridge_pure
+  | cons _ _ ih =>
+    intro _ _ _
+    unfold havocVarList
+    apply coBridge_bind' (hg := fun a _ => ih a _ _)
+    apply coBridge_stepBaseCmdStore
+
 /-- `CoBridge` (the stop hook can only stop the run at its last event) holds for `stepInterp` over a
     command stepper satisfying it. -/
 theorem coBridge_stepInterp {CmdT : Type} [CmdDefs P CmdT]
@@ -693,6 +755,8 @@ private theorem coBridge_runCallee (step : StepCmdM P (CmdExt P) (ReplayM P))
     bridge_close coBridge
   · unfold runCallee
     bridge_close coBridge
+  · unfold runCallee
+    bridge_close coBridge
 
 /-- `CoBridge` (the stop hook can only stop the run at its last event) holds for `stepCmd π`, for
     every callee table `π`. -/
@@ -700,14 +764,14 @@ theorem coBridge_stepCmd [HasFvar P] [HasOldIdent P]
     (π : String → Option (Procedure P (CmdExt P) Hdr)) :
     ∀ (k d : Nat) (env : IEnv P) (cmd : CmdExt P)
       (cfg : ReplayCfg P) (st : ReplayState P),
-      CoBridge (stepCmd π d k env cmd) cfg st := by bridge_ind coBridge
+      CoBridge (stepCmd π .contract d k env cmd) cfg st := by bridge_ind coBridge
 
 /-- `CoBridge` (the stop hook can only stop the run at its last event) holds for `runCallInterp π`,
     for every callee table `π`. -/
 theorem coBridge_runCallInterp [HasFvar P] [HasOldIdent P]
     (π : String → Option (Procedure P (CmdExt P) Hdr)) (dfuel : Nat)
     (start : IConfig P (CmdExt P)) (d : Nat) (cfg : ReplayCfg P) (st : ReplayState P) :
-    CoBridge (runCallInterp (m := ReplayM P) π dfuel start d) cfg st :=
+    CoBridge (runCallInterp (m := ReplayM P) π .contract dfuel start d) cfg st :=
   coBridge_runInterp _ (fun k => coBridge_stepCmd π k d) ..
 
 /-- A `.genuine` strict verdict under the enforcing stop hook implies a path-feasible trace (every
@@ -737,10 +801,10 @@ theorem pathFeasible_of_runReplay_genuine_call [HasFvar P] [HasOldIdent P]
     (target : AssertId P) (fuel : Nat)
     (π : String → Option (Procedure P (CmdExt P) Hdr)) (start : IConfig P (CmdExt P)) (d : Nat)
     (oracle : List P.Expr)
-    (h : (runReplay (runCallInterp (m := ReplayM P) π fuel start d)
+    (h : (runReplay (runCallInterp (m := ReplayM P) π .contract fuel start d)
         { oracleConfig := .strict, interruptOn := enforceInterrupt target fuel }
         (assertFailureHalt target fuel) oracle).1 = .genuine) :
-    PathFeasible fuel (runReplayRun (runCallInterp (m := ReplayM P) π fuel start d)
+    PathFeasible fuel (runReplayRun (runCallInterp (m := ReplayM P) π .contract fuel start d)
       { oracleConfig := .strict, interruptOn := enforceInterrupt target fuel }
         oracle).2.traceRev :=
   pathFeasible_of_runReplay_genuine_enforce _ _ _ _ (feasBridge_runCallInterp _ _ _ _ _ _ _ _)
@@ -755,9 +819,9 @@ theorem pathFeasible_enforce_of_spec_suffix [HasFvar P] [HasOldIdent P]
     (π : String → Option (Procedure P (CmdExt P) Hdr)) (start : IConfig P (CmdExt P)) (d : Nat)
     (oracle : List P.Expr) (tgt : IEvent P) (pre : List (IEvent P))
     (htgt : assertFailureHalt target fuel tgt = true) (hpre : PathFeasible fuel pre)
-    (hsuf : (tgt :: pre) <:+ (runReplayRun (runCallInterp (m := ReplayM P) π fuel start d)
+    (hsuf : (tgt :: pre) <:+ (runReplayRun (runCallInterp (m := ReplayM P) π .contract fuel start d)
         { oracleConfig := .strict } oracle).2.traceRev) :
-    PathFeasible fuel (runReplayRun (runCallInterp (m := ReplayM P) π fuel start d)
+    PathFeasible fuel (runReplayRun (runCallInterp (m := ReplayM P) π .contract fuel start d)
       { oracleConfig := .strict, interruptOn := enforceInterrupt target fuel }
         oracle).2.traceRev := by
   obtain ⟨⟨hon, -⟩, -⟩ := dBridge_runCallInterp π fuel start d
@@ -871,7 +935,7 @@ theorem genuineEnforced_of_spec_suffix [HasFvar P] [HasOldIdent P]
     (target : AssertId P) (cex : CexA P (CmdExt P)) (fuel : Nat) (d : Nat)
     (tgt : IEvent P) (pre : List (IEvent P))
     (htgt : assertFailureHalt target fuel tgt = true) (hpre : PathFeasible fuel pre)
-    (hsuf : (tgt :: pre) <:+ (runReplayRun (runCallInterp (m := ReplayM P) π fuel
+    (hsuf : (tgt :: pre) <:+ (runReplayRun (runCallInterp (m := ReplayM P) π .contract fuel
         cex.cfg d) { oracleConfig := .strict } cex.oracle).2.traceRev) :
     genuineEnforced π target fuel cex d :=
   runReplay_genuine_enforce_of_spec_suffix _ _ _ _ (dBridge_runCallInterp ..)

@@ -10,7 +10,7 @@ import Strata.Languages.Core.ObligationExtractionProps
 import Strata.Transform.InsertLoopInvariantAsserts
 import Strata.Transform.LoopElim
 import Strata.Transform.PrecondElim
-import Strata.Transform.TerminationCheck
+import Strata.Transform.TerminationCheckPhase
 public import Strata.Languages.Core.SMTEncoder
 import Std.Tactic.BVDecide.Normalize.Prop
 import Strata.DL.Lambda.Denote.LExprAnnotated
@@ -29,6 +29,8 @@ public meta import Strata.DL.SMT.Translate
 import Strata.DL.SMT.Translate -- shake: keep
 meta import Lean.Meta.Eval
 import Lean.Meta.Eval -- shake: keep
+meta import Lean.Meta.Native
+import Lean.Meta.Native -- shake: keep
 import Lean.Meta.AppBuilder
 import Lean.Meta.ProdN
 import Lean.Meta.SynthInstance
@@ -1202,21 +1204,9 @@ where
 
 def nativeDecide (p : Lean.Expr) : MetaM Lean.Expr := do
   let hp ← Meta.synthInstance (.app (.const ``Decidable []) p)
-  let auxDeclName ← mkNativeAuxDecl `_genSMTVCs (.const ``Bool []) (mkApp2 (.const ``decide []) p hp)
-  let b := .const auxDeclName []
-  return mkApp3 (.const ``of_decide_eq_true []) p hp
-                (mkApp3 (.const ``Lean.ofReduceBool []) b (.const ``true [])
-                        (mkApp2 (.const ``Eq.refl [1]) (.const ``Bool []) (.const ``true [])))
-where
-  mkNativeAuxDecl (baseName : Name) (type value : Lean.Expr) : MetaM Name := do
-    let auxName ← Lean.mkAuxDeclName baseName
-    let decl := Declaration.defnDecl {
-      name := auxName, levelParams := [], type, value
-      hints := .abbrev
-      safety := .safe
-    }
-    addAndCompile decl
-    pure auxName
+  match ← Lean.Meta.nativeEqTrue `native_decide (mkApp2 (.const ``decide []) p hp) with
+  | .success prf => return mkApp3 (.const ``of_decide_eq_true []) p hp prf
+  | .notTrue => throwError "native_decide evaluated the proposition to false:{indentExpr p}"
 
 /--
 Prove `D`, the denotation of a VC, from `h : P`, its Lean goal. `D` always

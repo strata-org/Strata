@@ -48,7 +48,7 @@ VCs:
 Label: callElimAssert_Extract_requires_0_2
 Property: assert
 Obligation:
-List..isCons(xs@3)
+List..isCons(xs@2)
 
 Label: Test_ensures_0
 Property: assert
@@ -61,7 +61,7 @@ Obligation: callElimAssert_Extract_requires_0_2
 Property: assert
 Result: ❌ fail
 Model:
-(xs@3, Nil)
+(xs@2, Nil)
 
 Obligation: Test_ensures_0
 Property: assert
@@ -100,14 +100,14 @@ VCs:
 Label: assert_0
 Property: assert
 Assumptions:
-$__callElimAssume_MkCons_ensures_0_2: List..isCons(r@3)
+callElimPost_MkCons_ensures_0_2: List..isCons(r@2)
 Obligation:
-List..isCons(r@3)
+List..isCons(r@2)
 
 Label: Test_ensures_0
 Property: assert
 Assumptions:
-$__callElimAssume_MkCons_ensures_0_2: List..isCons(r@3)
+callElimPost_MkCons_ensures_0_2: List..isCons(r@2)
 Obligation:
 true
 

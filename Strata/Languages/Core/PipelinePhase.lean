@@ -28,9 +28,19 @@ public section
 inductive ModelValidation where
   /-- The phase preserves models — sat results are sound. -/
   | modelPreserving
-  /-- The phase may introduce spurious models. The function returns true
-      when the model is valid. -/
-  | modelToValidate (validate : Imperative.SMT.Model Expression.Ident → Bool)
+  /-- The phase may introduce spurious models. The function returns the model to
+      report when the model is valid (the model itself, or one the validation
+      refined, such as with the values of a run it found), and `none` when it is not.
+      `holds` says which query the model is of: the check holding (the
+      satisfiability query, `P ∧ Q`) or failing (the validity query, `P ∧ ¬Q`). -/
+  | modelToValidate (validate : (holds : Bool) → Imperative.SMT.Model Expression.Ident →
+      Option (Imperative.SMT.Model Expression.Ident))
+  /-- The obligation's path carries markers of the phase, each placed under the branch guards
+      `guards` lists for it (`markerGuards`; an empty list for a marker on every path). A model
+      can reach a marker unless it falsifies one of the marker's guards; a `sat` result whose
+      model can reach one of the markers is not sound. A model that reaches none of them is
+      passed through, never promoted. -/
+  | markersOnPath (guards : List (List Expression.Expr))
 
 /-- A phase in the verification pipeline. Each phase determines per-obligation
     whether its models need validation, based on whether the obligation is
@@ -43,10 +53,34 @@ structure AbstractedPhase where
   name : String
   /-- Given an obligation, determine the model validation for this phase. -/
   getValidation : ProofObligation Expression → ModelValidation := fun _ => .modelPreserving
+  /-- A validation that also reads the program the phase was given, for a phase that
+      checks a model against that program (by replaying it, say). When the pipeline
+      records the phase's input (`runTransformsRecording`), the verifier uses it in place
+      of `getValidation` (`AbstractedPhase.onInput`); `getValidation` serves the callers
+      that do not record inputs. -/
+  getValidationOn : Option (Program → ProofObligation Expression → ModelValidation) := none
+  /-- The phase, when it changes the program, may abstract some code without a
+      labelled assumption on its paths (call elimination, whose call to a callee without
+      postconditions is a bare `havoc`). A later phase's `getValidationOn` would run that
+      abstraction as if it were the program, so after such a phase has changed the
+      program `runTransformsRecording` records no input, and the later phase validates
+      with `getValidation`. -/
+  leavesUnmarkedAbstractions : Bool := false
+  /-- The label prefixes of the assumptions `getValidation` looks for
+      (`obligationHasLabelPrefix`), for a phase that rebuilds obligations and must
+      keep those labels on their paths (the passive VC phase). -/
+  validationPrefixes : List String := []
   /-- Given an obligation label, return a human-readable description for
       diagnostics (e.g. "precondition 'nat'"). Returns `none` when the
       label does not belong to this phase. -/
   getAssertDescription : String → Option String := fun _ => none
+
+/-- The phase, validating models against `input`, the program it was given, when it has
+    such a validation (`getValidationOn`). -/
+def AbstractedPhase.onInput (p : AbstractedPhase) (input : Program) : AbstractedPhase :=
+  match p.getValidationOn with
+  | some f => { p with getValidation := f input }
+  | none => p
 
 /-- True when the label of an assumption in the obligation's path conditions
     starts with the given string, indicating the obligation went through that
@@ -59,57 +93,85 @@ def obligationHasLabelPrefix (obligation : ProofObligation Expression)
       | .assumption l _ => l.startsWith pfx
       | _ => false
 
+/-- The reach condition under which `--vcgen wp` keeps a marker whose condition is `true`, when
+    `e` is that marker's condition as WP keeps it: `if c then true else ¬c`, `c` being the reach
+    condition (`WP.kMarkImp`). `some []` for the condition `true`, and `none` for any other
+    condition. Symbolic evaluation and symbolic execution never give a marker the first form:
+    every leaf of their markers' conditions is `true`. -/
+def markerGuards : Expression.Expr → Option (List Expression.Expr)
+  | .ite _ c (.const _ (.boolConst true))
+      (.ite _ c' (.const _ (.boolConst false)) (.const _ (.boolConst true))) =>
+    if c == c' then some [c] else none
+  | .const _ (.boolConst true) => some []
+  | _ => none
 
-/-! ## Proof obligations, deferred
+/-- The model validation of an abstraction phase whose markers are the assumptions of the
+    obligation's path condition with a label that starts with one of `pfxs`. Without such an
+    assumption, `modelPreserving`. Otherwise `markersOnPath` with, for each, its branch guards
+    (`markerGuards`) when its label starts with one of `guarded`, whose markers have the
+    condition `true`, and no guards (the marker is on every path) for any other. -/
+def markerValidation (obligation : ProofObligation Expression) (pfxs : List String)
+    (guarded : List String := []) : ModelValidation :=
+  let guards := obligation.assumptions.flatMap fun pc => pc.filterMap fun
+    | .assumption l e =>
+      if !pfxs.any (l.startsWith ·) then none
+      else if guarded.any (l.startsWith ·) then some ((markerGuards e).getD [])
+      else some []
+    | _ => none
+  if guards.isEmpty then .modelPreserving else .markersOnPath guards
+
+
+/-- The label of the assumption a phase places on the path of an obligation whose
+    models may be spurious: a phase whose output over-approximates what the
+    solver's models can represent, so that a model of the output's query need not
+    be one of the input. Like every name starting with `$__`, it cannot be written
+    in a user's program. The SMT back end reports a satisfiable query for a marked
+    obligation as unknown, not as a counterexample. -/
+def spuriousModelsLabel : String := "$__spuriousModels"
+
+/-- The metadata field that marks a lemma, an obligation of its own with no statement to
+    place a marker before: a lemma's obligation carries the lemma's metadata, so the field
+    marks that obligation alone. -/
+@[match_pattern]
+abbrev spuriousModelsField : Imperative.MetaDataElem.Field Expression := .label spuriousModelsLabel
+
+/-- The assumption `assume [spuriousModelsLabel]: true` that marks an obligation
+    whose models may be spurious; `e` is its `true`, carrying the marking phase's
+    location. -/
+def spuriousModelsMarker (e : Expression.Expr) : Statement :=
+  Statement.assume spuriousModelsLabel e .empty
+
+/-- The model validation of a phase that marks obligations with
+    `spuriousModelsMarker`: a model of a marked obligation is reported as unknown,
+    never as a counterexample; any other obligation is unaffected. -/
+def spuriousModelsValidation (obligation : ProofObligation Expression) : ModelValidation :=
+  let marked := obligationHasLabelPrefix obligation spuriousModelsLabel ||
+    (obligation.metadata.findElem spuriousModelsField).isSome
+  if marked then .modelToValidate (fun _ _ => none)
+  else .modelPreserving
+
+/-! ## Proof obligations
 
 A phase's `establishes` and `preserves` are claims about the program its
 transform produces, and `establishes_ok` and `preserves_ok` state that those
-claims hold. Proving one relates a transform to a `Prop` about its output; no
-production transform has such a proof yet, so contracts are checked for
-*composition* while the facts themselves are declared. -/
+claims hold, for every claimed fact the phase does not list in `unproved`.
+Proving one relates a transform to a `Prop` about its output. Every contract
+is checked for *composition*, proved or not. -/
 
-/-- Require every phase to prove every fact it claims, whatever its own
-    `PipelinePhase.provesContract` says.
-
-    Temporary: it exists only because `true` is not yet reachable. Once
-    every phase discharges its obligations, this switch and the
-    `PhaseContractObligation` guard it feeds go away and the obligations become
-    ordinary fields. -/
-@[expose] def proveAllPhaseContracts : Bool := false
-
-/-- A claim a phase makes about its output program: the claim itself when a
-    proof is owed — `proveAllPhaseContracts` or the phase's own
-    `provesContract` is `true` — and `True` otherwise.
-
-    Guarding the obligation rather than omitting it keeps the statement
-    written down and checked for well-formedness, and makes turning a phase
-    from declared to proved a one-word edit. -/
-@[expose] def PhaseContractObligation (provesContract : Bool) (P : Prop) : Prop :=
-  if proveAllPhaseContracts || provesContract then P else True
-
-/-- When neither the global switch nor the phase's own `provesContract` flag is
-    set, the obligation is trivially satisfied. -/
-theorem PhaseContractObligation.deferred {b : Bool} {P : Prop}
-    (h : (proveAllPhaseContracts || b) = false) : PhaseContractObligation b P := by
-  simp [PhaseContractObligation, h]
-
-/-- An obligation that *is* owed, from a proof of the claim itself. Also
-    accepted where nothing is owed, so a phase that proves its contract need
-    not know which switch turned the obligation on. -/
-theorem PhaseContractObligation.intro {b : Bool} {P : Prop} (h : P) : PhaseContractObligation b P := by
-  unfold PhaseContractObligation; split
-  · exact h
-  · trivial
-
-/-- Close a contract obligation that nobody owes yet. Fails when the phase sets
-    `provesContract := true`, or when `proveAllPhaseContracts` is `true`,
-    which is the point: the proof is then owed here. -/
-macro "deferred_contract" : tactic =>
+/-- Close a contract obligation that owes nothing: every fact the phase claims is
+    in its `unproved` set, which is checked by `decide`. Fails as soon as a claimed
+    fact is not in `unproved`, which is the point: its proof is then owed here. -/
+macro "unproved_contract" : tactic =>
   `(tactic| first
-      | exact PhaseContractObligation.deferred (by decide)
-      | fail "this phase's contract is owed a proof, because it sets \
-              `provesContract := true` or `proveAllPhaseContracts` is `true`. \
-              Prove the claim and wrap it in `PhaseContractObligation.intro`.")
+      | (intro _ _ _ _ _ _ _ f _ hu
+         exact absurd Strata.Pipeline.mem_allFactSet hu)
+      | (intro f _ hu
+         exact absurd Strata.Pipeline.mem_allFactSet hu)
+      | (intro _ _ _ _ _ _ _ f hf hu; exact absurd ((by decide : _ ⊑ _) f hf) hu)
+      | (intro f hf hu; exact absurd ((by decide : _ ⊑ _) f hf) hu)
+      | fail "this phase claims a fact that is not in its `unproved` set, so its \
+              contract is owed a proof of it: prove the claim, or, if it is true \
+              but not yet proved, add it to `unproved` with the reason.")
 
 /-! ## Pipeline phase
 
@@ -149,30 +211,33 @@ structure PipelinePhase where
   establishes : ProgramFactSet := factSet![]
   /-- Facts that, if they held on the input, also hold on the output. -/
   preserves   : ProgramFactSet := factSet![]
-  /-- Whether this phase's `establishes` and `preserves` are backed by
-      proofs rather than declared. Setting it to `true` demands
-      `establishes_ok` and `preserves_ok` from this phase alone, so proofs
-      can arrive one transform at a time. -/
-  provesContract : Bool := false
-  /-- Every fact in `establishes` holds on the output. Vacuously true
-      when `establishes` is `factSet![]`. The shape is "any successful run
-      of the transform produces a program on which every asserted fact
-      holds." `s'` is the final state; `b` is the changed-flag returned
-      by the transform. -/
-  establishes_ok : PhaseContractObligation provesContract
-      (∀ (p : Program) (s : Transform.CoreTransformState)
+  /-- The facts of `establishes` and `preserves` whose proof this phase does not
+      give. Each must be a claim believed true, with a comment saying why it is not
+      proved yet: a claim found false is fixed or dropped, never listed here. By
+      default every fact, so a phase owes no proof until it lists less. A test pins what
+      each shipped phase leaves unproved, so proving a fact means updating that test too. -/
+  unproved : ProgramFactSet := ProgramFactSet.all
+  /-- Every fact in `establishes` that is not `unproved` holds on the output.
+      The shape is "any successful run of the transform on a program meeting
+      `requires` produces a program on which every such fact holds." `s'` is the
+      final state; `b` is the changed-flag returned by the transform. The proof is
+      relative to `requires`: the facts it assumes are those the pipeline's
+      bookkeeping says hold, so it is as good as the claims of the phases before it. -/
+  establishes_ok :
+      ∀ (p : Program) (s : Transform.CoreTransformState)
         (b : Bool) (p' : Program) (s' : Transform.CoreTransformState),
+        requires.holds p →
         (transform p).run s = (.ok (b, p'), s') →
-        establishes.holds p') := by deferred_contract
-  /-- Every preserved fact really is preserved when it held on the
-      input. Vacuously true when `preserves` is `factSet![]`. -/
-  preserves_ok : PhaseContractObligation provesContract
-      (∀ (f : ProgramFact), f ∈ preserves →
+        ∀ f ∈ establishes, f ∉ unproved → f.holds p' := by unproved_contract
+  /-- Every fact in `preserves` that is not `unproved`, holding on an input meeting
+      `requires`, holds on the output. -/
+  preserves_ok :
+      ∀ (f : ProgramFact), f ∈ preserves → f ∉ unproved →
       ∀ (p : Program) (s : Transform.CoreTransformState),
-        f.holds p →
+        requires.holds p → f.holds p →
       ∀ (b : Bool) (p' : Program) (s' : Transform.CoreTransformState),
         (transform p).run s = (.ok (b, p'), s') →
-        f.holds p') := by deferred_contract
+        f.holds p' := by unproved_contract
 
 /-- A model-preserving pipeline phase: the transform is applied but it
     cannot introduce spurious models (e.g. it only removes information). -/
@@ -197,7 +262,8 @@ def ProgramFact.assertPhaseName (f : ProgramFact) : String :=
 /-- What the `assert` phase for `f` reports about a program `f`'s check rejects. For
     `wellFormedCalls`, the first ill-formed call, located at the call; there is one,
     since that check is `(illFormedCalls p).isEmpty`. For `noCFGBodies`, the first
-    procedure with a CFG body, located at its declaration. For the other facts, a
+    procedure with a CFG body, located at its declaration. For `noLambdas`, the first
+    lambda, located where it was written, with the remedy. For the other facts, a
     message naming what is expected. -/
 private def assertFailure (f : ProgramFact) (p : Program) : Strata.Message :=
   let generic :=
@@ -210,7 +276,18 @@ private def assertFailure (f : ProgramFact) (p : Program) : Strata.Message :=
       | _ => none
     match cfgProc with
     | some (name, md) => md.toDiagnostic s!"❌ Expected every procedure body to be \
-        structured, but found procedure {name} with a CFG body."
+        structured, but found procedure {name} with a CFG body. To verify it, pass \
+        --vcgen symexec (for an acyclic one) or --vcgen usp (or uwp)."
+    | none => generic
+  | .noLambdas =>
+    match p.firstLiveLambda? with
+    | some e =>
+      let msg := f!"❌ Expected no lambda, since the verification back end has no term for \
+        one, but found the lambda `{Program.showLambda e}`. Run `lambdaLift` before the back end."
+      match (Lambda.LExpr.metadata e).uri with
+      | some uri =>
+        Strata.Message.withRange { file := uri, range := (Lambda.LExpr.metadata e).range } msg
+      | none => Strata.Message.fromFormat msg
     | none => generic
   | _ => generic
 
@@ -258,18 +335,18 @@ def assertFactPhase (f : ProgramFact) (hc : f.check?.isSome = true := by decide)
   phase.name := f.assertPhaseName
   establishes := ProgramFactSet.ofList [f]
   preserves := ProgramFactSet.all
-  provesContract := true
-  establishes_ok := PhaseContractObligation.intro (by
-    intro p s b p' s' hrun g hg
+  unproved := ProgramFactSet.empty
+  establishes_ok := by
+    intro p s b p' s' _ hrun g hg _
     obtain ⟨rfl, hf⟩ := assertFact_run hrun
     have hg' : g = f := by
       simpa [ProgramFactSet.ofList] using ProgramFactSet.mem_ofList.mp hg
     subst hg'
-    exact (ProgramFact.holds_iff_check_get hc _).mpr hf)
-  preserves_ok := PhaseContractObligation.intro (by
-    intro _ _ p s hp b p' s' hrun
+    exact (ProgramFact.holds_iff_check_get hc _).mpr hf
+  preserves_ok := by
+    intro _ _ _ p s _ hp b p' s' hrun
     obtain ⟨rfl, _⟩ := assertFact_run hrun
-    exact hp)
+    exact hp
 
 /-- The phase that checks `f` on the program and passes it through. A fact with no
     executable check has no such phase, and `by decide` refuses it where it is written:
@@ -350,12 +427,17 @@ abbrev ValidatedPipeline.ofListFromDelivering (σ₀ : ProgramFactSet) (consumer
       `withRepeatedPhasePure` for telemetry.
     * `keepAllFilesPrefix` — when provided, the program after each phase is
       written to `{prefix}.{n}.{phaseName}.core.st` (1-indexed). Creates the
-      parent directory if needed. -/
-def runTransforms (p : Program) (phases : List PipelinePhase)
+      parent directory if needed.
+
+    Also returns the input of each phase that validates models against its input
+    (`AbstractedPhase.getValidationOn`), by position in `phases`, unless an earlier
+    phase changed the program and may leave abstractions unmarked
+    (`AbstractedPhase.leavesUnmarkedAbstractions`). -/
+def runTransformsRecording (p : Program) (phases : List PipelinePhase)
     (initState : Transform.CoreTransformState := .emp)
     (pipelineCtx : Option Strata.Pipeline.PipelineContext := none)
     (keepAllFilesPrefix : Option String := none)
-    : EIO Transform.Err (Program × Transform.CoreTransformState) := do
+    : EIO Transform.Err (Program × Transform.CoreTransformState × List (Nat × Program)) := do
   let initState := { initState with currentProgram := .some p }
   if let some pfx := keepAllFilesPrefix then
     if let some parent := (System.FilePath.mk pfx).parent then
@@ -364,19 +446,21 @@ def runTransforms (p : Program) (phases : List PipelinePhase)
   let mut current := p
   let mut state := initState
   let mut step := 0
-  have : Inhabited (Except Transform.Err Program × Transform.CoreTransformState) :=
+  let mut inputs : Array (Nat × Program) := #[]
+  let mut unmarked := false
+  have : Inhabited (Except Transform.Err (Bool × Program) × Transform.CoreTransformState) :=
     ⟨(.error default, Transform.CoreTransformState.emp)⟩
-  for pp in phases do
-    let runPhase : Unit → Except Transform.Err Program × Transform.CoreTransformState :=
-      fun () =>
-        Transform.runWith current (fun prog => do
-          let (_, next) ← pp.transform prog
-          return next) state
+  for (pp, i) in phases.zipIdx do
+    if pp.phase.getValidationOn.isSome && !unmarked then
+      inputs := inputs.push (i, current)
+    let runPhase : Unit → Except Transform.Err (Bool × Program) × Transform.CoreTransformState :=
+      fun () => Transform.runWith current pp.transform state
     let (result, newState) ← match pipelineCtx with
       | some pctx => pctx.withRepeatedPhasePure pp.phase.name runPhase
       | none => pure (runPhase ())
     match result with
-    | .ok next =>
+    | .ok (changed, next) =>
+      unmarked := unmarked || (changed && pp.phase.leavesUnmarkedAbstractions)
       current := next
       state := newState
       step := step + 1
@@ -385,7 +469,16 @@ def runTransforms (p : Program) (phases : List PipelinePhase)
         IO.toEIO (fun e => Strata.Message.fromFormat f!"{e}")
           (IO.FS.writeFile path (toString current ++ "\n"))
     | .error e => throw e
-  pure (current, state)
+  pure (current, state, inputs.toList)
+
+/-- `runTransformsRecording` without the recorded inputs. -/
+def runTransforms (p : Program) (phases : List PipelinePhase)
+    (initState : Transform.CoreTransformState := .emp)
+    (pipelineCtx : Option Strata.Pipeline.PipelineContext := none)
+    (keepAllFilesPrefix : Option String := none)
+    : EIO Transform.Err (Program × Transform.CoreTransformState) := do
+  let (p, s, _) ← runTransformsRecording p phases initState pipelineCtx keepAllFilesPrefix
+  pure (p, s)
 
 /-- `phase` turns `p` into `p'`, from transform state `s` to state `s'`. -/
 @[expose] def PipelinePhase.Runs (phase : PipelinePhase)

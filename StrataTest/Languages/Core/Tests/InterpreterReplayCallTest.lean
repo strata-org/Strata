@@ -30,7 +30,7 @@ private def doubleProc : Procedure := {
               outputs := [(id "result", (.int : Lambda.LMonoTy))] }
   spec := { preconditions := [], postconditions := [] }
   body := .structured
-    [ .cmd (.cmd (.set (id "result") (.det (.fvar default (id "n") (some .int))) md)) ] }
+    [ .cmd (.cmd (.set (id "result") (.det (.fvar default (id "n") (some .int))) md)) ] false }
 
 /-- Procedure environment resolving `Double`. -/
 private def piEnv : String → Option Procedure :=
@@ -78,7 +78,7 @@ private def exitProc : Procedure := {
   header := { name := id "E", typeArgs := [], inputs := [],
               outputs := [(id "result", (.int : Lambda.LMonoTy))] }
   spec := { preconditions := [], postconditions := [] }
-  body := .structured [setResult 7, .exit "nowhere" md, setResult 99] }
+  body := .structured [setResult 7, .exit "nowhere" md, setResult 99] false }
 
 /-- Procedure environment resolving `E`. -/
 private def piExit : String → Option Procedure :=

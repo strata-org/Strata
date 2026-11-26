@@ -217,10 +217,17 @@ where
     caller need not re-hash it. -/
 private def collectExprsToAbbreviate (exprs : List Expression.Expr) :
     List (UInt64 × Expression.Expr) :=
-  let final := exprs.foldl (fun st e => (collectSubexprs st e).2) ({} : CollectedExprs)
-  let duplicates := (final.dups.toList.mergeSort (fun a b => a.1 < b.1)).flatMap
-    (fun (h, bucket) => bucket.toList.map (h, ·))
-  removeSubsumed final.memoHash duplicates
+  let (duplicates, memoHash) := collectDups exprs
+  removeSubsumed memoHash duplicates
+where
+  /-- Walk the input expressions once and list every duplicate eligible
+      subexpression with its structural hash, in hash order (and, within a
+      hash, in the order the walk found them), together with the hash cache. -/
+  collectDups (exprs : List Expression.Expr) :
+      List (UInt64 × Expression.Expr) × PtrCache hx :=
+    let final := exprs.foldl (fun st e => (collectSubexprs st e).2) ({} : CollectedExprs)
+    ((final.dups.toList.mergeSort (fun a b => a.1 < b.1)).flatMap
+      (fun (h, bucket) => bucket.toList.map (h, ·)), final.memoHash)
 
 ---------------------------------------------------------------------
 -- Fast replacement of subexpressions
@@ -486,7 +493,9 @@ def stmtRunCSEIter (body : Statements) (startIdx : Nat) : Option (Statements × 
 
 /-- Deduplicate a procedure's body by extracting common subexpressions into
     `var` declarations prepended to the body. Returns the modified body and
-    the next available uniq index. -/
+    the next available uniq index. `runCSE` uses `stmtRunCSESinglePass`, which
+    is proved to return the same result up to source locations
+    (`stmtRunCSESinglePass_equiv`); this definition is its specification. -/
 def stmtRunCSE (body : Statements) (startIdx : Nat) : Statements × Nat :=
   -- For performance, maximize structural sharing of subexpressions up front, so
   -- the pointer-address hash cache hashes each distinct subterm exactly once
@@ -504,6 +513,201 @@ where
       | none => (body, startIdx)
       | some (newBody, nextIdx) => go steps' newBody nextIdx
 
+---------------------------------------------------------------------
+-- Single-pass common subexpression elimination
+---------------------------------------------------------------------
+
+/-! ## Single pass
+
+A *duplicate* is a closed (bvar-free) application, `ite` or `eq` that occurs at
+least twice in the body. Occurrences are counted on the DAG of distinct
+subterms: a node's children are counted once, however often the node occurs,
+and occurrences under binders are not counted.
+
+The pass names every duplicate that has a type and is not inside a duplicate
+without one. The *level* of a named node is the number of named nodes above it
+on the longest path from a root, so inner nodes have higher levels. Names are
+numbered by level, then by hash. Declarations are emitted from the highest level
+down, so every variable is declared before the declarations that use it. A
+declaration's right-hand side is its node with its children rewritten; in the
+body, every outermost occurrence of a named node becomes its variable.
+
+If a named node is the function of an application (a shared partial
+application), naming it changes how often that application's arguments are
+counted, and the pass uses `stmtRunCSE` instead. -/
+
+/-- The DAG of the distinct (up to `exprEq`) subterms of a list of
+    expressions. Every child is an edge, including binder bodies, triggers and
+    the functions of applications. Nodes are numbered in post-order, so every
+    child has a smaller index than its parent. -/
+private structure Dag where
+  cache : PtrCache hx := PtrCache.empty
+  ids   : Std.HashMap UInt64 (List (Expression.Expr × Nat)) := {}
+  nodes : Array Expression.Expr := #[]
+  kids  : Array (List Nat) := #[]
+
+/-- The index of the node of `g` equal to `e` (whose structural hash is `h`),
+    if any. -/
+private def Dag.find? (g : Dag) (h : UInt64) (e : Expression.Expr) : Option Nat :=
+  ((g.ids.getD h []).find? (fun p => exprEq p.1 e)).map (·.2)
+
+/-- Add `e` and its subterms to the DAG and return the index of `e`'s node. -/
+private def dagNode (e : Expression.Expr) : StateM Dag Nat := do
+  let g ← get
+  let (h, cache) := hashCached g.cache e
+  set { g with cache }
+  match (← get).find? h e with
+  | some i => return i
+  | none =>
+    let ks ← match e with
+      | .const _ _ | .bvar _ _ | .fvar _ _ _ | .op _ _ _ => pure []
+      | .app _ fn arg => do
+        let i₁ ← dagNode fn
+        let i₂ ← dagNode arg
+        pure [i₁, i₂]
+      | .ite _ c t f => do
+        let i₁ ← dagNode c
+        let i₂ ← dagNode t
+        let i₃ ← dagNode f
+        pure [i₁, i₂, i₃]
+      | .eq _ e1 e2 => do
+        let i₁ ← dagNode e1
+        let i₂ ← dagNode e2
+        pure [i₁, i₂]
+      | .abs _ _ _ body => do
+        let i₁ ← dagNode body
+        pure [i₁]
+      | .quant _ _ _ _ tr body => do
+        let i₁ ← dagNode tr
+        let i₂ ← dagNode body
+        pure [i₁, i₂]
+    let g ← get
+    let i := g.nodes.size
+    set { g with ids := g.ids.insert h ((e, i) :: g.ids.getD h []),
+                 nodes := g.nodes.push e, kids := g.kids.push ks }
+    return i
+  termination_by e
+
+/-- `up[i]` is the largest number of marked nodes (`marked[i]`) strictly above
+    node `i` on a path from a root of the DAG with children `kids`. Nodes are
+    visited from the largest index down, so a node's value is final (its parents
+    all have larger indices) when it is pushed to its children. -/
+private def propagateUp (kids : Array (List Nat)) (marked : Array Bool) : Array Nat :=
+  go kids.size (Array.replicate kids.size 0)
+where
+  /-- Push the values of nodes `i - 1, …, 0` to their children. -/
+  go : Nat → Array Nat → Array Nat
+  | 0, up => up
+  | i + 1, up =>
+    let u := up[i]! + (if marked[i]! then 1 else 0)
+    go i ((kids[i]!).foldl (fun up k => up.modify k (max · u)) up)
+
+/-- Whether some application node of `g` has a marked node as its function. -/
+private def markedFunction (g : Dag) (marked : Array Bool) : Bool :=
+  (List.range g.nodes.size).any fun i =>
+    match g.nodes[i]!, g.kids[i]! with
+    | .app _ _ _, k :: _ => marked[k]!
+    | _, _ => false
+
+/-- `e` with its children rewritten by `replaceSubexprs` (and `e` itself kept):
+    the right-hand side of the declaration that names `e`. -/
+private def replaceKids
+    (replacements : Std.HashMap UInt64 (List (Expression.Expr × Expression.Expr)))
+    (e : Expression.Expr) : StateM RwState Expression.Expr :=
+  match e with
+  | .app m fn arg => do
+    let (fn', _) ← replaceSubexprs replacements fn
+    let (arg', _) ← replaceSubexprs replacements arg
+    pure (.app m fn' arg')
+  | .ite m c t f => do
+    let (c', _) ← replaceSubexprs replacements c
+    let (t', _) ← replaceSubexprs replacements t
+    let (f', _) ← replaceSubexprs replacements f
+    pure (.ite m c' t' f')
+  | .eq m e1 e2 => do
+    let (e1', _) ← replaceSubexprs replacements e1
+    let (e2', _) ← replaceSubexprs replacements e2
+    pure (.eq m e1' e2')
+  | e => pure e
+
+/-- A node the single pass names: its structural hash, the node, its type and its
+    level plus one. -/
+private abbrev Target := UInt64 × Expression.Expr × LMonoTy × Nat
+
+/-- Deduplicate a procedure's body in one pass: declare the named nodes in
+    `init`s prepended to the body, and replace their occurrences with the
+    declared variables. Returns the new body and the next free index. -/
+def stmtRunCSESinglePass (body : Statements) (startIdx : Nat) : Statements × Nat :=
+  -- Maximize physical sharing, so each distinct subterm is hashed once.
+  let body := ShareCommon.shareCommon' body
+  let exprs := Statements.collectExprs body
+  -- Every duplicate, in hash order.
+  let (dups, memoHash) := collectExprsToAbbreviate.collectDups exprs
+  let typed : List (UInt64 × Expression.Expr × Option LMonoTy) :=
+    (dups.mapM (m := StateM TcState)
+      (fun (h, d) => do return (h, d, ← typeCheckClosed d))).run' {}
+  -- The proper subterms of the untyped duplicates are not named.
+  let blocked : Std.HashSet UInt64 :=
+    (typed.foldlM (fun acc (p : UInt64 × Expression.Expr × Option LMonoTy) =>
+        let (_, d, ty) := p
+        if ty.isNone then collectSubexprHashes acc true d else pure acc)
+      ({} : Std.HashSet UInt64)).run' memoHash
+  let named : List (UInt64 × Expression.Expr × LMonoTy) := typed.filterMap
+    fun (h, d, ty) => if blocked.contains h then none else ty.map ((h, d, ·))
+  if named.isEmpty then (body, startIdx) else
+  let g := ((exprs.mapM dagNode).run { cache := memoHash }).2
+  let index (h : UInt64) (d : Expression.Expr) : Nat := (g.find? h d).getD 0
+  let marked := named.foldl (fun a (h, d, _) => a.set! (index h d) true)
+    (Array.replicate g.nodes.size false)
+  if markedFunction g marked then stmtRunCSE body startIdx else
+  let up := propagateUp g.kids marked
+  let targets : List Target := named.map fun (h, d, ty) => (h, d, ty, up[index h d]! + 1)
+  -- Indices by level, then in hash order; declarations by level from the
+  -- deepest, then in hash order. `mergeSort` is stable.
+  let byRound := targets.mergeSort (fun a b => a.2.2.2 ≤ b.2.2.2)
+  let (replacements, nextIdx) := byRound.foldl
+      (fun (repMap, idx) (h, dup, ty, _) =>
+        let freshVar : Expression.Expr :=
+          .fvar valueLoc ⟨s!"{cseVarPrefix}{idx}", ()⟩ (some ty)
+        (repMap.insert h ((dup, freshVar) :: repMap.getD h []), idx + 1))
+      (({} : Std.HashMap UInt64 (List (Expression.Expr × Expression.Expr))), startIdx)
+  let indexed : List (Nat × Target) := (List.range' startIdx byRound.length).zip byRound
+  let declOrder := indexed.mergeSort (fun a b => a.2.2.2.2 ≥ b.2.2.2.2)
+  let (decls, body') := (do
+      let decls ← declOrder.mapM fun (p : Nat × Target) => do
+        let (idx, _, dup, ty, _) := p
+        let rhs ← replaceKids replacements dup
+        pure (Statement.init ⟨s!"{cseVarPrefix}{idx}", ()⟩ (LTy.forAll [] ty) (.det rhs)
+          .empty)
+      let body' ← Statements.mapExprsM
+        (fun e => Prod.fst <$> replaceSubexprs replacements e) body
+      pure (decls, body')).run' ({} : RwState)
+  (decls ++ body', nextIdx)
+
+/-- Whether `stmtRunCSESinglePass` uses `stmtRunCSE` on `body`: it does when a node it
+    would name is the function of an application. On any other body it does the work
+    in one pass. -/
+def singlePassFallsBack (body : Statements) : Bool :=
+  let body := ShareCommon.shareCommon' body
+  let exprs := Statements.collectExprs body
+  let (dups, memoHash) := collectExprsToAbbreviate.collectDups exprs
+  let typed : List (UInt64 × Expression.Expr × Option LMonoTy) :=
+    (dups.mapM (m := StateM TcState)
+      (fun (h, d) => do return (h, d, ← typeCheckClosed d))).run' {}
+  let blocked : Std.HashSet UInt64 :=
+    (typed.foldlM (fun acc (p : UInt64 × Expression.Expr × Option LMonoTy) =>
+        let (_, d, ty) := p
+        if ty.isNone then collectSubexprHashes acc true d else pure acc)
+      ({} : Std.HashSet UInt64)).run' memoHash
+  let named : List (UInt64 × Expression.Expr × LMonoTy) := typed.filterMap
+    fun (h, d, ty) => if blocked.contains h then none else ty.map ((h, d, ·))
+  if named.isEmpty then false else
+  let g := ((exprs.mapM dagNode).run { cache := memoHash }).2
+  let index (h : UInt64) (d : Expression.Expr) : Nat := (g.find? h d).getD 0
+  let marked := named.foldl (fun a (h, d, _) => a.set! (index h d) true)
+    (Array.replicate g.nodes.size false)
+  markedFunction g marked
+
 /-- Deduplicate all procedures in a program. Returns the modified program
     and whether any changes were made. -/
 def runCSE (p : Program) : Transform.CoreTransformM (Bool × Program) := do
@@ -511,15 +715,16 @@ def runCSE (p : Program) : Transform.CoreTransformM (Bool × Program) := do
     match decl with
     | .proc proc md =>
       match proc.body with
-      | .structured ss =>
-        let (body', idx') := stmtRunCSE ss idx
-        pure (.proc { proc with body := .structured body' } md :: acc, idx', changed || idx' > idx)
-      | .cfg _ =>
+      | .structured ss o =>
+        let (body', idx') := stmtRunCSESinglePass ss idx
+        pure (.proc { proc with body := .structured body' o } md :: acc, idx', changed || idx' > idx)
+      | .cfg _ _ =>
         -- A CFG body cannot be walked here; reject it rather than silently
         -- skipping.
         throw (Strata.Message.fromFormat
           f!"❌ CommonSubexprElim: procedure {proc.header.name.name} has a CFG body; \
              common subexpressions can only be eliminated from structured bodies.")
+      | .abstract => pure (decl :: acc, idx, changed)
     | other => pure (other :: acc, idx, changed)
   ) ([], 0, false)
   return (changed, { decls := revDecls.reverse })
@@ -553,7 +758,13 @@ def Core.commonSubexprElimPhase (minTreeSize : Option Nat := none) : Core.Pipeli
     -- between the definition and the uses, which is what
     -- `staticSingleAssignment` gives. The abbreviations are prepended to the
     -- body, so the body must declare no variable they could read: `noInits`.
-    (requires := factSet![.noCFGBodies, .staticSingleAssignment, .typeAnnotated, .noInits])
+    -- A call writes its outputs without a `set`, and a loop runs its body
+    -- repeatedly, so neither may stand between a definition and its uses:
+    -- `noCalls` and `noLoops`. A named subexpression is evaluated at the top of
+    -- the body, outside any guard, so the preconditions of the functions it calls
+    -- must already have been checked where they were: `noPrecondsFromFuncs`.
+    (requires := factSet![.noCFGBodies, .noCalls, .noLoops, .staticSingleAssignment,
+                        .noPrecondsFromFuncs, .typeAnnotated, .noInits])
     (preserves := factSet![.noCFGBodies, .noCalls, .noLoops, .noLoopInvariants,
                          .noLoopMeasures, .staticSingleAssignment,
                          .noBetaRedexes, .noPrecondsFromFuncs, .noNondetGuards,

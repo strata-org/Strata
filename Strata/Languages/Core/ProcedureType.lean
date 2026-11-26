@@ -116,12 +116,13 @@ def blockInitsNodupB (cfg : DetCFG) : Bool :=
   cfg.blocks.all fun lb => (WF.blockInitVars lb.2).nodupB
 
 /-- Every CFG-local a *reachable* block reads or assigns has a dominating
-declarer. Unreachable blocks are excluded (their dominator set is `⊤`).
+declarer. Unreachable blocks are excluded (every block dominates them; see
+`Dom.DomMap`).
 
 Each use of `x` is checked only against the declarers of `x` (`groupValuesByKey`), so
-a local with one declarer costs one `dominates` query per use. `dominates`
-searches the block's dominator list from `computeDominators`. -/
-def domScopedB (dom : Std.HashMap String (List String)) (reachable : Std.HashSet String)
+a local with one declarer costs one `dominates` query per use, which is a
+constant-time interval test (`computeDominators`). -/
+def domScopedB (dom : Imperative.CFG.Dom.DomMap) (reachable : Std.HashSet String)
     (cfg : DetCFG) : Bool :=
   let inits := Std.HashSet.ofList (WF.cfgInitVars cfg)
   let groups := (cfgInitDeclBlocks cfg).groupValuesByKey (fun _ => true)
@@ -132,15 +133,15 @@ def domScopedB (dom : Std.HashMap String (List String)) (reachable : Std.HashSet
       (groups.getD x []).any (fun d => dominates dom d lb.1)
 
 /-- Two distinct *reachable* blocks declaring the same local are
-dominance-incomparable. Unreachable declarers are excluded (their dominator set
-is `⊤`).
+dominance-incomparable. Unreachable declarers are excluded (every block dominates
+them; see `Dom.DomMap`).
 
 Each reachable declarer is compared only with the other declarers of the same
 local (`groupValuesByKey`): none of them may dominate it. Running this for
 every declarer covers both directions of each pair. A local declared in a single
 block makes no `dominates` query, so the check is linear when locals are
 distinct. -/
-def initsIncomparableB (dom : Std.HashMap String (List String)) (reachable : Std.HashSet String)
+def initsIncomparableB (dom : Imperative.CFG.Dom.DomMap) (reachable : Std.HashSet String)
     (cfg : DetCFG) : Bool :=
   let ds := cfgInitDeclBlocks cfg
   let groups := ds.groupValuesByKey reachable.contains
@@ -161,7 +162,7 @@ def checkBlockInitsNodup (procName : CoreIdent) (cfg : DetCFG) (sourceLoc : File
 before the per-block loop (over the order-independent dominance oracle) so a
 genuine scope error surfaces as this CFG-level message ahead of the low-level
 in-loop fvar error. -/
-def checkDomScoped (dom : Std.HashMap String (List String)) (reachable : Std.HashSet String)
+def checkDomScoped (dom : Imperative.CFG.Dom.DomMap) (reachable : Std.HashSet String)
     (procName : CoreIdent) (cfg : DetCFG) (sourceLoc : FileRange) :
     Except Message Unit :=
   if domScopedB dom reachable cfg then .ok ()
@@ -173,7 +174,7 @@ def checkDomScoped (dom : Std.HashMap String (List String)) (reachable : Std.Has
     header (`CFG.misplacedInvariants`). CFG loop elimination cuts loops at their headers, so
     an invariant elsewhere would mean nothing; rejecting it here makes every generator
     report it. -/
-def checkLoopInvariantsAtHeaders (dom : Std.HashMap String (List String))
+def checkLoopInvariantsAtHeaders (dom : Imperative.CFG.Dom.DomMap)
     (reachable : Std.HashSet String) (procName : CoreIdent) (cfg : DetCFG)
     (sourceLoc : FileRange) : Except Message Unit := do
   if let some l := (Imperative.CFG.misplacedInvariants dom reachable cfg).head? then
@@ -184,7 +185,7 @@ def checkLoopInvariantsAtHeaders (dom : Std.HashMap String (List String))
 /-- Error unless same-local declarers are dominance-incomparable. Runs before the
 per-block loop (over the order-independent dominance oracle) so this CFG-level
 message surfaces for a comparable pair ahead of the low-level in-loop error. -/
-def checkInitsIncomparable (dom : Std.HashMap String (List String)) (reachable : Std.HashSet String)
+def checkInitsIncomparable (dom : Imperative.CFG.Dom.DomMap) (reachable : Std.HashSet String)
     (procName : CoreIdent) (cfg : DetCFG) (sourceLoc : FileRange) :
     Except Message Unit :=
   if initsIncomparableB dom reachable cfg then .ok ()
@@ -448,7 +449,7 @@ def typeCheck (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv)
   -- depend on insertion order.
   --
   -- Extending the parent's newest frame copies it, so on a chain of declaring
-  -- blocks this walk is quadratic, like the dominator map itself.
+  -- blocks this walk is quadratic in their number.
   let (rpo, idom) := idoms
   let mut scopeCtx : Std.HashMap String (type_of% Env.context) := {}
   for lbl in rpo do
@@ -622,6 +623,56 @@ private def checkCondition (C : Core.Expression.TyContext) (Env : Core.Expressio
     throw (conditionErrorMessage C.knownTypes procName σ label chk.md ambientRigidRefinedMsg)
   .ok { chk with expr := expr }
 
+/-- The type variables, outside `typeArgs`, in the declared type of the local that the command `c`
+    declares or in the type arguments of the call that it makes. -/
+def cmdUnboundTyVars (typeArgs : List TyIdentifier) (c : Command) : List TyIdentifier :=
+  (cmdCollect (fun _ => []) LMonoTy.freeVars c).filter (· ∉ typeArgs) |>.eraseDups
+
+/-- The part of an error message that names the unbound type variables `vs`. A generated variable
+    that unification left unsolved is reported without its name. -/
+def unboundTyVarsPhrase (vs : List TyIdentifier) : String :=
+  match vs.filter isAllowedName with
+  | [] => "an unresolved type variable, which is not a type parameter of the procedure"
+  | [v] => s!"type variable '{v}', which is not a type parameter of the procedure"
+  | written =>
+    s!"type variables {", ".intercalate (written.map fun v => s!"'{v}'")}, which are not type \
+      parameters of the procedure"
+
+/-- What is wrong with the command `c` when it mentions a type variable outside `typeArgs`: its
+    metadata and an error text, and `none` when it does not. A local is reported with its name
+    unless the name is reserved, and a call with its callee. -/
+def cmdUnboundMsg? (typeArgs : List TyIdentifier) (c : Command) :
+    Option (MetaData Expression × String) :=
+  match cmdUnboundTyVars typeArgs c with
+  | [] => none
+  | vs =>
+    -- Only `init` and `call` collect types. A call's type arguments are recomputed by the
+    -- checker, so an unbound variable in one is either a generated variable that nothing solved
+    -- or a written variable that an argument's type carried in.
+    some (match c with
+      | .cmd (.init x _ _ md) =>
+        let who := if isAllowedName x.name then s!"local '{x.name}'" else "a local"
+        (md, s!"{who} is declared at {unboundTyVarsPhrase vs}")
+      | .call callee _ _ md =>
+        match vs.filter isAllowedName with
+        | [] => (md, s!"the call to '{callee}' does not determine one of its type parameters")
+        | _ => (md, s!"the call to '{callee}' is instantiated at {unboundTyVarsPhrase vs}")
+      | _ => (.empty, "a command mentions a type variable that is not a type parameter of the \
+          procedure"))
+
+/-- Error unless every type variable in a local's declared type or in a call type argument of
+    `body` is one of the type parameters `typeArgs`. The error reports every offending command, in
+    order and without repeats, and is located at the first, or at `md`, the procedure's metadata,
+    when that command has no source location. -/
+def checkDeclTyVarsBound (procName : CoreIdent) (md : MetaData Expression)
+    (typeArgs : List TyIdentifier) (body : Procedure.Body) : Except Message Unit :=
+  match (bodyCmds body).filterMap (cmdUnboundMsg? typeArgs) with
+  | [] => .ok ()
+  | (cmdMd, m) :: rest =>
+    let loc := if (Imperative.getFileRange cmdMd).isSome then cmdMd else md
+    throw (loc.toDiagnosticF
+      f!"{procedureMsgPrefix procName}{"; ".intercalate (m :: rest.map (·.2)).eraseDups}")
+
 /-- Check the names of a procedure header (`checkSignatureNames`). -/
 def checkHeaderNames (C : Core.Expression.TyContext) (h : Procedure.Header) :
     Except Format Unit :=
@@ -676,7 +727,7 @@ def typeCheckCore (scope progSigs : Thunk (Std.HashSet String))
     let chk' ← checkCondition C' bodyEnv name sk label chk
     .ok (label, chk'))
   let body' ← match proc.body with
-    | .cfg c => do
+    | .cfg c o => do
       let cSk := if sk.isEmpty then c
         else DetCFG.mapCmdsGuards c (skolemizeCmd none sk) (skolemizeBody none sk)
       let (cOut, bodyEnv') ← (CFG.typeCheck C' bodyEnv p proc cSk fileRange).mapError
@@ -684,14 +735,16 @@ def typeCheckCore (scope progSigs : Thunk (Std.HashSet String))
       let _ ← ensureAmbientRigidVarsFixed name C'.rigidTypeVars bodyEnv'.stateSubstInfo.subst
       .ok (Procedure.Body.cfg (if sk.isEmpty then cOut
         else DetCFG.mapCmdsGuards cOut (mapCmdTys (deskolemizeTy sk))
-          (mapExprTys (deskolemizeTy sk))))
-    | .structured ss => do
+          (mapExprTys (deskolemizeTy sk))) o)
+    | .structured ss o => do
       let ssSk := if sk.isEmpty then ss else skolemizeStmts none sk ss
       let (ssOut, bodyEnv') ← (Statement.typeCheck C' bodyEnv p (some proc) ssSk).mapError
         (bodyErrorMessage (withLocalTypes C'.knownTypes ss) name sk)
       let _ ← ensureAmbientRigidVarsFixed name C'.rigidTypeVars bodyEnv'.stateSubstInfo.subst
       .ok (Procedure.Body.structured
-        (if sk.isEmpty then ssOut else mapStmtsTys (deskolemizeTy sk) ssOut))
+        (if sk.isEmpty then ssOut else mapStmtsTys (deskolemizeTy sk) ssOut) o)
+    | .abstract => .ok .abstract
+  checkDeclTyVarsBound name md h.typeArgs body'
   let proc' : Procedure :=
     { proc with
       header := h,

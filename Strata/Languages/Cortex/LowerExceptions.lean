@@ -135,6 +135,9 @@ def lowerBody (tys : Std.HashMap String LTy) (throwing : Std.HashMap String (Str
     (if procThrows then [(exitLabel, { cmds := [], transfer := .finish .empty })] else [])
   { cfg := { entry := entry, blocks := extra ++ st.blocks.toList }, handlers := [] }
 
+/-- The procedure with its exceptions lowered. A procedure with a `throws` clause gains the
+outputs `$thrown` and `$exc`, and returns normally where it raised, with `$thrown` true; its
+postconditions, which the source checks only on a normal return, become `$thrown || e`. -/
 def lowerProcedure (globals : List (Core.Expression.Ident × LTy)) (throwing : Std.HashMap String (String × List Nat))
     (p : Procedure) : Procedure :=
   let procThrows := p.throws.isSome
@@ -146,7 +149,10 @@ def lowerProcedure (globals : List (Core.Expression.Ident × LTy)) (throwing : S
         | .cmd (.init x t _ _) => m.insert x.name t
         | _ => m) m) tys
     | none => tys
-  { p with outputs, throws := none, body := p.body.map (lowerBody tys throwing procThrows) }
+  let ensures := if procThrows then
+      p.ensures.map fun post => { post with cond := mkCall "Bool.Or" [mkFvar thrownOut, post.cond] }
+    else p.ensures
+  { p with outputs, ensures, throws := none, body := p.body.map (lowerBody tys throwing procThrows) }
 
 def run (prog : UnorderedProgram) : Except String UnorderedProgram := do
   prog.refuseVirtualCalls "LowerExceptions"

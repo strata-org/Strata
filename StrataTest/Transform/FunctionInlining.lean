@@ -355,7 +355,7 @@ whose structured body is `set x := myConst()` has that assignment RHS inlined to
 private def procStructBodyPgm : Core.Program :=
   let setStmt : Core.Statement := Core.Statement.set ⟨"x", ()⟩ myConst.opExpr default
   let proc : Core.Procedure := { (default : Core.Procedure) with
-    body := .structured [setStmt] }
+    body := .structured [setStmt] false }
   { decls := [.proc proc default] }
 
 #guard
@@ -363,7 +363,7 @@ private def procStructBodyPgm : Core.Program :=
   match runInliningGetProc procStructBodyPgm factory with
   | some p =>
     match p.body with
-    | .structured [Core.Statement.set _ e _] => e == bodyTrue
+    | .structured [Core.Statement.set _ e _] _ => e == bodyTrue
     | _ => false
   | _ => false
 
@@ -380,7 +380,7 @@ private def cfgCallPgm : Core.Program :=
   let blk : Imperative.DetBlock String Core.Command Core.Expression :=
     { cmds := [cmd], transfer := .finish default }
   let cfg : Core.DetCFG := { entry := "b0", blocks := [("b0", blk)] }
-  let proc : Core.Procedure := { (default : Core.Procedure) with body := .cfg cfg }
+  let proc : Core.Procedure := { (default : Core.Procedure) with body := .cfg cfg false }
   { decls := [.proc proc default] }
 
 #guard
@@ -388,7 +388,7 @@ private def cfgCallPgm : Core.Program :=
   match runInliningGetProc cfgCallPgm factory with
   | some p =>
     match p.body with
-    | .cfg c =>
+    | .cfg c _ =>
       c.entry == "b0" &&
       (match c.blocks with
        | [(lbl, blk)] =>
@@ -424,8 +424,8 @@ private def assertsOf (p : Core.Program) : Std.Format :=
     ((p.decls.flatMap fun
       | .proc proc _ =>
         match proc.body with
-        | .structured ss => ss
-        | .cfg _ => []
+        | .structured ss _ => ss
+        | .cfg _ _ | .abstract => []
       | _ => []).flatMap fun s =>
         match s with
         | .cmd (.cmd (.assert l e _)) => [Std.Format.text s!"{l}: " ++ Std.format e]

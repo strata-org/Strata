@@ -64,12 +64,12 @@ looking wrong:
 
 In local development, checks that need the Go toolchain skip with a warning when
 `go` is absent or when ion-go cannot be resolved (see `writeGoModule`), and the
-verification verdict skips without an SMT solver, matching how
-`StrataTestExtra/Languages/Java/TestGen.lean` skips without `javac`. Brazil
-builds provide Go and ion-go through `build-tools` and `brazil-path`, and a CI
-run (`CI` set) must install Go; both fail rather than skip, because the test
-driver reports only `PASS` and a skip warning would never be seen (see
-`goChecksRequired`).
+verification verdict skips without an SMT solver. Brazil builds provide Go and
+ion-go through `build-tools` and `brazil-path`, and a CI run (`CI` set) must
+install Go; both fail rather than skip, because the test driver reports only
+`PASS` and a skip warning would never be seen (see
+`Strata.TestUtil.externalToolChecksRequired`, which the `javac` checks in
+`StrataTestExtra/Languages/Java/TestGen.lean` share).
 `laurelGoGen` is *not* optional: it is in `defaultTargets` and in
 `StrataTestMain`'s `needs`, and silently skipping the end-to-end cases is the
 one failure mode that would let a broken M0 look green.
@@ -936,8 +936,8 @@ subject. -/
 def quietVerifyOptions : _root_.Core.VerifyOptions := _root_.Core.VerifyOptions.quiet
 
 /-- Whether the SMT solver the verifier defaults to is available. Verification is
-skipped with a warning without it, in the same spirit as the Java suite skipping
-without `javac`. -/
+skipped with a warning without it, in every build: unlike the Go toolchain
+checks, this one does not consult `externalToolChecksRequired`. -/
 def haveSolver : IO Bool := do
   try
     let r ← IO.Process.output { cmd := "cvc5", args := #["--version"] }

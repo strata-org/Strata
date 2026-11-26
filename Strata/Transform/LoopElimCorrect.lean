@@ -24,11 +24,7 @@ well formed there:
 
 * a run of `ss` gives a run of `ss'` with the same outcome, whose trace is the source's with
   some events dropped (`Trace.MayDropEvents`) and operationally true assumptions inserted
-  (`Trace.InsertsTrueAssumes`) — `run_sim`; when no loop iteration leaves its loop by an `exit`
-  (`Block.loopExitsLocal`), for each event of the source run there is also such a run of `ss'`
-  keeping that event, after events so related to those before it and before events so related
-  to those after it — `run_sim_at`; so a run of `ss'` whose assertions are valid exists only if
-  those of the source run are — `run_sim_valid`;
+  (`Trace.InsertsTrueAssumes`) — `run_sim`;
 * a reach of `ss` gives a reach of `ss'` whose trace ends with the same event, after events so
   related to those before it in the source (`Trace.PreservesLastEvent`) — `reach_sim`.
 
@@ -37,16 +33,14 @@ the loop runs an iteration; the first havoc block jumps from the loop's entry st
 store at the start of one iteration of the source, the replayed body follows that iteration,
 and the second havoc block jumps to the store the loop ends with.  For a reach, the replayed
 iteration is the one the reach stops in.  For a run, it is the last one, which an `exit` out of
-the loop forces; without such exits, `run_sim_at` replays instead the iteration the chosen event
-is in, the second havoc block jumping from its end to the end of the loop.  The havocs
+the loop forces.  The havocs
 can choose those stores: an iteration changes only the loop-carried variables
 (`Block.carriedVars`), since the variables the body defines are undefined at its start (def-use
 well-formedness) and projected away at its end, and keeps each value typed alike
 (`TypeAgree`).  The inserted assumptions of the guard and of its negation hold at those stores:
 the source entered, and left, the loop there.
 
-Key theorems: `LoopElim.run_sim`, `LoopElim.run_sim_at`, `LoopElim.run_sim_valid`,
-`LoopElim.reach_sim`. -/
+Key theorems: `LoopElim.run_sim`, `LoopElim.reach_sim`. -/
 
 namespace Imperative
 namespace LoopElim
@@ -483,133 +477,9 @@ private theorem defUse_loop_body {D : P.Ident → Bool} {g : ExprOrNondet P} {m 
   simp only [Stmt.defUseWellFormed, Bool.and_eq_true] at hdu
   exact hdu.2
 
-/-! ## Replaying a loop without escaping exits
-
-When no iteration of a loop leaves it by an `exit` (`Stmt.loopExitsLocal`), a run of the loop
-ends normally, and the encoding may replay any of its iterations: the second havoc block jumps
-from the end of the replayed iteration to the store the loop ends with.  So for every event of a
-run, a run of the encoding keeps that event, after events related to those before it and before
-events related to those after it by `DropsInserts`: the replay of the iteration the event is
-in. -/
-
-/-- A run with trace `evs` replays at each of its events: for every event `e` of `evs`, with
-    `pre` before it and `post` after it, `run` holds of a trace having `e` after events related
-    to `pre` and before events related to `post` by `DropsInserts`. -/
-private def ReplaysAt (allowed : P.Factory → Prop) (run : List (Event P) → Prop)
-    (evs : List (Event P)) : Prop :=
-  ∀ pre e post, evs = pre ++ e :: post → ∃ pre' post', run (pre' ++ e :: post') ∧
-    DropsInserts allowed pre pre' ∧ DropsInserts allowed post post'
-
-omit [HasFvar P] [HasFvars P] [HasBoolOps P] [HasOps P] in
-/-- The stores of the starts of iterations compose. -/
-private theorem Compat.trans {M : List P.Ident} {σ₀ σ σ' : SemanticStore P}
-    (h₁ : Compat F M σ₀ σ) (h₂ : Compat F M σ σ') : Compat F M σ₀ σ' :=
-  ⟨fun x => (h₁.dom x).trans (h₂.dom x), fun x hx => (h₂.frame x hx).trans (h₁.frame x hx),
-    h₁.agree.trans h₂.agree fun x hx => (h₁.dom x) ▸ hx, h₂.storeWF⟩
-
-omit [HasBoolOps P] in
-/-- A run of a loop whose body exits to no outer label ends normally, at a store of the start
-    of an iteration where the guard admits stopping. -/
-private theorem loopRun_normal : ∀ {s : PStmt P} {σ : SemanticStore P} {evs : List (Event P)}
-    {o : Outcome P}, BRunS F s σ evs o → ∀ {g : ExprOrNondet P} {m : Option P.Expr}
-    {inv : List (String × P.Expr)} {body : PStmts P} {md : MetaData P},
-    s = .loop g m inv body md → Block.exitsCoveredByBlocks [] body →
-    Block.defUseWellFormed (fun x => (σ x).isSome) df body = true → WellFormedStore σ F →
-    ∃ σn, o = .normal σn ∧ Compat F (Block.carriedVars body) σ σn ∧ guardExits F σn g
-  | _, σ, _, _, .loop_exit hg, _, _, _, _, _, hs, _, _, hT => by
-    obtain ⟨rfl, -, -, rfl, rfl⟩ := Stmt.loop.inj hs
-    exact ⟨σ, rfl, .refl _ hT, hg⟩
-  | _, σ, _, _, .loop_iter _ h1 h2, _, _, _, _, _, hs, hcov, hdu, hT => by
-    obtain ⟨rfl, -, -, rfl, rfl⟩ := Stmt.loop.inj hs
-    have hc1 := (Compat.refl _ hT).step hdu h1
-    obtain ⟨σn, rfl, hc2, hx⟩ :=
-      loopRun_normal h2 hs hcov (defUse_congr hc1.dom hdu) hc1.storeWF
-    exact ⟨σn, rfl, hc1.trans hc2, hx⟩
-  | _, _, _, _, .loop_break _ h1, _, _, _, _, _, hs, hcov, _, _ => by
-    obtain ⟨rfl, -, -, rfl, rfl⟩ := Stmt.loop.inj hs
-    exact absurd (brun_exit_covered h1 hcov _ _ rfl) (by simp)
-
-/-- The replay of a loop entered from `σ₀`, without escaping exits, of which a run from the
-    store `σ` of the start of an iteration emits the nonempty trace `evs` and ends with `o`: the
-    guard admits entering at `σ`, `o` defines only variables of `σ₀`, and the first branch of the
-    encoding runs from `σ₀` to `o` replaying each event of `evs` (`ReplaysAt`). -/
-private def LoopRunResAt (F : P.Factory) (allowed : P.Factory → Prop) (n : String)
-    (g : ExprOrNondet P) (body body' : PStmts P) (md : MetaData P) (σ₀ σ : SemanticStore P)
-    (evs : List (Event P)) (o : Outcome P) : Prop :=
-  evs ≠ [] → guardEnters F σ g ∧ (∀ x, (o.store x).isSome → (σ₀ x).isSome) ∧
-    ReplaysAt allowed (fun t => BRun F (thenB n g (Block.carriedVars body) body' md) σ₀ t o) evs
-
-/-- **An iteration of a loop without escaping exits, replayed in the encoding.**  If the loop
-    entered from `σ₀` runs an iteration from `σ` (where the guard admits entering) ending
-    normally, the body's output replays each of its events, and the rest of the loop from the
-    next iteration is replayed (`LoopRunResAt`), then the loop from `σ` is replayed: an event of
-    the rest by the replay of the rest, an event of this iteration by replaying this iteration
-    and jumping to the end of the loop. -/
-private theorem LoopRunResAt.iter (hvar : WellFormedSemanticEvalVar (P := P) F)
-    (hbool : WellFormedSemanticEvalBool (P := P) F)
-    (htt : ∀ σ, P.eval F σ (@HasBool.tt P HasBoolOps.toHasBool) = some (HasBool.ttVal F))
-    (hF : allowed F)
-    {n : String} {g : ExprOrNondet P} {m : Option P.Expr} {inv : List (String × P.Expr)}
-    {body body' : PStmts P} {md : MetaData P}
-    {σ₀ σ σ1 : SemanticStore P} {evs1 evs2 : List (Event P)} {o : Outcome P}
-    (hg : guardEnters F σ g) (hc : Compat F (Block.carriedVars body) σ₀ σ)
-    (hdu : Block.defUseWellFormed (fun x => (σ₀ x).isSome) df body = true)
-    (hcov : Block.exitsCoveredByBlocks [] body)
-    (h1 : BRun F body σ evs1 (.normal σ1))
-    (hk1 : ReplaysAt allowed (fun t => BRun F body' σ t (.normal σ1)) evs1)
-    (h2 : BRunS F (.loop g m inv body md) (projectStore σ σ1) evs2 o)
-    (hres : LoopRunResAt F allowed n g body body' md σ₀ (projectStore σ σ1) evs2 o) :
-    LoopRunResAt F allowed n g body body' md σ₀ σ (evs1 ++ evs2) o := by
-  have hc' := hc.step hdu h1
-  have hdu' := defUse_congr hc'.dom hdu
-  obtain ⟨σn, rfl, hcn, hx⟩ := loopRun_normal h2 rfl hcov hdu' hc'.storeWF
-  intro _
-  refine ⟨hg, fun x hx' => ?_, fun pre e post h => ?_⟩
-  · simp only [Outcome.store] at hx'
-    rw [hc'.dom x, hcn.dom x]
-    exact hx'
-  · rcases List.append_eq_append_cons h with ⟨post₁, rfl, rfl⟩ | ⟨pre₂, rfl, rfl⟩
-    · obtain ⟨pre', post₁', h1', hpre, hpost⟩ := hk1 pre e post₁ rfl
-      obtain ⟨ee, hpr, hae⟩ := prelude_run (allowed := allowed) hvar htt hF n md hc hdu hg
-      obtain ⟨ex, hex, hax⟩ := exit_run (allowed := allowed) hbool htt hF n md hx
-      have harb := BRunS.block (l := s!"{Core.loopElimBlockPrefix}arbitrary_iter_facts_{n}")
-        (md := {}) (brun_append hpr h1')
-      have hσ : projectStore σ₀ σ1 = projectStore σ σ1 := projectStore_congr_parent hc.dom
-      simp only [Outcome.block, hσ] at harb
-      have hh := havocBlock_run hvar n md (hcn.havoc hdu').1 (hcn.havoc hdu').2
-      have hrun := BRun.cons_normal harb (.cons_normal hh hex)
-      have heq :
-          (ee ++ pre') ++ e :: (post₁' ++ ex) = (ee ++ (pre' ++ e :: post₁')) ++ ([] ++ ex) := by
-        simp
-      refine ⟨ee ++ pre', post₁' ++ ex, heq ▸ hrun,
-        by simpa using Trace.mayDropEvents_insertsTrueAssumes_append hae hpre, ?_⟩
-      simpa using Trace.mayDropEvents_insertsTrueAssumes_append hpost
-        (Trace.mayDropEvents_insertsTrueAssumes_drop_left evs2 hax)
-    · obtain ⟨-, -, hrep⟩ := hres (by simp)
-      obtain ⟨pre', post', h2', hpre, hpost⟩ := hrep pre₂ e post rfl
-      exact ⟨pre', post', h2', Trace.mayDropEvents_insertsTrueAssumes_drop_left evs1 hpre, hpost⟩
-
-omit [HasOps P] [LawfulHasVal P] in
-/-- A replay of the loop entered from its start store `σ` (`LoopRunResAt` with `σ₀ = σ`) gives,
-    for each event of the loop's run, a run of its encoding replaying it. -/
-private theorem LoopRunResAt.ite {n : String} {g : ExprOrNondet P} {body body' : PStmts P}
-    {md : MetaData P} {σ : SemanticStore P} {evs : List (Event P)} {o : Outcome P}
-    (h : LoopRunResAt F allowed n g body body' md σ σ evs o) :
-    ReplaysAt allowed
-      (fun t => BRunS F (Stmt.loopPassive n g (Block.carriedVars body) body' md) σ t o) evs := by
-  intro pre e post hpos
-  obtain ⟨hg, hdom, hrep⟩ := h (by simp [hpos])
-  obtain ⟨pre', post', h', hpre, hpost⟩ := hrep pre e post hpos
-  refine ⟨pre', post', ?_, hpre, hpost⟩
-  rw [loopPassive_eq, ← Outcome.proj_of_dom hdom]
-  cases g with
-  | det g => exact BRunS.ite_true hg h'
-  | nondet => exact BRunS.ite_nondet_true h'
-
 mutual
 /-- **A run of a list, replayed by its output**, with the same outcome and a trace related to
-    the source's by `DropsInserts`; when no loop iteration leaves its loop by an `exit`, also
-    replaying each event of the source (`ReplaysAt`). -/
+    the source's by `DropsInserts`. -/
 private theorem run_sim' (hvar : WellFormedSemanticEvalVar (P := P) F)
     (hbool : WellFormedSemanticEvalBool (P := P) F)
     (htt : ∀ σ, P.eval F σ (@HasBool.tt P HasBoolOps.toHasBool) = some (HasBool.ttVal F))
@@ -617,38 +487,24 @@ private theorem run_sim' (hvar : WellFormedSemanticEvalVar (P := P) F)
     ∀ {ss : PStmts P} {σ : SemanticStore P} {evs : List (Event P)} {o : Outcome P},
     BRun F ss σ evs o → ∀ {ss' : PStmts P}, BlockRel ss ss' →
     Block.defUseWellFormed (fun x => (σ x).isSome) df ss = true → WellFormedStore σ F →
-    (∃ evs', BRun F ss' σ evs' o ∧ DropsInserts allowed evs evs') ∧
-      (Block.loopExitsLocal ss → ReplaysAt allowed (fun t => BRun F ss' σ t o) evs)
+    ∃ evs', BRun F ss' σ evs' o ∧ DropsInserts allowed evs evs'
   | _, _, _, _, .nil, _, hr, _, _ => by
     cases hr
-    exact ⟨⟨[], .nil, [], .slnil, .nil⟩, fun _ pre e post h => by simp at h⟩
+    exact ⟨[], .nil, [], .slnil, .nil⟩
   | _, _, _, _, .cons_normal h1 h2, _, hr, hdu, hT => by
     cases hr with
     | cons hs hr =>
       have hdu' := defUse_rest h1 hdu
-      obtain ⟨⟨e1, h1', ha1⟩, hk1⟩ := runS_sim hvar hbool htt hF h1 hs hdu'.1 hT
-      obtain ⟨⟨e2, h2', ha2⟩, hk2⟩ :=
-        run_sim' hvar hbool htt hF h2 hr hdu'.2 (brunS_typed h1 hT).1
-      refine ⟨⟨e1 ++ e2, .cons_normal h1' h2',
-          Trace.mayDropEvents_insertsTrueAssumes_append ha1 ha2⟩,
-        fun hl pre e post h => ?_⟩
-      rcases List.append_eq_append_cons h with ⟨post₁, hpos, hpost⟩ | ⟨pre₂, hpre, hpos⟩
-      · obtain ⟨pre', post', h1'', ha, hb⟩ := hk1 hl.1 pre e post₁ hpos
-        have heq : pre' ++ e :: (post' ++ e2) = (pre' ++ e :: post') ++ e2 := by simp
-        exact ⟨pre', post' ++ e2, heq ▸ .cons_normal h1'' h2', ha,
-          hpost ▸ Trace.mayDropEvents_insertsTrueAssumes_append hb ha2⟩
-      · obtain ⟨pre', post', h2'', ha, hb⟩ := hk2 hl.2 pre₂ e post hpos
-        have heq : (e1 ++ pre') ++ e :: post' = e1 ++ (pre' ++ e :: post') := by simp
-        exact ⟨e1 ++ pre', post', heq ▸ .cons_normal h1' h2'',
-          hpre ▸ Trace.mayDropEvents_insertsTrueAssumes_append ha1 ha, hb⟩
+      obtain ⟨e1, h1', ha1⟩ := runS_sim hvar hbool htt hF h1 hs hdu'.1 hT
+      obtain ⟨e2, h2', ha2⟩ := run_sim' hvar hbool htt hF h2 hr hdu'.2 (brunS_typed h1 hT).1
+      exact ⟨e1 ++ e2, .cons_normal h1' h2',
+        Trace.mayDropEvents_insertsTrueAssumes_append ha1 ha2⟩
   | _, _, _, _, .cons_exit h1, _, hr, hdu, hT => by
     cases hr with
     | cons hs hr =>
       simp only [Block.defUseWellFormed, Bool.and_eq_true] at hdu
-      obtain ⟨⟨e1, h1', ha1⟩, hk1⟩ := runS_sim hvar hbool htt hF h1 hs hdu.1 hT
-      refine ⟨⟨e1, .cons_exit h1', ha1⟩, fun hl pre e post h => ?_⟩
-      obtain ⟨pre', post', h1'', ha, hb⟩ := hk1 hl.1 pre e post h
-      exact ⟨pre', post', .cons_exit h1'', ha, hb⟩
+      obtain ⟨e1, h1', ha1⟩ := runS_sim hvar hbool htt hF h1 hs hdu.1 hT
+      exact ⟨e1, .cons_exit h1', ha1⟩
 
 /-- **A run of a statement, replayed by its output**, as `run_sim'`. -/
 private theorem runS_sim (hvar : WellFormedSemanticEvalVar (P := P) F)
@@ -658,86 +514,63 @@ private theorem runS_sim (hvar : WellFormedSemanticEvalVar (P := P) F)
     ∀ {s : PStmt P} {σ : SemanticStore P} {evs : List (Event P)} {o : Outcome P},
     BRunS F s σ evs o → ∀ {s' : PStmt P}, StmtRel s s' →
     Stmt.defUseWellFormed (fun x => (σ x).isSome) df s = true → WellFormedStore σ F →
-    (∃ evs', BRunS F s' σ evs' o ∧ DropsInserts allowed evs evs') ∧
-      (Stmt.loopExitsLocal s → ReplaysAt allowed (fun t => BRunS F s' σ t o) evs)
+    ∃ evs', BRunS F s' σ evs' o ∧ DropsInserts allowed evs evs'
   | _, _, evs, _, .cmd h, _, hr, _, _ => by
     cases hr
-    exact ⟨⟨evs, .cmd h, Trace.mayDropEvents_insertsTrueAssumes_refl evs⟩,
-      fun _ pre e post hpos => ⟨pre, post, hpos ▸ .cmd h,
-        Trace.mayDropEvents_insertsTrueAssumes_refl pre,
-        Trace.mayDropEvents_insertsTrueAssumes_refl post⟩⟩
+    exact ⟨evs, .cmd h, Trace.mayDropEvents_insertsTrueAssumes_refl evs⟩
   | _, _, _, _, .ite_true hc h, _, hr, hdu, hT => by
     cases hr with
     | ite ht _ =>
       simp only [Stmt.defUseWellFormed, Bool.and_eq_true] at hdu
-      obtain ⟨⟨e, h', ha⟩, hk⟩ := run_sim' hvar hbool htt hF h ht hdu.1.2 hT
-      refine ⟨⟨e, .ite_true hc h', ha⟩, fun hl pre e0 post hpos => ?_⟩
-      obtain ⟨pre', post', h'', hpre, hpost⟩ := hk hl.1 pre e0 post hpos
-      exact ⟨pre', post', .ite_true hc h'', hpre, hpost⟩
+      obtain ⟨e, h', ha⟩ := run_sim' hvar hbool htt hF h ht hdu.1.2 hT
+      exact ⟨e, .ite_true hc h', ha⟩
   | _, _, _, _, .ite_false hc h, _, hr, hdu, hT => by
     cases hr with
     | ite _ he =>
       simp only [Stmt.defUseWellFormed, Bool.and_eq_true] at hdu
-      obtain ⟨⟨e, h', ha⟩, hk⟩ := run_sim' hvar hbool htt hF h he hdu.2 hT
-      refine ⟨⟨e, .ite_false hc h', ha⟩, fun hl pre e0 post hpos => ?_⟩
-      obtain ⟨pre', post', h'', hpre, hpost⟩ := hk hl.2 pre e0 post hpos
-      exact ⟨pre', post', .ite_false hc h'', hpre, hpost⟩
+      obtain ⟨e, h', ha⟩ := run_sim' hvar hbool htt hF h he hdu.2 hT
+      exact ⟨e, .ite_false hc h', ha⟩
   | _, _, _, _, .ite_nondet_true h, _, hr, hdu, hT => by
     cases hr with
     | ite ht _ =>
       simp only [Stmt.defUseWellFormed, Bool.and_eq_true] at hdu
-      obtain ⟨⟨e, h', ha⟩, hk⟩ := run_sim' hvar hbool htt hF h ht hdu.1.2 hT
-      refine ⟨⟨e, .ite_nondet_true h', ha⟩, fun hl pre e0 post hpos => ?_⟩
-      obtain ⟨pre', post', h'', hpre, hpost⟩ := hk hl.1 pre e0 post hpos
-      exact ⟨pre', post', .ite_nondet_true h'', hpre, hpost⟩
+      obtain ⟨e, h', ha⟩ := run_sim' hvar hbool htt hF h ht hdu.1.2 hT
+      exact ⟨e, .ite_nondet_true h', ha⟩
   | _, _, _, _, .ite_nondet_false h, _, hr, hdu, hT => by
     cases hr with
     | ite _ he =>
       simp only [Stmt.defUseWellFormed, Bool.and_eq_true] at hdu
-      obtain ⟨⟨e, h', ha⟩, hk⟩ := run_sim' hvar hbool htt hF h he hdu.2 hT
-      refine ⟨⟨e, .ite_nondet_false h', ha⟩, fun hl pre e0 post hpos => ?_⟩
-      obtain ⟨pre', post', h'', hpre, hpost⟩ := hk hl.2 pre e0 post hpos
-      exact ⟨pre', post', .ite_nondet_false h'', hpre, hpost⟩
+      obtain ⟨e, h', ha⟩ := run_sim' hvar hbool htt hF h he hdu.2 hT
+      exact ⟨e, .ite_nondet_false h', ha⟩
   | _, _, _, _, .block h, _, hr, hdu, hT => by
     cases hr with
     | block hb =>
       simp only [Stmt.defUseWellFormed] at hdu
-      obtain ⟨⟨e, h', ha⟩, hk⟩ := run_sim' hvar hbool htt hF h hb hdu hT
-      refine ⟨⟨e, .block h', ha⟩, fun hl pre e0 post hpos => ?_⟩
-      obtain ⟨pre', post', h'', hpre, hpost⟩ := hk hl pre e0 post hpos
-      exact ⟨pre', post', .block h'', hpre, hpost⟩
+      obtain ⟨e, h', ha⟩ := run_sim' hvar hbool htt hF h hb hdu hT
+      exact ⟨e, .block h', ha⟩
   | _, _, _, _, .exit, _, hr, _, _ => by
     cases hr
-    exact ⟨⟨[], .exit, [], .slnil, .nil⟩, fun _ pre e post h => by simp at h⟩
+    exact ⟨[], .exit, [], .slnil, .nil⟩
   | _, _, _, _, .typeDecl, _, hr, _, _ => by
     cases hr
-    exact ⟨⟨[], .typeDecl, [], .slnil, .nil⟩, fun _ pre e post h => by simp at h⟩
+    exact ⟨[], .typeDecl, [], .slnil, .nil⟩
   | _, σ, _, _, .loop_exit hg, _, hr, _, _ => by
     obtain ⟨n, body', -, -, rfl⟩ := hr.loop_inv
-    obtain ⟨e, h', ha⟩ := LoopRunRes.ite (allowed := allowed) (body' := body')
-      (.inl ⟨rfl, rfl, hg⟩)
-    exact ⟨⟨e, h', ha⟩, fun _ pre e post h => by simp at h⟩
+    exact LoopRunRes.ite (allowed := allowed) (body' := body') (.inl ⟨rfl, rfl, hg⟩)
   | _, σ, _, _, .loop_iter (g := g) (m := m) (inv := inv) (body := body) (md := md) hg h1 h2, _,
       hr, hdu, hT => by
     obtain ⟨n, body', hb, hl, rfl⟩ := hr.loop_inv
     have hdub := defUse_loop_body hdu
-    obtain ⟨⟨_, h1', ha1⟩, hk1⟩ := run_sim' hvar hbool htt hF h1 hb hdub hT
+    obtain ⟨_, h1', ha1⟩ := run_sim' hvar hbool htt hF h1 hb hdub hT
     have hc := Compat.refl (Block.carriedVars body) hT
     have hres := loopRun_sim hvar hbool htt hF h2 rfl (n := n) hb hl σ (hc.step hdub h1) hdub
-    obtain ⟨e, h', ha⟩ :=
-      LoopRunRes.ite (LoopRunRes.iter hvar hbool htt hF hg hc hdub h1 h1' ha1 hres)
-    refine ⟨⟨e, h', ha⟩, fun hloc => ?_⟩
-    have hresA :=
-      loopRun_simAt hvar hbool htt hF h2 rfl (n := n) hb hloc σ (hc.step hdub h1) hdub
-    exact LoopRunResAt.ite
-      (LoopRunResAt.iter hvar hbool htt hF hg hc hdub hloc.1 h1 (hk1 hloc.2) h2 hresA)
+    exact LoopRunRes.ite (LoopRunRes.iter hvar hbool htt hF hg hc hdub h1 h1' ha1 hres)
   | _, σ, _, _, .loop_break (body := body) hg h1, _, hr, hdu, hT => by
     obtain ⟨n, body', hb, hl, rfl⟩ := hr.loop_inv
     have hdub := defUse_loop_body hdu
-    obtain ⟨⟨_, h1', ha1⟩, -⟩ := run_sim' hvar hbool htt hF h1 hb hdub hT
-    obtain ⟨e, h', ha⟩ := LoopRunRes.ite
+    obtain ⟨_, h1', ha1⟩ := run_sim' hvar hbool htt hF h1 hb hdub hT
+    exact LoopRunRes.ite
       (LoopRunRes.break hvar htt hF hg (Compat.refl (Block.carriedVars body) hT) hdub hl h1 h1' ha1)
-    exact ⟨⟨e, h', ha⟩, fun hloc => absurd (brun_exit_covered h1 hloc.1 _ _ rfl) (by simp)⟩
 
 /-- **A run of a loop from the start of an iteration, replayed in the encoding of the loop
     entered from `σ₀`.** -/
@@ -759,38 +592,14 @@ private theorem loopRun_sim (hvar : WellFormedSemanticEvalVar (P := P) F)
   | _, σ, _, _, .loop_iter hg h1 h2, _, _, _, _, _, hs, n, _, hb, hl, σ₀, hc, hdu => by
     obtain ⟨rfl, -, -, rfl, rfl⟩ := Stmt.loop.inj hs
     have hdub := defUse_congr hc.dom hdu
-    obtain ⟨⟨_, h1', ha1⟩, -⟩ := run_sim' hvar hbool htt hF h1 hb hdub hc.storeWF
+    obtain ⟨_, h1', ha1⟩ := run_sim' hvar hbool htt hF h1 hb hdub hc.storeWF
     have hres := loopRun_sim hvar hbool htt hF h2 hs (n := n) hb hl σ₀ (hc.step hdu h1) hdu
     exact LoopRunRes.iter hvar hbool htt hF hg hc hdu h1 h1' ha1 hres
   | _, σ, _, _, .loop_break hg h1, _, _, _, _, _, hs, _, _, hb, hl, σ₀, hc, hdu => by
     obtain ⟨rfl, -, -, rfl, rfl⟩ := Stmt.loop.inj hs
-    obtain ⟨⟨_, h1', ha1⟩, -⟩ :=
+    obtain ⟨_, h1', ha1⟩ :=
       run_sim' hvar hbool htt hF h1 hb (defUse_congr hc.dom hdu) hc.storeWF
     exact LoopRunRes.break hvar htt hF hg hc hdu hl h1 h1' ha1
-
-/-- **A run of a loop without escaping exits from the start of an iteration, replayed in the
-    encoding of the loop entered from `σ₀` at each of its events.** -/
-private theorem loopRun_simAt (hvar : WellFormedSemanticEvalVar (P := P) F)
-    (hbool : WellFormedSemanticEvalBool (P := P) F)
-    (htt : ∀ σ, P.eval F σ (@HasBool.tt P HasBoolOps.toHasBool) = some (HasBool.ttVal F))
-    (hF : allowed F) :
-    ∀ {s : PStmt P} {σ : SemanticStore P} {evs : List (Event P)} {o : Outcome P},
-    BRunS F s σ evs o → ∀ {g : ExprOrNondet P} {m : Option P.Expr}
-    {inv : List (String × P.Expr)} {body : PStmts P} {md : MetaData P},
-    s = .loop g m inv body md → ∀ {n : String} {body' : PStmts P}, BlockRel body body' →
-    Stmt.loopExitsLocal s → ∀ σ₀, Compat F (Block.carriedVars body) σ₀ σ →
-    Block.defUseWellFormed (fun x => (σ₀ x).isSome) df body = true →
-    LoopRunResAt F allowed n g body body' md σ₀ σ evs o
-  | _, _, _, _, .loop_exit _, _, _, _, _, _, _, _, _, _, _, _, _, _ =>
-    fun h => absurd rfl h
-  | _, σ, _, _, .loop_iter hg h1 h2, _, _, _, _, _, hs, n, _, hb, hloc, σ₀, hc, hdu => by
-    obtain ⟨rfl, -, -, rfl, rfl⟩ := Stmt.loop.inj hs
-    have hdub := defUse_congr hc.dom hdu
-    obtain ⟨-, hk1⟩ := run_sim' hvar hbool htt hF h1 hb hdub hc.storeWF
-    have hres := loopRun_simAt hvar hbool htt hF h2 rfl (n := n) hb hloc σ₀ (hc.step hdu h1) hdu
-    exact LoopRunResAt.iter hvar hbool htt hF hg hc hdu hloc.1 h1 (hk1 hloc.2) h2 hres
-  | _, _, _, _, .loop_break _ h1, _, _, _, _, _, _, _, _, _, hloc, _, _, _ => by
-    exact absurd (brun_exit_covered h1 hloc.1 _ _ rfl) (by simp)
 end
 
 mutual
@@ -813,7 +622,7 @@ private theorem reach_sim' (hvar : WellFormedSemanticEvalVar (P := P) F)
     cases hr with
     | cons hs hr =>
       have hdu' := defUse_rest h1 hdu
-      obtain ⟨⟨e1, h1', ha1⟩, -⟩ := runS_sim hvar hbool htt hF h1 hs hdu'.1 hT
+      obtain ⟨e1, h1', ha1⟩ := runS_sim hvar hbool htt hF h1 hs hdu'.1 hT
       obtain ⟨e2, h2', ha2⟩ := reach_sim' hvar hbool htt hF h2 hr hdu'.2 (brunS_typed h1 hT).1
       exact ⟨e1 ++ e2, .later h1' h2',
         Trace.PreservesLastEvent.append_left Trace.mayDropEvents_insertsTrueAssumes_append ha1 ha2
@@ -919,62 +728,7 @@ theorem run_sim (hvar : WellFormedSemanticEvalVar (P := P) F)
     {evs : List (Event P)} {o : Outcome P} (h : BRun F ss σ evs o) :
     ∃ evs', BRun F ss' σ evs' o ∧
       RComp Trace.MayDropEvents (Trace.InsertsTrueAssumes allowed) evs evs' :=
-  (run_sim' hvar hbool htt hF h hr hdu hT).1
-
-/-- **A run of a list without escaping exits, replayed by its output at any event.**  Under the
-    premises of `run_sim`, if no loop iteration of `ss` leaves its loop by an `exit`
-    (`Block.loopExitsLocal`), then for every run of `ss` from `σ` and every event `e` of its
-    trace, with `pre` before it and `post` after it, a run of `ss'` from `σ` with the same
-    outcome has `e` in its trace after events related to `pre` and before events related to
-    `post` by dropping events and inserting true assumptions. -/
-theorem run_sim_at (hvar : WellFormedSemanticEvalVar (P := P) F)
-    (hbool : WellFormedSemanticEvalBool (P := P) F)
-    (htt : ∀ σ, P.eval F σ (@HasBool.tt P HasBoolOps.toHasBool) = some (HasBool.ttVal F))
-    (hF : allowed F)
-    {ss ss' : PStmts P} (hr : BlockRel ss ss') (hloc : Block.loopExitsLocal ss)
-    {σ : SemanticStore P}
-    (hdu : Block.defUseWellFormed (fun x => (σ x).isSome) df ss = true) (hT : WellFormedStore σ F)
-    {evs : List (Event P)} {o : Outcome P} (h : BRun F ss σ evs o)
-    {pre : List (Event P)} {e : Event P} {post : List (Event P)} (hpos : evs = pre ++ e :: post) :
-    ∃ pre' post', BRun F ss' σ (pre' ++ e :: post') o ∧
-      RComp Trace.MayDropEvents (Trace.InsertsTrueAssumes allowed) pre pre' ∧
-      RComp Trace.MayDropEvents (Trace.InsertsTrueAssumes allowed) post post' :=
-  (run_sim' hvar hbool htt hF h hr hdu hT).2 hloc pre e post hpos
-
-/-- **A run of a list without escaping exits, replayed by its output reflecting assertion
-    validity.**  Under the premises of `run_sim_at`, for an interpretation `I` under which every
-    condition that evaluates to `true` under an `allowed` factory holds, every run of `ss` from
-    `σ` has a run of `ss'` from `σ` with the same outcome, its trace related to the source's as
-    in `run_sim`, whose assertions are all valid under `I` only if those of the source are: when
-    an assertion of the source fails, the run of `ss'` keeping it (`run_sim_at`) fails it too. -/
-theorem run_sim_valid {I : ConditionInterp P} (htrue : I.TrueStutterHolds allowed)
-    (hvar : WellFormedSemanticEvalVar (P := P) F)
-    (hbool : WellFormedSemanticEvalBool (P := P) F)
-    (htt : ∀ σ, P.eval F σ (@HasBool.tt P HasBoolOps.toHasBool) = some (HasBool.ttVal F))
-    (hF : allowed F)
-    {ss ss' : PStmts P} (hr : BlockRel ss ss') (hloc : Block.loopExitsLocal ss)
-    {σ : SemanticStore P}
-    (hdu : Block.defUseWellFormed (fun x => (σ x).isSome) df ss = true) (hT : WellFormedStore σ F)
-    {evs : List (Event P)} {o : Outcome P} (h : BRun F ss σ evs o) :
-    ∃ evs', BRun F ss' σ evs' o ∧
-      RComp Trace.MayDropEvents (Trace.InsertsTrueAssumes allowed) evs evs' ∧
-      (Trace.AssertionsValid P I evs' → Trace.AssertionsValid P I evs) := by
-  by_cases hv : Trace.AssertionsValid P I evs
-  · obtain ⟨evs', hb, ha⟩ := run_sim hvar hbool htt hF hr hdu hT h
-    exact ⟨evs', hb, ha, fun _ => hv⟩
-  · have hfail := hv
-    rw [Trace.AssertionsValid_iff_occurrences] at hfail
-    simp only [Classical.not_forall] at hfail
-    obtain ⟨pre, c, post, hpos, w, hw, hc⟩ := hfail
-    obtain ⟨pre', post', hb, hpre, hpost⟩ := run_sim_at hvar hbool htt hF hr hloc hdu hT h hpos
-    refine ⟨_, hb, ?_, fun hv' => ?_⟩
-    · subst hpos
-      simpa using Trace.mayDropEvents_insertsTrueAssumes_append hpre
-        (Trace.mayDropEvents_insertsTrueAssumes_append
-          (Trace.mayDropEvents_insertsTrueAssumes_refl [.assert c]) hpost)
-    · rw [Trace.AssertionsValid_iff_occurrences] at hv'
-      exact absurd (hv' pre' c post' rfl w
-        (Trace.mayDropEvents_insertsTrueAssumes_assumptionsHold htrue hpre hw)) hc
+  run_sim' hvar hbool htt hF h hr hdu hT
 
 /-- **A reach of a list, replayed by its output.**  Under the premises of `run_sim`, every reach
     of `ss` from `σ` has a reach of `ss'` from `σ` whose trace ends with the same event, after

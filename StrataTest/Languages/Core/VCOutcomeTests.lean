@@ -192,15 +192,15 @@ private def preservingPhase : AbstractedPhase :=
   { name := "Preserving" }
 
 private def rejectingPhase : AbstractedPhase :=
-  { name := "Rejecting", getValidation := fun _ => .modelToValidate (fun _ => false) }
+  { name := "Rejecting", getValidation := fun _ => .modelToValidate (fun _ _ => none) }
 
 private def acceptingPhase : AbstractedPhase :=
-  { name := "Accepting", getValidation := fun _ => .modelToValidate (fun _ => true) }
+  { name := "Accepting", getValidation := fun _ => .modelToValidate (fun _ m => some m) }
 
 private def needsValidation (phases : List AbstractedPhase)
     (obligation : Imperative.ProofObligation Core.Expression) : Bool :=
   phases.any fun p => match p.getValidation obligation with
-    | .modelToValidate _ => true
+    | .modelToValidate _ | .markersOnPath _ => true
     | .modelPreserving => false
 
 private def satResult : Result := .sat []
@@ -253,6 +253,43 @@ private def dummyObligation : Imperative.ProofObligation Core.Expression :=
 -- adjustForPhases: unknown stays unknown with preserving phase (no validator)
 #guard (unknownResult.adjustForPhases [preservingPhase] dummyObligation).1 == unknownResult
 #guard (unknownResult.adjustForPhases [preservingPhase] dummyObligation).2 == [{ phase := "Preserving", result := unknownResult }]
+
+/-- A phase whose markers lie under the guards `guards` (`ModelValidation.markersOnPath`). -/
+private def markerPhase (guards : List (List Core.Expression.Expr)) : AbstractedPhase :=
+  { name := "Markers", getValidation := fun _ => .markersOnPath guards }
+
+-- adjustForPhases: a marker on every path (no guard) demotes sat
+#guard (satResult.adjustForPhases [markerPhase [[]]] dummyObligation).1 == unknownResult
+
+-- adjustForPhases: a marker whose guard the model falsifies leaves sat
+#guard (satResult.adjustForPhases [markerPhase [[.false testLoc]]] dummyObligation).1 == satResult
+
+-- adjustForPhases: a guard that does not evaluate (an unbound variable) leaves the marker
+#guard (satResult.adjustForPhases [markerPhase [[.fvar testLoc ⟨"g", ()⟩ (some .bool)]]]
+  dummyObligation).1 == unknownResult
+
+-- adjustForPhases: one marker that the model can reach demotes sat
+#guard (satResult.adjustForPhases [markerPhase [[.false testLoc], [.true testLoc]]]
+  dummyObligation).1 == unknownResult
+
+-- adjustForPhases: a marker phase never promotes unknown
+#guard (unknownResult.adjustForPhases [markerPhase [[.false testLoc]]] dummyObligation).1 ==
+  unknownResult
+
+/-- `op a b` at the test location. -/
+private def testOp2 (op : String) (a b : Core.Expression.Expr) : Core.Expression.Expr :=
+  .app testLoc (.app testLoc (.op testLoc ⟨op, ()⟩ none) a) b
+
+-- The model check evaluates a guard of comparisons and arithmetic without division, and no
+-- guard with a division: Core gives `x / 0.0` the value `0.0`, while the solver leaves it free.
+#guard Core.markerGuardEvaluable (testOp2 "Real.Gt" (.fvar testLoc ⟨"x", ()⟩ none)
+  (testOp2 "Real.Mul" (.fvar testLoc ⟨"y", ()⟩ none) (.fvar testLoc ⟨"y", ()⟩ none)))
+#guard !Core.markerGuardEvaluable (testOp2 "Real.Gt"
+  (testOp2 "Real.Div" (.fvar testLoc ⟨"x", ()⟩ none) (.fvar testLoc ⟨"z", ()⟩ none))
+  (.fvar testLoc ⟨"y", ()⟩ none))
+#guard !Core.markerGuardEvaluable (testOp2 "Int.Gt"
+  (testOp2 "Int.Mod" (.fvar testLoc ⟨"x", ()⟩ none) (.fvar testLoc ⟨"z", ()⟩ none))
+  (.fvar testLoc ⟨"y", ()⟩ none))
 
 -- adjustForPhases: empty phases list preserves sat
 #guard (satResult.adjustForPhases [] dummyObligation).1 == satResult

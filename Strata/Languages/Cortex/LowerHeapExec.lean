@@ -191,6 +191,10 @@ def isRefElem (prog : UnorderedProgram) : LMonoTy → Bool
 
 def stuckBool : Expr := mkCall "Int.Le" [stuckInt, intLit 0]
 
+/-- `r` refers to an object: `alloc` gives an object a non-negative address, and a reference to
+no object has address -1 (`defaultOf`). -/
+def live (r : Expr) : Expr := mkCall "Int.Le" [intLit 0, addr r]
+
 def inBounds (o idx : Expr) : Expr :=
   mkCall "Bool.And" [mkCall "Int.Le" [intLit 0, idx], mkCall "Int.Lt" [idx, objLen o]]
 
@@ -242,16 +246,18 @@ def lowerCmd (i : Info) : IRCmd → Except String (List IRCmd)
         (ite ok (fieldPut (objFields obj) (elemKey idx) (box rt v)) stuckFields) (objLen obj))) md]
   | .instanceOf x o t md => do
     let t' ← monoOf t
-    if (arrayElem? t').isSome then
-      return [setTo x (tagIn (LowerComposites.typeTagOf o) (arraysBelow i t')) md]
-    else return [.instanceOf x o t md]
+    if !isRefElem i.prog (valueTy i.prog.constrained t') then return [.instanceOf x o t md]
+    let test? := if (arrayElem? t').isSome
+      then some (tagIn (LowerComposites.typeTagOf o) (arraysBelow i t'))
+      else conTyName? t >>= fun n => pred i.prog.constrained n o
+    let some test := test? | return [.instanceOf x o t md]
+    return [setTo x (ite (live o) test stuckBool) md]
   | .instanceOfComponent x obj arr md =>
     let tagArr := LowerComposites.typeTagOf arr
     let tagObj := LowerComposites.typeTagOf obj
     let refArrays := i.arrays.filterMap fun a => match arrayElem? a with
       | some e => if isRefElem i.prog e then some (a, e) else none
       | none => none
-    let live := fun (r : Expr) => mkCall "Int.Le" [intLit 0, objTag (heapGet heap (addr r))]
     let test := refArrays.foldr (init := ff) fun (a, e) acc =>
       ite (eq tagArr (LowerComposites.tagOf (LowerComposites.arrayTag a)))
         (tagIn tagObj (tagsBelow i e)) acc

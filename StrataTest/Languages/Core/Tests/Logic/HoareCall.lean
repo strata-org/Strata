@@ -138,18 +138,19 @@ private def resultId : Core.Expression.Ident := ⟨"result", ()⟩
 
 private def maxSetExpr : Core.Expression.Expr :=
   match maxProc.body with
-  | .structured [Imperative.Stmt.cmd (Imperative.CmdExt.cmd (Imperative.Cmd.set _ (.det e) _))] => e
+  | .structured [Imperative.Stmt.cmd (Imperative.CmdExt.cmd (Imperative.Cmd.set _ (.det e) _))] _ =>
+      e
   | _ => Lambda.LExpr.const Core.valueLoc (Lambda.LConst.boolConst true)
 
 private def maxSetMd : Imperative.MetaData Core.Expression :=
   match maxProc.body with
-  | .structured [Imperative.Stmt.cmd (Imperative.CmdExt.cmd (Imperative.Cmd.set _ _ md))] => md
+  | .structured [Imperative.Stmt.cmd (Imperative.CmdExt.cmd (Imperative.Cmd.set _ _ md))] _ => md
   | _ => #[]
 
 /-- Max16's translated body is one assignment to `result`. -/
 private theorem max_body_eq :
     maxProc.body = .structured [Imperative.Stmt.cmd
-      (Imperative.CmdExt.cmd (Imperative.Cmd.set resultId (.det maxSetExpr) maxSetMd))] := by
+      (Imperative.CmdExt.cmd (Imperative.Cmd.set resultId (.det maxSetExpr) maxSetMd))] false := by
   native_decide
 
 private def maxSpecExpr : Core.Expression.Expr :=
@@ -169,18 +170,19 @@ private theorem max_ensures_shape :
 
 private def minSetExpr : Core.Expression.Expr :=
   match minProc.body with
-  | .structured [Imperative.Stmt.cmd (Imperative.CmdExt.cmd (Imperative.Cmd.set _ (.det e) _))] => e
+  | .structured [Imperative.Stmt.cmd (Imperative.CmdExt.cmd (Imperative.Cmd.set _ (.det e) _))] _ =>
+      e
   | _ => Lambda.LExpr.const Core.valueLoc (Lambda.LConst.boolConst true)
 
 private def minSetMd : Imperative.MetaData Core.Expression :=
   match minProc.body with
-  | .structured [Imperative.Stmt.cmd (Imperative.CmdExt.cmd (Imperative.Cmd.set _ _ md))] => md
+  | .structured [Imperative.Stmt.cmd (Imperative.CmdExt.cmd (Imperative.Cmd.set _ _ md))] _ => md
   | _ => #[]
 
 /-- Min16's translated body is one assignment to `result`. -/
 private theorem min_body_eq :
     minProc.body = .structured [Imperative.Stmt.cmd
-      (Imperative.CmdExt.cmd (Imperative.Cmd.set resultId (.det minSetExpr) minSetMd))] := by
+      (Imperative.CmdExt.cmd (Imperative.Cmd.set resultId (.det minSetExpr) minSetMd))] false := by
   native_decide
 
 private def minSpecExpr : Core.Expression.Expr :=
@@ -241,57 +243,57 @@ private def minBitHackExpr : Core.Expression.Expr :=
 
 private def maxABInitTy : Core.Expression.Ty :=
   match mmRunProc.body with
-  | .structured (Core.Statement.init _ ty .nondet _ :: _) => ty
+  | .structured (Core.Statement.init _ ty .nondet _ :: _) _ => ty
   | _ => default
 private def maxABInitMd : Imperative.MetaData Core.Expression :=
   match mmRunProc.body with
-  | .structured (Core.Statement.init _ _ .nondet md :: _) => md
+  | .structured (Core.Statement.init _ _ .nondet md :: _) _ => md
   | _ => #[]
 private def maxABInitStmt : Core.Statement :=
   Core.Statement.init maxABId maxABInitTy .nondet maxABInitMd
 
 private def cArgs1 : List (Imperative.CallArg Core.Expression) :=
   match mmRunProc.body with
-  | .structured (_ :: Core.Statement.call _ _ a _ :: _) => a
+  | .structured (_ :: Core.Statement.call _ _ a _ :: _) _ => a
   | _ => []
 private def cMd1 : Imperative.MetaData Core.Expression :=
   match mmRunProc.body with
-  | .structured (_ :: Core.Statement.call _ _ _ m :: _) => m
+  | .structured (_ :: Core.Statement.call _ _ _ m :: _) _ => m
   | _ => #[]
 private def cArgs2 : List (Imperative.CallArg Core.Expression) :=
   match mmRunProc.body with
-  | .structured (_ :: _ :: Core.Statement.call _ _ a _ :: _) => a
+  | .structured (_ :: _ :: Core.Statement.call _ _ a _ :: _) _ => a
   | _ => []
 private def cMd2 : Imperative.MetaData Core.Expression :=
   match mmRunProc.body with
-  | .structured (_ :: _ :: Core.Statement.call _ _ _ m :: _) => m
+  | .structured (_ :: _ :: Core.Statement.call _ _ _ m :: _) _ => m
   | _ => #[]
 private def minABInitTy : Core.Expression.Ty :=
   match mmRunProc.body with
-  | .structured (_ :: _ :: _ :: Core.Statement.init _ ty .nondet _ :: _) => ty
+  | .structured (_ :: _ :: _ :: Core.Statement.init _ ty .nondet _ :: _) _ => ty
   | _ => default
 private def minABInitMd : Imperative.MetaData Core.Expression :=
   match mmRunProc.body with
-  | .structured (_ :: _ :: _ :: Core.Statement.init _ _ .nondet md :: _) => md
+  | .structured (_ :: _ :: _ :: Core.Statement.init _ _ .nondet md :: _) _ => md
   | _ => #[]
 private def minABInitStmt : Core.Statement :=
   Core.Statement.init minABId minABInitTy .nondet minABInitMd
 
 private def cArgs3 : List (Imperative.CallArg Core.Expression) :=
   match mmRunProc.body with
-  | .structured (_ :: _ :: _ :: _ :: Core.Statement.call _ _ a _ :: _) => a
+  | .structured (_ :: _ :: _ :: _ :: Core.Statement.call _ _ a _ :: _) _ => a
   | _ => []
 private def cMd3 : Imperative.MetaData Core.Expression :=
   match mmRunProc.body with
-  | .structured (_ :: _ :: _ :: _ :: Core.Statement.call _ _ _ m :: _) => m
+  | .structured (_ :: _ :: _ :: _ :: Core.Statement.call _ _ _ m :: _) _ => m
   | _ => #[]
 private def cArgs4 : List (Imperative.CallArg Core.Expression) :=
   match mmRunProc.body with
-  | .structured (_ :: _ :: _ :: _ :: _ :: Core.Statement.call _ _ a _ :: _) => a
+  | .structured (_ :: _ :: _ :: _ :: _ :: Core.Statement.call _ _ a _ :: _) _ => a
   | _ => []
 private def cMd4 : Imperative.MetaData Core.Expression :=
   match mmRunProc.body with
-  | .structured (_ :: _ :: _ :: _ :: _ :: Core.Statement.call _ _ _ m :: _) => m
+  | .structured (_ :: _ :: _ :: _ :: _ :: Core.Statement.call _ _ _ m :: _) _ => m
   | _ => #[]
 
 /-- The translated Run body interleaves two local declarations with its four calls. -/
@@ -302,7 +304,7 @@ private theorem mm_run_body_eq :
        Core.Statement.call "Min16" none cArgs2 cMd2,
        minABInitStmt,
        Core.Statement.call "Min16" none cArgs3 cMd3,
-       Core.Statement.call "Max16" none cArgs4 cMd4] := by native_decide
+       Core.Statement.call "Max16" none cArgs4 cMd4] false := by native_decide
 
 /-! ### Body-frame lemmas for Max16 / Min16 -/
 
@@ -549,7 +551,7 @@ private theorem bv16_call_triple
         (mmAST.factoryBeforeProcedure procName) mmAST.findProcByString? q)
     (hproc : mmAST.findProcByString? procName = some proc)
     (hbody : proc.body = .structured [Imperative.Stmt.cmd (Imperative.CmdExt.cmd
-      (Imperative.Cmd.set resultId (.det bodyE) bmd))])
+      (Imperative.Cmd.set resultId (.det bodyE) bmd))] false)
     (hIn : Core.CallArg.getInputExprs callArgs = [exX, exY])
     (hOutArgs : Imperative.CallArg.getOutArgs callArgs = [outVar])
     (hLhs : Imperative.CallArg.getLhs callArgs = [outVar])
@@ -613,6 +615,7 @@ private theorem bv16_call_triple
     have hvx : vx = bvV ρ₀.factory va := Option.some.inj (hEEx.symm.trans hExa)
     have hvy : vy = bvV ρ₀.factory vb := Option.some.inj (hEEy.symm.trans hExb)
     rw [hbody]
+    simp only [Imperative.Body.isOpaque, Bool.false_eq_true, ↓reduceIte]
     refine ⟨⟨?_, hfac.trans hfactory.symm, ?_, ?_, ?_⟩, ?_⟩
     · intro label check hmem; rw [hNoPre] at hmem; simp at hmem
     · intro id hid; rw [hInout] at hid; simp at hid
@@ -810,7 +813,7 @@ private theorem bv16_set_contract
     (fval : BitVec 16 → BitVec 16 → BitVec 16)
     (hproc : mmAST.findProcByString? procName = some proc)
     (hbody : proc.body = .structured [Imperative.Stmt.cmd
-      (Imperative.CmdExt.cmd (Imperative.Cmd.set resultId (.det bodyE) md))])
+      (Imperative.CmdExt.cmd (Imperative.Cmd.set resultId (.det bodyE) md))] false)
     (hChecksTyped : Core.Logic.Hoare.Procedure.contractChecksTyped proc)
     (hInList : proc.header.inputs.toList =
       [(xId, Lambda.LMonoTy.bitvec 16), (yId, Lambda.LMonoTy.bitvec 16)])

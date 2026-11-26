@@ -783,8 +783,12 @@ theorem stmtTypSpec_cmd (hL : TypingLaws Typ Ground) (κ : RE P) (d : Nat) (f : 
       fun _ hT => ⟨fun it hm => ?_, fun _ m hm => by simp at hm⟩
     simp only [Rope.toList_one, List.mem_singleton] at hm
     subst hm
-    exact WOK.kIte hL hκ (wRen_wok hL h0 hwfs (fun _ _ _ h => h) (hT (.inl rfl)) hann hwt)
-      (WOK.lit hL true)
+    have ha := wRen_wok hL h0 hwfs (fun _ _ _ h => h) (hT (.inl rfl)) hann hwt
+    have hc := WOK.not hL (WOK.not hL (WOK.kExpr hL hκ))
+    unfold kAssume kMarkImp
+    split
+    · exact WOK.ite hL hc ha (WOK.not hL hc)
+    · exact WOK.kIte hL hκ ha (WOK.lit hL true)
   all_goals
     obtain ⟨-, ⟨hwt, -⟩, hann, -⟩ := hty
     obtain ⟨⟨⟨we, rd⟩, s0⟩, h0, ⟨u, s1⟩, h1, rfl, rfl⟩ := h

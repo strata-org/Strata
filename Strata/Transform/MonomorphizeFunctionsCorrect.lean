@@ -52,14 +52,14 @@ public theorem monomorphizeFunctions_reflectsLemmas :
     PhaseReflectsLemmas MonoPre Strata.Core.passMonomorphizeFunctions := by
   intro s p s' p' hpre hrun ρ hentry
   have hnp : ∀ d ∈ p.decls, d.kind ≠ .proc := hpre.noProcs
-  obtain ⟨hnu, st, hinv, hdecls, hfac⟩ := run_ok hnp (passMono_runs hrun)
+  obtain ⟨st, hinv, hdecls, hfac⟩ := run_ok hnp (passMono_runs hrun)
   obtain ⟨hfac0, hstore⟩ := hentry
-  have hg : RenOK (monoRen (collectPolymorphicFuncDecls p s.factory) s.factory) :=
+  have hg : RenOK (copyPrefixOf s p) (monoRen (collectPolymorphicFuncDecls p s.factory) s.factory) :=
     monoRen_ok _ _
   generalize monoRen (collectPolymorphicFuncDecls p s.factory) s.factory = g at hg hinv hdecls hfac
   generalize collectPolymorphicFuncDecls p s.factory = P at hfac
-  have hops : ∀ d ∈ p.decls, ∀ e ∈ d.ownExprs, OpsUnmangled e :=
-    fun d hd e he => opsUnmangled_of_namesUnmangled hnu hd he
+  have hops : ∀ d ∈ p.decls, ∀ e ∈ d.ownExprs, OpsUnmangled (copyPrefixOf s p) e :=
+    fun d hd e he => opsUnmangled_of_mem hd he
   have htakeN : p.decls.take p.decls.length = p.decls := List.take_length
   have hzlen : (p.decls.map (topDecl g)).zipIdx.take p.decls.length =
       (p.decls.map (topDecl g)).zipIdx := List.take_of_length_le (by simp)
@@ -68,7 +68,7 @@ public theorem monomorphizeFunctions_reflectsLemmas :
   dsimp only at hfac0 hstore ⊢
   subst hfac0
   have hsrc : ∀ f', f' ∈ (runtimeFactoryOf s'.factory p'.decls).toArray →
-      ∃ lf ∈ contributed s.factory p.decls, FnInstance lf f' ∧
+      ∃ lf ∈ contributed s.factory p.decls, FnInstance (copyPrefixOf s p) lf f' ∧
         ((f'.isConstr = true → f' = lf) ∧ (lf.isConstr = true → f' = lf)) := by
     intro f' h
     have hc := mem_contributed_of_runtimeFactoryOf h
@@ -77,33 +77,33 @@ public theorem monomorphizeFunctions_reflectsLemmas :
     rwa [htakeN] at this
   have hrel : ∀ n (hn : n ∈ runtimeFactoryOf s'.factory p'.decls),
       ∃ o, ∃ ho : o ∈ runtimeFactoryOf s.factory p.decls,
-        FnInstance ((runtimeFactoryOf s.factory p.decls)[o]'ho) (_[n]'hn) := by
+        FnInstance (copyPrefixOf s p) ((runtimeFactoryOf s.factory p.decls)[o]'ho) (_[n]'hn) := by
     intro n hn
     obtain ⟨lf, hlf, hinst, -, -⟩ := hsrc _ (Lambda.Factory.getElem_mem_toArray _ n hn)
     have hget := getElem?_runtimeFactoryOf_of_contributed hdist hlf
     exact ⟨lf.name.name, Lambda.Factory.getElem?_some_implies_mem hget, by
       rw [Lambda.Factory.getElem?_some_getElem hget]; exact hinst⟩
-  have hnat : ConcreteEvalsCommuteDemangle (runtimeFactoryOf s.factory p.decls) := by
+  have hnat : ConcreteEvalsCommuteDemangle (copyPrefixOf s p) (runtimeFactoryOf s.factory p.decls) := by
     intro o ho c hc
     exact hpre.evals _
       (mem_contributed_of_runtimeFactoryOf (Lambda.Factory.getElem_mem_toArray _ o ho)) c hc
   have hconstr : ∀ f' ∈ (runtimeFactoryOf s'.factory p'.decls).toArray, f'.isConstr = true →
       f' ∈ (runtimeFactoryOf s.factory p.decls).toArray ∧
-        demangleName f'.name.name = f'.name.name := by
+        demangleName (copyPrefixOf s p) f'.name.name = f'.name.name := by
     intro f' hf' hc
     obtain ⟨lf, hlf, -, heq, -⟩ := hsrc f' hf'
     rw [heq hc]
     exact ⟨Lambda.Factory.getElem?_is_some_implies_mem
         (getElem?_runtimeFactoryOf_of_contributed hdist hlf),
-      demangleName_of_not_hash (hpre.unmangled lf hlf).1⟩
+      demangleName_of_not_prefix (hpre.unmangled lf hlf).1⟩
   have hcover := runtime_constr_cover hpre hdecls hdist hsrc
   let M₀ : ModeledFactory CoreLParams := ⟨runtimeFactoryOf s.factory p.decls, M, tv⟩
-  have hev : ∀ e, OpsUnmangled e → ∀ σ,
+  have hev : ∀ e, OpsUnmangled (copyPrefixOf s p) e → ∀ σ,
       (e.renameOps g).denoteEval (instModel M₀ hrel hnat hconstr hcover) σ = e.denoteEval M₀ σ :=
     fun e he σ => eval_instModel hg M₀ σ he
   refine ⟨⟨store, instModel M₀ hrel hnat hconstr hcover⟩, ⟨rfl, hstore⟩, ?_⟩
   intro i l md hl hval hfacts
-  have hlops : OpsUnmangled l.e :=
+  have hlops : OpsUnmangled (copyPrefixOf s p) l.e :=
     hops _ (List.mem_of_getElem? hl) l.e (by simp [Decl.ownExprs])
   have hLi : ((p.decls.map (topDecl g)).zipIdx)[i]? =
       some (.lemma { l with e := l.e.renameOps g } md, i) := by
@@ -179,7 +179,7 @@ public theorem monomorphizeFunctions_overapproximates :
 public theorem monomorphizeFunctions_noProcedures {s s' : Transform.CoreTransformState}
     {p p' : Program} (hnp : NoProcedures p)
     (hrun : Strata.Core.passMonomorphizeFunctions.Runs s p s' p') : NoProcedures p' := by
-  obtain ⟨-, st, -, hdecls, -⟩ := run_ok hnp (passMono_runs hrun)
+  obtain ⟨st, -, hdecls, -⟩ := run_ok hnp (passMono_runs hrun)
   intro d hd
   rw [hdecls] at hd
   obtain ⟨⟨dT, j⟩, hx, hdx⟩ := List.mem_flatMap.mp hd

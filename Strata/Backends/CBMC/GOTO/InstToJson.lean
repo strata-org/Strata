@@ -49,6 +49,31 @@ def mkSymbolWithSourceLocation (identifier : String) (symbolType : Json) (loc : 
     loc_obj
   ]
 
+/--
+The `size` JSON of an array type. `indexTy?` is the array's index type with
+its JSON; the size has that type, or `signedbv 64` (CBMC's default index type)
+when the array has none. A constant size of bit-vector type is written in
+hexadecimal, like other bit-vector constants.
+-/
+def arraySizeToJson (size : Ty.Identifier.ArraySize) (indexTy? : Option (Ty × Json)) : Json :=
+  let (sizeTy, sizeTyJson) := indexTy?.getD (.SignedBV 64, mkSignedBVType 64)
+  match size with
+  | .infinity => Json.mkObj [
+      ("id", "infinity"),
+      ("namedSub", Json.mkObj [("type", sizeTyJson)])
+    ]
+  | .constant n =>
+    let value := match sizeTy.id with
+      | .bitVector _ => natToHex n
+      | _ => toString n
+    Json.mkObj [
+      ("id", "constant"),
+      ("namedSub", Json.mkObj [
+        ("type", sizeTyJson),
+        ("value", Json.mkObj [("id", value)])
+      ])
+    ]
+
 /-- Convert `Ty` to JSON format -/
 def tyToJson (ty : Ty) : Json :=
   match ty with
@@ -70,6 +95,21 @@ def tyToJson (ty : Ty) : Json :=
       ("id", "array"),
       ("sub", Json.arr #[tyToJson elemTy])
     ]
+  | { id := .array (some size), subtypes := [elemTy], .. } => Json.mkObj [
+      ("id", "array"),
+      ("namedSub", Json.mkObj [("size", arraySizeToJson size none)]),
+      ("sub", Json.arr #[tyToJson elemTy])
+    ]
+  | { id := .array size, subtypes := [elemTy, indexTy], .. } =>
+    let indexTyJson := tyToJson indexTy
+    let sizeField := match size with
+      | some size => [("size", arraySizeToJson size (some (indexTy, indexTyJson)))]
+      | none => []
+    Json.mkObj [
+      ("id", "array"),
+      ("namedSub", Json.mkObj (sizeField ++ [("#index_type", indexTyJson)])),
+      ("sub", Json.arr #[tyToJson elemTy])
+    ]
   | .Pointer pointee => Json.mkObj [
       ("id", "pointer"),
       ("namedSub", Json.mkObj [("width", Json.mkObj [("id", "64")])]),
@@ -77,7 +117,7 @@ def tyToJson (ty : Ty) : Json :=
     ]
   | { id := .code, subtypes := retTy :: paramTypes, .. } =>
     let paramSubs := paramTypes.map fun pTy =>
-      Json.mkObj [("namedSub", Json.mkObj [("type", tyToJson pTy)])]
+      Json.mkObj [("id", "parameter"), ("namedSub", Json.mkObj [("type", tyToJson pTy)])]
     Json.mkObj [
       ("id", "code"),
       ("namedSub", Json.mkObj [
@@ -123,6 +163,18 @@ def exprToJson (expr : Expr) : Except String Json := do
           ("identifier", Json.mkObj [("id", name)]),
           ("type", tyToJson expr.type)
         ]),
+        srcField
+      ])
+    | .nullary .nil => pure (Json.mkObj [("id", "nil")])
+    | .unary (.Member componentName) => do
+      let subs ← expr.operands.mapM exprToJson
+      pure (Json.mkObj [
+        ("id", "member"),
+        ("namedSub", Json.mkObj [
+          ("component_name", Json.mkObj [("id", componentName)]),
+          ("type", tyToJson expr.type)
+        ]),
+        ("sub", Json.arr subs.toArray),
         srcField
       ])
     | .unary op => mkOpJson (toString f!"{op}")
@@ -179,7 +231,6 @@ def exprToJson (expr : Expr) : Except String Json := do
         ("sub", Json.arr #[fnSymbol, argsTuple]),
         srcField
       ])
-    | _ => throw s!"[exprToJson] Unsupported expr: {format expr}"
   return exprObj
   termination_by (SizeOf.sizeOf expr)
   decreasing_by all_goals (cases expr; term_by_mem)
@@ -352,6 +403,66 @@ def createGOTOSymbol (programName baseName fullName : String)
     prettyType := "unknown",
     prettyValue := "",
     type := tyJson,
+    value := Json.mkObj [("id", "nil")]
+  })
+
+/--
+A symbol table entry for a global variable `name` of type `ty`: static
+lifetime, neither thread-local nor file-local, with the initial value `value`,
+which CBMC's `__CPROVER_initialize` assigns before the entry function runs.
+-/
+def createGlobalSymbol (moduleName name : String) (ty : Ty) (value : Expr) :
+    Except String (String × CBMCSymbol) := do
+  let valueJson ← exprToJson value
+  return (name,
+  {
+    baseName := name,
+    isFileLocal := false,
+    isLvalue := true,
+    isStaticLifetime := true,
+    isThreadLocal := false,
+    mode := "C",
+    module := moduleName,
+    name := name,
+    prettyName := name,
+    type := tyToJson ty,
+    value := valueJson
+  })
+
+/-- The `struct` type JSON of the struct definition `s`. -/
+def structDefToJson (s : StructDef) : Json :=
+  let components := s.components.map fun (name, ty) =>
+    Json.mkObj [
+      ("id", ""),
+      ("namedSub", Json.mkObj [
+        ("#pretty_name", Json.mkObj [("id", name)]),
+        ("name", Json.mkObj [("id", name)]),
+        ("type", tyToJson ty)
+      ])
+    ]
+  Json.mkObj [
+    ("id", "struct"),
+    ("namedSub", Json.mkObj [
+      ("tag", Json.mkObj [("id", s.name)]),
+      ("components", Json.mkObj [
+        ("id", ""),
+        ("sub", Json.arr components.toArray)
+      ])
+    ])
+  ]
+
+/-- The symbol table entry `tag-<name>` declaring the struct definition `s`. -/
+def createStructTypeSymbol (s : StructDef) (moduleName : String := "") :
+    String × CBMCSymbol :=
+  (s!"tag-{s.name}",
+  {
+    baseName := s.name,
+    isType := true,
+    mode := "C",
+    module := moduleName,
+    name := s!"tag-{s.name}",
+    prettyName := s!"struct {s.name}",
+    type := structDefToJson s,
     value := Json.mkObj [("id", "nil")]
   })
 

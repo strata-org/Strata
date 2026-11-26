@@ -55,6 +55,19 @@ def wireInterpretFlags : List Flag :=
    { name := "interpreter", help := "Only `cortex` is supported: the Cortex interpreter runs the program.",
      takesArg := .arg "cortex" }]
 
+/-- How a Cortex run exits, by Strata's convention (`ExitCode`): 0 when it passed, `failuresFound` when a check failed,
+`knownLimitation` when a stop ended it, with no verdict, and `internalError` on an interpreter error. -/
+def runExitCode (outcome : InterpretOutcome) : UInt8 :=
+  match outcome.outcome with
+  | .error => ExitCode.internalError
+  | .failed => ExitCode.failuresFound
+  | .stopped => ExitCode.knownLimitation
+  | .passed => 0
+
+def exitHelp : String :=
+  "Exits 0 when every entry passes, 2 when a check fails, 4 when a stop ends a run, with no verdict, where the program \
+   has no model or at one of the interpreter's bounds, and 3 on an interpreter error."
+
 def printDiagnostics (diagnostics : Array Message) : IO Unit := do
   IO.println s!"==== DIAGNOSTICS ===="
   for diag in diagnostics do
@@ -88,8 +101,9 @@ def runInterpret (ionBytes : ByteArray) (pflags : ParsedFlags) : IO Unit := do
   printDiagnostics outcome.diagnostics
   for (procName, reason) in outcome.errors do
     IO.eprintln s!"'{targetName?.getD procName}': {reason}"
-  unless outcome.errors.isEmpty do
-    IO.Process.exit ExitCode.failuresFound
+  let code := runExitCode outcome
+  unless code == 0 do
+    IO.Process.exit code
 
 def readWireProgram (bytes : ByteArray) : IO Wire.Program :=
   match Wire.readProgram bytes with
@@ -148,15 +162,16 @@ def runWireInterpret (ionBytes : ByteArray) (pflags : ParsedFlags) : IO Unit := 
   printDiagnostics outcome.diagnostics
   for (procName, reason) in outcome.errors do
     IO.eprintln s!"'{(pflags.getString "entry").getD procName}': {reason}"
-  unless outcome.errors.isEmpty do
-    IO.Process.exit ExitCode.failuresFound
+  let code := runExitCode outcome
+  unless code == 0 do
+    IO.Process.exit code
 
 def cortexInterpretBinaryCommand : Command where
   name := "cortexInterpretBinary"
   args := []
   flags := interpretFlags
   help := "Concretely interpret a Laurel Ion program read from stdin on the Cortex interpreter \
-           (Laurel → Cortex → execute) and print diagnostics."
+           (Laurel → Cortex → execute) and print diagnostics. " ++ exitHelp
   callback := fun _ pflags => do
     let ionBytes ← (← IO.getStdin).readBinToEnd
     runInterpret ionBytes pflags
@@ -184,7 +199,7 @@ def cortexWireInterpretBinaryCommand : Command where
   args := []
   flags := wireInterpretFlags
   help := "Concretely interpret a Cortex program in the Cortex wire format, read as Ion from stdin, \
-           on the Cortex interpreter, and print diagnostics."
+           on the Cortex interpreter, and print diagnostics. " ++ exitHelp
   callback := fun _ pflags => do
     runWireInterpret (← (← IO.getStdin).readBinToEnd) pflags
 

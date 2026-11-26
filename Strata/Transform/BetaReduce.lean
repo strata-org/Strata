@@ -116,8 +116,9 @@ def betaReduceProgram (p : Program) : Program :=
           postconditions := proc.spec.postconditions.map
             fun (n, c) => (n, { c with expr := reduceExpr c.expr }) }
         let body := match proc.body with
-          | .structured ss => .structured (reduceBlock ss)
-          | .cfg g => .cfg { g with blocks := g.blocks.map fun (l, b) => (l, reduceDetBlock b) }
+          | .structured ss o => .structured (reduceBlock ss) o
+          | .cfg g o => .cfg { g with blocks := g.blocks.map fun (l, b) => (l, reduceDetBlock b) } o
+          | .abstract => .abstract
         .proc { proc with spec := spec, body := body } md
       | .func f md => .func (reduceFunction f) md
       | .recFuncBlock fs md => .recFuncBlock (fs.map reduceFunction) md

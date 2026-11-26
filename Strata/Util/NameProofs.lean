@@ -25,6 +25,7 @@ combines them into a single correctness theorem for `findUnique`.
 the names are pairwise distinct.
 `freshNames_not_mem`, `freshNames_nodup`, `freshNames_length` and `freshNames_prefix` state
 that `freshNames` picks one distinct name per base, outside `taken`, starting with its base.
+`startsWith_internalPrefixOf` proves that an internal name starts with the prefix recorded for it.
 -/
 
 public section
@@ -395,6 +396,21 @@ theorem freshNames_fresh (taken : Std.HashSet String) (bases : List String) :
   have := hnt n hn
   rw [Std.HashSet.mem_iff_contains.1 hmem] at this
   cases this
+
+/-- An internal name starts with the prefix `internalPrefixOf` records for it. -/
+theorem startsWith_internalPrefixOf {n : String} (h : isInternal n = true) :
+    n.startsWith (internalPrefixOf n) = true := by
+  unfold isInternal at h
+  rw [String.startsWith_string_iff] at h ⊢
+  obtain ⟨rest, hrest⟩ := h
+  have hdrop : n.toList.drop internalMarker.length = rest := by
+    rw [← hrest, String.length, List.drop_left]
+  unfold internalPrefixOf
+  rw [String.toList_append, String.toList_ofList, hdrop, ← hrest]
+  refine (List.prefix_append_right_inj _).mpr ?_
+  split
+  · exact List.take_prefix _ _
+  · exact List.takeWhile_prefix _
 
 end Strata.Name
 

@@ -1121,7 +1121,7 @@ session 0: 1 checks, 1 contexts
 /-! ### `--stop-on-first-error` stops taking goals after the first failure
 
 `neg` is always false under `pos`, so it fails, and the run stops before checking `pos2`. That
-goal is left out of the results, as the per-obligation loop leaves out what it never reached. -/
+goal is reported as not checked, as the per-obligation loop reports what it never reached. -/
 
 private def failsFirst :=
 #strata
@@ -1138,6 +1138,7 @@ procedure P()
 
 /--
 info: neg: session 0 REFUTED
+pos2: not checked
 session 0: 1 checks, 1 contexts
 -/
 #guard_msgs in
@@ -1146,7 +1147,7 @@ session 0: 1 checks, 1 contexts
 
 /-! A goal decided without a solver stops the run too. The contradiction in the first arm decides
 `reach`, a `cover` found unreachable, which is a failure; so the second arm's session is never
-taken and `other` is left out. -/
+taken and `other` is reported as not checked. -/
 
 private def deadCoverStops :=
 #strata
@@ -1169,6 +1170,7 @@ procedure P()
 /--
 info: contradiction: session 0 proved
 reach: session 0 unknown
+other: not checked
 session 0: 1 checks, 1 contexts
 -/
 #guard_msgs in
@@ -1777,7 +1779,8 @@ session 1: 1 checks, 1 contexts
 /-! ### `--stop-on-first-error` stops the one-shot half too
 
 `a1` fails in a procedure walked as a tree, so the procedure holding the single goal `b1` is
-never sent, as the per-obligation loop would stop after `a1`. -/
+never sent, as the per-obligation loop would stop after `a1`. The goals the run did not reach are
+reported as not checked. -/
 
 private def failsBeforeLone :=
 #strata
@@ -1801,6 +1804,8 @@ procedure B()
 
 /--
 info: a1: REFUTED
+a2: not checked
+b1: not checked
 -/
 #guard_msgs in
 #eval do
@@ -2389,6 +2394,7 @@ private def paramNamedLikeFunctionAst : Core.Program := { decls := [
           body := .structured
             [Core.Statement.assert "g" (.eq Core.coreLoc cParam (.intConst Core.coreLoc 5)) .empty,
              Core.Statement.assert "g2" (.eq Core.coreLoc cParam (.intConst Core.coreLoc 5)) .empty]
+             false
                  }
     .empty] }
 
@@ -2403,7 +2409,7 @@ private def withoutSymbolicEval : Option (Core.ValidatedPipeline Core.ProgramFac
   (Core.validatePipeline
     (entry ++ [Core.passTypeCheck .quiet, Core.passTermCheck, Core.passPrecondElim,
       Core.passGenOpaqueTypeParams, Core.passMonomorphizeFunctions, Core.passSimplify,
-      ho, pc, Core.passFunctionInlining, Core.passBetaReduce])).toOption
+      ho, pc, Core.passFunctionInlining, Core.passBetaReduce, Core.passLambdaLift])).toOption
 
 /--
 info: error: ❌ Type checking error.
@@ -2441,9 +2447,46 @@ session 0: 2 checks, 1 contexts
           proc with
       | .ok ss => IO.println (Std.format ss)
       | .error e => IO.println s!"error: {e}"
-  match ← Core.IncrementalSolve.verifyProgram p 1 with
+  match ← Core.IncrementalSolve.verifyProgram p 1 (typeCheckFirst := false) with
   | .ok (results, _, trace) => IO.println (trace.format results)
   | .error e => IO.println s!"error: {e}"
+
+/-- A procedure asserting `1 + true == 2`, which adds an integer to a Boolean. -/
+private def intPlusBoolAst : Core.Program := { decls := [
+  .proc { header := { name := "Q", typeArgs := [], inputs := [], outputs := [] },
+          spec := { preconditions := [], postconditions := [] },
+          body := .structured
+            [Core.Statement.assert "h"
+              (.eq Core.coreLoc
+                (.app Core.coreLoc (.app Core.coreLoc (.op Core.coreLoc "Int.Add" none)
+                  (.intConst Core.coreLoc 1)) (.boolConst Core.coreLoc true))
+                (.intConst Core.coreLoc 2)) .empty] false }
+    .empty] }
+
+/-! `verifyProgram` and `verifyProgramWith`, asked to type check the program first
+(`typeCheckFirst := true`), refuse one that does not type check with the type error, as
+`Core.verify` does, and no goal gets a verdict. -/
+
+/--
+info: verifyProgram: error: ❌ Type checking error.
+Procedure 'Q': Impossible to unify (arrow int int) with (arrow bool _).
+First mismatch: int with bool.
+verifyProgramWith: error: ❌ Type checking error.
+Procedure 'Q': Impossible to unify (arrow int int) with (arrow bool _).
+First mismatch: int with bool.
+-/
+#guard_msgs in
+#eval show IO Unit from do
+  let report (name : String) (r : Except Std.Format (VCResults × Statistics × Trace)) :=
+    match r with
+    | .ok (results, _, trace) => IO.println s!"{name}: {trace.format results}"
+    | .error e => IO.println s!"{name}: error: {e}"
+  report "verifyProgram"
+    (← Core.IncrementalSolve.verifyProgram intPlusBoolAst 1 (typeCheckFirst := true))
+  let unused : Core.IncrementalSolve.SessionFactory :=
+    { τ := Unit, σ := Unit, spawn := fun _ => throw (IO.userError "no solver is opened") }
+  report "verifyProgramWith"
+    (← Core.IncrementalSolve.verifyProgramWith unused intPlusBoolAst 1 (typeCheckFirst := true))
 
 /-! The same pipeline leaves a node every assertion it had, so through it the programs below put
 several goals on one session, and the walk is compared with the per-obligation path on them. -/
@@ -2969,7 +3012,7 @@ procedure P(x : int, out y : int)
 
 /-! Under `--stop-on-first-error`, every goal of this procedure is a session of one goal once
 symbolic evaluation has run, so all of them are sent to the per-obligation discharge, which stops
-at `f1bad`. The goals it never reached are left out in both modes. -/
+at `f1bad`. The goals it never reached are reported as not checked in both modes. -/
 
 private def stopsMidway :=
 #strata
@@ -2985,7 +3028,7 @@ procedure P()
 };
 #end
 
-/-- info: stopsMidway: agree on 2, 1 with a counterexample -/
+/-- info: stopsMidway: agree on 4, 1 with a counterexample -/
 #guard_msgs in
 #eval bothWays "stopsMidway" (parse stopsMidway)
   { VerifyOptions.quiet with stopOnFirstError := true }

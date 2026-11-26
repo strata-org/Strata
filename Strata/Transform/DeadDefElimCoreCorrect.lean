@@ -70,8 +70,8 @@ public section
 theorem deadDefElimProgram_over {prog out : Program} {s s' : Transform.CoreTransformState}
     {b : Bool} (h : (deadDefElimProgram prog).run s = (.ok (b, out), s')) {q : Procedure}
     {md : Imperative.MetaData Expression} {ss : Statements} (hq : Decl.proc q md ∈ prog.decls)
-    (hb : q.body = .structured ss) :
-    Decl.proc { q with body := .structured (deadDefElimH [] ss) } md ∈ out.decls ∧
+    (hb : q.body = .structured ss opq) :
+    Decl.proc { q with body := .structured (deadDefElimH [] ss) opq } md ∈ out.decls ∧
       ∀ {F : Expression.Factory}, WellFormedSemanticEvalExprCongr (P := Expression) F →
         WellFormedSemanticEvalBool (P := Expression) F → Block.noLoops ss = true →
         ∀ {σ : SemanticStore Expression}, WellFormedStore σ F →
@@ -98,8 +98,8 @@ theorem deadDefElimPipelinePhase_over {program out : Program}
     {s s' : Transform.CoreTransformState} {b : Bool}
     (h : (deadDefElimPipelinePhase.transform program).run s = (.ok (b, out), s'))
     {q : Procedure} {md : Imperative.MetaData Expression} {ss : Statements}
-    (hq : Decl.proc q md ∈ program.decls) (hb : q.body = .structured ss) :
-    Decl.proc { q with body := .structured (deadDefElimH [] ss) } md ∈ out.decls ∧
+    (hq : Decl.proc q md ∈ program.decls) (hb : q.body = .structured ss opq) :
+    Decl.proc { q with body := .structured (deadDefElimH [] ss) opq } md ∈ out.decls ∧
       ∀ {F : Expression.Factory}, WellFormedSemanticEvalExprCongr (P := Expression) F →
         WellFormedSemanticEvalBool (P := Expression) F → Block.noLoops ss = true →
         ∀ {σ : SemanticStore Expression}, WellFormedStore σ F →
@@ -155,21 +155,18 @@ theorem deadDefElim_overapproximatesTraces (π : String → Option Procedure)
 
 /-- **Assertion validity transported back through erasure.** For an
     interpretation `I` stable under `DDArgRel` (such as evaluation to `true`, by
-    `evalInterp_stableUnder`)
-    and a Core statement list `ss` without loops and procedure calls: if every occurrence of
-    the assertion `aid` holds under its preceding assumptions on every trace of
-    `deadDefElim [] ss` from every environment satisfying `BlockInitEnvWF params` of that list,
-    the same holds for `ss` from every environment satisfying `BlockInitEnvWF params ss`. -/
+    `evalInterp_stableUnder`), `deadDefElim []` preserves assertion validity on Core statement
+    lists without loops and procedure calls: if every occurrence of an assertion holds under its
+    preceding assumptions on every trace of `deadDefElim [] ss` from every environment
+    satisfying `BlockInitEnvWF params` of that list, the same holds for `ss` from every
+    environment satisfying `BlockInitEnvWF params ss`. -/
 theorem deadDefElim_assertValid (π : String → Option Procedure) (params : InitEnvWFParams)
-    {I : ConditionInterp Expression} (hI : I.StableUnder DDArgRel) {ss : Statements}
-    (hss : Block.noLoops ss = true) (hnc : Statements.noCalls ss = true) {aid : AssertId Expression}
-    (h : AssertValidOnTracesWhen (EventLang.coreBlock π) I
-      (BlockInitEnvWF params (deadDefElim [] ss)) (deadDefElim [] ss) aid) :
-    AssertValidOnTracesWhen (EventLang.coreBlock π) I (BlockInitEnvWF params ss) ss aid :=
-  overapproximatesTracesUptoWhen_assertValid I _ DDOut (EventLang.coreBlock π)
-    (EventLang.coreBlock π) (fun ss => some (deadDefElim [] ss))
-    (fun ss => Block.noLoops ss = true ∧ Statements.noCalls ss = true) params params
-    (dd_assertValid_reflect hI) (deadDefElim_overapproximatesTraces π params) rfl ⟨hss, hnc⟩ h
+    {I : ConditionInterp Expression} (hI : I.StableUnder DDArgRel) :
+    AssertValidityPreservedWhen I (EventLang.coreBlock π) (EventLang.coreBlock π)
+      (fun ss => some (deadDefElim [] ss))
+      (fun ss => Block.noLoops ss = true ∧ Statements.noCalls ss = true) params params :=
+  overapproximatesTraces2UptoWhen_assertValidityPreservedWhen I (dd_assertValid_reflect hI)
+    (deadDefElim_overapproximatesTraces π params)
 
 /-- **The executable pass over-approximates traces**: `deadDefElim_overapproximatesTraces` for
     `deadDefElimH`, the pass the phase runs. -/
@@ -189,12 +186,12 @@ theorem deadDefElimH_overapproximatesTraces (π : String → Option Procedure)
 /-- **Assertion validity transported back through the executable pass**:
     `deadDefElim_assertValid` for `deadDefElimH`. -/
 theorem deadDefElimH_assertValid (π : String → Option Procedure) (params : InitEnvWFParams)
-    {I : ConditionInterp Expression} (hI : I.StableUnder DDArgRel) {ss : Statements}
-    (hss : Block.noLoops ss = true) (hnc : Statements.noCalls ss = true) {aid : AssertId Expression}
-    (h : AssertValidOnTracesWhen (EventLang.coreBlock π) I
-      (BlockInitEnvWF params (deadDefElimH [] ss)) (deadDefElimH [] ss) aid) :
-    AssertValidOnTracesWhen (EventLang.coreBlock π) I (BlockInitEnvWF params ss) ss aid :=
-  deadDefElim_assertValid π params hI hss hnc (deadDefElimH_eq [] ss ▸ h)
+    {I : ConditionInterp Expression} (hI : I.StableUnder DDArgRel) :
+    AssertValidityPreservedWhen I (EventLang.coreBlock π) (EventLang.coreBlock π)
+      (fun ss => some (deadDefElimH [] ss))
+      (fun ss => Block.noLoops ss = true ∧ Statements.noCalls ss = true) params params :=
+  overapproximatesTraces2UptoWhen_assertValidityPreservedWhen I (dd_assertValid_reflect hI)
+    (deadDefElimH_overapproximatesTraces π params)
 
 /-- **A Hoare triple transported back through erasure.**  For a Core statement list `ss`
     without loops and procedure calls, and a precondition admitting only entry environments over

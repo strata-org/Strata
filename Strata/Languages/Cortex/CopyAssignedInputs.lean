@@ -13,8 +13,8 @@ public import Strata.Languages.Cortex.Module
 A Core procedure body may assign only its outputs and its locals. This pass
 gives every Cortex procedure body that shape: an input `x` that the body
 assigns and that is not an output is renamed `x$in`, and the body starts with
-`init x := x$in`, which makes `x` a local. The procedure's preconditions,
-which are over its inputs, name `x$in` instead of `x`.
+`init x := x$in`, which makes `x` a local. The procedure's preconditions and
+postconditions, which read such an input at entry, name `x$in` instead of `x`.
 
 The copies are prepended to the entry block when no block transfers to the
 entry, so that they run once. Otherwise they run in a new entry block,
@@ -74,7 +74,9 @@ private def copyInputs (p : Procedure) : Except String Procedure := do
       inputs := inputs.push (x, t)
   if copies.isEmpty then return p
   let requires := p.requires.map fun pre => { pre with cond := pre.cond.substFvars renames }
-  return { p with inputs := inputs.toList, requires, body := some (withCopies b copies.toList) }
+  let ensures := p.ensures.map fun post => { post with cond := post.cond.substFvars renames }
+  return { p with inputs := inputs.toList, requires, ensures,
+                  body := some (withCopies b copies.toList) }
 
 def run : Program → Except String Program
   | .unordered prog => do

@@ -420,9 +420,9 @@ private def freshenCheckLabels (global : Std.HashSet String) (decls : List Decl)
         modifyGet fun ls => ((l, md), if isInsertedCheck md then ls else ls.insert l)
       let (_, kept) := (Procedure.Body.mapCheckLabelsM keep proc.body).run {}
       let invariants := match proc.body with
-        | .structured ss => ((Statements.collectAssertIds ss).filter
+        | .structured ss _ => ((Statements.collectAssertIds ss).filter
             fun a => !isInsertedCheck a.md).map (·.label)
-        | .cfg _ => []
+        | .cfg _ _ | .abstract => []
       let procLabels := kept.insertMany (proc.spec.preconditions.map (·.1) ++
         proc.spec.postconditions.map (·.1) ++ invariants)
       let rename (l : String) (md : Imperative.MetaData Expression) :
@@ -483,12 +483,13 @@ where
       | .proc proc md => do
         let F ← getFactory
         let (bodyChanged, proc') ← match proc.body with
-          | .structured ss =>
+          | .structured ss o =>
             let (c, body') ← transformStmts ss
-            pure (c, { proc with body := .structured body' })
-          | .cfg g =>
+            pure (c, { proc with body := .structured body' o })
+          | .cfg g o =>
             let (c, g') ← transformCFG proc.header.name.1 g
-            pure (c, { proc with body := .cfg g' })
+            pure (c, { proc with body := .cfg g' o })
+          | .abstract => pure (false, proc)
         setFactory F -- reset factory
         let wfDecls := mkContractWFLemmas F taken proc
         taken := taken.insertMany (wfDecls.map (·.name.name))

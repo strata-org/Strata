@@ -1,0 +1,480 @@
+/-
+  Copyright Strata Contributors
+
+  SPDX-License-Identifier: Apache-2.0 OR MIT
+-/
+module
+
+public import Strata.DL.Util.StringGen
+import all Strata.DL.Util.StringGen
+import all Strata.DL.Util.Counter
+import all Init.Data.Repr
+
+/-! # Properties of the string generator
+
+Properties of `StringGenState.gen` and of the predicates on generated strings in
+`StringGen.lean`.
+
+- `StringGenState.WFMono`: a `gen` step keeps a generator state well-formed, so generated
+  strings stay distinct.
+- `StringGenState.stringGens_gen`, `StringGenState.stringGens_gen_not_in`: a `gen` step adds its
+  fresh label to the generated ones.
+- `StringGenState.gen_ne_of_not_hasUnderscoreDigitSuffix`,
+  `StringGenState.not_mem_stringGens_of_not_hasUnderscoreDigitSuffix`: a string without the
+  `_<digits>` suffix is never generated.
+- `StringGenState.GenStep.refl`, `StringGenState.GenStep.trans`, `StringGenState.GenStep.of_gen`:
+  generator steps compose.
+- `StringGenState.gen_hasGenPrefix`, `String.HasGenPrefix.bare_isPrefixOf`: a label generated
+  under `pf` starts with `pf`.
+- `StringGenState.allMem_emp`, `StringGenState.allMem_gen`,
+  `StringGenState.not_mem_stringGens_of_not_allMem`: every generated label satisfies `R`.
+-/
+
+public section
+
+local infixl:50 " <:+ " => String.IsSuffixOf
+
+theorem String.append_eq_suffix (as bs bs' : String):
+  (as ++ bs = as ++ bs') → bs = bs' := by
+  intros Heq
+  by_cases bs = bs' <;> simp_all
+
+theorem String.append_eq_prefix (as as' bs : String):
+  (as ++ bs = as' ++ bs) → as = as' := by
+  intros Heq
+  by_cases as = as' <;> simp_all
+
+theorem List.reverse_injective' :
+  List.reverse l₁ = List.reverse l₂ → l₁ = l₂ := List.reverse_inj.mp
+
+theorem StringGenState.contains :
+  StringGenState.gen pf σ = (s, σ') →
+  s ∈ σ'.generated.unzip.2 := by
+  intros Hgen
+  simp [gen] at Hgen
+  simp [← Hgen]
+
+theorem StringGenState.subset : gen pf σ = (n, σ') → σ ⊆ σ' := by
+  intros Hgen
+  simp [gen] at Hgen
+  simp only [Subset, List.unzip_snd, ← Hgen, List.unzip_cons, List.unzip_fst]
+  intros a Hin
+  simp_all
+
+theorem StringGenState.gen_nonEmpty: gen pf σ = (n, σ') → σ'.generated ≠ [] := by
+  simp only [gen, Nat.toString_eq_repr, Prod.mk.injEq, ne_eq, and_imp]
+  intro _ Hgen
+  simp [← Hgen]
+
+theorem StringGenState.genCounter_of_StringGenStategen
+  (Hgen: gen pf σ = (n, σ')): Counter.genCounter σ.cs = ((σ'.generated.head $ gen_nonEmpty Hgen).fst, σ'.cs) := by
+  simp [gen] at Hgen
+  simp [← Hgen.right]
+
+theorem Nat_digitchar_neq_underscore {x: Nat}: ¬ '_' =  Nat.digitChar x := by
+  unfold Nat.digitChar
+  match x with
+  | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 => simp
+  | j + 16 => simp
+
+theorem Nat_toDigitsCore_not_contain_underscore {n m l} : '_' ∉ l → '_' ∉ Nat.toDigitsCore 10 n m l := by
+  intro Hnin
+  induction n using Nat.strongRecOn generalizing m l
+  rename_i n ind
+  cases n
+  simp [Nat.toDigitsCore, Hnin]
+  rename_i n
+  simp only [Nat.toDigitsCore, Nat.div_eq_zero_iff, reduceCtorEq, false_or, ↓Char.isValue]
+  split
+  simp [Nat_digitchar_neq_underscore, Hnin]
+  apply ind <;> simp [*, Nat_digitchar_neq_underscore]
+
+theorem Nat_toString_not_contain_underscore {x: Nat} : '_' ∉ (toString x).toList := by
+  simp only [toString, Nat.repr, Nat.toDigits, String.toList_ofList, ↓Char.isValue]
+  exact Nat_toDigitsCore_not_contain_underscore (l := []) (by simp)
+
+theorem Nat_digitChar_index: x.digitChar =
+    #['0','1','2','3','4','5','6','7','8','9','a','b','c','d','e','f','*'][min x 16]'(by simp; omega) := by
+  unfold Nat.digitChar
+  match h : x with
+  | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 => simp
+  | j + 16 => simp
+
+theorem nodup_implies_injective (H: List.Nodup a) (Hl1: x < a.length) (Hl2: y < a.length) (eq : a[x]'Hl1 = a[y]'Hl2) : x = y := by
+  unfold List.Nodup at H
+  induction a generalizing x y
+  case nil =>
+    simp at Hl1
+  case cons h t ind =>
+    simp only [List.pairwise_cons] at H
+    grind
+
+theorem Nat_eq_of_digitChar_eq : n < 16 → m < 16 → n.digitChar = m.digitChar → n = m := by
+  intro _ _
+  have h1 : min n 16 = n := by omega
+  have h2 : min m 16 = m := by omega
+  simp [Nat_digitChar_index, h1, h2]
+
+theorem Nat_toDigitsCore_list_suffix : l <:+ Nat.toDigitsCore 10 x n l := by
+  induction x generalizing n l <;> simp only [Nat.toDigitsCore, Nat.div_eq_zero_iff, reduceCtorEq, false_or]
+  · exact List.suffix_refl _
+  split
+  · exact List.suffix_cons _ _
+  rename_i ind _
+  have ind:= @ind ((n % 10).digitChar :: l) (n/10)
+  simp only [List.IsSuffix, Nat.not_lt] at *
+  obtain ⟨t, ind⟩ := ind
+  exists t ++ [(n % 10).digitChar]
+  simp [← ind]
+
+theorem Nat_toDigitsCore_list_len_le: (Nat.toDigitsCore 10 x n l).length ≥ l.length := by
+  have H : l <:+ Nat.toDigitsCore 10 x n l := Nat_toDigitsCore_list_suffix
+  simp only [List.IsSuffix] at H
+  obtain ⟨t, H⟩ := H
+  simp [← H]
+
+theorem Nat_toDigitsCore_list_len_lt : x > 0 → n > 0 → (Nat.toDigitsCore 10 x n l).length > l.length := by
+  intros
+  cases x; contradiction
+  rename_i x _
+  simp [Nat.toDigitsCore]
+  split
+  simp
+  have : (Nat.toDigitsCore 10 x (n / 10) ((n % 10).digitChar :: l)).length ≥ ((n % 10).digitChar :: l).length := Nat_toDigitsCore_list_len_le
+  simp at this
+  omega
+
+theorem Nat_toDigitsCore_list_head_eq : Nat.toDigitsCore 10 x n (h1::t) = Nat.toDigitsCore 10 y m (h2::t) → h1 = h2 := by
+  intro H
+  unfold Nat.toDigitsCore at H
+  split at H <;> (simp only [Nat.div_eq_zero_iff, reduceCtorEq, false_or] at H; split at H)
+  any_goals split at H
+  any_goals simp at H
+  any_goals split at H
+  assumption
+  rename_i m _ _ _ x _
+  have Hsuf : ((m % 10).digitChar :: h2 :: t) <:+ Nat.toDigitsCore 10 x (m / 10) ((m % 10).digitChar :: h2 :: t) := Nat_toDigitsCore_list_suffix
+  simp [← H, List.suffix_iff_eq_drop] at Hsuf
+  simp at H
+  simp [H]
+  rename_i n _ _ _ x _
+  have Hsuf : ((n % 10).digitChar :: h2 :: t) <:+ Nat.toDigitsCore 10 x (n / 10) ((n % 10).digitChar :: h2 :: t) := Nat_toDigitsCore_list_suffix
+  simp [← H, List.suffix_iff_eq_drop] at Hsuf
+  simp [Hsuf]
+  rename_i n _ _ _ x _ _ _ _ _
+  have: (Nat.toDigitsCore 10 x (n / 10) ((n % 10).digitChar :: h1 :: t)).length ≥  ((n % 10).digitChar :: h1 :: t).length := Nat_toDigitsCore_list_len_le
+  simp [H] at this
+  omega
+  rename_i n _ _ _ x _ _ _ _ _ _ _
+  have Hsuf : ((n % 10).digitChar :: h1 :: t) <:+ Nat.toDigitsCore 10 x (n / 10) ((n % 10).digitChar :: h1 :: t) := Nat_toDigitsCore_list_suffix
+  simp [H, List.suffix_iff_eq_drop] at Hsuf
+  simp [Hsuf]
+  rename_i n _ _ _ x _ m _ _ _ y _
+  have Hsuf : ((m % 10).digitChar :: h2 :: t) <:+ Nat.toDigitsCore 10 y (m / 10) ((m % 10).digitChar :: h2 :: t) := Nat_toDigitsCore_list_suffix
+  have Hsuf' : ((n % 10).digitChar :: h1 :: t) <:+ Nat.toDigitsCore 10 x (n / 10) ((n % 10).digitChar :: h1 :: t) := Nat_toDigitsCore_list_suffix
+  simp [H, List.suffix_iff_eq_drop] at *
+  simp [← Hsuf'] at Hsuf
+  simp [Hsuf]
+
+theorem Nat_eq_of_toDigitsCore_eq : x > n → y > m
+  → Nat.toDigitsCore 10 x n l = Nat.toDigitsCore 10 y m l → n = m := by
+  induction x using Nat.strongRecOn generalizing y n m l
+  rename_i x ind
+  intro Hn1 Hn2
+  cases x <;> cases y
+  any_goals omega
+  rename_i x y
+  simp only [Nat.toDigitsCore, Nat.div_eq_zero_iff, reduceCtorEq, false_or]
+  split
+  split <;> intro H
+  simp only [List.cons.injEq, and_true] at H
+  have := Nat_eq_of_digitChar_eq (by omega) (by omega) H
+  omega
+  have: (Nat.toDigitsCore 10 y (m / 10) ((m % 10).digitChar :: l)).length > ((m % 10).digitChar :: l).length := by
+    apply Nat_toDigitsCore_list_len_lt (by omega) (by omega)
+  simp [← H] at this
+  split <;> intro H
+  have: (Nat.toDigitsCore 10 x (n / 10) ((n % 10).digitChar :: l)).length > ((n % 10).digitChar :: l).length := by
+    apply Nat_toDigitsCore_list_len_lt (by omega) (by omega)
+  simp [H] at this
+  have H':= Nat_eq_of_digitChar_eq (by omega) (by omega) $ Nat_toDigitsCore_list_head_eq H
+  rw [H'] at H
+  have ind:= ind _ (by simp) (by omega) (by omega) H
+  omega
+
+theorem Nat_eq_of_toString_eq {x y: Nat}: (toString x) = (toString y) → x = y := by
+  intro H
+  simp only [toString, Nat.repr] at H
+  apply Nat_eq_of_toDigitsCore_eq (by simp) (by simp) (String.ofList_injective H)
+
+private theorem under_toList : "_".toList = ['_'] := rfl
+
+theorem Nat_eq_of_StringGen_suffix {x y: Nat}: ("_" ++ toString x).IsSuffixOf (s ++ "_" ++ toString y) → x = y := by
+  intro Hsuf
+  apply Nat_eq_of_toString_eq
+  if x_lt : (toString x).length < (toString y).length then
+    simp only [String.IsSuffixOf, String.toList_append, under_toList] at Hsuf
+    have Hsuf': (toString y).toList  <:+ s.toList ++ ['_'] ++ (toString y).toList :=
+      List.suffix_append_of_suffix (List.suffix_refl _)
+    have ⟨t, h⟩ : ['_'] ++ (toString x).toList <:+ (toString y).toList :=
+      List.suffix_of_suffix_length_le Hsuf Hsuf' (by simp [Nat.repr] at x_lt ⊢; omega)
+    have : '_' ∈ (toString y).toList := by grind
+    have := @Nat_toString_not_contain_underscore y
+    contradiction
+  else if x_gt : (toString x).length > (toString y).length then
+    have Hsuf : (toString x).toList <:+ s.toList ++ ['_'] ++ (toString y).toList := by
+      obtain ⟨t, H⟩ := Hsuf
+      exists t ++ ['_']
+      simp only [String.toList_append, under_toList, List.append_assoc] at H
+      simp only [List.append_assoc]
+      exact H
+    have Hsuf': ['_'] ++ (toString y).toList  <:+ s.toList ++ ['_'] ++ (toString y).toList := by
+      simp only [List.append_assoc]
+      exact List.suffix_append_of_suffix (List.suffix_refl _)
+    have ⟨t, h⟩ : ['_'] ++ (toString y).toList <:+ (toString x).toList :=
+      List.suffix_of_suffix_length_le Hsuf' Hsuf (by simp [Nat.repr] at x_gt ⊢; omega)
+    have : '_' ∈ (toString x).toList := by grind
+    have := @Nat_toString_not_contain_underscore x
+    contradiction
+  else
+    have eq_len: (toString x).length = (toString y).length := by omega
+    obtain ⟨cs, H⟩ := Hsuf
+    simp only [String.toList_append, ← List.append_assoc] at H
+    have this := List.append_inj_right' H eq_len
+    exact String.toList_inj.mp this
+
+/--
+The uniqueness of the generated string follows from the following: given that the numbers at the end of all strings are unique, then the strings themselves must be unique.
+-/
+theorem StringGenState.WFMono :
+  WF σ →
+  gen pf σ = (n, σ') →
+  WF σ' := by
+  intros Hwf Hgen
+  simp only [WF, List.unzip_fst, List.unzip_snd, Nat.toString_eq_repr] at *
+  constructor
+  exact Counter.genCounterWFMono Hwf.left $ StringGenState.genCounter_of_StringGenStategen Hgen
+  simp [gen] at Hgen
+  simp only [← Hgen.right, Counter.genCounter, List.map_cons, ← Hwf.right.left, List.nodup_cons, List.mem_map,
+    Prod.exists, exists_eq_right, not_exists, Hwf.right.right.left, and_true, List.mem_cons, Prod.mk.injEq, true_and]
+  constructor
+  intro x Hx
+  have Hx := Nat_eq_of_StringGen_suffix $ Hwf.right.right.right x _ Hx
+  have : x ∈ List.map Prod.fst σ.generated  := by refine List.mem_map.mpr ?_; exists (x, pf ++ "_" ++ toString σ.cs.counter)
+  rw [← Hwf.right.left, Hx] at this
+  have Hcontra:= Hwf.left.left _ this
+  simp at Hcontra
+  intro c s H
+  cases H
+  · rename_i H
+    simp only [H.right, H.left, String.IsSuffixOf, String.toList_append, List.append_assoc]
+    apply List.suffix_append
+  · apply Hwf.right.right.right ; assumption
+
+/-! ## Convenience helpers for the list of generated string labels -/
+
+/-- The empty generator state is well-formed. -/
+theorem StringGenState.wf_emp : StringGenState.WF StringGenState.emp := by
+  simp [StringGenState.WF, Counter.WF]
+
+/-- The empty generator state has produced no labels. -/
+@[simp] theorem StringGenState.stringGens_emp :
+    StringGenState.stringGens StringGenState.emp = [] := by
+  simp [StringGenState.stringGens, StringGenState.emp]
+
+/-- No string is among the empty generator state's produced labels. -/
+theorem StringGenState.not_mem_stringGens_emp (s : String) :
+    s ∉ StringGenState.stringGens StringGenState.emp := by
+  rw [StringGenState.stringGens_emp]; exact List.not_mem_nil
+
+/-- After generating, the new state's labels list is the new label cons'd onto the old. -/
+theorem StringGenState.stringGens_gen
+    (pf : String) (σ : StringGenState) :
+    StringGenState.stringGens (StringGenState.gen pf σ).2
+      = (StringGenState.gen pf σ).1 :: StringGenState.stringGens σ := by
+  simp [StringGenState.gen, StringGenState.stringGens]
+
+/-- The freshly generated label is not in the old state's labels list, given WF. -/
+theorem StringGenState.stringGens_gen_not_in
+    (pf : String) (σ : StringGenState) (hwf : StringGenState.WF σ) :
+    (StringGenState.gen pf σ).1 ∉ StringGenState.stringGens σ := by
+  intro h_in
+  have hwf' : StringGenState.WF (StringGenState.gen pf σ).2 :=
+    StringGenState.WFMono hwf rfl
+  have h_gens_eq : StringGenState.stringGens (StringGenState.gen pf σ).2
+      = (StringGenState.gen pf σ).1 :: StringGenState.stringGens σ :=
+    StringGenState.stringGens_gen pf σ
+  have h_nodup : (StringGenState.stringGens (StringGenState.gen pf σ).2).Nodup := by
+    simp only [StringGenState.WF] at hwf'
+    exact hwf'.2.2.1
+  rw [h_gens_eq] at h_nodup
+  rw [List.nodup_cons] at h_nodup
+  exact h_nodup.1 h_in
+
+/-! ## Shape predicates: distinguishing user labels from generated labels
+
+The lemmas below are the building blocks for showing that a user label is not generator
+output. The most useful one for client code is `gen_ne_of_not_hasUnderscoreDigitSuffix`:
+a string without the `_<digits>` suffix shape can never be the output of `gen`. -/
+
+/-- The label produced by `gen` has the form `pf ++ "_" ++ toString n`. -/
+theorem StringGenState.gen_eq (pf : String) (σ : StringGenState) :
+    (StringGenState.gen pf σ).1 = pf ++ "_" ++ toString σ.cs.counter := by
+  simp [StringGenState.gen, Counter.genCounter]
+
+/-- Every label produced by `gen` has the `_<digits>` suffix shape. -/
+theorem StringGenState.gen_hasUnderscoreDigitSuffix
+    (pf : String) (σ : StringGenState) :
+    String.HasUnderscoreDigitSuffix (StringGenState.gen pf σ).1 := by
+  refine ⟨pf, σ.cs.counter, ?_⟩
+  exact StringGenState.gen_eq pf σ
+/-- `String.endsWithUnderscoreDigits` accepts every string with the
+`_<digits>` suffix shape. -/
+theorem String.endsWithUnderscoreDigits_of_hasUnderscoreDigitSuffix {s : String}
+    (h : String.HasUnderscoreDigitSuffix s) :
+    String.endsWithUnderscoreDigits s = true := by
+  obtain ⟨pf, n, rfl⟩ := h
+  have hdig : ∀ c ∈ (Nat.toDigits 10 n).reverse, c.isDigit = true := fun c hc =>
+    Nat.isDigit_of_mem_toDigits (by decide) (by decide) (List.mem_reverse.mp hc)
+  have hrev : (pf ++ "_" ++ toString n).toList.reverse =
+      (Nat.toDigits 10 n).reverse ++ '_' :: pf.toList.reverse := by
+    simp [String.toList_append, Nat.toString_eq_repr, Nat.toList_repr]
+  have htake : ((Nat.toDigits 10 n).reverse ++ '_' :: pf.toList.reverse).takeWhile
+      Char.isDigit = (Nat.toDigits 10 n).reverse := by
+    rw [List.takeWhile_append_of_pos hdig]
+    simp [show Char.isDigit '_' = false from by decide]
+  simp only [String.endsWithUnderscoreDigits, hrev, htake]
+  simp
+
+/-- Every label inside a WF `StringGenState`'s `generated` list has the
+`_<digits>` suffix shape. -/
+theorem StringGenState.hasUnderscoreDigitSuffix_of_mem_generated
+    {σ : StringGenState} (hwf : StringGenState.WF σ)
+    {s : String} (hs : s ∈ σ.stringGens) :
+    String.HasUnderscoreDigitSuffix s := by
+  simp only [StringGenState.stringGens, List.unzip_snd, List.mem_map] at hs
+  obtain ⟨⟨c, s'⟩, h_mem, h_eq⟩ := hs
+  subst h_eq
+  have hsuf : ("_" ++ toString c).IsSuffixOf s' := hwf.2.2.2 c s' h_mem
+  obtain ⟨t_chars, h_t⟩ := hsuf
+  refine ⟨String.ofList t_chars, c, ?_⟩
+  apply String.toList_inj.mp
+  simp only [String.toList_append, under_toList, String.toList_ofList]
+  rw [← h_t, String.toList_append, under_toList]
+  simp [List.append_assoc]
+
+/-- If a string does not have the `_<digits>` suffix shape, it cannot have been
+produced by `gen`. -/
+theorem StringGenState.gen_ne_of_not_hasUnderscoreDigitSuffix
+    (pf : String) (σ : StringGenState) (s : String)
+    (h : ¬ String.HasUnderscoreDigitSuffix s) :
+    s ≠ (StringGenState.gen pf σ).1 := by
+  intro h_eq
+  apply h
+  rw [h_eq]
+  exact StringGenState.gen_hasUnderscoreDigitSuffix pf σ
+
+/-- If a string does not have the `_<digits>` suffix shape, it cannot appear
+in the `stringGens` list of any WF `StringGenState`. -/
+theorem StringGenState.not_mem_stringGens_of_not_hasUnderscoreDigitSuffix
+    {σ : StringGenState} (hwf : StringGenState.WF σ)
+    {s : String} (h : ¬ String.HasUnderscoreDigitSuffix s) :
+    s ∉ σ.stringGens := by
+  intro h_in
+  exact h (StringGenState.hasUnderscoreDigitSuffix_of_mem_generated hwf h_in)
+
+/-- Transports an equality of two `gen` outputs to an equality of their
+`pf ++ "_" ++ <counter>` normal forms, by unfolding `gen` on both sides. This
+is the concatenation equality only; it does not by itself split into equal
+prefixes and equal counters (that would additionally need the last-underscore
+split to be unique, via `Nat_toString_not_contain_underscore`). -/
+theorem StringGenState.gen_inj_of_pf_eq
+    {pf₁ pf₂ : String} {σ₁ σ₂ : StringGenState}
+    (h : (StringGenState.gen pf₁ σ₁).1 = (StringGenState.gen pf₂ σ₂).1) :
+    pf₁ ++ "_" ++ toString σ₁.cs.counter = pf₂ ++ "_" ++ toString σ₂.cs.counter := by
+  rw [StringGenState.gen_eq, StringGenState.gen_eq] at h
+  exact h
+
+/-! ## GenStep: well-formed monotone transitions of a `StringGenState`
+
+`GenStep` is reflexive and transitive, and a single `gen` is a `GenStep`. -/
+
+namespace StringGenState.GenStep
+
+/-- Identity transition. -/
+theorem refl (gen : StringGenState) : GenStep gen gen :=
+  ⟨id, fun _ h => h⟩
+
+/-- Composition of transitions. -/
+theorem trans {gen gen_mid gen' : StringGenState}
+    (h₁ : GenStep gen gen_mid) (h₂ : GenStep gen_mid gen') :
+    GenStep gen gen' :=
+  ⟨h₂.wf_mono ∘ h₁.wf_mono, fun _ hx => h₂.subset (h₁.subset hx)⟩
+
+/-- A single `gen` call is a `GenStep`. -/
+theorem of_gen (pf : String) (σ : StringGenState) :
+    GenStep σ (StringGenState.gen pf σ).2 := by
+  refine ⟨?_, ?_⟩
+  · intro hwf; exact StringGenState.WFMono hwf rfl
+  · intro x hx
+    rw [StringGenState.stringGens_gen]
+    exact List.mem_cons.mpr (Or.inr hx)
+
+end StringGenState.GenStep
+
+/-! ## Kind-contract: per-prefix membership witnesses -/
+
+/-- The label produced by `gen pf σ` carries `pf` as a generator prefix. -/
+theorem StringGenState.gen_hasGenPrefix (pf : String) (σ : StringGenState) :
+    String.HasGenPrefix pf (StringGenState.gen pf σ).1 := by
+  unfold String.HasGenPrefix
+  rw [gen_eq, List.isPrefixOf_iff_prefix]
+  refine ⟨(toString σ.cs.counter).toList, ?_⟩
+  simp [String.toList_append, List.append_assoc]
+
+/-- From a generator-prefix witness `HasGenPrefix pf s` (which carries
+`(pf ++ "_")` as a prefix of `s`) to the bare prefix `pf.toList.isPrefixOf
+s.toList`, by dropping the trailing `"_"`. This is the generic consequence of
+`HasGenPrefix` reused by every pass that must show its generated names lie under
+a reserved bare prefix. -/
+theorem String.HasGenPrefix.bare_isPrefixOf {pf s : String}
+    (h : String.HasGenPrefix pf s) : pf.toList.isPrefixOf s.toList = true := by
+  rw [String.HasGenPrefix, List.isPrefixOf_iff_prefix] at h
+  rw [List.isPrefixOf_iff_prefix]
+  refine List.IsPrefix.trans ?_ h
+  rw [String.toList_append]
+  exact List.prefix_append _ _
+
+/-! ## Membership tracking: `AllMem`
+
+`gen` preserves `AllMem R` when `R` holds of every `gen`-output under its prefix. The
+foreign discharge is then plain contraposition (`not_mem_stringGens_of_not_allMem`). -/
+
+/-- The empty generator state vacuously satisfies any `AllMem`. -/
+theorem StringGenState.allMem_emp (R : String → Prop) :
+    StringGenState.AllMem R StringGenState.emp := by
+  intro s hs
+  rw [stringGens_emp] at hs
+  exact absurd hs (List.not_mem_nil)
+
+/-- `AllMem` is preserved by a `gen pf` step whose newly produced label satisfies
+`R`. -/
+theorem StringGenState.allMem_gen (R : String → Prop) (pf : String)
+    (σ : StringGenState) (h : StringGenState.AllMem R σ)
+    (hnew : R (StringGenState.gen pf σ).1) :
+    StringGenState.AllMem R (StringGenState.gen pf σ).2 := by
+  intro s hs
+  rw [stringGens_gen, List.mem_cons] at hs
+  rcases hs with hnew' | hold
+  · exact hnew' ▸ hnew
+  · exact h s hold
+
+/-- A label `s` that fails `R` cannot appear in a state satisfying `AllMem R`
+(contraposition). -/
+
+theorem StringGenState.not_mem_stringGens_of_not_allMem {R : String → Prop}
+    {σ : StringGenState} {s : String}
+    (hall : StringGenState.AllMem R σ) (hns : ¬ R s) :
+    s ∉ stringGens σ := fun h_in => hns (hall s h_in)
+
+end

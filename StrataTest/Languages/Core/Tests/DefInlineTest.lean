@@ -130,6 +130,32 @@ Wrote problem to _test_definline_vcs/a_0.smt2.
     vcgen := .wp, verbose := .debug, vcDirectory := vcDir })
   IO.FS.removeDirAll vcDir
 
+/-! With the contextual rewriting phase after `betaReduce` in the same order, the phase rewrites
+the obligation of `a`, `x@0 + 3 > x@0`, to `true`, so no problem is written for a solver. -/
+
+/--
+info: [Strata.Core] Type checking succeeded.
+
+
+VCs:
+Label: a
+Property: assert
+Obligation:
+true
+-/
+#guard_msgs in
+#eval do
+  let vcDir : System.FilePath := "_test_definline_vcs_rewrite"
+  IO.FS.createDirAll vcDir
+  let options := { Core.VerifyOptions.default with
+    vcgen := .wp, verbose := .debug, vcDirectory := vcDir }
+  let .ok pipeline := Strata.Core.splicePhasesAfter "betaReduce"
+      [Strata.Core.passContextualRewrite] (Strata.Core.corePipelinePhases options)
+      >>= Strata.Core.validatePipeline
+    | throw (IO.userError "the order does not compose")
+  let _ ← Strata.Core.verify incrPgm (options := options) (pipeline := some pipeline)
+  IO.FS.removeDirAll vcDir
+
 /-! ## The erasure after the inlining leaves no more nodes
 
 On the outputs of the WP and SSA phases for random statement lists (`RProg`), the inlining

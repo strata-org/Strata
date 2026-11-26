@@ -90,10 +90,10 @@ end
 @[expose] def wpLoopDecl (body : Statements → Statements × Nat × Bool) :
     Decl → Decl × Bool × Nat × Bool
   | .proc q md => match q.body with
-    | .structured ss =>
+    | .structured ss o =>
       let (ss', n, out) := body ss
-      (.proc { q with body := .structured ss' } md, n > 1 || out, n, out)
-    | .cfg _ => (.proc q md, false, 0, false)
+      (.proc { q with body := .structured ss' o } md, n > 1 || out, n, out)
+    | .cfg _ _ | .abstract => (.proc q md, false, 0, false)
   | d => (d, false, 0, false)
 
 /-- Every procedure of the program with the loop `body` run on its structured body, every other

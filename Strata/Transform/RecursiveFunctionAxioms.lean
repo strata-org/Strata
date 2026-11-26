@@ -85,22 +85,4 @@ def run (options : VerifyOptions) (p : Program) : Transform.CoreTransformM (Bool
 end RecursiveAxioms
 end Core
 
-/-- Recursive-function axioms pipeline phase.
-
-    Model-preserving: each axiom is an equation the function's definition satisfies, so
-    it holds in every model of the program and removes none. It changes only function
-    declarations, adding axioms, so it preserves every fact about procedure bodies,
-    contracts and polymorphism. It does not claim `noBetaRedexes`, which `betaReduce`
-    establishes after it. -/
-def Core.recursiveAxiomsPhase (options : VerifyOptions := VerifyOptions.default) :
-    Core.PipelinePhase :=
-  Core.modelPreservingPipelinePhase "recursiveAxioms" (Core.RecursiveAxioms.run options)
-    (requires := factSet![.typeAnnotated])
-    (preserves := factSet![.noCFGBodies, .noCalls, .noLoops, .noLoopInvariants,
-                         .noLoopMeasures, .staticSingleAssignment,
-                         .noPrecondsFromFuncs, .noNondetGuards, .hasObligationForm,
-                         .noProcedureContracts, .noPolymorphicProcedures,
-                         .noPolymorphicFunctions, .typeAnnotated, .noInits, .treeForm,
-                         .exitsCovered, .armsHaveObligations])
-
 end

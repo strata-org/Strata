@@ -128,6 +128,35 @@ info: PruneUnreachable: exception handlers must be lowered before PruneUnreachab
     handlers := [{ covered := ["E"], catchType := none, binder := "e",
                    target := "H", md := .empty }] }
 
+/-! ## Constrained types in a procedure's contract
+
+`LowerCTE` replaces each constrained type by its base type everywhere a program mentions
+it, a precondition's and a postcondition's condition included, so no annotation of a
+constrained type reaches Core, which declares no such type. -/
+
+/-- A program with the constrained type `int32` and a procedure whose precondition and
+postcondition annotate a parameter with `int32`. -/
+def constrainedContract : UnorderedProgram :=
+  { composites := [],
+    constrained := [{ name := "int32", base := mono .int, binder := idn "$v",
+                      constraint := mkCall "Int.Le" [intLit 0, mkFvar "$v"] }],
+    procedures := [
+      { name := "keep", inputs := [(idn "x", mono (.tcons "int32" []))],
+        outputs := [(idn "r", mono (.tcons "int32" []))], throws := none,
+        requires := [{ cond := mkCall "Int.Le"
+                         [intLit 0, .fvar Core.coreLoc (idn "x") (some (.tcons "int32" []))] }],
+        ensures := [{ label := "kept",
+                      cond := .eq Core.coreLoc (.fvar Core.coreLoc (idn "r") (some (.tcons "int32" [])))
+                        (.fvar Core.coreLoc (idn "x") (some (.tcons "int32" []))) }],
+        body := some { handlers := [],
+                       cfg := { entry := "E", blocks := [("E", blk [setV "r" "x"] fin)] } } }] }
+
+/--
+info: type check ok
+-/
+#guard_msgs in
+#eval report (passes := [LowerCTE.pass, Ordering.pass]) constrainedContract
+
 end Cortex.ToCoreCFGTest
 
 end

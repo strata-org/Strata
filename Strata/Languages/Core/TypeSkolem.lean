@@ -127,8 +127,9 @@ def DetCFG.initTys (c : DetCFG) : List LMonoTy :=
     graph. -/
 def Procedure.initTys (p : Procedure) : List LMonoTy :=
   match p.body with
-  | .structured ss => Statements.initTys ss
-  | .cfg c => DetCFG.initTys c
+  | .structured ss _ => Statements.initTys ss
+  | .cfg c _ => DetCFG.initTys c
+  | .abstract => []
 
 /-- The type names a procedure mentions, given the types `annot` it writes: the type
     constructor names of `annot` and of its literals, and the names of the types its body
@@ -136,8 +137,8 @@ def Procedure.initTys (p : Procedure) : List LMonoTy :=
 def procTyNames (proc : Procedure) (annot : List LMonoTy) : List String :=
   annot.flatMap getTypeRefs ++ procLitTyNames proc ++
     match proc.body with
-    | .structured ss => (Imperative.Block.localTypeDecls ss).map (·.name)
-    | .cfg _ => []
+    | .structured ss _ => (Imperative.Block.localTypeDecls ss).map (·.name)
+    | .cfg _ _ | .abstract => []
 
 /-- The type variables a declaration with type parameters `typeArgs` mentions, given the types
     `annot` it writes: its type parameters and the type variables of `annot`. -/

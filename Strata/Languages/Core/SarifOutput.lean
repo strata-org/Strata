@@ -175,22 +175,23 @@ def vcResultToSarifResult (mode : VerificationMode) (files : Map Strata.Uri Lean
   let relatedLocations := extractRelatedLocations files vcr.obligation.metadata
   let properties : Strata.Sarif.PropertyBag :=
     { propertyType := propertyTypeToClassification vcr.obligation.property }
+  let locations := match extractLocation files vcr.obligation.metadata with
+    | some loc => #[locationToSarif loc]
+    | none => #[]
+  -- An obligation a stopped run did not ask is neither a failure nor an error of Strata.
+  if let some why := vcr.notChecked then
+    { ruleId, level := .warning, message := { text := s!"Not checked: {why}" }, locations,
+      relatedLocations, properties } else
   match vcr.outcome with
   | .error err =>
     let level := .error
     let messageText := s!"Verification error: {err}"
     let message : Strata.Sarif.Message := { text := messageText }
-    let locations := match extractLocation files vcr.obligation.metadata with
-      | some loc => #[locationToSarif loc]
-      | none => #[]
     { ruleId, level, message, locations, relatedLocations, properties }
   | .ok outcome =>
     let level := outcomeToLevel mode vcr.obligation.property outcome
     let messageText := sarifMessage vcr outcome
     let message : Strata.Sarif.Message := { text := messageText }
-    let locations := match extractLocation files vcr.obligation.metadata with
-      | some loc => #[locationToSarif loc]
-      | none => #[]
     { ruleId, level, message, locations, relatedLocations, properties }
 
 /-- Convert VCResults to a SARIF document -/

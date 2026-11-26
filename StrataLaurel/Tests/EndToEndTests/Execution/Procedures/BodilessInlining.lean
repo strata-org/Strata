@@ -35,3 +35,26 @@ procedure caller()
 //^^^^^^^^^^^^ error: assertion does not hold
 };
 #end
+
+-- A call to a bodiless `modifies *` procedure runs in the Core interpreter: the heap, an inout
+-- parameter of the call, gets a fresh value.
+#eval testLaurelExecution { skipVerification := true, skipLaurelInterpreter := true } <|
+#strata
+program Laurel;
+procedure env() opaque modifies *;
+procedure main() entry opaque modifies * { var k: int := 1; env(); assert k == 1 };
+#end
+
+-- A read of the heap after such a call does not evaluate: the call havocked the heap, and a
+-- concrete run chooses no value for it. The error names the call.
+/--
+error: interpret: 'main' raised a non-assertion error: [ERROR] assert (assert(2211)) condition did not reduce to bool: it reads the value of '$heap' that the call to the abstract procedure 'env' havocked, which a concrete run does not choose
+-/
+#guard_msgs in
+#eval testLaurelExecution { skipVerification := true, skipLaurelInterpreter := true } <|
+#strata
+program Laurel;
+composite Cell { var x: int }
+procedure env() opaque modifies *;
+procedure main() entry opaque modifies * { var c: Cell := new Cell; c#x := 5; env(); assert c#x == 5 };
+#end

@@ -108,7 +108,9 @@ def verifyOptionsFlags : List Flag := [
   { name := "vcgen",
     help := "(experimental) Verification-condition generation: 'symbolic' (default, the legacy "
       ++ "symbolic evaluator), 'wp' (the WP phase, the SSA phase, guard forwarding, the "
-      ++ "inlining of single-use definitions and dead-definition elimination), or "
+      ++ "inlining of single-use definitions and dead-definition elimination), 'usp' or 'uwp' "
+      ++ "(passification of each procedure's control-flow graph, then strongest postconditions "
+      ++ "or weakest preconditions; these accept CFG bodies, and are not yet proved sound), or "
       ++ "'symexec[:MODE]' (symbolic execution by the path explorer, in place of the legacy "
       ++ "evaluator). MODE says when to merge the two branches of an if where they meet: "
       ++ "'merged' (the default: merge at every join), 'per-path' (no merging, up to "
@@ -118,7 +120,7 @@ def verifyOptionsFlags : List Flag := [
       ++ "paths, a path that stopped, or a loop in a CFG body), the run stops with an error "
       ++ "naming the procedure and the reason, and no results are reported. Given more than "
       ++ "once, the last --vcgen counts.",
-    takesArg := .arg "symbolic|wp|symexec[:per-path|merged|merge-above:N]" },
+    takesArg := .arg "symbolic|wp|usp|uwp|symexec[:per-path|merged|merge-above:N]" },
   { name := "parallel",
     help := "Number of parallel solver workers (default: 1, sequential).",
     takesArg := .arg "N" },
@@ -216,6 +218,8 @@ def parseVCGenFlag (value : Option String) (base : VerifyOptions) :
   | none => .ok (base.vcgen, base.symExec)
   | some "symbolic" => .ok (.symbolic, none)
   | some "wp" => .ok (.wp, none)
+  | some "usp" => .ok (.usp, none)
+  | some "uwp" => .ok (.uwp, none)
   | some "symexec" => .ok (.symbolic, some .default)
   | some v =>
     match v.dropPrefix? "symexec:" with
@@ -223,7 +227,7 @@ def parseVCGenFlag (value : Option String) (base : VerifyOptions) :
       | some mode => .ok (.symbolic, some mode)
       | none => .error s!"Invalid vcgen: '{v}'. The merge mode after 'symexec:' must be \
         'per-path', 'merged' or 'merge-above:N' (N ≥ 1)."
-    | none => .error s!"Invalid vcgen: '{v}'. Must be 'symbolic', 'wp' or \
+    | none => .error s!"Invalid vcgen: '{v}'. Must be 'symbolic', 'wp', 'usp', 'uwp' or \
       'symexec[:per-path|merged|merge-above:N]'."
 
 /-- The value of `--cvc5-retry-timeout`: `base` when the flag is absent, else its value in

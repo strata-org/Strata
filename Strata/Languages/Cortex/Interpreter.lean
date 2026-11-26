@@ -78,12 +78,26 @@ inductive StopReason where
   | inoutArgumentMismatch (name : ProcName)
   | procedureWithoutBody (name : ProcName)
   | invalidDatatypes (msg : String)
+  /-- A stop that a frontend placed where it has no model (`stopSummary?`). -/
+  | stop (summary : String)
   | at (md : MD) (r : StopReason)
   deriving Repr, Inhabited
 
 @[expose] def StopReason.locate (md : MD) : StopReason → StopReason
   | r@(.at m inner) => if (Imperative.getFileRange m).isSome then r else .at md inner
   | r => .at md r
+
+/-- The kinds of stop, each the start of a stop's summary, `<kind>: <detail>`. -/
+def stopKinds : List String :=
+  ["unsupported", "no-model", "implementation-defined", "dangling-reference", "resource-limit"]
+
+/-- The summary of the stop that an assertion or precondition `e` at `md` is: the literal `false` with a summary
+that starts with a kind of stop. Any other `assert false` is an ordinary check, as Strata's exception lowerings use
+it for an uncaught exception. -/
+@[expose] def stopSummary? (e : Expr) (md : MD) : Option String :=
+  if Core.eraseLocs e = HasBool.ff (P := Core.Expression) then
+    md.getPropertySummary.filter fun s => stopKinds.any fun k => s.startsWith s!"{k}: "
+  else none
 
 variable {m : Type → Type} [Monad m] [InterpEffects CortexExpression m]
   [MonadExcept Imperative.StopReason m] [MonadExceptOf StopReason m]
@@ -162,7 +176,13 @@ where
       | none => (merge is os).map (CallArg.inArg (P := CortexExpression) a :: ·)
 
 @[expose] def view (prog : UnorderedProgram) : IRCmd → CmdView CortexExpression IRCmd Hdr m
-  | .cmd c => .base c
+  | .cmd c =>
+    -- A stop ends the run here, rather than continuing on values a frontend invented.
+    match c with
+    | .assert _ e md => match stopSummary? e md with
+      | some s => .ext fun _ _ => throwThe StopReason (.stop s)
+      | none => .base c
+    | _ => .base c
   | .call lhs n args md =>
     match prog.findProcedure? n with
     | none => .call n (args.map (CallArg.inArg (P := CortexExpression)) ++
@@ -174,8 +194,7 @@ where
   | .virtualCall .. => .ext fun _ _ => throwThe StopReason (.notLowered "virtualCall")
   | .throw _ _ => .ext fun _ _ => throwThe StopReason .exceptionsUnsupported
   | c => .ext fun fuel env => do
-    let σ ← extCmd fuel env.factory env.store c
-    pure (.terminal { env with store := σ })
+    pure (.done (← extCmd fuel env.factory env.store c))
 
 @[expose] def stubBody (tyProg prog : UnorderedProgram) (p : Procedure) : Except String Body := do
   let declared := ((tyProg.findProcedure? p.name).map (·.outputs)).getD p.outputs
@@ -203,12 +222,22 @@ where
 @[expose] def calleeTable (prog : UnorderedProgram) (n : String) : Option IProcedure :=
   (prog.findProcedure? n).map fun p =>
     let body := (p.body.getD { cfg := { entry := "$none", blocks := [] }, handlers := [] }).cfg
+    -- A call checks the callee's other preconditions, then stops at its first command, without running the callee.
+    let body := match p.requires.findSome? (fun pre => stopSummary? pre.cond pre.md) with
+      | none => body
+      | some s =>
+        let entry := freshLabel "$stop" (body.blocks.map (·.1))
+        let marker : Cortex.LBlock :=
+          { cmds := [.cmd (.assert "$stop" HasBool.ff ((.empty : MD).withPropertySummary s))],
+            transfer := .goto body.entry }
+        { entry, blocks := (entry, marker) :: body.blocks }
     { header := { name := p.name, inputs := p.inputs.map Prod.fst,
                   outputs := p.outputs.map Prod.fst }
-      spec := { preconditions := ListMap.ofList (p.requires.zipIdx.map fun (pre, i) =>
+      spec := { preconditions := ListMap.ofList ((p.requires.zipIdx.filter fun (pre, _) =>
+                    (stopSummary? pre.cond pre.md).isNone).map fun (pre, i) =>
                   (s!"requires_{i}", ({ expr := pre.cond, md := pre.md } : Imperative.Check CortexExpression)))
                 postconditions := ListMap.ofList [] }
-      body := .cfg body }
+      body := .cfg body false }
 
 @[expose] def locatedAt {α : Type} (md : MD) (x : m α) : m α :=
   tryCatchThe StopReason x fun e => throwThe StopReason (e.locate md)
@@ -217,7 +246,35 @@ where
     Imperative.StepCmdM CortexExpression IRCmd m :=
   fun fuel env c =>
     locatedAt (IRCmd.md c) (stepCmdWith (view prog) (fun c x => locatedAt (IRCmd.md c) x)
-      (calleeTable prog) Imperative.defaultMaxCallDepth fuel env c)
+      (calleeTable prog) .execute Imperative.defaultMaxCallDepth fuel env c)
+
+/-- The first source location the run reaches from `cmds` and then `tr`: the passes that lower a program add commands
+and jumps without one, as the prologue of an entry, which runs before its first command. A jump without a location
+to one block is followed there, at most `n` blocks deep. -/
+@[expose] def firstLocated (g : Cortex.LCFG) :
+    Nat → List IRCmd → Imperative.DetTransferCmd Label Core.Expression → MD
+  | n, cmds, tr =>
+    match cmds.find? (fun c => (Imperative.getFileRange (IRCmd.md c)).isSome) with
+    | some c => IRCmd.md c
+    | none =>
+      match n, tr with
+      | n + 1, .condGoto _ lt lf md =>
+        if (Imperative.getFileRange md).isNone && lt == lf then
+          match List.lookup lt g.blocks with
+          | some blk => firstLocated g n blk.cmds blk.transfer
+          | none => md
+        else md
+      | _, .condGoto _ _ _ md | _, .finish md => md
+
+/-- Where the run in `c` goes on: its next command, or its block's transfer, the first of them with a source
+location. -/
+@[expose] def nextMd : Config → MD
+  | .atBlock g t _ =>
+    match List.lookup t g.blocks with
+    | some blk => firstLocated g g.blocks.length blk.cmds blk.transfer
+    | none => .empty
+  | .inBlock g _ cmds tr _ => firstLocated g g.blocks.length cmds tr
+  | .terminal _ => .empty
 
 @[expose] def runCFG (step : Imperative.StepCmdStoreM CortexExpression IRCmd m) :
     Nat → Config → m Config
@@ -226,7 +283,8 @@ where
     | .terminal _ => pure cfgc
     | _ =>
       match fuel with
-      | 0 => throw .replayFuelExhausted
+      -- Out of fuel: the stop is where the run would have gone on; in a callee, which Core's call rule runs, the call.
+      | 0 => locatedAt (nextMd cfgc) (throw .replayFuelExhausted)
       | fuel + 1 => do
         let next ← match cfgc with
           | .inBlock _ _ [] (.condGoto _ _ _ md) _ =>
@@ -276,6 +334,17 @@ def isEntry (p : Procedure) : Bool :=
   | some { value := .switch true, .. } => true
   | _ => false
 
+/-- The CFG an entry procedure runs: when `globalInit` is nonempty, the body's CFG with a fresh
+entry block in front, which runs the `globalInit` commands and then jumps to the body's entry;
+otherwise the body's CFG unchanged. -/
+@[expose] def entryCfg (prog : UnorderedProgram) (body : Body) :
+    Imperative.DetCFG Core.Expression IRCmd :=
+  if prog.globalInit.isEmpty then body.cfg else
+    let entry := freshLabel "$globalsEntry" (body.cfg.blocks.map (·.1))
+    let initBlock : Cortex.LBlock :=
+      { cmds := prog.globalInit.map .cmd, transfer := .goto body.cfg.entry }
+    { entry := entry, blocks := (entry, initBlock) :: body.cfg.blocks }
+
 /-- Start `p` as the program's entry: its frame has no caller to take the globals from, so
 the globals are defined by running `globalInit` first, in a block in front of the body. -/
 def startProc (prog : UnorderedProgram) (f : LFactory) (fuel : Nat) (p : Procedure) : HostM Config := do
@@ -284,12 +353,8 @@ def startProc (prog : UnorderedProgram) (f : LFactory) (fuel : Nat) (p : Procedu
   | some body =>
     let outs ← (p.outputs.map Prod.snd).mapM (chooseTyped f Store.empty)
     let σ₀ := Store.empty.bindPositional (p.outputs.map Prod.fst) outs
-    let entry := freshLabel "$globalsEntry" (body.cfg.blocks.map (·.1))
-    let initBlock : Cortex.LBlock := { cmds := prog.globalInit.map .cmd, transfer := .goto body.cfg.entry }
-    let body := if prog.globalInit.isEmpty then body else
-      { body with cfg := { entry := entry, blocks := (entry, initBlock) :: body.cfg.blocks } }
-    runCFG (stepper prog).toStore fuel
-      (.atBlock body.cfg body.cfg.entry { store := σ₀, factory := f })
+    let g := entryCfg prog body
+    runCFG (stepper prog).toStore fuel (.atBlock g g.entry { store := σ₀, factory := f })
 
 def lower (prog : UnorderedProgram) : Except String UnorderedProgram := do
   let typed ← match ← runPasses (sharedPasses true ++ interpreterPasses) (.unordered prog) with
@@ -303,19 +368,27 @@ def prepare (prog : UnorderedProgram) : Except StopReason UnorderedProgram := do
   let prog ← (lower prog).mapError StopReason.lowering
   (TypeCheck.run prog).mapError StopReason.typeError
 
-def runPrepared (prog : UnorderedProgram) (fuel : Nat) (name : ProcName) : Except StopReason RunResult := do
-  let some p := prog.findProcedure? name | throw (.procedureWithoutBody name)
-  if p.body.isNone then throw (.procedureWithoutBody p.name)
-  match programFactory prog with
-  | .error e => .error (.invalidDatatypes e.message)
-  | .ok lf =>
-    let oracle : Oracle := match TypeCheck.context prog with
-      | .ok C => fun lf ty n => (defaultValue prog lf ty n).map fun v =>
-          (TypeCheck.annotate prog C [] v (LTy.toMonoType? (ty : LTy))).toOption.getD v
-      | .error _ => defaultValue prog
-    match (((startProc prog lf fuel p).run oracle).run).run {} with
-    | (.ok c, st) => .ok { final := c, trace := st.trace.toList }
-    | (.error e, _) => .error e
+/-- Run `name` of a prepared program as its entry: how the run ended, and the trace up to there, also when a stop
+ended it. -/
+def runPreparedTraced (prog : UnorderedProgram) (fuel : Nat) (name : ProcName) : Except StopReason Config × Trace :=
+  match prog.findProcedure? name with
+  | none => (.error (.procedureWithoutBody name), [])
+  | some p =>
+    if p.body.isNone then (.error (.procedureWithoutBody p.name), []) else
+    match programFactory prog with
+    | .error e => (.error (.invalidDatatypes e.message), [])
+    | .ok lf =>
+      let oracle : Oracle := match TypeCheck.context prog with
+        | .ok C => fun lf ty n => (defaultValue prog lf ty n).map fun v =>
+            (TypeCheck.annotate prog C [] v (LTy.toMonoType? (ty : LTy))).toOption.getD v
+        | .error _ => defaultValue prog
+      let (r, st) := (((startProc prog lf fuel p).run oracle).run).run {}
+      (r, st.trace.toList)
+
+def runPrepared (prog : UnorderedProgram) (fuel : Nat) (name : ProcName) : Except StopReason RunResult :=
+  match runPreparedTraced prog fuel name with
+  | (.ok c, trace) => .ok { final := c, trace }
+  | (.error e, _) => .error e
 
 def runEntry (prog : UnorderedProgram) (fuel : Nat) (p : Procedure) : Except StopReason RunResult := do
   if p.body.isNone then throw (.procedureWithoutBody p.name)

@@ -67,6 +67,7 @@ execute the body, check postconditions, and collect proof obligations.
 -/
 
 def eval (E : Env) (p : Procedure) : Env × Statistics :=
+  let E₀ := E
   -- A new scope binds the parameters and the `old` values of the in-out parameters; it is
   -- popped at the end of the procedure.
   -- Each parameter's initial value is a fresh unknown (`genFVars`).
@@ -85,17 +86,19 @@ def eval (E : Env) (p : Procedure) : Env × Statistics :=
   let E := E.pushScope (pVarMap ++ oldVarMap)
   let E := { E with pathConditions := E.pathConditions.push [] }
   match p.body with
-  | .structured bodyStmts =>
+  | .structured bodyStmts _ =>
     -- `E` stays alive as the fallback without the name supply, so the supply has one
     -- reference during evaluation.
     let (names, E) := E.takeNames
     let (ssEs, evalStats) := Statement.eval (E.withNames names) (p.contractWrapped bodyStmts)
     (mergeResults E (ssEs.map (fun sE => fixupError sE)), evalStats)
-  | .cfg _ =>
+  | .cfg _ _ =>
     -- CFG bodies are not supported here.
     -- The caller names the procedure, so this says only what went wrong.
     let errEnv := { E with error := some (.Misc "CFG bodies not supported yet") }
     (errEnv, {})
+  -- An abstract procedure has no body to verify; its contract is trusted.
+  | .abstract => (E₀, {})
 
 ---------------------------------------------------------------------
 

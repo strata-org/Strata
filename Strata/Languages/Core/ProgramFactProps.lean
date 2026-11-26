@@ -7,6 +7,10 @@ module
 
 public import Strata.Languages.Core.ProgramFact
 import Strata.DL.Util.Nodup
+import Strata.Languages.Core.ProgramProps
+import all Strata.Languages.Core.Program
+import all Strata.Languages.Core.Statement
+import all Strata.DL.Imperative.Stmt
 
 /-! # Properties of program facts
 
@@ -31,7 +35,15 @@ Key results:
   body.
 * `Statements.treeForm_eq`, `Statements.hasObligationForm_eq` — the checks of the
   `treeForm` and `hasObligationForm` facts are the language-generic shapes
-  `Imperative.Block.treeForm` and `Imperative.Block.passiveForm`. -/
+  `Imperative.Block.treeForm` and `Imperative.Block.passiveForm`.
+* `ProgramFact.holds_of_procs_eq` — a fact that reads only procedures
+  (`ProgramFact.readsOnlyProcedures`) holds of every program with the same procedures in the
+  same order, whatever its other declarations: the lemma a phase that leaves procedures alone
+  proves its contract with.
+* `ProgramFact.holds_iff_decls_all`, `ProgramFact.holds_of_decls_subset`,
+  `ProgramFact.holds_of_procs_eq_of_subset` — every fact but `wellFormedCalls` and `noLambdas`
+  checks each declaration on its own, so it holds of a program whose declarations are among
+  those of one it holds of; with the same procedures, `wellFormedCalls` does too. -/
 
 namespace Core
 
@@ -72,7 +84,7 @@ theorem Program.allStatements_of_proc
     {f : Statements → Bool} {program : Program} {q : Procedure}
     {md : Imperative.MetaData Expression} {ss : Statements}
     (h : Program.allStatements f program = true)
-    (hq : Decl.proc q md ∈ program.decls) (hb : q.body = .structured ss) :
+    (hq : Decl.proc q md ∈ program.decls) (hb : q.body = .structured ss opq) :
     f ss = true := by
   simp only [Program.allStatements, List.all_eq_true] at h
   simpa [Decl.allStatements, Imperative.Body.allStatements,
@@ -83,7 +95,7 @@ theorem Program.allStatements_of_proc
 theorem ProgramFact.noCalls_of_program
     {program : Program} {q : Procedure} {md : Imperative.MetaData Expression}
     {ss : Statements} (h : ProgramFact.noCalls.holds program)
-    (hq : Decl.proc q md ∈ program.decls) (hb : q.body = .structured ss) :
+    (hq : Decl.proc q md ∈ program.decls) (hb : q.body = .structured ss opq) :
     Statements.noCalls ss = Bool.true :=
   Program.allStatements_of_proc h hq hb
 
@@ -92,7 +104,7 @@ theorem ProgramFact.noCalls_of_program
 theorem ProgramFact.uniqueInits_of_program
     {program : Program} {q : Procedure} {md : Imperative.MetaData Expression}
     {ss : Statements} (h : ProgramFact.uniqueInits.holds program)
-    (hq : Decl.proc q md ∈ program.decls) (hb : q.body = .structured ss) :
+    (hq : Decl.proc q md ∈ program.decls) (hb : q.body = .structured ss opq) :
     Imperative.Block.uniqueInits (C := Command) ss := by
   have heq : (Imperative.Block.initVars (C := Command) ss).eraseDups =
       Imperative.Block.initVars (C := Command) ss := by
@@ -106,7 +118,7 @@ theorem ProgramFact.uniqueInits_of_program
 theorem ProgramFact.loopBodyNoInits_of_program
     {program : Program} {q : Procedure} {md : Imperative.MetaData Expression}
     {ss : Statements} (h : ProgramFact.loopBodyNoInits.holds program)
-    (hq : Decl.proc q md ∈ program.decls) (hb : q.body = .structured ss) :
+    (hq : Decl.proc q md ∈ program.decls) (hb : q.body = .structured ss opq) :
     Imperative.Block.loopBodyNoInits ss = Bool.true :=
   Program.allStatements_of_proc h hq hb
 
@@ -115,7 +127,7 @@ theorem ProgramFact.loopBodyNoInits_of_program
 theorem ProgramFact.noNondetGuards_of_program
     {program : Program} {q : Procedure} {md : Imperative.MetaData Expression}
     {ss : Statements} (h : ProgramFact.noNondetGuards.holds program)
-    (hq : Decl.proc q md ∈ program.decls) (hb : q.body = .structured ss) :
+    (hq : Decl.proc q md ∈ program.decls) (hb : q.body = .structured ss opq) :
     Imperative.Block.noNondetGuards ss = Bool.true :=
   Program.allStatements_of_proc h hq hb
 
@@ -124,7 +136,7 @@ theorem ProgramFact.noNondetGuards_of_program
 theorem ProgramFact.noLoopInvariants_of_program
     {program : Program} {q : Procedure} {md : Imperative.MetaData Expression}
     {ss : Statements} (h : ProgramFact.noLoopInvariants.holds program)
-    (hq : Decl.proc q md ∈ program.decls) (hb : q.body = .structured ss) :
+    (hq : Decl.proc q md ∈ program.decls) (hb : q.body = .structured ss opq) :
     Imperative.Block.loopHasNoInvariants ss = Bool.true :=
   Program.allStatements_of_proc h hq hb
 
@@ -133,7 +145,7 @@ theorem ProgramFact.noLoopInvariants_of_program
 theorem ProgramFact.noLoopMeasures_of_program
     {program : Program} {q : Procedure} {md : Imperative.MetaData Expression}
     {ss : Statements} (h : ProgramFact.noLoopMeasures.holds program)
-    (hq : Decl.proc q md ∈ program.decls) (hb : q.body = .structured ss) :
+    (hq : Decl.proc q md ∈ program.decls) (hb : q.body = .structured ss opq) :
     Imperative.Block.noMeasureLoops ss = Bool.true :=
   Program.allStatements_of_proc h hq hb
 
@@ -161,6 +173,80 @@ theorem Statements.hasObligationForm_eq (ss : Statements) :
   case case7 s _ _ _ _ _ _ =>
     rcases s with ((_ | _ | _ | _ | _) | _) | _ | ⟨_ | _⟩ | _ | _ | _ <;>
       grind [Imperative.Stmt.allSubstmts, Statement.isObligationForm]
+
+/-! ### Facts and the declarations they read -/
+
+/-- Every fact but `wellFormedCalls` and `noLambdas` asks the same check of each declaration on
+    its own. `wellFormedCalls` also reads, for each call, which procedure its callee names, and
+    `noLambdas` which functions the other declarations reach. -/
+theorem ProgramFact.holds_iff_decls_all {f : ProgramFact} (hf : f ≠ .wellFormedCalls)
+    (hl : f ≠ .noLambdas) :
+    ∃ g : Decl → Bool, ∀ p : Program, f.holds p ↔ p.decls.all g = true := by
+  cases f <;> first | exact absurd rfl hf | exact absurd rfl hl | exact ⟨_, fun _ => Iff.rfl⟩
+
+/-- A fact other than `wellFormedCalls` and `noLambdas` that holds of a program holds of any
+    program whose declarations are among its own. -/
+theorem ProgramFact.holds_of_decls_subset {f : ProgramFact} (hf : f ≠ .wellFormedCalls)
+    (hl : f ≠ .noLambdas) {p p' : Program} (hsub : ∀ d ∈ p'.decls, d ∈ p.decls)
+    (h : f.holds p) : f.holds p' := by
+  obtain ⟨g, hg⟩ := ProgramFact.holds_iff_decls_all hf hl
+  rw [hg] at h ⊢
+  simp only [List.all_eq_true] at h ⊢
+  exact fun d hd => h d (hsub d hd)
+
+/-- A fact other than `wellFormedCalls` that reads only procedures asks of each declaration a
+    check that every other declaration passes. -/
+private theorem ProgramFact.decls_all_of_readsOnlyProcedures {f : ProgramFact}
+    (hf : f.readsOnlyProcedures = true) (hw : f ≠ .wellFormedCalls) :
+    ∃ g : Decl → Bool, (∀ p : Program, f.holds p ↔ p.decls.all g = true) ∧
+      ∀ d, d.isProc = false → g d = true := by
+  cases f <;> first
+    | exact absurd rfl hw
+    | exact absurd hf (by decide)
+    | refine ⟨_, fun _ => Iff.rfl, fun d hd => ?_⟩
+      cases d <;> first
+        | (simp [Decl.isProc, Decl.kind] at hd; done)
+        | rfl
+        | decide
+        | simp [Decl.allStatements, Imperative.Block.loopBodyNoInits,
+            Imperative.Block.loopHasNoInvariants, Imperative.Block.noLoops,
+            Imperative.Block.noMeasureLoops, Imperative.Block.noNondetGuards,
+            Statements.hasObligationForm, Statements.noCalls, Statements.noInits,
+            Statements.staticSingleAssignment, Statements.treeForm, Imperative.Block.allSubstmts,
+            Imperative.Block.nondetIteLast]
+
+/-- `ds.all g` reads only the procedures of `ds` when every other declaration passes `g`. -/
+private theorem decls_all_eq_procs_all {g : Decl → Bool}
+    (hg : ∀ d, d.isProc = false → g d = true) (ds : List Decl) :
+    ds.all g = (ds.filter Decl.isProc).all g := by
+  induction ds with
+  | nil => rfl
+  | cons d ds ih =>
+    by_cases hd : d.isProc = true
+    · simp [List.filter_cons_of_pos hd, ih]
+    · simp [List.filter_cons_of_neg hd, ih, hg d (by simpa using hd)]
+
+/-- A fact that reads only procedures holds of a program whose procedures are those of a
+    program it holds of, in the same order, whatever its other declarations. -/
+theorem ProgramFact.holds_of_procs_eq {f : ProgramFact} (hf : f.readsOnlyProcedures = true)
+    {p p' : Program} (hprocs : p'.decls.filter Decl.isProc = p.decls.filter Decl.isProc)
+    (h : f.holds p) : f.holds p' := by
+  by_cases hw : f = .wellFormedCalls
+  · subst hw; exact Program.callsWellFormed_of_procs_eq hprocs h
+  · obtain ⟨g, hg, hother⟩ := ProgramFact.decls_all_of_readsOnlyProcedures hf hw
+    rw [hg] at h ⊢
+    rw [decls_all_eq_procs_all hother] at h ⊢
+    rwa [hprocs]
+
+/-- A program whose declarations are among those of a program a fact holds of, with the same
+    procedures in the same order, has the fact too, unless it is `noLambdas`: what a phase that
+    only deletes declarations other than procedures keeps. -/
+theorem ProgramFact.holds_of_procs_eq_of_subset {f : ProgramFact} (hl : f ≠ .noLambdas)
+    {p p' : Program} (hprocs : p'.decls.filter Decl.isProc = p.decls.filter Decl.isProc)
+    (hsub : ∀ d ∈ p'.decls, d ∈ p.decls) (h : f.holds p) : f.holds p' := by
+  by_cases hf : f = .wellFormedCalls
+  · subst hf; exact Program.callsWellFormed_of_procs_eq hprocs h
+  · exact ProgramFact.holds_of_decls_subset hf hl hsub h
 
 end -- public section
 

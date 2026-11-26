@@ -62,10 +62,11 @@ The typechecker spec for a procedure body, in ambient context `C` and body-scope
 -/
 inductive ProcBodyHasType (P : Program) (C : LContext CoreLParams) (Γ_body : TContext Unit) :
     Procedure.Body → Prop where
-  | structured : ∀ ss C' Γ' Δ',
+  | structured : ∀ ss C' Γ' Δ' opq,
       StatementsHasType P C Γ_body (fun _ => none) [] ss C' Γ' Δ' →
-      ProcBodyHasType P C Γ_body (.structured ss)
-  | cfg : ∀ c, ProcBodyHasType P C Γ_body (.cfg c)
+      ProcBodyHasType P C Γ_body (.structured ss opq)
+  | cfg : ∀ c opq, ProcBodyHasType P C Γ_body (.cfg c opq)
+  | abstract : ProcBodyHasType P C Γ_body .abstract
 
 /--
 The typechecker spec for procedures, with the type parameters taken as given

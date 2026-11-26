@@ -63,7 +63,7 @@ private def generatedLabels (p : StrataDDM.Program) : List String :=
   match Core.Transform.run (translate p) Core.CFGLoopElim.cfgLoopElim with
   | .ok (_, p') => p'.decls.flatMap fun d => match d with
     | .proc q _ => match q.body with
-      | .cfg g => g.blocks.flatMap fun (_, b) => b.cmds.filterMap fun c => match c with
+      | .cfg g _ => g.blocks.flatMap fun (_, b) => b.cmds.filterMap fun c => match c with
         | .cmd (.assert l _ _) => some l
         | .cmd (.assume l _ _) => some l
         | _ => none
@@ -487,7 +487,7 @@ private def checkLocations (p : StrataDDM.Program) : List String :=
   let rangeOf (md : Imperative.MetaData Core.Expression) :=
     (Imperative.getFileRange md).map (·.range)
   let blocks := q.decls.flatMap fun d => match d with
-    | .proc pr _ => match pr.body with | .cfg g => g.blocks | _ => []
+    | .proc pr _ => match pr.body with | .cfg g _ => g.blocks | _ => []
     | _ => []
   let invRanges := blocks.flatMap fun (_, b) =>
     (b.md.loopInvariantValues.filterMap fun v => match v with
@@ -504,7 +504,7 @@ private def checkLocations (p : StrataDDM.Program) : List String :=
   match Core.Transform.run q Core.CFGLoopElim.cfgLoopElim with
   | .ok (_, p') => p'.decls.flatMap fun d => match d with
     | .proc pr _ => match pr.body with
-      | .cfg g => g.blocks.flatMap fun (_, b) => b.cmds.filterMap fun c => match c with
+      | .cfg g _ => g.blocks.flatMap fun (_, b) => b.cmds.filterMap fun c => match c with
         | .cmd (.assert l _ md) =>
           if l.startsWith Core.CFGLoopElim.cfgLoopElimAssertPrefix then some s!"{l}: {name md}"
           else none
@@ -531,8 +531,9 @@ cfgLoopElimAssert_maintain_loop_tail_0: the transfer of tail
 The translator declares the choice of `goto body, done` (`$__nondet_0`) in the
 header, which is on the cycle. `hoistNondetChoices`, which runs before type checking,
 declares it once, at the entry, and havocs it in the header, so the loop is cut like any
-other, and `y` is still known to stay non-negative. `bad`, which needs the loop to run, is
-reported `unknown`: its counterexample rests on the cut. -/
+other, and `y` is still known to stay non-negative. `bad`, which needs the loop to run,
+fails: its counterexample rests on the cut, but replaying it through the program before the
+cut (`CFGLoopElim.replayValidates`) gives a run that skips the loop and ends with `y = 0`. -/
 
 private def nondetInLoop :=
 #strata
@@ -549,8 +550,7 @@ cfg entry {
 #end
 
 /--
-info:
-Obligation: cfgLoopElimAssert_entry_h_0
+info: Obligation: cfgLoopElimAssert_entry_h_0
 Property: assert
 Result: ✅ pass
 
@@ -564,15 +564,14 @@ Result: ✅ pass
 
 Obligation: bad
 Property: assert
-Result: ❓ unknown
+Result: ❌ fail
 -/
 #guard_msgs in
 #eval run nondetInLoop
 
 -- The same under merge mode `never` (one path per way through the body).
 /--
-info:
-Obligation: cfgLoopElimAssert_entry_h_0
+info: Obligation: cfgLoopElimAssert_entry_h_0
 Property: assert
 Result: ✅ pass
 
@@ -586,7 +585,7 @@ Result: ✅ pass
 
 Obligation: bad
 Property: assert
-Result: ❓ unknown
+Result: ❌ fail
 -/
 #guard_msgs in
 #eval run nondetInLoop .never
@@ -622,7 +621,7 @@ private def afterPhases (phases : List (Core.Program → Core.Transform.CoreTran
 private def blockLabels (p : Core.Program) : List String :=
   p.decls.flatMap fun d => match d with
     | .proc q _ => match q.body with
-      | .cfg g => g.blocks.map (·.1)
+      | .cfg g _ => g.blocks.map (·.1)
       | _ => []
     | _ => []
 
@@ -649,7 +648,7 @@ private def printReparse (phases : List (Core.Program → Core.Transform.CoreTra
 private def nondetOf (p : Core.Program) (lbl : String) : List String × List String :=
   p.decls.foldl (fun acc d => match d with
     | .proc q _ => match q.body with
-      | .cfg g => match g.blocks.lookup lbl with
+      | .cfg g _ => match g.blocks.lookup lbl with
         | some b =>
           (acc.1 ++ b.cmds.filterMap (fun | .cmd (.init x _ .nondet _) => some x.name | _ => none),
            acc.2 ++ b.cmds.filterMap (fun | .cmd (.set x .nondet _) => some x.name | _ => none))
@@ -1133,7 +1132,7 @@ cfg entry {
 private def annotatedBlocks (p : Core.Program) : List String :=
   p.decls.flatMap fun d => match d with
     | .proc q _ => match q.body with
-      | .cfg g => g.blocks.filterMap fun (l, b) =>
+      | .cfg g _ => g.blocks.filterMap fun (l, b) =>
         if b.md.loopInvariantValues.isEmpty then none else some l
       | _ => []
     | _ => []
@@ -1428,6 +1427,43 @@ true 1002
   match Core.CFGLoopElim.cutLoops "P" (chainCfg n loop) with
   | .ok (changed, g) => IO.println s!"{changed} {g.blocks.length}"
   | .error e => IO.println s!"error: {e}"
+
+/-! ## Under the passive generators
+
+The same cut under `--vcgen usp` and `uwp`: each program's verdicts, by label. A result
+that rests on the cut is `unknown` unless replay confirms it (`nondetInLoop`'s `bad`, on
+the run that skips the loop). -/
+
+private def passiveVerdicts (p : StrataDDM.SourcedProgram) (m : Core.VCGenMode) :
+    IO (List (String × String)) := do
+  let r ← Strata.Core.verify p (options := { Core.VerifyOptions.quiet with vcgen := m })
+  pure (r.toList.map fun r => (r.obligation.label,
+    if r.isSuccess then "pass" else if r.isFailure then "fail" else "other"))
+
+/--
+info: [(y_eq_n, pass), (cfgLoopElimAssert_entry_loop_0, pass), (cfgLoopElimAssert_entry_loop_1, pass), (cfgLoopElimAssert_maintain_loop_body_0, pass), (cfgLoopElimAssert_maintain_loop_body_1, pass)]
+[(y_eq_n, pass), (cfgLoopElimAssert_entry_loop_0, pass), (cfgLoopElimAssert_entry_loop_1, pass), (cfgLoopElimAssert_maintain_loop_body_0, pass), (cfgLoopElimAssert_maintain_loop_body_1, pass)]
+[(y_eq_n, other)]
+[(y_eq_n, other)]
+[(cfgLoopElimAssert_entry_loop_0, pass), (cfgLoopElimAssert_maintain_loop_body_0, other)]
+[(cfgLoopElimAssert_entry_loop_0, pass), (cfgLoopElimAssert_maintain_loop_body_0, other)]
+[(x_zero, pass), (cfgLoopElimAssert_entry_entry_0, pass), (cfgLoopElimAssert_maintain_entry_dec_0, pass)]
+[(x_zero, pass), (cfgLoopElimAssert_entry_entry_0, pass), (cfgLoopElimAssert_maintain_entry_dec_0, pass)]
+[(x_nonneg, pass), (cfgLoopElimAssert_entry_loop_0, pass), (cfgLoopElimAssert_maintain_loop_mid_0, pass), (cfgLoopElimAssert_maintain_loop_tail_0, pass)]
+[(x_nonneg, pass), (cfgLoopElimAssert_entry_loop_0, pass), (cfgLoopElimAssert_maintain_loop_mid_0, pass), (cfgLoopElimAssert_maintain_loop_tail_0, pass)]
+[(pos, pass), (bad, fail), (cfgLoopElimAssert_entry_h_0, pass), (cfgLoopElimAssert_maintain_h_body_0, pass)]
+[(pos, pass), (bad, fail), (cfgLoopElimAssert_entry_h_0, pass), (cfgLoopElimAssert_maintain_h_body_0, pass)]
+[(s_nonneg, pass), (cfgLoopElimAssert_entry_outer_0, pass), (cfgLoopElimAssert_entry_outer_1, pass), (cfgLoopElimAssert_entry_inner_0, pass), (cfgLoopElimAssert_entry_inner_1, pass), (cfgLoopElimAssert_maintain_inner_ibody_0, pass), (cfgLoopElimAssert_maintain_inner_ibody_1, pass), (cfgLoopElimAssert_maintain_outer_onext_0, pass), (cfgLoopElimAssert_maintain_outer_onext_1, pass)]
+[(s_nonneg, pass), (cfgLoopElimAssert_entry_outer_0, pass), (cfgLoopElimAssert_entry_outer_1, pass), (cfgLoopElimAssert_entry_inner_0, pass), (cfgLoopElimAssert_entry_inner_1, pass), (cfgLoopElimAssert_maintain_inner_ibody_0, pass), (cfgLoopElimAssert_maintain_inner_ibody_1, pass), (cfgLoopElimAssert_maintain_outer_onext_0, pass), (cfgLoopElimAssert_maintain_outer_onext_1, pass)]
+[(inc_post, pass), (y_eq_n, pass), (cfgLoopElimAssert_entry_loop_0, pass), (cfgLoopElimAssert_maintain_loop_body_0, pass)]
+[(inc_post, pass), (y_eq_n, pass), (cfgLoopElimAssert_entry_loop_0, pass), (cfgLoopElimAssert_maintain_loop_body_0, pass)]
+-/
+#guard_msgs in
+#eval show IO Unit from do
+  for p in [countUp, noInvPgm, notMaintainedPgm, entryHeader, twoBackEdges, nondetInLoop,
+            nestedPgm, callInLoop] do
+    for m in [Core.VCGenMode.usp, .uwp] do
+      IO.println (← passiveVerdicts p m)
 
 end Strata.Test.CFGLoopElim
 

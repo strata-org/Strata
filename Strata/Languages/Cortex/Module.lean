@@ -186,8 +186,9 @@ def mapBlock (h : IRCmd → List IRCmd) (g : Expr → Expr) (b : LBlock) : LBloc
 def mapBody (h : IRCmd → List IRCmd) (g : Expr → Expr) (b : Body) : Body :=
   { b with cfg := { b.cfg with blocks := b.cfg.blocks.map fun (l, blk) => (l, mapBlock h g blk) } }
 
-/-- Applies `m` to every type of the program outside its datatypes, and `elem` to the element
-type that an array command states. -/
+/-- Applies `m` to every type of the program outside its datatypes, the conditions of the
+preconditions and postconditions included, and `elem` to the element type that an array
+command states. -/
 def mapProgramMonoTys (m : LMonoTy → LMonoTy) (elem : LMonoTy → LMonoTy) (p : UnorderedProgram) :
     UnorderedProgram :=
   let t := mapLTyTys m
@@ -203,6 +204,8 @@ def mapProgramMonoTys (m : LMonoTy → LMonoTy) (elem : LMonoTy → LMonoTy) (p 
       { pr with
         inputs := params pr.inputs
         outputs := params pr.outputs
+        requires := pr.requires.map fun pre => { pre with cond := g pre.cond }
+        ensures := pr.ensures.map fun post => { post with cond := g post.cond }
         body := pr.body.map (mapBody (fun c => [mapCmd g t (mapLTyTys elem) c]) g) } }
 
 def mapConstrTys (m : LMonoTy → LMonoTy) (c : LConstr Unit) : LConstr Unit :=

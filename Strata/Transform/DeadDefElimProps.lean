@@ -332,8 +332,8 @@ private theorem step_evalE {π : String → Option Procedure} {c c' : Config Exp
     rename_i cmd _ _ _
     cases h with
     | cmd_sem h => exact ⟨.step_cmd h, trivial⟩
-    | call_sem => simp [CallFree, Statements.noCalls, Block.allSubstmts, Stmt.allSubstmts,
-        Statement.isNotCall] at hI
+    | call_sem | call_abstract_sem => simp [CallFree, Statements.noCalls, Block.allSubstmts,
+        Stmt.allSubstmts, Statement.isNotCall] at hI
   | step_seq_inner _ ih =>
     obtain ⟨h1, h2⟩ := ih hI.1
     exact ⟨.step_seq_inner h1, h2, hI.2⟩

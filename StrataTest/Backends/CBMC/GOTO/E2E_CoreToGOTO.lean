@@ -6,6 +6,7 @@
 module
 meta import Strata.Backends.CBMC.CollectSymbols
 meta import Strata.Backends.CBMC.GOTO.CoreToGOTOPipeline
+meta import Strata.Languages.GOTO.CoreToCProverGOTO
 import StrataDDM.Integration.Lean.HashCommands
 import Strata.Languages.Core.DDMTransform.Translate
 meta import Lean.Server.Utils
@@ -394,8 +395,9 @@ private def coreToGotoJsonWithSummary (p : StrataDDM.Program) (summary : String)
   let Env := Lambda.TEnv.default
   let procs := cprog.decls.filterMap fun d => d.getProc?
   let p := procs[0]!
-  let bodyStmts ← p.body.getStructured.mapError fun s => f!"{s}"
-  let p' : Core.Procedure := { p with body := .structured (injectPropertySummary bodyStmts summary) }
+  let bodyStmts ← p.body.getStructuredOrEmpty.mapError fun s => f!"{s}"
+  let p' : Core.Procedure :=
+    { p with body := .structured (injectPropertySummary bodyStmts summary) false }
   let pname := Core.CoreIdent.toPretty p'.header.name
   let ctx ← procedureToGotoCtx Env p'
   let json ← (CoreToGOTO.CProverGOTO.Context.toJson pname ctx).mapError (fun e => f!"{e}")
@@ -417,5 +419,33 @@ procedure test(x : int) {
   assert! (gotoStr.splitOn "x must be positive").length > 1
   -- It should NOT contain the default label as the comment
   assert! (gotoStr.splitOn "assert_0").length == 1
+
+
+-------------------------------------------------------------------------------
+
+-- Test: an abstract procedure (declared without a body) translates, with an empty body
+def E2E_Abstract :=
+#strata
+program Core;
+procedure test(x : int, out r : int)
+spec {
+  requires (int.gt(x, 0));
+  ensures (r == x);
+};
+#end
+
+-- The exported function has an empty body: its only instruction is `END_FUNCTION`.
+/-- info: Except.ok ["END_FUNCTION"] -/
+#guard_msgs in
+#eval show Except String (List String) from do
+  let (_, goto) ← (coreToGotoJson E2E_Abstract).mapError toString
+  let fns ← goto.getObjValAs? (Array Lean.Json) "functions"
+  let instrs ← fns[0]!.getObjValAs? (Array Lean.Json) "instructions"
+  instrs.toList.mapM (·.getObjValAs? String "instructionId")
+
+-- The single-procedure translator `transformToGoto` gives the same empty body.
+#guard ((CoreToGOTO.transformToGoto (translateCore E2E_Abstract)).toOption.map
+  fun ctx => ctx.program.instructions.toList.map (·.type)) ==
+  some [CProverGOTO.InstructionType.END_FUNCTION]
 
 end

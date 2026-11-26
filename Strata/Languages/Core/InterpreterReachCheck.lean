@@ -610,12 +610,12 @@ end
     (g : Imperative.DetCFG Expression Command) : Prop :=
   ∀ lb ∈ g.blocks, (∀ c ∈ lb.2.cmds, CmdInFragment P c) ∧ TransferInFragment P lb.2.transfer
 
-/-- A procedure is in the fragment `P` of expressions: it has a structured body in the fragment
-    or a CFG body in the fragment, and the conditions of its pre- and postconditions satisfy
-    `P`. -/
+/-- A procedure is in the fragment `P` of expressions: it has a structured body in the fragment,
+    a CFG body in the fragment, or no body (it is abstract), and the conditions of its pre- and
+    postconditions satisfy `P`. -/
 @[expose] def ProcInFragment (P : Expression.Expr → Prop) (p : Procedure) : Prop :=
-  ((∃ ss, p.body = .structured ss ∧ BlockInFragment P ss) ∨
-    ∃ g, p.body = .cfg g ∧ CFGInFragment P g) ∧
+  ((∃ ss opq, p.body = .structured ss opq ∧ BlockInFragment P ss) ∨
+    (∃ g opq, p.body = .cfg g opq ∧ CFGInFragment P g) ∨ p.body = .abstract) ∧
     (∀ lc ∈ p.spec.preconditions.toList, P lc.2.expr) ∧
     ∀ lc ∈ p.spec.postconditions.toList, P lc.2.expr
 
@@ -671,7 +671,10 @@ end
 
 /-- The decision procedure for `ProcInFragment`. -/
 @[expose] def procInFragment (fe : Expression.Expr → Bool) (p : Procedure) : Bool :=
-  (match p.body with | .structured ss => blockInFragment fe ss | .cfg g => cfgInFragment fe g) &&
+  (match p.body with
+    | .structured ss _ => blockInFragment fe ss
+    | .cfg g _ => cfgInFragment fe g
+    | .abstract => true) &&
     (p.spec.preconditions.toList.all fun lc => fe lc.2.expr) &&
     p.spec.postconditions.toList.all fun lc => fe lc.2.expr
 
@@ -1049,6 +1052,15 @@ private theorem defaultAssertEvents_inFragment {F : Expression.Factory} {σ : Co
     exact ⟨rfl, hσ, hc lc hlc⟩
   · cases hev
 
+/-- A havoc of a store of literals is a store of literals: each havocked value has the type of a
+    literal (`HasVal.valueOfStoredTy`). -/
+private theorem LitStore.havoc {F : Expression.Factory} {σ σ' : CoreStore}
+    {xs : List Expression.Ident} (hσ : LitStore F σ) (h : HavocVars F σ xs σ') :
+    LitStore F σ' := by
+  induction h with
+  | update_none => exact hσ
+  | update_some u hty _ ih => exact ih (hσ.set (litVal_of_valueOfStoredTy hσ hty) u)
+
 /-- The callee frame a call of the fragment builds from a store of literals is a store of
     literals. -/
 private theorem callEntry_lit {F : Expression.Factory} (hF : FragmentFactoryWF F)
@@ -1082,24 +1094,26 @@ private theorem evalCommandE_inFragment {F : Expression.Factory} (hF : FragmentF
   | cmd_sem h =>
     rintro rfl hσ hc
     exact evalCmdE_inFragment hF h hσ hc
-  | @call_sem _ _ _ _ _ _ σF bev _ f _ hπ he _ hx ih =>
+  | @call_sem _ _ _ _ _ _ σF bev _ f _ hπ _ he _ hx ih =>
     intro hf hσ hc
     subst f
     obtain ⟨hbody, hpre, hpost⟩ := hprocs _ _ _ hπ
     have hAO := callEntry_lit hF hσ hc he
     obtain ⟨hfin, hbev⟩ : LitStore F σF ∧ ∀ ev ∈ bev, EventInFragment F ev := by
-      rcases ih with ⟨ss', ρ', hss', rfl, hr⟩ | ⟨g', ρ', hg', rfl, hr⟩ <;>
-        rcases hbody with ⟨ss, hss, hblk⟩ | ⟨g, hg, hcfg⟩
+      rcases ih with ⟨ss', ρ', _, hss', rfl, hr⟩ | ⟨g', ρ', _, hg', rfl, hr⟩ <;>
+        rcases hbody with ⟨ss, _, hss, hblk⟩ | ⟨g, _, hg, hcfg⟩ | hab
       · cases hss.symm.trans hss'
         obtain ⟨⟨-, hfin⟩, -, hbev⟩ :=
           star_inFragment (fun _ _ _ _ ⟨_, hm⟩ hl hc => hm rfl hl hc) hr ⟨rfl, hAO⟩ hblk
         exact ⟨hfin, hbev⟩
       · cases hss'.symm.trans hg
+      · cases hss'.symm.trans hab
       · cases hg'.symm.trans hss
       · cases hg.symm.trans hg'
         obtain ⟨⟨-, hfin⟩, hbev⟩ :=
           cfgStar_inFragment (fun _ _ _ _ ⟨_, hm⟩ hl hc => hm rfl hl hc) hr ⟨hcfg, rfl, hAO⟩
         exact ⟨hfin.project, hbev⟩
+      · cases hg'.symm.trans hab
     obtain ⟨-, outs, hread, hupd, -⟩ := hx
     refine ⟨hσ.sets (hfin.read hread) hupd, fun ev hev => ?_⟩
     rcases List.mem_append.1 hev with hev | hev
@@ -1109,6 +1123,20 @@ private theorem evalCommandE_inFragment {F : Expression.Factory} (hF : FragmentF
         exact hpre lc' hlc'
       · exact hbev ev hev
     · exact defaultAssertEvents_inFragment hfin hpost ev hev
+  | call_abstract_sem hπ _ he hH hx =>
+    intro hf hσ hc
+    subst hf
+    obtain ⟨-, hpre, -⟩ := hprocs _ _ _ hπ
+    have hAO := callEntry_lit hF hσ hc he
+    obtain ⟨-, outs, hread, hupd, -⟩ := hx
+    refine ⟨hσ.sets ((hAO.havoc hH).read hread) hupd, fun ev hev => ?_⟩
+    rcases List.mem_append.1 hev with hev | hev
+    · refine defaultAssertEvents_inFragment hAO (fun lc hlc => ?_) ev hev
+      obtain ⟨lc', hlc', rfl⟩ := List.mem_map.1 hlc
+      exact hpre lc' hlc'
+    · simp only [Calls.assumeEvents, List.mem_map] at hev
+      obtain ⟨_, -, rfl⟩ := hev
+      trivial
 
 /-- The statement in active position of a configuration of the fragment whose environments have
     the factory `F` and stores of literals is in the fragment, under such an environment. -/
@@ -1152,18 +1180,20 @@ private theorem visits_inFragment {F : Expression.Factory} (hF : FragmentFactory
   | _, .call hv ha hp hb he => by
     obtain ⟨h1, h2⟩ := visits_inFragment hF hprocs hc hcc hv
     obtain ⟨⟨hf, hl⟩, hs⟩ := ha.inFragment h1 h2
-    obtain ⟨⟨ss, hss, hblk⟩ | ⟨g, hg, -⟩, -, -⟩ := hprocs _ _ _ hp
+    obtain ⟨⟨ss, _, hss, hblk⟩ | ⟨g, _, hg, -⟩ | hab, -, -⟩ := hprocs _ _ _ hp
     · cases hb.symm.trans hss
       rw [hf] at he ⊢
       exact ⟨⟨rfl, callEntry_lit hF hl hs he⟩, hblk⟩
     · cases hb.symm.trans hg
+    · cases hb.symm.trans hab
   | _, .cfgCall hv hp hb he => by
     obtain ⟨-, hcs, -, hf, hl⟩ := visitsCFG_inFragment hF hprocs hc hcc hv
-    obtain ⟨⟨ss, hss, hblk⟩ | ⟨g, hg, -⟩, -, -⟩ := hprocs _ _ _ hp
+    obtain ⟨⟨ss, _, hss, hblk⟩ | ⟨g, _, hg, -⟩ | hab, -, -⟩ := hprocs _ _ _ hp
     · cases hb.symm.trans hss
       rw [hf] at he ⊢
       exact ⟨⟨rfl, callEntry_lit hF hl (hcs _ List.mem_cons_self) he⟩, hblk⟩
     · cases hb.symm.trans hg
+    · cases hb.symm.trans hab
 
 /-- Programs of the fragment keep stores of literals along their CFG visits: under the hypotheses
     of `visits_inFragment`, every CFG configuration the reference semantics visits in a CFG callee
@@ -1179,15 +1209,19 @@ private theorem visitsCFG_inFragment {F : Expression.Factory} (hF : FragmentFact
   | _, .call hv ha hp hb he => by
     obtain ⟨h1, h2⟩ := visits_inFragment hF hprocs hc hcc hv
     obtain ⟨⟨hf, hl⟩, hs⟩ := ha.inFragment h1 h2
-    obtain ⟨⟨ss, hss, -⟩ | ⟨g, hg, hcfg⟩, -, -⟩ := hprocs _ _ _ hp
+    obtain ⟨⟨ss, _, hss, -⟩ | ⟨g, _, hg, hcfg⟩ | hab, -, -⟩ := hprocs _ _ _ hp
     · cases hb.symm.trans hss
+    rotate_left
+    · cases hb.symm.trans hab
     · cases hb.symm.trans hg
       rw [hf] at he ⊢
       exact ⟨hcfg, rfl, callEntry_lit hF hl hs he⟩
   | _, .cfgCall hv hp hb he => by
     obtain ⟨-, hcs, -, hf, hl⟩ := visitsCFG_inFragment hF hprocs hc hcc hv
-    obtain ⟨⟨ss, hss, -⟩ | ⟨g, hg, hcfg⟩, -, -⟩ := hprocs _ _ _ hp
+    obtain ⟨⟨ss, _, hss, -⟩ | ⟨g, _, hg, hcfg⟩ | hab, -, -⟩ := hprocs _ _ _ hp
     · cases hb.symm.trans hss
+    rotate_left
+    · cases hb.symm.trans hab
     · cases hb.symm.trans hg
       rw [hf] at he ⊢
       exact ⟨hcfg, rfl, callEntry_lit hF hl (hcs _ List.mem_cons_self) he⟩

@@ -21,6 +21,10 @@ post-dominator analysis `computePostIdoms`) are in `Imperative.CFG`, so they
 read as `cfg.computeDominators`; so is `idomsFrom` (the algorithm on any
 successor and predecessor maps). The other helpers are in
 `Imperative.CFG.Dom`.
+The dominator map numbers the dominator tree, so `dominates` answers a query from
+the numbers in constant time; `computeIdomsDag` is the one-pass computation for
+acyclic graphs. `CFGDominatorsTest` compares them with the textbook fixpoint on
+random graphs.
 
 `computeDominators` is not proved to compute true dominance; callers, including
 `WFCFGProp`, treat it as the definition of dominance.
@@ -28,10 +32,10 @@ successor and predecessor maps). The other helpers are in
 Proof debt. The direction the CFG type checker relies on is unproved: for a block
 `b` reachable from the entry, `dominates computeDominators a b = true` implies
 that every path from the entry to `b` passes through `a`. Until it is proved, the
-differential test in `CFGTypeCheck.lean`, which compares `computeDominators`
-with the textbook set-dataflow fixpoint on every test CFG, is the evidence that
-the two agree. Those CFGs are small, hand-written and reducible, so it is weak
-evidence for irreducible or deeply nested graphs.
+differential test `CFGDominatorsTest`, which compares `computeDominators` with
+the textbook set-dataflow fixpoint on many random graphs (irreducible ones, with
+self-loops, unreachable blocks and an entry that is a loop header, included), is
+the evidence that the two agree.
 Target: rung 4 (Lean proof). Budget: one follow-up CR. Fallback: the differential
 test against `computeDominatorsFullFuel`. -/
 
@@ -73,9 +77,20 @@ def idomIntersect (idom : Std.HashMap String String)
       f2 := inner2
     return f1
 
-/-- Does `a` dominate `b` in the computed map? -/
-def dominates (dom : Std.HashMap String (List String)) (a b : String) : Bool :=
-  (dom.getD b []).contains a
+/-- The dominators of every block, as the pre/post numbers of the dominator tree:
+a reachable block maps to an interval, and `a` dominates `b` exactly when `a`'s
+interval contains `b`'s. An unreachable block maps to the interval
+`(n, 0)`, with `n` above every pre-number: it lies inside every interval and
+contains only unreachable blocks, so every block dominates it. See
+`dominatorsOfIdoms`. -/
+abbrev DomMap := Std.HashMap String (Nat × Nat)
+
+/-- Does `a` dominate `b` in the computed map? A label the map does not have is
+dominated by nothing and dominates nothing. -/
+def dominates (dom : DomMap) (a b : String) : Bool :=
+  match dom.get? a, dom.get? b with
+  | some (ia, oa), some (ib, ob) => ia ≤ ib && ob ≤ oa
+  | _, _ => false
 
 end -- public section
 
@@ -134,6 +149,74 @@ def idomsFrom (succs preds : Std.HashMap String (List String)) (root : String) :
     if !changed then break
   return (rpo, idom)
 
+/-- The immediate dominators of an acyclic graph, from its nodes in topological
+    order (entry first, every node after all its predecessors) and its
+    predecessor map. The entry maps to itself; a node in `order` that is
+    unreachable from the entry is absent.
+
+    One pass suffices, since each node's predecessors are final when it is
+    reached. A node's idom is the common ancestor, in the tree built so far, of
+    its predecessors. To find a common ancestor in logarithmic time whatever the
+    shape of the tree, each node keeps its depth and a skip pointer to an
+    ancestor (the skew-binary jump pointers of Myers). The fixpoint of
+    `idomsFrom` re-climbs a node's whole chain for each predecessor, which
+    is quadratic for a join with many predecessors and a shallow idom.
+
+    Contract: on an acyclic graph, each reachable node maps to its immediate
+    dominator. Passification (`PassiveVCGen.passifyWith`) relies on it in two ways:
+    the variables it reconciles at a join (written since the join's `since` bound) and
+    the path facts it takes from a block's dominator need only some dominator, while
+    its test of a variable declared below the join's dominator (`declaredBelow`) needs
+    the immediate one. -/
+def computeIdomsDag (order : List String) (preds : Std.HashMap String (List String))
+    (entry : String) : Std.HashMap String String := Id.run do
+  let fuel := 2 * order.length + 2
+  let mut idom : Std.HashMap String String := Std.HashMap.emptyWithCapacity.insert entry entry
+  let mut depth : Std.HashMap String Nat := Std.HashMap.emptyWithCapacity.insert entry 0
+  let mut jump : Std.HashMap String String := Std.HashMap.emptyWithCapacity.insert entry entry
+  for l in order do
+    if l == entry then continue
+    let mut cur : Option String := none
+    for p in preds.getD l [] do
+      if idom.contains p then
+        match cur with
+        | none => cur := some p
+        | some c =>
+          let mut a := c
+          let mut b := p
+          for _ in [0:fuel] do
+            if a == b then break
+            if depth.getD a 0 < depth.getD b 0 then
+              let t := a; a := b; b := t
+            if depth.getD a 0 > depth.getD b 0 then
+              -- Bring the deeper one up to the other's depth: its skip pointer when
+              -- that does not pass the depth, otherwise its parent.
+              let j := jump.getD a a
+              if depth.getD j 0 ≥ depth.getD b 0 then a := j else a := idom.getD a a
+            else
+              -- At one depth the skip pointers are at one depth too (a pointer's
+              -- depth depends on the node's depth alone). Different targets mean
+              -- the common ancestor is above them, so both jump; equal ones mean
+              -- it is at or below them, so both take their parents.
+              let ja := jump.getD a a
+              let jb := jump.getD b b
+              if ja != jb then
+                a := ja
+                b := jb
+              else
+                a := idom.getD a a
+                b := idom.getD b b
+          cur := some a
+    if let some r := cur then
+      let j := jump.getD r r
+      let jj := jump.getD j j
+      let dr := depth.getD r 0
+      idom := idom.insert l r
+      depth := depth.insert l (dr + 1)
+      jump := jump.insert l
+        (if dr - depth.getD j 0 == depth.getD j 0 - depth.getD jj 0 then jj else r)
+  return idom
+
 /-- The dominator tree of the reachable nodes (`idomsFrom` from the entry over the transfer
 edges). Returns the reachable labels in reverse postorder (entry first) and a map from each
 reachable label to its immediate dominator (the entry maps to itself). Unreachable labels are
@@ -143,51 +226,57 @@ def computeIdoms (cfg : CFG String (DetBlock String CmdT P)) :
   idomsFrom cfg.succMap cfg.predMap cfg.entry
 
 /-- The dominator map built from `idoms`, the reverse postorder and immediate
-dominators that `computeIdoms cfg` returns. A reachable block maps to its
-immediate-dominator chain up to the entry; an unreachable block maps to every
-label. -/
+dominators that `computeIdoms cfg` returns: a depth-first numbering of the
+dominator tree. A reachable block maps to its pre/post interval, so one block
+dominates another exactly when its interval contains the other's (`Dom.dominates`);
+an unreachable block maps to `(n, 0)` for `n` above every pre-number, so every
+block dominates it. The map takes linear time and space, and answers a query in
+constant time. -/
 def dominatorsOfIdoms (cfg : CFG String (DetBlock String CmdT P))
-    (idoms : List String × Std.HashMap String String) :
-    Std.HashMap String (List String) := Id.run do
-  let allLabels := cfg.labels
+    (idoms : List String × Std.HashMap String String) : Dom.DomMap := Id.run do
   let (rpo, idom) := idoms
-  let fuel := rpo.length + 1
-  -- derive dominator sets: reachable node ↦ its idom chain to entry; unreachable
-  -- node ↦ ⊤ (all labels).
-  let mut dom : Std.HashMap String (List String) := {}
-  for l in allLabels do
-    if l == cfg.entry then
-      dom := dom.insert l [cfg.entry]
-    else if idom.contains l then
-      -- walk the idom chain from `l` up to (and including) entry.
-      let mut chain : List String := [l]
-      let mut cur := l
-      for _ in [0:fuel] do
-        if cur == cfg.entry then
-          break
-        let nxt := idom.getD cur cfg.entry
-        chain := nxt :: chain
-        cur := nxt
-      dom := dom.insert l chain
-    else
-      -- unreachable: dominated by everything (⊤).
-      dom := dom.insert l allLabels
-  return dom
+  let mut kids : Std.HashMap String (Array String) := {}
+  for l in rpo do
+    if l != cfg.entry then
+      let p := idom.getD l cfg.entry
+      kids := kids.insert p ((kids.getD p #[]).push l)
+  let mut tin : Std.HashMap String Nat := Std.HashMap.ofList [(cfg.entry, 0)]
+  let mut iv : Dom.DomMap := {}
+  let mut stack : Array (String × Nat) := #[(cfg.entry, 0)]
+  let mut clock := 1
+  -- Each step pushes a child or pops a node, so 2 steps per block suffice.
+  for _ in [0:2 * rpo.length + 2] do
+    match stack.back? with
+    | none => break
+    | some (n, i) =>
+      let ks := kids.getD n #[]
+      if h : i < ks.size then
+        stack := stack.pop.push (n, i + 1)
+        tin := tin.insert ks[i] clock
+        clock := clock + 1
+        stack := stack.push (ks[i], 0)
+      else
+        iv := iv.insert n (tin.getD n 0, clock)
+        clock := clock + 1
+        stack := stack.pop
+  for l in cfg.labels do
+    if !iv.contains l then
+      iv := iv.insert l (clock + 1, 0)
+  return iv
 
 /-- Dominator analysis via the Cooper-Harvey-Kennedy immediate-dominator
-algorithm. Returns a map label ↦ set of dominators (as a label list), intended
-to be set-equal to the textbook `dom(entry) = {entry}`,
-`dom(n) = {n} ∪ ⋂_{p ∈ preds(n)} dom(p)` fixpoint (checked by a differential
-test, not proved; see the module header).
+algorithm. Returns the dominator tree's interval map (`dominatorsOfIdoms`), whose
+`dominates` is intended to agree with the textbook
+`dom(entry) = {entry}`, `dom(n) = {n} ∪ ⋂_{p ∈ preds(n)} dom(p)` fixpoint
+(checked by a differential test, not proved; see the module header).
 
     Every block is in the domain, unreachable ones included. An unreachable
     non-entry block has no entry-to-`b` path, so the CHK fixpoint never assigns
-    it an idom; it is mapped to every label (⊤) — i.e. dominated by all blocks.
-    This is the faithful reading of the dominance definition (for an unreachable
-    `b` the set of entry-to-`b` paths is empty, so "on every such path" holds
-    vacuously for every candidate), not a sentinel. -/
-def computeDominators (cfg : CFG String (DetBlock String CmdT P)) :
-    Std.HashMap String (List String) :=
+    it an idom; it is mapped to an interval inside every other (see `Dom.DomMap`),
+    so every block dominates it. This is the faithful reading of the dominance
+    definition (for an unreachable `b` the set of entry-to-`b` paths is empty, so
+    "on every such path" holds vacuously for every candidate). -/
+def computeDominators (cfg : CFG String (DetBlock String CmdT P)) : Dom.DomMap :=
   cfg.dominatorsOfIdoms cfg.computeIdoms
 
 /-- The immediate post-dominator of each block of `cfg` from which a `finish` block is
@@ -231,7 +320,7 @@ def computePostIdoms (cfg : CFG String (DetBlock String CmdT P)) :
 to a block `h` that dominates it (`dom`, from `computeDominators`) makes `h` a loop header.
 The headers come in the order of their first back edge in block order, each with the sources
 of its back edges in block order. -/
-def backEdges (dom : Std.HashMap String (List String)) (reachable : Std.HashSet String)
+def backEdges (dom : Dom.DomMap) (reachable : Std.HashSet String)
     (cfg : CFG String (DetBlock String CmdT P)) : Array (String × Array String) := Id.run do
   let mut headers : Array String := #[]
   let mut srcs : Std.HashMap String (Array String) := {}
@@ -245,7 +334,7 @@ def backEdges (dom : Std.HashMap String (List String)) (reachable : Std.HashSet 
 
 /-- The blocks in `reachable` that carry a `loopInvariant` but are not loop headers
 (`backEdges`), in block order. A loop invariant means something only on a header. -/
-def misplacedInvariants (dom : Std.HashMap String (List String))
+def misplacedInvariants (dom : Dom.DomMap)
     (reachable : Std.HashSet String) (cfg : CFG String (DetBlock String CmdT P)) :
     List String :=
   let headers : Std.HashSet String := .ofList ((backEdges dom reachable cfg).toList.map (·.1))

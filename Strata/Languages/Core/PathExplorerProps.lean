@@ -146,7 +146,7 @@ theorem structuredShape_joinEnv_setJoinEnv {scfg : ExploreCfg} (c : StmtConfig s
 /-- The locals a merge at block `j` leaves out, given the dominators `dom` and each block's
     declared locals `decls`: those declared in a block that does not dominate `j` and in no block
     that does. -/
-def cfgOutOfScope (dom : Std.HashMap String (List String))
+def cfgOutOfScope (dom : CFG.Dom.DomMap)
     (decls : List (String × List CoreIdent)) (j : String) : List CoreIdent :=
   let kept := decls.flatMap fun p => bif CFG.Dom.dominates dom p.1 j then p.2 else []
   decls.flatMap fun p =>
@@ -167,7 +167,7 @@ private theorem flatMap_filter_nonempty (l : List (String × List CoreIdent))
 
 /-- Looking only at the blocks that declare locals finds the same out-of-scope locals at `j` as
     looking at every block (`cfgOutOfScope`). -/
-private theorem localsOutOfScope_filter (dom : Std.HashMap String (List String))
+private theorem localsOutOfScope_filter (dom : CFG.Dom.DomMap)
     (decls : List (String × List CoreIdent)) (j : String) :
     localsOutOfScope dom (decls.filter (!·.2.isEmpty)) j = cfgOutOfScope dom decls j := by
   have hkept := flatMap_filter_nonempty decls
@@ -178,12 +178,12 @@ private theorem localsOutOfScope_filter (dom : Std.HashMap String (List String))
   · rename_i h
     rw [← flatMap_filter_nonempty decls _ (fun d => by simp), List.isEmpty_iff.mp h]
     rfl
-  · simp only [Std.HashSet.contains_ofList, CFG.Dom.dominates] at hkept ⊢
+  · simp only [Std.HashSet.contains_ofList] at hkept ⊢
     rw [hkept]
     exact flatMap_filter_nonempty decls _ (fun d => by simp)
 
 /-- A merge at `j` never leaves out a local that some block dominating `j` declares. -/
-theorem cfgOutOfScope_not_dominating {dom : Std.HashMap String (List String)}
+theorem cfgOutOfScope_not_dominating {dom : CFG.Dom.DomMap}
     {decls : List (String × List CoreIdent)} {j : String} {x : CoreIdent}
     (hx : x ∈ cfgOutOfScope dom decls j) :
     ∀ d xs, (d, xs) ∈ decls → CFG.Dom.dominates dom d j = true → x ∉ xs := by
