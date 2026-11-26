@@ -18,7 +18,9 @@ import StrataDDM.Integration.Lean.HashCommands
 the body; the proof instead evaluates the precondition and the postcondition with the
 evaluation lemmas of `Strata.Languages.Core.SeqEvalProps` and `BoolEvalProps`, and closes the
 postcondition with `Core.seqSelectBang_eq_select`: in every model, the two selectors agree in
-range, which is what the precondition gives.
+range, which is what the precondition gives. The program declares a function before the
+procedure, so the procedure's factory is not `Core.Factory`; it still resolves the built-ins
+(`Core.Program.factoryBeforeProcedure_getElem?_of_core`).
 
 Key result: `readAt_meets_contract`.
 -/
@@ -33,6 +35,8 @@ open Lambda
 private def seqPgm : Program :=
 #strata
 program Core;
+
+function twice(x : int) : int { int.mul(x, 2) }
 
 procedure ReadAt(s : Sequence int, i : int, out r : int)
 spec {
@@ -96,9 +100,16 @@ private theorem read_post_shape :
 private theorem read_pre_ne : (procOf seqAST "ReadAt").spec.preconditions.toList ≠ [] := by
   native_decide
 
-/-- No function precedes `ReadAt`, so its visible factory is `Core.Factory`. -/
-private theorem read_factory : seqAST.factoryBeforeProcedure "ReadAt" = Core.Factory :=
-  Core.Program.factoryBeforeProcedure_eq_core_of_noFunctions (by native_decide)
+/-- The factory visible to `ReadAt`: Core's built-ins and the function `twice`. -/
+private abbrev readFactory : Lambda.Factory Core.CoreLParams :=
+  seqAST.factoryBeforeProcedure "ReadAt"
+
+/-- A built-in of `Core.Factory` resolves the same way in a runtime factory over
+    `readFactory`, although the program declares a function before the procedure. -/
+private theorem builtin {F : Core.Expression.Factory} (hF : F.factory = readFactory)
+    {n : String} {fn : LFunc Core.CoreLParams} (h : Core.Factory[n]? = some fn) :
+    F.factory[n]? = some fn :=
+  hF ▸ Core.Program.factoryBeforeProcedure_getElem?_of_core seqAST "ReadAt" h
 
 /-- An input of type `Sequence int` holds a sequence of the runtime factory. -/
 private theorem seq_input {ρ : Imperative.Env Core.Expression}
@@ -122,8 +133,7 @@ theorem readAt_meets_contract :
     (opq := false) seqAST testParams "ReadAt" (procOf seqAST "ReadAt") (by native_decide)
     command ?_ (by native_decide) ?_ ?_
   · simpa [command] using read_body_shape
-  · rw [read_factory]
-    intro ρ₀ σ' emitted hpre hwf hstep
+  · intro ρ₀ σ' emitted hpre hwf hstep
     obtain ⟨hreq, hfac, -, hin, -⟩ := hpre
     have hsw := hwf.storeWellDefined
     obtain ⟨k, hk⟩ :=
@@ -139,9 +149,9 @@ theorem readAt_meets_contract :
     have hpreE : Core.Expression.eval F ρ₀.store preE =
         some (SemValue.ofBool F.model.tcInterp
           (decide (0 ≤ k) && decide (k < Core.seqLengthOf F.model .int sv))) :=
-      Core.eval_boolAnd (hfac ▸ Core.coreFactory_boolAnd)
-        (Core.eval_intLe (hfac ▸ Core.coreFactory_intLe) (Core.eval_intConst F _ 0) hiE)
-        (Core.eval_intLt (hfac ▸ Core.coreFactory_intLt) hiE hlenE)
+      Core.eval_boolAnd (builtin hfac Core.coreFactory_boolAnd)
+        (Core.eval_intLe (builtin hfac Core.coreFactory_intLe) (Core.eval_intConst F _ 0) hiE)
+        (Core.eval_intLt (builtin hfac Core.coreFactory_intLt) hiE hlenE)
     obtain ⟨⟨l, c⟩, hmem⟩ := List.exists_mem_of_ne_nil _ read_pre_ne
     have hrange : 0 ≤ k ∧ k < Core.seqLengthOf F.model .int sv := by
       rcases hreq l c hmem ⟨fun _ => False⟩ with ⟨_, he⟩ | ⟨hnf, _⟩
@@ -176,8 +186,8 @@ theorem readAt_meets_contract :
             (Core.eval_fvar (m := Core.valueLoc) (ty := some seqInt) F hs' rfl)
             (Core.eval_fvar_int (m := Core.valueLoc) (ty := some intMono) F hk')
           have hagree := Core.seqSelectBang_eq_select F.model
-            (hfac ▸ Core.coreFactory_seqSelect) (hfac ▸ Core.coreFactory_boolAnd)
-            (hfac ▸ Core.coreFactory_intLe) (hfac ▸ Core.coreFactory_intLt)
+            (builtin hfac Core.coreFactory_seqSelect) (builtin hfac Core.coreFactory_boolAnd)
+            (builtin hfac Core.coreFactory_intLe) (builtin hfac Core.coreFactory_intLt)
             (intMono.substTyVars F.tyVarVal) sv k hrange.1 hrange.2
           refine Core.eval_eq_true F (Core.eval_fvar F hnew rfl) ?_
           rw [hagree]
