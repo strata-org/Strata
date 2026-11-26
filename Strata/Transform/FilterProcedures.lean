@@ -88,7 +88,15 @@ end FilterProcedures
 /-- FilterProcedures pipeline phase: restricts the program to the target
     procedures and their transitive callees. Model-preserving because it
     only removes procedures without changing the semantics of the
-    remaining ones. -/
+    remaining ones.
+
+    Its contract is declared, not proved: the argument for `wellFormedCalls` below needs the
+    callee closure to be complete, and the filter computes it from the call graph cached in the
+    transform state, which the contract's obligation lets be any graph. No phase leaves
+    a stale graph behind: call elimination removes the edges it eliminates, procedure inlining
+    only adds edges, and with no cached graph the filter builds one from the program. So the
+    claim cannot be falsified through a pipeline, only by handing `runTransforms` an initial
+    state with a wrong graph. -/
 def filterProceduresPipelinePhase (procs : List String)
     (keepUnlistedLemmas : Bool := true) : PipelinePhase :=
   -- The filter removes procedures and lemmas and leaves the rest unchanged, so a

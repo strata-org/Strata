@@ -140,6 +140,15 @@ def Decl.getTypeDecl (d : Decl) (H: d.kind = .type): TypeDecl :=
   | .proc p _ => some p
   | _ => none
 
+/-- Is `d` a procedure? -/
+@[expose] def Decl.isProc (d : Decl) : Bool := d.kind == .proc
+
+/-- The functions `d` declares: a function, or the members of a recursive block. -/
+@[expose] def Decl.funcs : Decl → List Function
+  | .func f _ => [f]
+  | .recFuncBlock fs _ => fs
+  | _ => []
+
 def Decl.getProc (d : Decl) (H: d.kind = .proc): Procedure :=
   match d with | .proc p _ => p
 
@@ -629,6 +638,10 @@ def Program.arityIn (arities : Std.HashMap String Nat) (F : @Lambda.Factory Core
      | Core.Decl.func f _md => f.preconditions.isEmpty
      | Core.Decl.recFuncBlock fs _md => fs.all (·.preconditions.isEmpty)
      | _ => true)
+
+/-- Does every function `p` declares, at the top level or in a recursive block, pass `c`? -/
+@[expose] def Program.funcsAll (c : Function → Bool) (p : Program) : Bool :=
+  p.decls.all fun d => d.funcs.all c
 
 /-- The attributes of every function `p` declares, by name, including the functions of
     a recursive block. -/

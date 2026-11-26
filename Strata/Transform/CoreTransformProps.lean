@@ -10,6 +10,7 @@ public import Strata.Transform.CoreTransform
 import all Strata.Transform.CoreTransform
 import all Strata.Languages.Core.CoreGen
 public import Strata.Languages.Core.CoreGenProps
+import Init.Internal.Order.While
 
 public section
 
@@ -145,6 +146,14 @@ theorem Post.throw {α : Type} {e : Err} {Q : α → Prop} :
     Post (MonadExcept.throw e : CoreTransformM α) Q :=
   fun σ _ _ hr => by rw [throw_apply] at hr; cases hr
 
+/-- A run of `liftDiag e` returns the value `e` holds. -/
+theorem Post.liftDiag {α : Type} {e : Except Strata.Message α} :
+    Post (Transform.liftDiag e) fun a => e = .ok a := by
+  unfold Transform.liftDiag
+  split
+  · exact Post.pure rfl
+  · exact Post.throw
+
 /-- Every successful run returns a value satisfying `True`. -/
 theorem Post.true {α : Type} (m : CoreTransformM α) : Post m fun _ => True :=
   fun _ _ _ _ => trivial
@@ -175,6 +184,28 @@ theorem Post.forIn {α β : Type} {I : List α → β → Prop} {Q : β → Prop
   | x :: l, b, hb => (List.forIn_cons f x l b).symm ▸ Post.bind (hstep x l b hb) fun
     | .done _, hc => Post.pure hc
     | .yield c, hc => Post.forIn hend hstep l c hc
+
+/-- A `while` loop returns a value with `Q` when every step from a state satisfying `I` either
+    stops with a value satisfying `Q` or continues from a state satisfying `I` whose measure `μ`
+    is smaller. -/
+theorem Post.loop {β : Type} {f : Unit → β → CoreTransformM (ForInStep β)} (μ : β → Nat)
+    {I Q : β → Prop}
+    (hf : ∀ b, I b → Post (f () b) fun
+      | .done b' => Q b'
+      | .yield b' => I b' ∧ μ b' < μ b) :
+    ∀ b, I b → Post (Lean.Loop.forIn Lean.Loop.mk b f) Q := by
+  suffices h : ∀ n b, μ b < n → I b → Post (Lean.Loop.forIn Lean.Loop.mk b f) Q from
+    fun b hb => h _ b (Nat.lt_succ_self _) hb
+  intro n
+  induction n with
+  | zero => intro b h; omega
+  | succ n ih =>
+    intro b hlt hb
+    rw [Lean.Loop.forIn_eq_of_monadTail]
+    refine Post.bind (hf b hb) fun r hr => ?_
+    cases r with
+    | done b' => exact Post.pure hr
+    | yield b' => exact ih b' (by have := hr.2; omega) hr.1
 
 /-! ## Successful runs and the generator state
 

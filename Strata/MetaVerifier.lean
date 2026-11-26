@@ -10,7 +10,7 @@ import Strata.Languages.Core.ObligationExtractionProps
 import Strata.Transform.InsertLoopInvariantAsserts
 import Strata.Transform.LoopElim
 import Strata.Transform.PrecondElim
-import Strata.Transform.TerminationCheck
+import Strata.Transform.TerminationCheckPhase
 public import Strata.Languages.Core.SMTEncoder
 import Std.Tactic.BVDecide.Normalize.Prop
 import Strata.DL.Lambda.Denote.LExprAnnotated

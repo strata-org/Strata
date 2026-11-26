@@ -6,7 +6,7 @@
 module
 
 meta import Strata.Languages.Core
-meta import Strata.Transform.TerminationCheck
+meta import Strata.Transform.TerminationCheckPhase
 import StrataDDM.Integration.Lean.HashCommands
 
 meta section
