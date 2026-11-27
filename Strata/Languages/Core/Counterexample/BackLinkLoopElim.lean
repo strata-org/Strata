@@ -12,7 +12,7 @@ import Strata.DL.Imperative.Counterexample.Tactics
 /-! # `loopElim` back-link support: configuration mapping and slicing
 
 Support for the `(a) → (a)` back-link of the loop-elimination phase
-`loopElimPipelinePhase` ([LoopElim.lean](Strata/Transform/LoopElim.lean)): mapping a
+`loopElimPipelinePhase` (`Strata/Transform/LoopElim.lean`): mapping a
 configuration of the pass's output to the source, and slicing a source replay at loop
 entries and exits.
 

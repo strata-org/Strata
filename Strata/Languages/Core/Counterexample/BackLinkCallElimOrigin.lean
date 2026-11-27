@@ -176,7 +176,7 @@ def recordStmtsRec (taken takenVars : Std.HashSet String) (vt : TypeSpec.TypeSco
     return headOrigins ++ tailOrigins
 
 /-- Program-level origin extractor: a sibling of `callElim'`
-    ([CallElim.lean](../../Transform/CallElim.lean)) that walks every
+    (`Strata/Transform/CallElim.lean`) that walks every
     procedure body exactly as `runProgramTyped (targetProcList := .none)` does —
     setting `currentProgram`/`currentProcedureName` identically, in the same
     declaration order, a CFG body through `runCFGCmdsTyped` with `callElimCommand` as
