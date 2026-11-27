@@ -16,7 +16,7 @@ import Strata.DL.Imperative.Counterexample.Tactics
 
 Support for the `(a) → (a)` back-link `callElimBackLink` (`BackLinkPhases`) of
 the call-elimination phase `callElimPipelinePhase`
-([CallElim.lean](Strata/Transform/CallElim.lean)).  Level `(a)` is a run of the
+(`Strata/Transform/CallElim.lean`).  Level `(a)` is a run of the
 program: a `CexA`, a start configuration replayed with an oracle of nondeterministic
 choices.
 
@@ -36,7 +36,7 @@ reachability question at each of them.
 
 The pass keeps no back-reference from an expansion to its call.  The deterministic
 sibling extractor `Core.CallElim.callElimOrigin'`
-([BackLinkCallElimOrigin.lean](Strata/Languages/Core/Counterexample/BackLinkCallElimOrigin.lean))
+(`Strata/Languages/Core/Counterexample/BackLinkCallElimOrigin.lean`)
 re-runs the pass's own per-call step and records, per call site, a `CallOrigin`: the
 original call statement, its expansion, the position of the havocs in it, the fresh
 names, and the precondition-target mapping (generated assert label → callee

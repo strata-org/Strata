@@ -144,7 +144,9 @@ jobs:
       - name: Check for broken links
         uses: lycheeverse/lychee-action@v2
         with:
-          args: --offline --no-progress --exclude-path '.*/find/.*' --exclude-path '.*/search/.*' --exclude-path '.*/html-multi/.*' docs/verso/_out/
+          # `lean-manual://` links come from Lean's own docstrings and point into the Lean
+          # reference manual, which the offline check cannot resolve.
+          args: --offline --no-progress --exclude 'lean-manual://' --exclude-path '.*/find/.*' --exclude-path '.*/search/.*' --exclude-path '.*/html-multi/.*' docs/verso/_out/
           fail: true
       - name: Check for broken links (html-multi)
         run: |

@@ -902,7 +902,13 @@ structure Procedure : Type where
   readsGlobals : List Identifier := []
   /-- File-scope globals this procedure writes. See `readsGlobals`. -/
   writesGlobals : List Identifier := []
+  /-- Marked `implicit`: a one-input, one-output procedure that resolution may
+      insert as a cast where a value of its input type fills a slot of its
+      output type. Resolution clears the flag once it realizes the casts. -/
   isImplicit : Bool := false
+  /-- Marked `frame`: takes one composite and returns the composites it frames;
+      a `modifies` entry whose type has a frame procedure is rewritten through
+      it. Resolution clears the flag once it realizes the casts. -/
   isFrame : Bool := false
 
 /-- A short user-facing name for the construct, used in diagnostic messages. -/
