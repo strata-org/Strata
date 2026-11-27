@@ -864,9 +864,10 @@ theorem elimFuncs_names {T : LExprParams} [Inhabited T.IDMeta]
       intro l hlen
       conv => rhs; rw [← List.map_fst_zip hlen, List.map_map]
       rfl
-    rw [List.map_map]
-    refine (List.map_congr_left ?_).trans
-      (hzip _ (Nat.le_of_eq (freshTypeArgs_length _ _).symm))
+    rw [List.mapIdx_eq_zipIdx_map, List.map_map]
+    refine (List.map_congr_left ?_).trans (List.map_map.symm.trans
+      ((congrArg (List.map fun p => (elimFuncName p.1).name) (List.zipIdx_map_fst 0 _)).trans
+        (hzip _ (Nat.le_of_eq (freshTypeArgs_length _ _).symm))))
     intro p _
     rfl
 
@@ -1129,8 +1130,7 @@ theorem genBlockFactory_constrsNotBool [BEq T.Identifier] {block : MutualDatatyp
     rcases hfn with (((hfn | hfn) | hfn) | hfn) | hfn
     · split at hfn
       · simp at hfn
-      · simp only [List.mem_map] at hfn
-        obtain ⟨_, -, rfl⟩ := hfn
+      · obtain ⟨_, _, rfl⟩ := List.mem_mapIdx.mp hfn
         simp at hc
     · obtain ⟨d, hd, c, -, rfl⟩ := hfn
       exact subst_dataDefault_ne_bool (hname d hd)

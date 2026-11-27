@@ -494,16 +494,18 @@ the generated functions are:
 `Forest$Elim (Fcons r f) r1 f1 f2 = f2 r f (Rose$Elim r r1 f1 f2) (Forest$Elim f r1 f1 f2)`
 
 The evaluator returns `none` unless given a scrutinee and one case function per
-constructor of the block.
+constructor of the block. `dtIdx` is the eliminator's datatype in the block; a
+scrutinee built by another datatype's constructor gives `none`.
 -/
 def elimConcreteEval {T: LExprParams} [BEq T.Identifier] [Inhabited T.IDMeta] (block : MutualDatatype T.IDMeta)
-    (m : T.Metadata) : ConcreteEval T :=
+    (dtIdx : Nat) (m : T.Metadata) : ConcreteEval T :=
   fun _ _ args =>
     if args.length != blockConstrCount block + 1 then none else
     match args with
     | x :: xs =>
       match matchConstr block x with
-      | some (dtIdx, constrIdx, _, a, recs) =>
+      | some (xIdx, constrIdx, _, a, recs) =>
+        if xIdx != dtIdx then none else
         let gIdx := blockConstrIdx block dtIdx constrIdx
         xs[gIdx]?.bind fun f =>
           some (f.mkApp m (a ++ recs.filterMap (fun (r, rty) => elimRecCall block r rty xs m)))
@@ -528,12 +530,12 @@ def elimFuncs [Inhabited T.IDMeta] [BEq T.Identifier] (block : MutualDatatype T.
   let allConstrs :=
     block.mapIdx (fun dtIdx d => d.constrs.map (dtIdx, ·)) |>.flatten
   let caseTypes := allConstrs.map fun (dtIdx, c) => elimTy block retTyVars dtIdx c
-  (block.zip retTyVars).map fun (d, outputTyVar) =>
+  (block.zip retTyVars).mapIdx fun dtIdx (d, outputTyVar) =>
     { name := elimFuncName d
       typeArgs := retTyVars ++ d.typeArgs
       inputs := List.zip (genArgNames (allConstrs.length + 1)) (dataDefault d :: caseTypes)
       output := .ftvar outputTyVar
-      concreteEval := elimConcreteEval block m
+      concreteEval := elimConcreteEval block dtIdx m
       attr := #[.evalIfConstr 0] }
 
 ---------------------------------------------------------------------

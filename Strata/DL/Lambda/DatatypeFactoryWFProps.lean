@@ -524,9 +524,9 @@ private theorem matchConstr_getVars {T : LExprParams} [BEq T.Identifier]
 /-- The eliminator's evaluator succeeds only on a scrutinee together with one
     case function per constructor of the block. -/
 private theorem elimConcreteEval_length {T : LExprParams} [BEq T.Identifier]
-    [Inhabited T.IDMeta] (block : MutualDatatype T.IDMeta) (m md : T.Metadata)
+    [Inhabited T.IDMeta] (block : MutualDatatype T.IDMeta) (dtIdx : Nat) (m md : T.Metadata)
     (opTy : Option LMonoTy) (args : List (LExpr T.mono))
-    (res : LExpr T.mono) (h : elimConcreteEval block m md opTy args = some res) :
+    (res : LExpr T.mono) (h : elimConcreteEval block dtIdx m md opTy args = some res) :
     args.length = blockConstrCount block + 1 := by
   simp only [elimConcreteEval] at h
   elim_err h with hlen
@@ -536,12 +536,12 @@ private theorem elimConcreteEval_length {T : LExprParams} [BEq T.Identifier]
     argument list, it succeeds on any list differing only in metadata, with a
     result differing only in metadata. -/
 theorem elimConcreteEval_eraseMetadata {T : LExprParams} [BEq T.Identifier]
-    [Inhabited T.IDMeta] (block : MutualDatatype T.IDMeta)
+    [Inhabited T.IDMeta] (block : MutualDatatype T.IDMeta) (dtIdx : Nat)
     (m md1 md2 : T.Metadata) (opTy : Option LMonoTy)
     (args1 args2 : List (LExpr T.mono)) (res1 : LExpr T.mono)
     (hmap : args1.map LExpr.eraseMetadata = args2.map LExpr.eraseMetadata)
-    (h : elimConcreteEval block m md1 opTy args1 = some res1) :
-    ∃ res2, elimConcreteEval block m md2 opTy args2 = some res2 ∧
+    (h : elimConcreteEval block dtIdx m md1 opTy args1 = some res1) :
+    ∃ res2, elimConcreteEval block dtIdx m md2 opTy args2 = some res2 ∧
       LExpr.eraseMetadata res1 = LExpr.eraseMetadata res2 := by
   have hlen : args1.length = args2.length := by
     have h_len := congrArg List.length hmap
@@ -560,11 +560,13 @@ theorem elimConcreteEval_eraseMetadata {T : LExprParams} [BEq T.Identifier]
       obtain ⟨hx, hxs⟩ := hmap
       simp only at h ⊢
       rcases matchConstr_eraseMetadata_congr block x1 x2 hx with
-        ⟨hn1, hn2⟩ | ⟨dtIdx, constrIdx, c, a₁, a₂, r₁, r₂, hm1, hm2, ha, hr⟩
+        ⟨hn1, hn2⟩ | ⟨xIdx, constrIdx, c, a₁, a₂, r₁, r₂, hm1, hm2, ha, hr⟩
       · rw [hn1] at h; exact absurd h (by simp)
       rw [hm1] at h
       rw [hm2]
       simp only at h ⊢
+      elim_err h with hidx
+      rw [ite_eq_right hidx]
       cases hf1 : xs1[blockConstrIdx block dtIdx constrIdx]? with
       | none => rw [hf1] at h; exact absurd h (by simp)
       | some f1 =>
@@ -595,9 +597,9 @@ theorem elimConcreteEval_eraseMetadata {T : LExprParams} [BEq T.Identifier]
 /-- Every variable of the eliminator evaluator's result is a variable of some
     argument. -/
 theorem elimConcreteEval_getVars {T : LExprParams} [BEq T.Identifier]
-    [Inhabited T.IDMeta] (block : MutualDatatype T.IDMeta) (m md : T.Metadata)
+    [Inhabited T.IDMeta] (block : MutualDatatype T.IDMeta) (dtIdx : Nat) (m md : T.Metadata)
     (opTy : Option LMonoTy) (args : List (LExpr T.mono))
-    (res : LExpr T.mono) (h : elimConcreteEval block m md opTy args = some res) :
+    (res : LExpr T.mono) (h : elimConcreteEval block dtIdx m md opTy args = some res) :
     ∀ z ∈ LExpr.LExpr.getVars res, ∃ a ∈ args, z ∈ LExpr.LExpr.getVars a := by
   simp only [elimConcreteEval] at h
   elim_err h
@@ -608,16 +610,17 @@ theorem elimConcreteEval_getVars {T : LExprParams} [BEq T.Identifier]
     cases hmc : matchConstr block x with
     | none => rw [hmc] at h; exact absurd h (by simp)
     | some v =>
-      obtain ⟨dtIdx, constrIdx, c, a, recs⟩ := v
+      obtain ⟨xIdx, constrIdx, c, a, recs⟩ := v
       rw [hmc] at h
       simp only at h
+      elim_err h
       cases hf : xs[blockConstrIdx block dtIdx constrIdx]? with
       | none => rw [hf] at h; exact absurd h (by simp)
       | some f =>
         rw [hf, Option.bind_some, Option.some.injEq] at h
         subst h
         obtain ⟨hargs, hrecs⟩ :=
-          matchConstr_getVars block x dtIdx constrIdx c a recs hmc
+          matchConstr_getVars block x xIdx constrIdx c a recs hmc
         have hxs : ∀ b ∈ xs, ∀ z ∈ LExpr.LExpr.getVars b,
             ∃ e ∈ x :: xs, z ∈ LExpr.LExpr.getVars e :=
           fun b hb z hz => ⟨b, List.mem_cons_of_mem x hb, hz⟩
@@ -856,7 +859,7 @@ private theorem destructorFuncs_wf {T : LExprParams} [BEq T.Identifier]
     parameters. -/
 private theorem elimFunc_wf {T : LExprParams} [Inhabited T.IDMeta]
     [BEq T.Identifier]
-    (block : MutualDatatype T.IDMeta) (m : T.Metadata) (d : LDatatype T.IDMeta)
+    (block : MutualDatatype T.IDMeta) (dtIdx : Nat) (m : T.Metadata) (d : LDatatype T.IDMeta)
     (retTyVars : List TyIdentifier) (outputTyVar : TyIdentifier)
     (allConstrs : List (Nat × LConstr T.IDMeta))
     (hownnodup : d.typeArgs.Nodup)
@@ -876,7 +879,7 @@ private theorem elimFunc_wf {T : LExprParams} [Inhabited T.IDMeta]
           (dataDefault d ::
             allConstrs.map (fun q => elimTy block retTyVars q.1 q.2))
         output := .ftvar outputTyVar
-        concreteEval := some (elimConcreteEval block m)
+        concreteEval := some (elimConcreteEval block dtIdx m)
         attr := #[.evalIfConstr 0] } := by
   have hlensame :
       (genArgNames (IDMeta := T.IDMeta) (allConstrs.length + 1)).length
@@ -939,19 +942,19 @@ private theorem elimFunc_wf {T : LExprParams} [Inhabited T.IDMeta]
   · intro fn md opTy args res hfn heval
     simp only [Option.some.injEq] at hfn
     subst hfn
-    rw [elimConcreteEval_length block m md opTy args res heval, List.length_zip,
+    rw [elimConcreteEval_length block dtIdx m md opTy args res heval, List.length_zip,
       ← hlensame, genArgNames_length, hcount]
     simp
   · simp
   · intro ceval hceval md1 md2 opTy args1 args2 res1 hmap heval
     simp only [Option.some.injEq] at hceval
     subst hceval
-    exact elimConcreteEval_eraseMetadata block m md1 md2 opTy args1 args2 res1 hmap
+    exact elimConcreteEval_eraseMetadata block dtIdx m md1 md2 opTy args1 args2 res1 hmap
       heval
   · intro ceval hceval md opTy args res heval z hz
     simp only [Option.some.injEq] at hceval
     subst hceval
-    exact elimConcreteEval_getVars block m md opTy args res heval z hz
+    exact elimConcreteEval_getVars block dtIdx m md opTy args res heval z hz
 
 /-- Every eliminator a mutual block generates is well formed when each
     datatype's type parameters are distinct and none of them starts with
@@ -975,13 +978,15 @@ private theorem elimFuncs_wf {T : LExprParams} [Inhabited T.IDMeta]
     rcases block with _ | ⟨_, _⟩
     · exact absurd rfl hne
     · simp
-  obtain ⟨p, hp, hpf⟩ := List.mem_map.mp hf
+  rw [List.mapIdx_eq_zipIdx_map] at hf
+  obtain ⟨⟨p, dtIdx⟩, hpi, hpf⟩ := List.mem_map.mp hf
+  have hp := List.fst_mem_of_mem_zipIdx hpi
   obtain ⟨d, outputTyVar⟩ := p
   have hd : d ∈ block := (List.of_mem_zip hp).1
   have houtmem : outputTyVar ∈ freshTypeArgs block.length block[0].typeArgs :=
     (List.of_mem_zip hp).2
   subst hpf
-  refine elimFunc_wf block m d _ outputTyVar _ (hnodup d hd)
+  refine elimFunc_wf block dtIdx m d _ outputTyVar _ (hnodup d hd)
     (freshTypeArgs_nodup _ _) ?_ (freshTypeArgs_length _ _) houtmem ?_
     (hres d hd) (length_blockConstrs block) ?_
   · intro v hv hvd
@@ -1089,7 +1094,9 @@ theorem genBlockFactory_sigs_of {T : LExprParams} [Inhabited T.Metadata]
   · simp only [elimFuncs] at helim
     split at helim
     · exact absurd helim (by simp)
-    obtain ⟨p, hp, hpf⟩ := List.mem_map.mp helim
+    rw [List.mapIdx_eq_zipIdx_map] at helim
+    obtain ⟨⟨p, _⟩, hpi, hpf⟩ := List.mem_map.mp helim
+    have hp := List.fst_mem_of_mem_zipIdx hpi
     obtain ⟨d, outputTyVar⟩ := p
     have hd : d ∈ block := (List.of_mem_zip hp).1
     rw [← hpf]

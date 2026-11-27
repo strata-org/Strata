@@ -1478,7 +1478,7 @@ section ElimEvalArity
 /-- The eliminator's concrete evaluator for the single-datatype block `[weekTy]`,
     applied to `args`. -/
 def dayElimEval (args : List (LExpr TestParams.mono)) : Option (LExpr TestParams.mono) :=
-  elimConcreteEval (T := TestParams) [weekTy] () () none args
+  elimConcreteEval (T := TestParams) [weekTy] 0 () () none args
 
 /-- The `Day` value built by constructor `c`. -/
 def dayVal (c : String) : LExpr TestParams.mono :=
@@ -1501,6 +1501,29 @@ def dayCases : List (LExpr TestParams.mono) :=
 #eval IO.println (format (dayElimEval [dayVal "Su", intConst () 0]))
 
 end ElimEvalArity
+
+section ElimEvalOwnDatatype
+
+/- Each eliminator of a mutual block evaluates only its own datatype's constructors. -/
+
+/-- The concrete evaluator of the `i`-th eliminator of `roseForestBlock`, applied to `x` and
+    the cases `0`, `1` and `2`, one per constructor of the block. -/
+def roseForestElimEval (i : Nat) (x : LExpr TestParams.mono) : Option (LExpr TestParams.mono) :=
+  (elimFuncs (T := TestParams) roseForestBlock ())[i]? >>= (·.concreteEval) >>=
+    fun ev => ev () none (x :: (List.range 3).map (intConst () ∘ Int.ofNat))
+
+-- `FNil` is a `Forest` constructor, so `RoseTree$Elim` gives no result on it, even when it is
+-- annotated at `RoseTree int`.
+/-- info: none -/
+#guard_msgs in
+#eval IO.println (format (roseForestElimEval 0
+  (.op () ("FNil" : TestParams.Identifier) (.some (.tcons "RoseTree" [.int])))))
+
+/-- info: some #1 -/
+#guard_msgs in
+#eval IO.println (format (roseForestElimEval 1 fnil'))
+
+end ElimEvalOwnDatatype
 
 section ConstructorFieldNames
 
