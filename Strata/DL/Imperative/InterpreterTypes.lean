@@ -190,6 +190,11 @@ abbrev RStore (P : PureExpr) := P.Ident → Option P.Expr
 @[expose] def RStore.project (σ_parent σ_inner : RStore P) : RStore P :=
   fun x => if (σ_parent x).isSome then σ_inner x else none
 
+/-- Every variable in `vs` is defined in the runtime store `store`: the runtime counterpart of
+    `SemanticStore.varsDefined`. -/
+@[expose] def RStore.isDefined (store : RStore P) (vs : List P.Ident) : Prop :=
+  ∀ ident, ident ∈ vs → (store ident).isSome = true
+
 /-- The runtime counterpart of `dropVars`: the store with every name of `D` undefined. -/
 @[expose] def RStore.dropVars [DecidableEq P.Ident] (D : List P.Ident) (σ : RStore P) :
     RStore P :=

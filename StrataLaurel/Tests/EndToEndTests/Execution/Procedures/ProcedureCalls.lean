@@ -380,7 +380,7 @@ procedure main()
   opaque
 {
   var z: int := 10 / zero()
-//^^^^^^^^^^^^^^^^^^^^^^^^^ error: divisor is non-zero does not hold
+//              ^^^^^^^^^^^ error: divisor is non-zero does not hold
 };
 #end
 

@@ -325,6 +325,10 @@ macro "jk_tac" : tactic => `(tactic|
     | with_reducible exact jk_allocateObject _
     | with_reducible exact jk_readField _ _ _
     | with_reducible exact jk_writeField _ _ _ _
+    | with_reducible exact jk_arrayObject _ _
+    | with_reducible exact jk_arrayPosition _ _ _
+    | with_reducible exact jk_readElement _ _ _
+    | with_reducible exact jk_writeElement _ _ _ _
     | with_reducible exact jk_resolveOverride _ _ _ _
     | with_reducible exact jk_resolveMethod _ _ _
     | with_reducible exact jk_coroInstance _ _ _
@@ -400,6 +404,22 @@ theorem jk_readField (target : Value) (name : String) : KeepsJK (readField targe
 theorem jk_writeField (target : Value) (name : String) (v : Value) :
     KeepsJK (writeField target name v : EvalM PM Unit) := fun o => by
   unfold writeField; jk_tac
+
+theorem jk_arrayObject (target : Value) :
+    KeepsJK (arrayObject target : EvalM PM (Nat × HeapObject)) := fun o => by
+  unfold arrayObject; jk_tac
+
+theorem jk_arrayPosition (obj : HeapObject) (index : Value) :
+    KeepsJK (arrayPosition obj index : EvalM PM Nat) := fun o => by
+  unfold arrayPosition; jk_tac
+
+theorem jk_readElement (target index : Value) :
+    KeepsJK (readElement target index : EvalM PM Value) := fun o => by
+  unfold readElement; jk_tac
+
+theorem jk_writeElement (target index v : Value) :
+    KeepsJK (writeElement target index v : EvalM PM Unit) := fun o => by
+  unfold writeElement; jk_tac
 
 theorem jk_resolveOverride (target : Value) (id : Nat) (static : Procedure) :
     KeepsJK (resolveOverride target id static : EvalM PM Procedure) := fun o => by

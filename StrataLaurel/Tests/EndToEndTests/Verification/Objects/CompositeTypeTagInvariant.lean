@@ -39,7 +39,7 @@ composite Dog extends Animal { var name: int }
 procedure supertypeIsNotSubtype(a: Animal) opaque { assert a is Dog };
 //                                                  ^^^^^^^^^^^^^^^ error: assertion does not hold
 procedure unguardedDowncast(a: Animal) opaque { var d: Dog := a as Dog };
-//                                              ^^^^^^^^^^^^^^^^^^^^^^ error: precondition does not hold
+//                                                            ^^^^^^^^ error: precondition does not hold
 #end
 
 /-! ## Call results, field reads, quantifiers -/

@@ -182,8 +182,7 @@ Result: ❌ fail
 #guard_msgs in
 #eval Core.verify functionNamedLikeUnknown (options := quiet)
 
-/-- A local may not be named like a function: the type checker rejects a local `c` beside the
-    function `c`. -/
+/-- The local `c` is not the function `c`: the assertion fails. -/
 private def localNamedLikeFunction :=
 #strata
 program Core;
@@ -197,8 +196,10 @@ procedure P()
 #end
 
 /--
-error: ❌ Type checking error.
-Procedure 'P': Local variable 'c' collides with a function or constant of the same name
+info:
+Obligation: a
+Property: assert
+Result: ❌ fail
 -/
 #guard_msgs in
 #eval Core.verify localNamedLikeFunction (options := quiet)
@@ -516,14 +517,14 @@ private def leakedNames (p : StrataDDM.Program) : List String :=
   | .ok tp => leakedNamesOf tp
 
 #guard [destructorOfStored, mergeThenDeclare, pathCapMerge, localNamedLikeUnknown,
-        oldNamedLikeUnknown, functionNamedLikeUnknown,
+        oldNamedLikeUnknown, functionNamedLikeUnknown, localNamedLikeFunction,
         branchLocalsOfTwoTypes, doubling, initFromOld,
         guardReadsOld, inoutBothBranches, oldAfterExitMerge,
         localNamedLikeOld].all (leakedNames · == [])
 
 /-- `localNamedLikeFunction` as a type-annotated AST: the function `c`, the axiom `c() == 5`,
-    and a procedure whose local `c` is asserted to be `5`. The type checker rejects the local's
-    name, so symbolic evaluation runs on the AST directly. -/
+    and a procedure whose local `c` is asserted to be `5`. Symbolic evaluation runs on the AST
+    directly, where the local keeps the function's name. -/
 private def localNamedLikeFunctionAst : Core.Program :=
   { decls := [
       .func { name := "c", inputs := [], output := .int } .empty,

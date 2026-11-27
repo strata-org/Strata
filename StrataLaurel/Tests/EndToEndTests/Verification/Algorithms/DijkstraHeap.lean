@@ -60,13 +60,13 @@ procedure push(key: Sequence<int>, vert: Sequence<int>, k: int, v: int) returns 
   {
     var p: int := (i - 1) / 2;
     var tk: int := seqSelect(ks, p);
-//  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
+//                 ^^^^^^^^^^^^^^^^ error: precondition could not be proved
 // desired: verifies
     ks := seqUpdate(seqUpdate(ks, p, seqSelect(ks, i)), i, tk);
 //                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
 // desired: verifies
     var tv: int := seqSelect(vs, p);
-//  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
+//                 ^^^^^^^^^^^^^^^^ error: precondition could not be proved
 // desired: verifies
     vs := seqUpdate(seqUpdate(vs, p, seqSelect(vs, i)), i, tv);
 //                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
@@ -163,7 +163,7 @@ procedure shortestPaths(w: Sequence<Sequence<int>>, n: int, src: int) returns (d
         invariant seqLength(vert) == seqLength(key)
       {
         var wt: int := seqSelect(seqSelect(w, u), v);
-//      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
+//                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
 //                               ^^^^^^^^^^^^^^^ error: precondition could not be proved
 // desired: verifies
         if wt >= 0 && (!seqSelect(rc, v) || seqSelect(dist, u) + wt < seqSelect(dist, v)) then {
@@ -174,7 +174,7 @@ procedure shortestPaths(w: Sequence<Sequence<int>>, n: int, src: int) returns (d
 // desired: verifies
           rc := seqUpdate(rc, v, true);
           assign key, vert := push(key, vert, seqSelect(dist, v), v)
-//        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
+//                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
 // desired: verifies
         };
         v := v + 1
@@ -235,11 +235,11 @@ procedure push(key: Sequence<int>, vert: Sequence<int>, k: int, v: int) returns 
   {
     var p: int := (i - 1) / 2;
     var tk: int := seqSelect(ks, p);
-//  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
+//                 ^^^^^^^^^^^^^^^^ error: precondition could not be proved
     ks := seqUpdate(seqUpdate(ks, p, seqSelect(ks, i)), i, tk);
 //                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
     var tv: int := seqSelect(vs, p);
-//  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
+//                 ^^^^^^^^^^^^^^^^ error: precondition could not be proved
     vs := seqUpdate(seqUpdate(vs, p, seqSelect(vs, i)), i, tv);
 //                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
     i := p
@@ -330,7 +330,7 @@ procedure shortestPaths(w: Sequence<Sequence<int>>, n: int, src: int) returns (d
         invariant seqLength(vert) == seqLength(key)
       {
         var wt: int := seqSelect(seqSelect(w, u), v);
-//      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
+//                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
 //                               ^^^^^^^^^^^^^^^ error: precondition could not be proved
         if wt > 0 && (!seqSelect(rc, v) || seqSelect(dist, u) + wt < seqSelect(dist, v)) then {
 //                                         ^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
@@ -338,7 +338,7 @@ procedure shortestPaths(w: Sequence<Sequence<int>>, n: int, src: int) returns (d
 //                                   ^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
           rc := seqUpdate(rc, v, true);
           assign key, vert := push(key, vert, seqSelect(dist, v), v)
-//        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
+//                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
         };
         v := v + 1
       }

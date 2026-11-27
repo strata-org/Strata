@@ -29,7 +29,7 @@ open Strata.Cli
 /--
 info: To run the phases in the default order:
 
-  --phases typeCheck,assertNoCFGBodies,callElim,termCheck,precondElim,seqTotalize,insertLoopInvariantAsserts,loopElim,genOpaqueTypeParams,monomorphizeFunctions,simplify,nondetElim,declObligations,wp,ssa,wpLoop,betaReduce,lambdaLift
+  --phases typeCheck,assertNoCFGBodies,callElim,termCheck,precondElim,seqTotalize,insertLoopInvariantAsserts,loopElim,genOpaqueTypeParams,monomorphizeFunctions,simplify,nondetElim,declObligations,wp,ssa,wpLoop,betaReduce,lambdaLift,separateVarNames
 
 You can change this order. Give it back to --phases with no input file and
 Strata reports whether it composes without verifying anything.
@@ -137,37 +137,37 @@ private def afterBetaReduce (flags : List (String × String)) : IO Unit := do
   IO.println (((Core.corePipelinePhases o).map Strata.Core.phaseName).dropWhile (· != "betaReduce"))
 
 /--
-info: [betaReduce, lambdaLift]
+info: [betaReduce, lambdaLift, separateVarNames]
 -/
 #guard_msgs in
 #eval afterBetaReduce [("vcgen", "symexec")]
 
 /--
-info: [betaReduce, commonSubexprElim, lambdaLift]
+info: [betaReduce, commonSubexprElim, lambdaLift, separateVarNames]
 -/
 #guard_msgs in
 #eval afterBetaReduce [("vcgen", "symexec:per-path")]
 
 /--
-info: [betaReduce, lambdaLift]
+info: [betaReduce, lambdaLift, separateVarNames]
 -/
 #guard_msgs in
 #eval afterBetaReduce [("vcgen", "wp")]
 
 /--
-info: [betaReduce, lambdaLift]
+info: [betaReduce, lambdaLift, separateVarNames]
 -/
 #guard_msgs in
 #eval afterBetaReduce [("vcgen", "usp")]
 
 /--
-info: [betaReduce, lambdaLift]
+info: [betaReduce, lambdaLift, separateVarNames]
 -/
 #guard_msgs in
 #eval afterBetaReduce [("vcgen", "uwp")]
 
 /--
-info: [betaReduce, commonSubexprElim, lambdaLift]
+info: [betaReduce, commonSubexprElim, lambdaLift, separateVarNames]
 -/
 #guard_msgs in
 #eval afterBetaReduce []
@@ -369,7 +369,7 @@ private def reportOf (flags : List (String × String)) : IO Unit := do
 #eval reportOf [("path-cap", "3"), ("phases", wpOrder)]
 
 /--
-info: This order composes: typeCheck, assertNoCFGBodies, callElim, termCheck, precondElim, seqTotalize, insertLoopInvariantAsserts, loopElim, genOpaqueTypeParams, monomorphizeFunctions, simplify, nondetElim, declObligations, wp, ssa, wpLoop, betaReduce, lambdaLift
+info: This order composes: typeCheck, assertNoCFGBodies, callElim, termCheck, precondElim, seqTotalize, insertLoopInvariantAsserts, loopElim, genOpaqueTypeParams, monomorphizeFunctions, simplify, nondetElim, declObligations, wp, ssa, wpLoop, betaReduce, lambdaLift, separateVarNames
 -/
 #guard_msgs in
 #eval reportOf [("vcgen", "wp"), ("phases", wpOrder)]
@@ -384,14 +384,14 @@ private def withRewrite (o : Core.VerifyOptions) : String :=
     if n == "betaReduce" then [n, "contextualRewrite"] else [n])
 
 /--
-info: This order composes: hoistNondetChoices, typeCheck, cfgLoopElim, callElim, termCheck, precondElim, seqTotalize, insertLoopInvariantAsserts, loopElim, genOpaqueTypeParams, monomorphizeFunctions, simplify, nondetElim, symExec, betaReduce, contextualRewrite, commonSubexprElim, lambdaLift
+info: This order composes: hoistNondetChoices, typeCheck, cfgLoopElim, callElim, termCheck, precondElim, seqTotalize, insertLoopInvariantAsserts, loopElim, genOpaqueTypeParams, monomorphizeFunctions, simplify, nondetElim, symExec, betaReduce, contextualRewrite, commonSubexprElim, lambdaLift, separateVarNames
 -/
 #guard_msgs in
 #eval reportOf [("vcgen", "symexec:per-path"),
   ("phases", withRewrite { Core.VerifyOptions.quiet with symExec := some .never })]
 
 /--
-info: This order composes: typeCheck, assertNoCFGBodies, callElim, termCheck, precondElim, seqTotalize, insertLoopInvariantAsserts, loopElim, genOpaqueTypeParams, monomorphizeFunctions, simplify, nondetElim, declObligations, wp, ssa, wpLoop, betaReduce, contextualRewrite, lambdaLift
+info: This order composes: typeCheck, assertNoCFGBodies, callElim, termCheck, precondElim, seqTotalize, insertLoopInvariantAsserts, loopElim, genOpaqueTypeParams, monomorphizeFunctions, simplify, nondetElim, declObligations, wp, ssa, wpLoop, betaReduce, contextualRewrite, lambdaLift, separateVarNames
 -/
 #guard_msgs in
 #eval reportOf [("vcgen", "wp"),

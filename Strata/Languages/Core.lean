@@ -283,6 +283,11 @@ def Core.passLambdaLift : Core.PipelinePhase :=
 def Core.passLambdaLiftIfNeeded : Core.PipelinePhase :=
   Core.lambdaLiftIfNeededPipelinePhase
 
+/-- Rename apart each variable named like a function or constant, establishing
+    `varsNotFunctions`, which obligation extraction reads. -/
+def Core.passSeparateVarNames : Core.PipelinePhase :=
+  Core.separateVarNamesPipelinePhase
+
 /-- Type check the program, annotating expressions with their types. -/
 def Core.passTypeCheck (options : Core.VerifyOptions := Core.VerifyOptions.default) :
     Core.PipelinePhase :=
@@ -460,8 +465,9 @@ def Core.phaseName (p : Core.PipelinePhase) : String := p.phase.name
 def Core.validatePipelineFromExact (entryFacts : Core.ProgramFactSet)
     (phases : List Core.PipelinePhase) :
     Except String (Core.ValidatedPipeline entryFacts) :=
-  Core.ValidatedPipeline.ofListFromDelivering
-    entryFacts "the verification back end" Core.backEndRequiredFacts phases
+  (Core.ValidatedPipeline.ofListFromDelivering
+    entryFacts "the verification back end" Core.backEndRequiredFacts phases).mapError
+    (Core.withSeparateVarNamesHint entryFacts phases)
 
 /-- The ways to run `monomorphizeFunctions` again after the last `termCheck` of `phases`, when
     `noPolymorphicFunctions` holds just before that `termCheck`, from `entryFacts` or an earlier

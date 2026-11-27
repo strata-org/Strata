@@ -1843,6 +1843,13 @@ theorem List.findSome?_congr {α β γ : Type} (R : β → γ → Prop) (f : α 
     · simp only [List.findSome?_cons, hf, hg]
       exact Or.inr ⟨b, c, rfl, rfl, hR⟩
 
+/-- Filtering a list by a predicate that is false wherever `f` returns `none` does not
+    change the first `some` result of `f` over the list. -/
+theorem List.findSome?_filter {α β : Type} (f : α → Option β) (q : α → Bool)
+    (hq : ∀ x, q x = false → f x = none) :
+    ∀ l : List α, (l.filter q).findSome? f = l.findSome? f
+  := fun l => by induction l <;> grind
+
 /-- If every result of `f` satisfies `P`, so does the result of `l.findSome? f`. -/
 theorem List.findSome?_prop {α β : Type} (f : α → Option β) (P : β → Prop) (l : List α)
     (hstep : ∀ a ∈ l, ∀ b, f a = some b → P b) :

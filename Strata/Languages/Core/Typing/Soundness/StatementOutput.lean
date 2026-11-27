@@ -137,13 +137,12 @@ private theorem boolCheck_sound_output
 
 /-- The conclusion of output soundness for one plain command `c'` checked from `Env` to `Env'`:
     under `S`, it is well typed from the substituted resolved scope to scopes agreeing by lookup
-    with the substituted output scope, and the names it introduces are valid. -/
+    with the substituted output scope. -/
 private abbrev CmdOutputSound (C : LContext CoreLParams) (Env Env' : TEnv Unit) (S : Subst)
     (c' : Cmd Expression) : Prop :=
-  (∃ ts', CmdWellTyped C (TContext.subst Env.context.dealias S).types
+  ∃ ts', CmdWellTyped C (TContext.subst Env.context.dealias S).types
       (Statement.Cmd.subst S c') ts' ∧
-    ∀ x, ts'.find? x = (TContext.subst Env'.context.dealias S).types.find? x) ∧
-  CmdNamesWF (· ∈ C.functions) (Statement.Cmd.subst S c')
+    ∀ x, ts'.find? x = (TContext.subst Env'.context.dealias S).types.find? x
 
 /-- Output soundness of a plain initialization without a value under a substitution absorbing the
     checker's. -/
@@ -154,7 +153,6 @@ private theorem imperativeCmd_initNondet_output
     (hlk' : Env.context.types.find? x = none)
     (hpre : CmdType.preprocess C Env xty = .ok (ty1, E1))
     (hpost : CmdType.postprocess C E1 ty1 = .ok (ty2, E2))
-    (hfun : x.name ∉ C.functions)
     (h_aliasNames : ∀ al ∈ Env.context.aliases,
       C.knownTypes.containsName al.name = false)
     (hS : allCmdTys (fun mty => LMonoTy.knownInstance mty C.knownTypes)
@@ -172,9 +170,8 @@ private theorem imperativeCmd_initNondet_output
       (knownInstance_of_subst _ S _ hkn)
   have hfe := update_subst_dealias_FindEq Env.context Env S x _ (TContext.FindEq.refl _) hlk'
     hfix
-  refine ⟨⟨(TContext.subst Env.context.dealias S).types.insert x
-      (.forAll [] (LMonoTy.subst S (LMonoTy.subst Env.stateSubstInfo.subst mtyP))), ?_, hfe.1⟩,
-    hfun⟩
+  refine ⟨(TContext.subst Env.context.dealias S).types.insert x
+      (.forAll [] (LMonoTy.subst S (LMonoTy.subst Env.stateSubstInfo.subst mtyP))), ?_, hfe.1⟩
   show CmdWellTyped C (TContext.subst Env.context.dealias S).types
     (.init x (LTy.subst S (.forAll [] (LMonoTy.subst Env.stateSubstInfo.subst mtyP)))
       (Statement.substExprOrNondet S .nondet) md) _
@@ -195,7 +192,6 @@ private theorem imperativeCmd_initDet_output
     (hinf : CmdType.inferType C E1 (.init x xty (.det expr) md) expr = .ok (e1, ety, E2))
     (hunif : CmdType.unifyTypes E2 [(ty1, ety)] = .ok E3)
     (hpost : CmdType.postprocess C E3 ty1 = .ok (ty3, E4))
-    (hfun : x.name ∉ C.functions)
     (he : LExpr.TEnvWF (T := CoreLParams) Env)
     (hf : FactorySigWF C.functions)
     (hr : TContext.AliasesResolved Env.context)
@@ -257,10 +253,9 @@ private theorem imperativeCmd_initDet_output
       Lambda.LExpr.Proofs.getVars_unresolved]
     intro hmem
     exact hnotkey (resolveSource_getVars_mem_knownVars expr ea C Env E2 hres x hmem)
-  refine ⟨⟨(TContext.subst Env.context.dealias S).types.insert x
+  refine ⟨(TContext.subst Env.context.dealias S).types.insert x
         (LTy.subst S (.forAll []
-          (LMonoTy.subst (E2.updateSubst Sx).stateSubstInfo.subst mtyP))), ?_, ?_⟩,
-    hfun⟩
+          (LMonoTy.subst (E2.updateSubst Sx).stateSubstInfo.subst mtyP))), ?_, ?_⟩
   · show CmdWellTyped C (TContext.subst Env.context.dealias S).types
       (.init x (LTy.subst S (.forAll []
           (LMonoTy.subst (E2.updateSubst Sx).stateSubstInfo.subst mtyP)))
@@ -311,7 +306,7 @@ private theorem imperativeCmd_setNondet_output
       | cons v vars =>
         change LTy.isMonoType (.forAll (v :: vars) mty) = true at hmono
         simp [LTy.isMonoType, LTy.boundVars] at hmono
-  refine ⟨⟨(TContext.subst Env.context.dealias S).types, ?_, fun _ => rfl⟩, trivial⟩
+  refine ⟨(TContext.subst Env.context.dealias S).types, ?_, fun _ => rfl⟩
   show CmdWellTyped C (TContext.subst Env.context.dealias S).types
     (.set x (Statement.substExprOrNondet S .nondet) md) _
   simp only [Statement.substExprOrNondet, Imperative.ExprOrNondet.map]
@@ -357,7 +352,7 @@ private theorem imperativeCmd_setDet_output
       = LMonoTy.subst S (LExpr.toLMonoTy ea) :=
     LMonoTy.subst_eq_of_absorbs S Sx.subst _ (LExpr.toLMonoTy ea) habsSx
       (Constraints.unify_sound _ _ _ hu (_, LExpr.toLMonoTy ea) List.mem_cons_self)
-  refine ⟨⟨(TContext.subst Env.context.dealias S).types, ?_, ?_⟩, trivial⟩
+  refine ⟨(TContext.subst Env.context.dealias S).types, ?_, ?_⟩
   · show CmdWellTyped C (TContext.subst Env.context.dealias S).types
       (.set x (Statement.substExprOrNondet S (.det (LExpr.unresolved ea))) md) _
     simp only [Statement.substExprOrNondet, Imperative.ExprOrNondet.map]
@@ -379,11 +374,10 @@ private theorem imperativeCmd_setDet_output
 
 /-- Output soundness of one plain command under a substitution absorbing the checker's: the
     substituted command is well typed from the substituted resolved scope to scopes agreeing by
-    lookup with the substituted output scope, and the names it introduces are valid. -/
+    lookup with the substituted output scope. -/
 private theorem imperativeCmd_sound_output_subst
     (C : LContext CoreLParams) (Env Env' : TEnv Unit) (cc c' : Cmd Expression) (S : Subst)
     (run : ImperativeCmdRun C Env cc c' Env')
-    (hfun : ∀ x xty e md, cc = .init x xty e md → x.name ∉ C.functions)
     (he : LExpr.TEnvWF (T := CoreLParams) Env) (hf : FactorySigWF C.functions)
     (hr : TContext.AliasesResolved Env.context) (h_ne : Env.context.types ≠ [])
     (h_mono : MonoScope (IDMeta := Unit) Env.context)
@@ -395,11 +389,10 @@ private theorem imperativeCmd_sound_output_subst
     CmdOutputSound C Env Env' S c' := by
   cases run with
   | @initNondet x xty ty1 ty2 md E1 E2 hlk' hpre hpost =>
-    exact imperativeCmd_initNondet_output C Env S hlk' hpre hpost (hfun x xty .nondet md rfl)
-        h_aliasNames hS
+    exact imperativeCmd_initNondet_output C Env S hlk' hpre hpost h_aliasNames hS
   | @initDet x xty ty1 ety ty3 expr e1 md E1 E2 E3 E4 hlk' _ hpre hinf hunif hpost =>
-    exact imperativeCmd_initDet_output C Env S hlk' hpre hinf hunif hpost (hfun x xty (.det expr)
-        md rfl) he hf hr h_ne h_mono h_aliasNames h_sigsFixed hS habs
+    exact imperativeCmd_initDet_output C Env S hlk' hpre hinf hunif hpost he hf hr h_ne h_mono
+      h_aliasNames h_sigsFixed hS habs
   | @setNondet x xty0 md hlk' hmono =>
     exact imperativeCmd_setNondet_output C Env S hlk' hmono
   | @setDet x xty0 ety expr e1 md E2 Env' hlk' hinf hunif =>
@@ -412,7 +405,7 @@ private theorem imperativeCmd_sound_output_subst
     have hB := binderAnnotsKnown_of_stored_cmd C S _ e1 (List.mem_singleton.mpr rfl) hS
     have hagree := inferType_annotAgree C Env Env' _ e e1 ety S hinf he hf h_mono h_sigsFixed
       habs
-    refine ⟨⟨(TContext.subst Env.context.dealias S).types, ?_, hfind.1⟩, trivial⟩
+    refine ⟨(TContext.subst Env.context.dealias S).types, ?_, hfind.1⟩
     constructor
     · exact ⟨hty, hB, hagree⟩
     · exact HMaps.Equiv.refl _
@@ -435,14 +428,14 @@ private theorem typeCheckCmd_cmd_sound_output_subst
     (∃ ts', CmdExtWellTyped C (P.resolveSigs Env.context.aliases)
         (TContext.subst Env.context.dealias S).types (Statement.Command.subst S c') ts' ∧
       ∀ x, ts'.find? x = (TContext.subst Env'.context.dealias S).types.find? x) ∧
-    StatementNamesWF (P.resolveSigs Env.context.aliases) (· ∈ C.functions)
+    StatementNamesWF (P.resolveSigs Env.context.aliases)
       (.cmd (Statement.Command.subst S c')) := by
   cases Statement.typeCheckCmd_ok_inv h with
-  | cmd run hfun =>
-    obtain ⟨⟨ts', hcmd, hfe⟩, hnames⟩ :=
-      imperativeCmd_sound_output_subst C Env Env' cc _ S run hfun he hf hr h_ne h_mono
+  | cmd run =>
+    obtain ⟨ts', hcmd, hfe⟩ :=
+      imperativeCmd_sound_output_subst C Env Env' cc _ S run he hf hr h_ne h_mono
         h_aliasNames h_sigsFixed hS habs
-    exact ⟨⟨ts', CmdExtWellTyped.cmd _ _ _ hcmd, hfe⟩, hnames⟩
+    exact ⟨⟨ts', CmdExtWellTyped.cmd _ _ _ hcmd, hfe⟩, trivial⟩
 
 section CallOutput
 
@@ -830,7 +823,7 @@ theorem Statement.typeCheckCmd_sound_output
         (Statement.Command.subst S c') ts' ∧
       ∀ x, Strata.Util.HMaps.find? ts' x =
         (TContext.subst Env'.context.dealias S).types.find? x) ∧
-    StatementNamesWF (P.resolveSigs Env.context.aliases) (· ∈ C.functions)
+    StatementNamesWF (P.resolveSigs Env.context.aliases)
       (.cmd (Statement.Command.subst S c')) := by
   rw [LContext.resolveTable_eq_self h_sigsFixed]
   cases c with
@@ -926,7 +919,7 @@ private abbrev GoOutputMotive (P : Program) (A : List TypeAlias) (S : Subst)
       StatementsWellTyped (P.resolveSigs A) C (TContext.subst Env.context.dealias S).types
         labels (ss_proc.map (Statement.Statement.subst S)) C' tsOut ∧
       (∀ x, tsOut.find? x = (TContext.subst Env'.context.dealias S).types.find? x) ∧
-      StatementsNamesWF (P.resolveSigs A) (· ∈ C.functions)
+      StatementsNamesWF (P.resolveSigs A)
         (ss_proc.map (Statement.Statement.subst S)))
 
 /-- The conclusion of output soundness for a block check: the emitted statements, after applying
@@ -939,7 +932,7 @@ private abbrev GoOutputMotiveB (P : Program) (A : List TypeAlias) (S : Subst)
     (∃ ss_proc C_body ts_body, bss' = acc.reverse ++ ss_proc ∧
       StatementsWellTyped (P.resolveSigs A) C (TContext.subst Env.context.dealias S).types
         labels (ss_proc.map (Statement.Statement.subst S)) C_body ts_body ∧
-      StatementsNamesWF (P.resolveSigs A) (· ∈ C.functions)
+      StatementsNamesWF (P.resolveSigs A)
         (ss_proc.map (Statement.Statement.subst S)))
 
 /-- A scope with the same lookups as one with resolved aliases, a nonempty stack of monotypes and
@@ -1002,7 +995,6 @@ private theorem go_output_cmd {P : Program} {op : Option Procedure} {S : Subst}
     Statement.typeCheckCmd_sound_output Cx Env Envm P _ c' S htc he hf hr h_ne h_mono
       (fun al hal => hAN.2.1 al (hAN.1 ▸ hal)) hsigs (hpeel tp0 htp0).1 habsm
   rw [LContext.resolveTable_eq_self hsigs, hAN.1] at hcmd'
-  rw [hAN.1] at hnames
   have hmonoIn : MonoScope (IDMeta := Unit) (TContext.subst Env.context.dealias S) :=
     (MonoScope_subst_iff _ S).mpr ((MonoScope_dealias_iff Env.context).mpr h_mono)
   have hmonoC := TypeSpec.CmdExtWellTyped.monoScope hcmd' hmonoIn
@@ -1077,9 +1069,9 @@ private theorem go_output_block {P : Program} {op : Option Procedure} {S : Subst
       (TContext.subst Egb.context.dealias S).types := by
     rw [Statement_subst_block]
     exact hstmt0
-  have hstmtNames : StatementNamesWF (P.resolveSigs A) (· ∈ Cgb.functions)
+  have hstmtNames : StatementNamesWF (P.resolveSigs A)
       (Statement.Statement.subst S (Stmt.block label bss' md)) := by
-    have hn0 : StatementNamesWF (P.resolveSigs A) (· ∈ Cgb.functions)
+    have hn0 : StatementNamesWF (P.resolveSigs A)
         (.block label (bss'.map (Statement.Statement.subst S)) md) := hbnames
     rw [Statement_subst_block]
     exact hn0
@@ -1190,9 +1182,9 @@ private theorem go_output_ite {P : Program} {op : Option Procedure} {S : Subst}
       Ce (TContext.subst Ee.context.dealias S).types := by
     rw [Statement_subst_ite]
     exact hstmt0
-  have hstmtNames : StatementNamesWF (P.resolveSigs A) (· ∈ Ce.functions)
+  have hstmtNames : StatementNamesWF (P.resolveSigs A)
       (Statement.Statement.subst S (Stmt.ite condElab tss' ess' md)) := by
-    have hn0 : StatementNamesWF (P.resolveSigs A) (· ∈ Ce.functions)
+    have hn0 : StatementNamesWF (P.resolveSigs A)
         (Stmt.ite (condElab.map (fun e : Expression.Expr => LExpr.applyTypeSubst e S))
           (tss'.map (Statement.Statement.subst S)) (ess'.map (Statement.Statement.subst S))
           md) := ⟨htt_names, hte_names⟩
@@ -1359,9 +1351,9 @@ private theorem go_output_loop {P : Program} {op : Option Procedure} {S : Subst}
       Cx (TContext.subst Ebody.context.dealias S).types := by
     rw [Statement_subst_loop]
     exact hstmt0
-  have hstmtNames : StatementNamesWF (P.resolveSigs A) (· ∈ Cx.functions)
+  have hstmtNames : StatementNamesWF (P.resolveSigs A)
       (Statement.Statement.subst S (Stmt.loop guardElab measureElab invElab bss' md)) := by
-    have hn0 : StatementNamesWF (P.resolveSigs A) (· ∈ Cx.functions)
+    have hn0 : StatementNamesWF (P.resolveSigs A)
         (Stmt.loop (guardElab.map (fun e : Expression.Expr => LExpr.applyTypeSubst e S))
           (measureElab.map (fun e : Expression.Expr => LExpr.applyTypeSubst e S))
           (invElab.map (fun p => (p.1, LExpr.applyTypeSubst p.2 S)))
@@ -1392,7 +1384,7 @@ private theorem go_output_sound_subst
       StatementsWellTyped (P.resolveSigs A) C (TContext.subst Env.context.dealias S).types
         labels (ss_proc.map (Statement.Statement.subst S)) C' tsOut ∧
       (∀ x, tsOut.find? x = (TContext.subst Env'.context.dealias S).types.find? x) ∧
-      StatementsNamesWF (P.resolveSigs A) (· ∈ C.functions)
+      StatementsNamesWF (P.resolveSigs A)
         (ss_proc.map (Statement.Statement.subst S)) := by
   refine go_ok_induct
     (motive := GoOutputMotive P A S)
@@ -1451,10 +1443,8 @@ private theorem go_output_sound_subst
         (Statement.Statement.subst S (Stmt.typeDecl tc md)) Cnew
         (TContext.subst Env.context.dealias S).types :=
       .typeDecl _ _ _ _ _ _ _ hprogKind hkt (HMaps.Equiv.refl _)
-    have htailNames : StatementsNamesWF (P.resolveSigs A) (· ∈ Cx.functions)
-        (tp.map (Statement.Statement.subst S)) := by
-      rw [← hfun]
-      exact hnames
+    have htailNames : StatementsNamesWF (P.resolveSigs A)
+        (tp.map (Statement.Statement.subst S)) := hnames
     exact ⟨.cons _ _ _ _ _ _ _ _ _ hstmt hty, hfe, hprog, htailNames⟩
   case blockFlat =>
     intro _ _ _ _ _ _ _ _ _ Cgo _ _ _ _ ih1 habs he hf hr h_ne h_mono hAN hS
@@ -1513,7 +1503,7 @@ theorem Statement.typeCheck_sound_output
     (∃ C' ts', StatementsWellTyped (P.resolveSigs Env.context.aliases)
       (C.resolveTable Env.context.aliases)
       (TContext.subst Env.context.dealias Env'.stateSubstInfo.subst).types [] ss' C' ts') ∧
-    StatementsNamesWF (P.resolveSigs Env.context.aliases) (· ∈ C.functions) ss' := by
+    StatementsNamesWF (P.resolveSigs Env.context.aliases) ss' := by
   obtain ⟨ssA, EnvA, CA, hAux, hssGo, hEnv, -⟩ :=
     Statement.typeCheck_ok_inv C Env Env' P op ss ss' h
   have hss' : ss' = ssA.map (Statement.Statement.subst

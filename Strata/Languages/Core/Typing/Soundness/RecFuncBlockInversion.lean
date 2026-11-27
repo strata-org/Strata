@@ -29,7 +29,7 @@ theorem RecFuncBlock.typeCheckIn_decompose (S S' : Std.HashSet String)
     (funcs funcs' : List Function)
     (h : RecFuncBlock.typeCheckIn S C Env funcs = .ok (funcs', C', Env', S')) :
     ∃ sigs : List CheckedSignature,
-      List.Rel₂ (fun f sig => RecFuncBlock.checkSignature C Env funcs f = .ok sig) funcs sigs
+      List.Rel₂ (fun f sig => RecFuncBlock.checkSignature C Env f = .ok sig) funcs sigs
       ∧ S' = S.insertMany (Factory.tyNamesFrom C.functions.toArray.size
           (RecFuncBlock.stubContext C (sigs.map (·.stub))).functions)
       ∧ List.Rel₂ (fun sig f' => ∃ E,

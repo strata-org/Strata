@@ -99,16 +99,16 @@ def WrittenEnv.bindFirst (Δ : WrittenEnv) (rigid : List TyIdentifier)
     leaves `Δ` unchanged. -/
 inductive CmdHasType (C : LContext CoreLParams) :
     WrittenEnv → TContext Unit → Cmd Expression → TContext Unit → WrittenEnv → Prop where
-  /-- `var x : T := e` — `x` must be fresh, not named like a function, `T` a valid declared
-      monotype `T₀` (user-writable type variables only) admitting the stored monotype `mty`
-      through an instantiation agreeing with `Δ`, and `mty` well-kinded.
+  /-- `var x : T := e` — `x` must be fresh (it may have the name of a function, which it
+      shadows), `T` a valid declared monotype `T₀` (user-writable type variables only)
+      admitting the stored monotype `mty` through an instantiation agreeing with `Δ`, and `mty`
+      well-kinded.
 
       The output `Γ'` is required only up to `TContext.Equiv` with the canonical
       `insert`-form: the `HMap`-backed context ignores key/insertion order, so
       structural equality is too strong. This holds for every constructor below. -/
   | init_det : ∀ Δ Γ x (xty : LTy) e mty mty₀ σ md Γ',
       Γ.types.find? x = none →
-      x.name ∉ C.functions →
       x ∉ HasFvars.getFvars (P := Expression) e →
       xty = .forAll [] mty₀ →
       ScopedAnnotInst Γ.aliases C.rigidTypeVars Δ σ mty₀ mty ∧
@@ -122,7 +122,6 @@ inductive CmdHasType (C : LContext CoreLParams) :
   /-- `var x : T := *` — as `init_det`, with no initializer. -/
   | init_nondet : ∀ Δ Γ x (xty : LTy) mty mty₀ σ md Γ',
       Γ.types.find? x = none →
-      x.name ∉ C.functions →
       xty = .forAll [] mty₀ →
       ScopedAnnotInst Γ.aliases C.rigidTypeVars Δ σ mty₀ mty ∧
         ValidDeclaredTy C Γ.aliases mty₀ →

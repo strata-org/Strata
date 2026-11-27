@@ -297,8 +297,7 @@ private theorem imperativeCmd_ok_inv {C : LContext CoreLParams} {Env Env' : TEnv
 inductive CmdRun (C : LContext CoreLParams) (Env : TEnv Unit) (P : Program) :
     Command → Command → TEnv Unit → Prop where
   | cmd {cc cc' : Cmd Expression} {Env' : TEnv Unit}
-      (run : ImperativeCmdRun C Env cc cc' Env')
-      (hfun : ∀ x xty e md, cc = .init x xty e md → x.name ∉ C.functions) :
+      (run : ImperativeCmdRun C Env cc cc' Env') :
       CmdRun C Env P (.cmd cc) (.cmd cc') Env'
   | call {nm : String} {tyArgs : Option (List Expression.Ty)}
       {callArgs : List (CallArg Expression)} {md : MetaData Expression}
@@ -336,23 +335,12 @@ theorem Statement.typeCheckCmd_ok_inv {C : LContext CoreLParams} {Env Env' : TEn
   cases c with
   | cmd cc =>
     unfold Statement.typeCheckCmd at h
-    simp only [bind, Except.bind, pure, Except.pure] at h
-    elim_err h with u hcheck
+    simp only [bind, Except.bind] at h
     elim_err h with result hic
     obtain ⟨c2, E2⟩ := result
     simp only [Except.ok.injEq, Prod.mk.injEq] at h
     obtain ⟨rfl, rfl⟩ := h
-    have hchecks : ∀ x xty e md, cc = .init x xty e md → x.name ∉ C.functions := by
-      cases cc with
-      | init _ _ _ _ =>
-        intro _ _ _ _ hcc
-        cases hcc
-        dsimp only at hcheck
-        elim_err hcheck with hnin
-        exact hnin
-      | set _ _ _ | assert _ _ _ | assume _ _ _ | cover _ _ _ =>
-        exact fun _ _ _ _ hcc => (nomatch hcc)
-    exact .cmd (imperativeCmd_ok_inv hic) hchecks
+    exact .cmd (imperativeCmd_ok_inv hic)
   | call nm tyArgs callArgs md =>
     unfold Statement.typeCheckCmd at h
     simp only [tryCatch, tryCatchThe, MonadExceptOf.tryCatch, Except.tryCatch] at h

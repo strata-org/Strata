@@ -275,6 +275,9 @@ inductive HighType : Type where
   | Intersection (types : List (AstNode HighType))
   /-- Bitvector type of a given width. -/
   | TBv (size : Nat)
+  /-- The type of the arrays whose elements have type `elementType`. An array is a reference:
+  its elements are mutable and its length is fixed when it is allocated. -/
+  | TArray (elementType : AstNode HighType)
   /-- Type used internally by the Laurel compilation pipeline.
   This type is used when a resolution error occurs,
   to continue compilation without producing superfluous errors
@@ -536,6 +539,9 @@ inductive Variable : Type where
   /-- A local variable declaration with a name and an optional type annotation (see `Parameter?`). -/
   | Declare (parameter : Parameter?)
   | Stack (type : Option (AstNode HighType))
+  /-- The element at `index`, an `int`, of the array that `array` refers to. Combined with
+      `Assign` for element writes. An index outside the array is an error. -/
+  | ArrayElement (array : AstNode StmtExpr) (index : AstNode StmtExpr)
 
 /--
 The unified statement-expression type for Laurel programs.
@@ -654,6 +660,11 @@ inductive StmtExpr : Type where
       instantiation directly off the allocation site rather than recovering it
       from surrounding context. -/
   | New (ref : Identifier) (typeArgs : List (AstNode HighType) := [])
+  /-- Allocate an array of `length` elements of type `elementType`, each the default value of
+      that type (`new Array<T>(n)`). A negative length is an error. -/
+  | NewArray (elementType : AstNode HighType) (length : AstNode StmtExpr)
+  /-- The number of elements of the array that `array` refers to. -/
+  | ArrayLength (array : AstNode StmtExpr)
   /-- Reference to the current object (`this`/`self`). -/
   | This
   /-- Reference equality test between two expressions. -/
@@ -914,6 +925,8 @@ def StmtExpr.constrName : StmtExpr → String
   | .Call none ..        => "call"
   | .Call (some _) ..    => "method call"
   | .New ..              => "new"
+  | .NewArray ..         => "new array"
+  | .ArrayLength ..      => "array length"
   | .This                => "this"
   | .ReferenceEquals ..  => "reference equality"
   | .AsType ..           => "as"
@@ -1099,6 +1112,7 @@ partial def mapHighTypeNames (f : (Identifier → HighType) → Identifier → H
       | .UserDefined name => f .UserDefined name
       | .TVar name => f .TVar name
       | .TSet et => .TSet (go et)
+      | .TArray et => .TArray (go et)
       | .TMap kt vt => .TMap (go kt) (go vt)
       | .Applied base args => .Applied (go base) (args.map go)
       | .Intersection ts => .Intersection (ts.map go)
@@ -1122,6 +1136,7 @@ def anyHighType (p : HighType → Bool) (ty : HighType) : Bool :=
     anyHighType p b.val || args.attach.any (fun ⟨x, _⟩ => anyHighType p x.val)
   | .TMap k v => anyHighType p k.val || anyHighType p v.val
   | .TSet e => anyHighType p e.val
+  | .TArray e => anyHighType p e.val
   | .Intersection ts => ts.attach.any (fun ⟨x, _⟩ => anyHighType p x.val)
   | .MultiValuedExpr ts => ts.attach.any (fun ⟨x, _⟩ => anyHighType p x.val)
   -- Leaves enumerated rather than a `| _ => false` wildcard, so a NEW compound constructor is a
@@ -1142,6 +1157,7 @@ partial def tvarIdents : HighType → List Identifier
   | .Applied b args => tvarIdents b.val ++ args.flatMap (tvarIdents ·.val)
   | .TMap k v => tvarIdents k.val ++ tvarIdents v.val
   | .TSet e => tvarIdents e.val
+  | .TArray e => tvarIdents e.val
   | .Intersection ts => ts.flatMap (tvarIdents ·.val)
   | .MultiValuedExpr ts => ts.flatMap (tvarIdents ·.val)
   | _ => []
@@ -1209,6 +1225,7 @@ partial def solveInferVars (a b : HighType) (acc : Std.HashMap String HighType :
       (solveInferVars ab.val bb.val acc)
   | .TMap ak av, .TMap bk bv => solveInferVars av.val bv.val (solveInferVars ak.val bk.val acc)
   | .TSet ae, .TSet be => solveInferVars ae.val be.val acc
+  | .TArray ae, .TArray be => solveInferVars ae.val be.val acc
   | .MultiValuedExpr as, .MultiValuedExpr bs =>
     if as.length != bs.length then acc
     else (as.zip bs).foldl (fun acc (x, y) => solveInferVars x.val y.val acc) acc
@@ -1277,6 +1294,22 @@ theorem Variable.sizeOf_field_target_lt_of_eq {v : AstNode Variable}
   have : sizeOf v.val = sizeOf (Variable.Field target fieldName) := congrArg sizeOf h
   omega
 
+/-- The array of an `ArrayElement` variable is smaller than the variable, as a termination measure. -/
+theorem Variable.sizeOf_arrayElement_array_lt_of_eq {v : AstNode Variable}
+    {array index : AstNode StmtExpr} (h : v.val = Variable.ArrayElement array index) :
+    sizeOf array < sizeOf v := by
+  have hv := AstNode.sizeOf_val_lt v
+  have heq : sizeOf v.val = sizeOf (Variable.ArrayElement array index) := congrArg sizeOf h
+  simp at heq; omega
+
+/-- The index of an `ArrayElement` variable is smaller than the variable, as a termination measure. -/
+theorem Variable.sizeOf_arrayElement_index_lt_of_eq {v : AstNode Variable}
+    {array index : AstNode StmtExpr} (h : v.val = Variable.ArrayElement array index) :
+    sizeOf index < sizeOf v := by
+  have hv := AstNode.sizeOf_val_lt v
+  have heq : sizeOf v.val = sizeOf (Variable.ArrayElement array index) := congrArg sizeOf h
+  simp at heq; omega
+
 /-- Apply a monadic transformation to the condition expression, preserving the summary. -/
 @[expose]
 def Condition.mapM [Monad m] (f : AstNode StmtExpr → m (AstNode StmtExpr)) (c : Condition) : m Condition :=
@@ -1327,6 +1360,7 @@ def highEq (a : HighTypeMd) (b : HighTypeMd) : Bool := match _a: a.val, _b: b.va
   | HighType.TString, HighType.TString => true
   | HighType.TBv n1, HighType.TBv n2 => n1 == n2
   | HighType.TSet t1, HighType.TSet t2 => highEq t1 t2
+  | HighType.TArray t1, HighType.TArray t2 => highEq t1 t2
   | HighType.TMap k1 v1, HighType.TMap k2 v2 => highEq k1 k2 && highEq v1 v2
   | HighType.UserDefined r1, HighType.UserDefined r2 => r1.text == r2.text
   | HighType.TVar r1, HighType.TVar r2 => r1.text == r2.text
@@ -1404,6 +1438,7 @@ def matchTypeArg (declared actual : HighType)
   | .TMap dk dv => match actual with
     | .TMap ak av => (matchTypeArg dk.val ak.val acc).bind (fun m => matchTypeArg dv.val av.val m)
     | _ => none
+  | .TArray dv => match actual with | .TArray av => matchTypeArg dv.val av.val acc | _ => none
   -- A concrete declared type (no tyvar) need only be consistent with the actual;
   -- we don't constrain it (any mismatch is a separate type error, not our concern).
   | _ => some acc
@@ -1755,6 +1790,9 @@ def instTagCommon (leaf : HighType → Option String) (ty : HighType) : Option S
   | .TSet e => do
     let et ← instTagCommon leaf e.val
     some s!"Set$a1${et}"
+  | .TArray e => do
+    let et ← instTagCommon leaf e.val
+    some s!"Array$a1${et}"
   | _ => none
   termination_by ty
   decreasing_by ast_recursion_decreasing
@@ -1869,6 +1907,7 @@ partial def ancestorMatchesTarget (anc sup : HighTypeMd) : Bool :=
       (aargs.zip bargs).all (fun (x, y) => ancestorMatchesTarget x y)
   | .TMap ka va, .TMap kb vb => ancestorMatchesTarget ka kb && ancestorMatchesTarget va vb
   | .TSet ea, .TSet eb => ancestorMatchesTarget ea eb
+  | .TArray ea, .TArray eb => ancestorMatchesTarget ea eb
   | _, _ => highEq anc sup
 
 /-- Pure subtyping `<:`. Walks the `extending` chain for `CompositeType`
@@ -2049,6 +2088,7 @@ def isConsistent (ctx : TypeLattice) (a b : HighTypeMd) : Bool :=
   -- `Set` has no surface-Laurel production today, so only the `.TMap` arm is exercised.
   | .TMap k1 v1, .TMap k2 v2 => isConsistent ctx k1 k2 && isConsistent ctx v1 v2
   | .TSet e1, .TSet e2 => isConsistent ctx e1 e2
+  | .TArray e1, .TArray e2 => isConsistent ctx e1 e2
   -- A BARE composite name and its INSTANTIATION are consistent when the base names
   -- match: `Box ~ Box<int>`. This is the legacy `new C` correlation form — `var b:
   -- Box<int> := new Box` synthesizes the allocation as `.UserDefined "Box"` (no args;
@@ -2473,6 +2513,8 @@ def StmtExpr.constructorName (e : StmtExpr) : String :=
   | .PureFieldUpdate .. => "PureFieldUpdate"
   | .Call .. => "Call"
   | .New .. => "New"
+  | .NewArray .. => "NewArray"
+  | .ArrayLength .. => "ArrayLength"
   | .This => "This"
   | .ReferenceEquals .. => "ReferenceEquals"
   | .AsType .. => "AsType"
@@ -2509,6 +2551,7 @@ def Variable.toReadbackExpr : Variable → StmtExpr
   | .Declare param => .Var (.Local param.name)
   | .Field target fieldName => .Var (.Field target fieldName)
   | .Stack type => .Var (.Stack type)
+  | .ArrayElement a i => .Var (.ArrayElement a i)
 
 /-- Source-preserving read-back expression for a `VariableMd`
     (see `Variable.toReadbackExpr`). -/
@@ -2706,6 +2749,7 @@ def DatatypeDefinition.unsafeDestructorName (dt : DatatypeDefinition) (field : P
 partial def HighType.mentionedNames : HighType → List String
   | .UserDefined n | .TVar n => [n.text]
   | .TSet et => et.val.mentionedNames
+  | .TArray et => et.val.mentionedNames
   | .TMap kt vt => kt.val.mentionedNames ++ vt.val.mentionedNames
   | .Applied base args => base.val.mentionedNames ++ args.flatMap (·.val.mentionedNames)
   | .Intersection tys => tys.flatMap (·.val.mentionedNames)

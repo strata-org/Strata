@@ -188,14 +188,14 @@ private theorem CmdHasType_transport {C : LContext CoreLParams}
     (hR : TContext.FindEq (T := CoreLParams) Ξ Γ) (h : CmdHasType C Δ Γ c Γ' Δ') :
     ∃ Ξ', CmdHasType C Δ Ξ c Ξ' Δ' ∧ TContext.FindEq (T := CoreLParams) Ξ' Γ' := by
   cases h with
-  | init_det x xty e mty mty₀ σ md _ hfind hfun hfv hxty hdecl hwk hexpr hann hsc hEqv =>
-    exact ⟨_, .init_det _ _ x xty e mty mty₀ σ md _ ((hR.find? x).trans hfind) hfun
+  | init_det x xty e mty mty₀ σ md _ hfind hfv hxty hdecl hwk hexpr hann hsc hEqv =>
+    exact ⟨_, .init_det _ _ x xty e mty mty₀ σ md _ ((hR.find? x).trans hfind)
       hfv hxty (hR.aliases ▸ hdecl) hwk (HasType_FindEq C _ _ _ _ hR hexpr)
       (writtenAnnotsOk_of_aliases_eq hR.aliases hann) hsc (TContext.Equiv.refl _),
       (hR.insert x _).trans hEqv.toFindEq.symm⟩
-  | init_nondet x xty mty mty₀ σ md _ hfind hfun hxty hdecl hwk hEqv =>
+  | init_nondet x xty mty mty₀ σ md _ hfind hxty hdecl hwk hEqv =>
     exact ⟨_, .init_nondet _ _ x xty mty mty₀ σ md _ ((hR.find? x).trans hfind)
-      hfun hxty (hR.aliases ▸ hdecl) hwk (TContext.Equiv.refl _),
+      hxty (hR.aliases ▸ hdecl) hwk (TContext.Equiv.refl _),
       (hR.insert x _).trans hEqv.toFindEq.symm⟩
   | set_det x mty e md Γo hfind hexpr hann hsc hEqv =>
     exact ⟨Ξ, .set_det _ Ξ x mty e md Ξ ((hR.find? x).trans hfind)
@@ -267,14 +267,14 @@ theorem CmdExtHasType_idents_irrel (C : Expression.TyContext) (P : Program)
   | cmd =>
     rename_i hcc
     cases hcc with
-    | init_det x _ e mty _ _ _ _ hfind hfun hfv hxty hdecl hwk hexpr hann hsc hEqv =>
-      exact .cmd _ _ _ _ _ (.init_det _ _ _ _ _ _ _ _ _ _ hfind hfun hfv hxty
+    | init_det x _ e mty _ _ _ _ hfind hfv hxty hdecl hwk hexpr hann hsc hEqv =>
+      exact .cmd _ _ _ _ _ (.init_det _ _ _ _ _ _ _ _ _ _ hfind hfv hxty
         ⟨hdecl.1, validSourceTy_idents_irrel hdecl.2⟩
         (LContext.WellKindedTy_setIdents C j mty ▸ hwk)
         (HasType_idents_irrel C j Γ _ _ hexpr)
         (writtenAnnotsOk_idents_irrel C j Γ e hann) hsc hEqv)
-    | init_nondet x _ mty _ _ _ _ hfind hfun hxty hdecl hwk hEqv =>
-      exact .cmd _ _ _ _ _ (.init_nondet _ _ _ _ _ _ _ _ _ hfind hfun hxty
+    | init_nondet x _ mty _ _ _ _ hfind hxty hdecl hwk hEqv =>
+      exact .cmd _ _ _ _ _ (.init_nondet _ _ _ _ _ _ _ _ _ hfind hxty
         ⟨hdecl.1, validSourceTy_idents_irrel hdecl.2⟩
         (LContext.WellKindedTy_setIdents C j mty ▸ hwk) hEqv)
     | set_det x mty e md Γ' hfind hexpr hann hsc hEqv =>
@@ -303,10 +303,10 @@ private theorem CmdHasType_MonoScope {C : LContext CoreLParams} {Δ Δ' : Writte
     (h : CmdHasType C Δ Γ c Γ' Δ') (h_mono : MonoScope (IDMeta := Unit) Γ) :
     MonoScope (IDMeta := Unit) Γ' := by
   cases h with
-  | init_det x _ _ mty _ _ _ _ _ _ _ _ _ _ _ _ _ hEqv =>
+  | init_det x _ _ mty _ _ _ _ _ _ _ _ _ _ _ _ hEqv =>
     exact MonoScope_of_findEq hEqv.toFindEq
       (MonoScope.insert h_mono (z := x) (tz := .forAll [] mty) rfl)
-  | init_nondet x _ mty _ _ _ _ _ _ _ _ _ hEqv =>
+  | init_nondet x _ mty _ _ _ _ _ _ _ _ hEqv =>
     exact MonoScope_of_findEq hEqv.toFindEq
       (MonoScope.insert h_mono (z := x) (tz := .forAll [] mty) rfl)
   | set_det _ _ _ _ _ _ _ _ _ hEqv => exact MonoScope_of_findEq hEqv.toFindEq h_mono

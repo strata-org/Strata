@@ -353,8 +353,8 @@ private abbrev reservedSyn : TypeSynonym := { name := "$__tyA", typeArgs := [], 
 
 /-- The name conditions on declarations accept `type $__tyA := int`: a type synonym may be
     named with a reserved prefix. -/
-example (P : Program) (md : Imperative.MetaData Expression) (fns : String → Prop) :
-    DeclNamesWF P fns (.type (.syn reservedSyn) md) :=
+example (P : Program) (md : Imperative.MetaData Expression) :
+    DeclNamesWF P (.type (.syn reservedSyn) md) :=
   trivial
 
 /-! ### Binder annotations -/
@@ -432,13 +432,13 @@ example (Δ Δ' : WrittenEnv) (Γ Γ' : TContext Unit) (x : Expression.Ident)
     ¬ CmdHasType C Δ Γ (.init x (.forAll ["a"] (.ftvar "a")) .nondet md) Γ' Δ' := by
   intro h
   cases h with
-  | init_nondet _ _ _ _ _ _ _ _ _ hxty => exact absurd hxty (by simp)
+  | init_nondet _ _ _ _ _ _ _ _ hxty => exact absurd hxty (by simp)
 
 /-- A fresh `var x : T := *` satisfies the typechecker spec when `T` is a monotype that is a valid
     source type and the stored type is well-kinded and alias-equivalent to `T`. -/
 private theorem init_nondet_derivable (Γ : TContext Unit) (x : Expression.Ident)
     (md : Imperative.MetaData Expression) (t mty : LMonoTy)
-    (hfind : Γ.types.find? x = none) (hfun : x.name ∉ C.functions)
+    (hfind : Γ.types.find? x = none)
     (hae : AliasEquiv Γ.aliases t mty)
     (hvalid : ValidDeclaredTy C Γ.aliases t)
     (hwk : C.WellKindedTy mty) :
@@ -449,7 +449,7 @@ private theorem init_nondet_derivable (Γ : TContext Unit) (x : Expression.Ident
     · exact absurd hbound (by simp)
     · rw [LMonoTy.subst_single_empty]
       exact hae
-  exact ⟨_, _, .init_nondet _ Γ x _ mty t Strata.Util.HMap.empty md _ hfind hfun rfl
+  exact ⟨_, _, .init_nondet _ Γ x _ mty t Strata.Util.HMap.empty md _ hfind rfl
     ⟨hinst, hvalid⟩ hwk (TContext.Equiv.refl _)⟩
 
 /-- `int` applies only registered constructors. -/
@@ -474,26 +474,23 @@ private theorem int_valid : ValidDeclaredTy C [] .int :=
       (fun v hv => by simp [LMonoTy.freeVars, LMonoTys.freeVars] at hv)⟩
 
 /-- `var x : b := *` satisfies the typechecker spec: a type variable is a valid declared type. -/
-example (x : Expression.Ident) (md : Imperative.MetaData Expression)
-    (hfun : x.name ∉ C.functions) :
+example (x : Expression.Ident) (md : Imperative.MetaData Expression) :
     ∃ Γ' Δ', CmdHasType C (fun _ => none) {} (.init x (.forAll [] (.ftvar "b")) .nondet md)
       Γ' Δ' :=
-  init_nondet_derivable {} x md (.ftvar "b") (.ftvar "b") rfl hfun AliasEquiv.refl
+  init_nondet_derivable {} x md (.ftvar "b") (.ftvar "b") rfl AliasEquiv.refl
     ⟨_, SourceTyResolves.ftvar, ResolvedTyWF.ftvar (by decide)⟩
     (by intro ref n hmem; simp [getTypeConsArities] at hmem)
 
 /-- `var x : int := *` satisfies the typechecker spec. -/
-example (x : Expression.Ident) (md : Imperative.MetaData Expression)
-    (hfun : x.name ∉ C.functions) :
+example (x : Expression.Ident) (md : Imperative.MetaData Expression) :
     ∃ Γ' Δ', CmdHasType C (fun _ => none) {} (.init x (.forAll [] .int) .nondet md) Γ' Δ' :=
-  init_nondet_derivable {} x md .int .int rfl hfun AliasEquiv.refl int_valid int_wellKinded
+  init_nondet_derivable {} x md .int .int rfl AliasEquiv.refl int_valid int_wellKinded
 
 /-- `type A := int` as stored in the alias scope. -/
 private def intAlias : TypeAlias := { name := "A", typeArgs := [], type := .int }
 
 /-- With `type A := int` in scope, `var x : A := *` satisfies the typechecker spec. -/
-example (x : Expression.Ident) (md : Imperative.MetaData Expression)
-    (hfun : x.name ∉ C.functions) :
+example (x : Expression.Ident) (md : Imperative.MetaData Expression) :
     ∃ Γ' Δ', CmdHasType C (fun _ => none) { aliases := [intAlias] }
       (.init x (.forAll [] (.tcons "A" [])) .nondet md) Γ' Δ' := by
   have hfind : [intAlias].find? (fun a => a.name == "A" && a.typeArgs.length == 0) =
@@ -503,7 +500,7 @@ example (x : Expression.Ident) (md : Imperative.MetaData Expression)
     (ResolvedTyWF.of_wellKinded (ty := LMonoTy.int) int_wellKinded
       (fun v hv => by simp [LMonoTy.freeVars, LMonoTys.freeVars] at hv) :
         ResolvedTyWF C TyVarAdmissibility.notGeneratedOrRigid .int)
-  exact init_nondet_derivable { aliases := [intAlias] } x md (.tcons "A" []) .int rfl hfun
+  exact init_nondet_derivable { aliases := [intAlias] } x md (.tcons "A" []) .int rfl
     (.expand ⟨intAlias, List.mem_singleton_self _, rfl, rfl, rfl⟩)
     ⟨_, SourceTyResolves.alias SourceTysResolve.nil hfind, hint⟩
     int_wellKinded

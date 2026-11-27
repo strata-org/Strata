@@ -99,7 +99,7 @@ procedure tour(d: Sequence<Sequence<int>>, n: int) returns (res: Sequence<int>)
     };
     t := seqBuild(t, best);
     visited := seqUpdate(visited, best, true);
-//  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
+//             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
 // desired: verifies
     step := step + 1
   };
@@ -168,7 +168,7 @@ procedure tour(d: Sequence<Sequence<int>>, n: int) returns (res: Sequence<int>)
   };
   var t: Sequence<int> := seqBuild(seqEmpty(), 0);
   visited := seqUpdate(visited, 0, true);
-//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
+//           ^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
 // desired: error: precondition does not hold
   var step: int := 1;
   while (step < n)
@@ -200,7 +200,7 @@ procedure tour(d: Sequence<Sequence<int>>, n: int) returns (res: Sequence<int>)
     };
     t := seqBuild(t, best);
     visited := seqUpdate(visited, best, true);
-//  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
+//             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
     step := step + 1
   };
   res := t

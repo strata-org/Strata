@@ -3201,19 +3201,19 @@ private theorem AliasScopeCtxRel.cmdExtΔ {aliases : List TypeAlias}
   | cmd =>
     rename_i cc hcc
     cases hcc with
-    | init_det x _ e mty _ _ _ _ hfresh hfun hfvar hxty hdecl hwk he hann hsc hΓ =>
+    | init_det x _ e mty _ _ _ _ hfresh hfvar hxty hdecl hwk he hann hsc hΓ =>
       obtain ⟨hinst', hvalid'⟩ := hdecl
       rw [← haliases] at hinst' hvalid'
       exact ⟨{ ΓD with types := ΓD.types.insert x (.forAll [] mty) },
-        .cmd _ _ _ _ _ (.init_det _ _ _ _ _ _ _ _ _ _ (hrel.find_none hfresh) hfun hfvar hxty
+        .cmd _ _ _ _ _ (.init_det _ _ _ _ _ _ _ _ _ _ (hrel.find_none hfresh) hfvar hxty
           ⟨hinst', hvalid'⟩ hwk (hrel.expr hwf he) (writtenAnnotsOk_of_aliases_eq haliases hann) hsc
           (TContext.Equiv.refl _)),
         (hrel.insert x (.forAll [] mty)).rightEquiv hΓ⟩
-    | init_nondet x _ mty _ _ _ _ hfresh hfun hxty hdecl hwk hΓ =>
+    | init_nondet x _ mty _ _ _ _ hfresh hxty hdecl hwk hΓ =>
       obtain ⟨hinst', hvalid'⟩ := hdecl
       rw [← haliases] at hinst' hvalid'
       exact ⟨{ ΓD with types := ΓD.types.insert x (.forAll [] mty) },
-        .cmd _ _ _ _ _ (.init_nondet _ _ _ _ _ _ _ _ _ (hrel.find_none hfresh) hfun hxty
+        .cmd _ _ _ _ _ (.init_nondet _ _ _ _ _ _ _ _ _ (hrel.find_none hfresh) hxty
           ⟨hinst', hvalid'⟩ hwk (TContext.Equiv.refl _)),
         (hrel.insert x (.forAll [] mty)).rightEquiv hΓ⟩
     | set_det x r e md _ hfind he hann hsc hΓ =>

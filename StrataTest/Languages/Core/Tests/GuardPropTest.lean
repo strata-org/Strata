@@ -154,14 +154,16 @@ A fact of the `then` arm of an `ite *` is unknown in the `else` arm and after th
 /-! ## The phase in the WP pipeline
 
 `--vcgen wp` runs guard propagation as a pass of the rewrite loop (`wpLoop`), which follows the
-SSA phase; beta reduction follows the loop, and lambda lifting ends the order. -/
+SSA phase; beta reduction follows the loop, then lambda lifting and the renaming of variables
+named like a function end the order. -/
 
 /-- info: true -/
 #guard_msgs in
 #eval do
   let opts : Core.VerifyOptions := { Core.VerifyOptions.quiet with vcgen := .wp }
   let names := (Strata.Core.corePipelinePhases opts).map Strata.Core.phaseName
-  IO.println (names.dropWhile (· != "ssa") == ["ssa", "wpLoop", "betaReduce", "lambdaLift"])
+  IO.println (names.dropWhile (· != "ssa") ==
+    ["ssa", "wpLoop", "betaReduce", "lambdaLift", "separateVarNames"])
 
 /-! ## The mutual-summary example
 

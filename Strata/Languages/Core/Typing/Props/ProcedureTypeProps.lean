@@ -351,7 +351,6 @@ theorem ProcHasTypeExact_transport {P : Program}
   preconditionsInScope := h.preconditionsInScope
   postconditionsInScope := h.postconditionsInScope
   bodyTyped := ProcBodyHasType_transport (push_FindEq _ _ _ hR) h.bodyTyped
-  formalsNotFunctions := h.formalsNotFunctions
 
 end TypeSpec
 
@@ -400,7 +399,6 @@ theorem TypeSpec.ProcHasTypeExact_idents_irrel
     ProcBodyHasType_idents_irrel P
       { C with rigidTypeVars := C.rigidTypeVars ++ proc.header.typeArgs } j
       (procBodyContext Γ proc) proc.body h.bodyTyped
-  formalsNotFunctions := h.formalsNotFunctions
 
 end Core
 

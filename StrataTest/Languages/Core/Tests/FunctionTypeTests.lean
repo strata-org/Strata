@@ -953,7 +953,7 @@ private def reservedParamFunc : Core.Function :=
   | .ok (f, _) => f!"ok: {f.inputs.keys}"
   | .error e => f!"error: {e}"
 
--- A parameter named like an in-scope function (the constant `x`) is rejected.
+-- A parameter named like an in-scope function (the constant `x`) shadows it.
 open Strata in
 private def funcParamCollidesPgm :=
 #strata
@@ -966,26 +966,34 @@ function f(x : int) : int {
 #end
 
 /--
-info: error: Function 'f': parameter 'x' collides with a function or constant of the same name
+info: [Strata.Core] Type checking succeeded.
+
+---
+info: ok: program Core;
+
+function x () : int;
+function f (x : int) : int {
+  x
+}
 -/
 #guard_msgs in
 #eval
   Std.format (Core.typeCheck .default (translate funcParamCollidesPgm))
 
--- A recursive block member's parameter named like a member of the block, another or itself, is
--- rejected.
+-- A recursive block member's parameter named like a member of the block, another or itself,
+-- shadows it.
 private def recMember (name param : String) : Core.Function :=
   { name := ⟨name, ()⟩, typeArgs := [], isRecursive := true, inputs := [(⟨param, ()⟩, .int)],
     output := .int, body := none }
 
 /--
-info: REJECTED: Function 'f': parameter 'g' collides with a function or constant of the same name
+info: ACCEPTED
 -/
 #guard_msgs in
 #eval recBlockResult [recMember "f" "g", recMember "g" "y"]
 
 /--
-info: REJECTED: Function 'f': parameter 'f' collides with a function or constant of the same name
+info: ACCEPTED
 -/
 #guard_msgs in
 #eval recBlockResult [recMember "f" "f"]

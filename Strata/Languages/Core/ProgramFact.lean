@@ -10,6 +10,7 @@ public import Strata.Languages.Core.CallWFProps
 public import Strata.DL.Lambda.LExprWF
 public import Strata.Pipeline.FactSet
 public import Strata.Languages.Core.NameMangling
+public import Strata.Languages.Core.ShadowingBinders
 
 /-! # Program facts
 
@@ -210,6 +211,15 @@ inductive ProgramFact where
       required by passive VC generation, which needs an acyclic CFG. Structured
       loops are a separate matter (`noLoops`). -/
   | noCFGCycles
+  /-- No variable of a procedure and no function formal has the name of a function or
+      constant of the program (`Program.varsNotFunctions`). The typing rules let a variable
+      shadow a function, since the expressions tell a variable from a function, but obligation
+      extraction and the SMT encoding put the two in one namespace, where such a variable would
+      denote the function. Established by `separateVarNames`, which renames such variables
+      apart, and which the verification back end runs last, before it extracts obligations.
+      Functions registered only in the pipeline's factory are outside the program, so the fact
+      does not cover them; the phase renames variables named like those too. -/
+  | varsNotFunctions
   deriving DecidableEq, Repr
 
 /-! ### Adding a fact
@@ -361,6 +371,7 @@ def ProgramFact.name : ProgramFact → String
   | .exitsCovered => "exitsCovered"
   | .armsHaveObligations => "armsHaveObligations"
   | .noCFGCycles => "noCFGCycles"
+  | .varsNotFunctions => "varsNotFunctions"
 
 /-- All known facts, in the order that defines canonical form. Verified
     complete by `ProgramFact.all_complete` and duplicate-free by
@@ -375,7 +386,7 @@ def ProgramFact.name : ProgramFact → String
    .noBetaRedexes, .noLambdas, .noPrecondsFromFuncs, .noNondetGuards, .hasObligationForm,
    .noProcedureContracts, .noPolymorphicProcedures, .noPolymorphicFunctions,
    .typeAnnotated, .noInits, .treeForm, .exitsCovered, .armsHaveObligations,
-   .noCFGCycles]
+   .noCFGCycles, .varsNotFunctions]
 
 /-- `ProgramFact` is a fact vocabulary: a closed enumeration with names, which
     is all the language-neutral pipeline machinery needs of it. Completeness and
@@ -444,7 +455,7 @@ def ProgramFact.noLambdasOffender (p : Program) : Option String :=
     classified here. -/
 @[expose] def ProgramFact.readsOnlyProcedures : ProgramFact → Bool
   | .noBetaRedexes | .noLambdas | .noPrecondsFromFuncs | .noPolymorphicFunctions
-  | .typeAnnotated => false
+  | .typeAnnotated | .varsNotFunctions => false
   | .wellFormedCalls | .noCFGBodies | .noCalls | .noLoops | .noLoopInvariants | .noLoopMeasures
   | .uniqueInits | .loopBodyNoInits | .staticSingleAssignment | .noNondetGuards
   | .hasObligationForm | .noProcedureContracts | .noPolymorphicProcedures | .noInits
@@ -485,6 +496,7 @@ def ProgramFact.noLambdasOffender (p : Program) : Option String :=
   | .exitsCovered => some (Program.allStatements (Imperative.Block.checkExitsCoveredByBlocks []))
   | .armsHaveObligations => some (Program.allStatements Imperative.Block.armsHaveChecks)
   | .noCFGCycles => some Program.noCFGCycles
+  | .varsNotFunctions => some Program.varsNotFunctions
 
 /-- What a fact asserts about a program: the `Prop` that a phase claiming
     the fact will have to prove of its output. -/
@@ -525,6 +537,7 @@ def ProgramFact.noLambdasOffender (p : Program) : Option String :=
   | .armsHaveObligations =>
     fun p => Program.allStatements Imperative.Block.armsHaveChecks p = true
   | .noCFGCycles => fun p => Program.noCFGCycles p = true
+  | .varsNotFunctions => fun p => Program.varsNotFunctions p = true
 
 end -- public section
 

@@ -730,6 +730,52 @@ procedure p()
 };
 #end)
 
+/--
+info: composite Holder { var arr: (Array<int>) }
+
+procedure twoOut()
+  returns (a: int, b: int)
+  opaque
+{
+  a := 1;
+  b := 2
+};
+
+procedure mk()
+  returns (r: (Array<int>))
+  opaque;
+
+procedure p(h: Holder, i: int)
+  opaque
+{
+  var a: Array<int> := new Array<int>(3);
+  var y: int := 0;
+  assign a[i + 1], y := twoOut();
+  assign y, h#arr[0] := twoOut();
+  assign (mk())[0], y := twoOut()
+};
+-/
+#guard_msgs in
+#eval do IO.println (← roundtrip <|
+#strata
+program Laurel;
+composite Holder { var arr: Array<int> }
+procedure twoOut() returns (a: int, b: int)
+  opaque
+{ a := 1; b := 2 };
+procedure mk() returns (r: Array<int>)
+  opaque;
+procedure p(h: Holder, i: int)
+  opaque
+{
+  var a: Array<int> := new Array<int>(3);
+  var y: int := 0;
+  assign a[i + 1], y := twoOut();
+  assign y, h#arr[0] := twoOut();
+  assign (mk())[0], y := twoOut()
+};
+#end)
+
 -- Resolution's Decl-Synth rewrites every unannotated declared target to the
 -- annotated form (`some T`), so every resolved program with declared targets
 -- prints with `: T` on each one. Build that post-resolution AST shape directly

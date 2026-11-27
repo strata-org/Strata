@@ -410,31 +410,6 @@ info: 10: assertion does not hold
     { p with body := p.body.map fun b =>
         { b with blocks := b.blocks.map fun blk => { blk with cmds := blk.cmds.dropLast.dropLast } } } }
 
-/-! A call to a procedure without a body gives an output of array type a new array of
-length 0, which is an instance of the array type and is not the array the caller holds. -/
-
-meta def bodiless : Wire.Program :=
-  program [
-    { name := "lib", inputs := [], outputs := [{ name := "r", ty := ints }], throws := none, requires := [],
-      body := none, entry := false, source := at_ 0 },
-    entry "bodiless" [
-      .init "a" ints none (at_ 1), .newArray "a" bv32 (.int 3) (at_ 1),
-      .init "r" ints none (at_ 2), .call ["r"] "lib" [] (at_ 2),
-      .init "n" .int none (at_ 3), .arrayLength "n" (.var "r") (at_ 3),
-      .init "isInts" .bool none (at_ 4), .instanceOf "isInts" (.var "r") ints (at_ 4),
-      isTrue "empty" (.eq (.var "n") (.int 0)) 5,
-      isTrue "instanceOfArrayType" (.var "isInts") 6,
-      isTrue "newObject" (.op "Bool.Not" [.eq (.var "r") (.var "a")]) 7,
-      isTrue "notEmpty" (.eq (.var "n") (.int 3)) 10,
-      isTrue "sameObject" (.eq (.var "r") (.var "a")) 11]]
-
-/--
-info: 10: assertion does not hold
-11: assertion does not hold
--/
-#guard_msgs in
-#eval interpret bodiless
-
 /-! ## Array parents
 
 Every array type is a subtype of each array parent and of what the parent extends, so an

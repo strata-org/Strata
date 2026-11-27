@@ -458,6 +458,116 @@ def MonoWorklistState.init : MonoWorklistState :=
 /-- The state monad for the monomorphization worklist. -/
 abbrev MonoWorklistStateM := StateM MonoWorklistState
 
+/-! ### Polymorphic recursion whose instances never end
+
+A call in the body of a polymorphic function `f` to a polymorphic function `g` instantiates each
+type parameter `b` of `g` at a type `τ` written over the type parameters of `f`. For each type
+parameter `a` of `f` occurring in `τ`, the parameter `(f, a)` flows into `(g, b)`, and grows
+when `τ` is not `a` itself. A cycle of flows through a growing one makes every instance of the
+functions on it need a strictly bigger one, so a function on such a cycle that is reached has
+infinitely many instances. Without such a cycle, the instances stay finite: `f<a>` calling
+`f<MyList int>` reaches `f<MyList int>` and stops. -/
+
+/-- A call from a polymorphic function to a polymorphic Program function: the caller, the
+    callee, and the callee's type arguments, written over the caller's type parameters. -/
+structure PolyCall where
+  caller : Function
+  callee : Function
+  typeArgs : List LMonoTy
+
+/-- Every call between the polymorphic Program functions of `pfuncDecls`. -/
+def polyCalls (pfuncDecls : PolymorphicFuncDecls) (factory : Lambda.Factory CoreLParams) :
+    List PolyCall :=
+  pfuncDecls.functionByName.toList.flatMap fun (_, f) =>
+    (collectFromFunction pfuncDecls factory f).filterMap fun fs =>
+      (pfuncDecls.functionByName.get? fs.name).map fun g =>
+        { caller := f, callee := g, typeArgs := fs.typeSubst.givenTypes }
+
+/-- A flow from type parameter `src` of a call's caller to type parameter `dst` of its callee
+    (`(name, parameter index)`), through the call `call`; `grows` when the callee's type
+    argument is not the caller's parameter itself. -/
+structure ParamFlow where
+  src : String × Nat
+  dst : String × Nat
+  grows : Bool
+  call : PolyCall
+
+/-- The flows of the call `c`. -/
+def PolyCall.flows (c : PolyCall) : List ParamFlow :=
+  c.caller.typeArgs.zipIdx.flatMap fun (a, i) =>
+    c.typeArgs.zipIdx.filterMap fun (τ, j) =>
+      if τ.freeVars.contains a then
+        some { src := (c.caller.name.name, i), dst := (c.callee.name.name, j),
+               grows := τ != .ftvar a, call := c }
+      else none
+
+/-- The flows of `flows` from `start` back to `goal`, in order, if there is such a path. A
+    breadth-first search: each node is visited once. -/
+def flowPath (flows : List ParamFlow) (start goal : String × Nat) : Option (List ParamFlow) :=
+  go (2 * flows.length + 2) [(start, [])] [start]
+where
+  /-- Search from the frontier (each node with the reversed path to it), with `seen` the nodes
+      already queued. A node is queued once, the goal at most once per flow into it, so `fuel`
+      twice the number of flows suffices. -/
+  go : Nat → List ((String × Nat) × List ParamFlow) → List (String × Nat) →
+      Option (List ParamFlow)
+    | 0, _, _ => none
+    | _, [], _ => none
+    | fuel + 1, (n, path) :: rest, seen =>
+      if n == goal && !path.isEmpty then some path.reverse
+      else
+        let next := (flows.filter (·.src == n)).filter fun fl =>
+          fl.dst == goal || !seen.contains fl.dst
+        let seen := seen ++ next.map (·.dst)
+        go fuel (rest ++ next.map fun fl => (fl.dst, fl :: path)) seen
+
+/-- A cycle of flows through a growing flow whose functions include one of `reached`, as the
+    calls along it from that flow's caller back to it. -/
+def growingCycle (calls : List PolyCall) (reached : Std.HashSet String) :
+    Option (List PolyCall) :=
+  let flows := calls.flatMap PolyCall.flows
+  flows.findSome? fun fl =>
+    if !fl.grows || !reached.contains fl.src.1 then none
+    else (flowPath flows fl.dst fl.src).map fun rest => (fl :: rest).map (·.call)
+
+/-- `f` written at the type arguments `tys`, as `f<t1, t2>`. -/
+def instanceText (f : Function) (tys : List LMonoTy) : String :=
+  s!"{f.name.name}<{", ".intercalate (tys.map (toString ∘ Std.format))}>"
+
+/-- The error for the cycle of calls `cycle`, starting at its first caller at its own type
+    parameters and showing the first instances the calls around it need. -/
+def growingCycleError (cycle : List PolyCall) : Strata.Message :=
+  match cycle with
+  | [] => Strata.Message.fromString "MonomorphizeFunctions: polymorphic recursion is not supported"
+  | c :: _ =>
+    let step (acc : List String × List LMonoTy) (call : PolyCall) :=
+      let S := Strata.Util.HMaps.ofScopes [call.caller.typeArgs.zip acc.2]
+      let tys := call.typeArgs.map (LMonoTy.subst S)
+      (instanceText call.callee tys :: acc.1, tys)
+    let start := c.caller.typeArgs.map LMonoTy.ftvar
+    let calls := (List.replicate 3 cycle).flatten.take (max 3 cycle.length)
+    let (shown, _) := calls.foldl step ([instanceText c.caller start], start)
+    Strata.Message.fromString
+      s!"MonomorphizeFunctions: polymorphic recursion is not supported: \
+         {" needs ".intercalate (shown.reverse.take 2)}{
+           String.join (shown.reverse.drop 2 |>.map (s!", which needs " ++ ·))}, ..."
+
+/-- The names of the polymorphic Program functions reached from the functions named `seeds`
+    through `calls`. -/
+def reachedFunctions (calls : List PolyCall) (seeds : List String) : Std.HashSet String :=
+  go (calls.length + seeds.length + 1) seeds {}
+where
+  /-- Visit `todo`, adding to `seen`. A name's calls are queued once, when it is first seen,
+      so the visits are bounded by the seeds and the calls, which `fuel` counts. -/
+  go : Nat → List String → Std.HashSet String → Std.HashSet String
+    | 0, _, seen => seen
+    | _, [], seen => seen
+    | fuel + 1, n :: todo, seen =>
+      if seen.contains n then go fuel todo seen
+      else
+        let next := (calls.filter (·.caller.name.name == n)).map (·.callee.name.name)
+        go fuel (todo ++ next) (seen.insert n)
+
 /-- Default upper bound on the number of specializations the worklist will
     process.
 
@@ -610,6 +720,12 @@ def run (p : Program) (cap : Nat := maxSpecializations) : CoreTransformM Program
         acc.appendList (collectFromFunction polyfuncDecls factory lfunc.toFunc)
       else acc
   let seedRefs := seedRefs ++ factorySeedRefs.toList
+
+  -- Refuse at once a reached function whose instances would never end, rather than let the
+  -- worklist run to its cap.
+  let calls := polyCalls polyfuncDecls factory
+  if let some cycle := growingCycle calls (reachedFunctions calls (seedRefs.map (·.name))) then
+    throw (growingCycleError cycle)
 
   -- Traverse polymorphic functions calling other polymorphic functions with
   -- different type instantiations, and collect all specializations.

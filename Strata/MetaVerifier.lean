@@ -12,6 +12,7 @@ import Strata.Transform.LoopElim
 import Strata.Transform.PrecondElim
 import Strata.Transform.SeqTotalize
 import Strata.Transform.TerminationCheckPhase
+import Strata.Transform.SeparateVarNames
 public import Strata.Languages.Core.SMTEncoder
 import Std.Tactic.BVDecide.Normalize.Prop
 import Strata.DL.Lambda.Denote.LExprAnnotated
@@ -119,6 +120,12 @@ def genVCsWithError (program : Program) (options : VerifyOptions := .default) :
   -- monoProgram for buildEnv, which needs the pre-symbolic-evaluation program.
   let (oblProgram, _stats) ← (Core.toCoreProofObligationProgram options monoProgram).mapError
     (s!"symbolic evaluation failed: {·}")
+  -- As in the verification pipeline, variables named like a function are renamed apart before
+  -- obligation extraction, which reads both under one namespace (`varsNotFunctions`).
+  let (separated, _) :=
+    Transform.runWith oblProgram (fun q => do
+      let (_, q') ← separateVarNamesPipelinePhase.transform q; return q') monoState
+  let oblProgram ← separated.mapError (s!"phase 'separateVarNames' failed: {·}")
   let obligations ← (Core.ObligationExtraction.extractObligations oblProgram).mapError
     (s!"obligation extraction failed: {·}")
   let E := match Core.buildEnv options monoProgram monoState.factory with

@@ -14,6 +14,7 @@ public import Strata.DL.Lambda.RecursiveAxioms
 public import Strata.Languages.Core.PipelinePhase
 public import Strata.Transform.CoreTypeCheck
 public import Strata.Languages.Core.Counterexample.Model
+public import Strata.Transform.SeparateVarNames
 public import Strata.Transform.WP.WPCoreProgram
 public import Strata.Transform.SSA.SSACoreProgram
 public import Strata.Transform.DeadDefElim
@@ -2476,7 +2477,9 @@ def symExecPerPathCSETreeSize : Nat := 100000
 def corePipelinePhases
     (options : VerifyOptions := VerifyOptions.default)
     (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default) : List PipelinePhase :=
-  match options.vcgen with
+  -- A variable may shadow a function, but obligation extraction and the SMT encoding put
+  -- both in one namespace: the last phase renames such variables apart (`varsNotFunctions`).
+  (match options.vcgen with
   | .usp | .uwp => passiveVCGenPhases options moreFns
   | .symbolic | .wp =>
     transformPipelinePhases options moreFns
@@ -2502,7 +2505,8 @@ def corePipelinePhases
           -- declarations (function bodies, axioms).
           | .wp => wpVCGenPhases options moreFns ++ [betaReducePipelinePhase,
                                                      lambdaLiftPipelinePhase]
-          | .usp | .uwp => [])
+          | .usp | .uwp => []))
+    ++ [separateVarNamesPipelinePhase]
 
 /-- What the back end needs of the program the pipeline hands it, as opposed to
     what one phase asks of another. A phase list that does not deliver these is
@@ -2524,13 +2528,37 @@ def corePipelinePhases
     spurious-model marker: a pipeline that meets `noLambdas` by asserting it, without
     `lambdaLift` or `lambdaLiftIfNeeded`, leaves an obligation that quantifies over a
     function type unmarked, and a possibly spurious model of it is reported as a
-    counterexample. -/
+    counterexample.
+
+    `varsNotFunctions` is absent although obligation extraction and the SMT encoding name a
+    variable and a function alike: each back end renames such variables apart itself, with
+    the run's factory, before it extracts (`ObligationExtraction.separated`), so a pipeline
+    that does not end with `separateVarNames` gets the same verdicts. The default orders end
+    with it all the same. Requiring the fact here would refuse every pipeline built outside
+    this package until it adds the phase; that requirement is added once they have. -/
 def backEndRequiredFacts : ProgramFactSet :=
   factSet![.noCFGBodies, .noCalls, .noLoops, .staticSingleAssignment,
            .noBetaRedexes, .noLambdas, .noPrecondsFromFuncs, .hasObligationForm,
            .noProcedureContracts,
            .noPolymorphicProcedures, .noPolymorphicFunctions,
            .typeAnnotated]
+
+/-- The hint appended to a refusal that lists `varsNotFunctions` as missing: it says which
+    phase to add to deliver the fact. -/
+def separateVarNamesHint : String :=
+  "; append the phase separateVarNames (separateVarNamesPipelinePhase) as the last phase"
+
+/-- `err`, the refusal of the phase list `phases` run from facts `σ`, with
+    `separateVarNamesHint` added when the phases compose but do not deliver `varsNotFunctions`
+    and the back end requires it. It does not yet (`backEndRequiredFacts`), so for now the hint
+    is never added; it takes effect when the requirement is. -/
+def withSeparateVarNamesHint (σ : ProgramFactSet) (phases : List PipelinePhase) (err : String) :
+    String :=
+  match ValidatedPipeline.ofListFrom σ phases with
+  | .ok vp =>
+    if (Strata.Pipeline.missingFacts backEndRequiredFacts vp.establishes).contains
+        .varsNotFunctions then err ++ separateVarNamesHint else err
+  | .error _ => err
 
 /-- The Core pipeline, checked as it is assembled: the phase list built from
     `options`, validated against the phases' contracts and against what the back
@@ -2544,8 +2572,9 @@ def coreValidatedPipeline
     (options : VerifyOptions := VerifyOptions.default)
     (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default) :
     Except String (ValidatedPipeline ProgramFactSet.empty) :=
-  ValidatedPipeline.ofListDelivering "the verification back end" backEndRequiredFacts
-    (corePipelinePhases options moreFns)
+  (ValidatedPipeline.ofListDelivering "the verification back end" backEndRequiredFacts
+    (corePipelinePhases options moreFns)).mapError
+    (withSeparateVarNamesHint ProgramFactSet.empty (corePipelinePhases options moreFns))
 
 /-- The model check of the markers that a front end places after a call to a procedure that
     models code Strata does not see (`externalAssumePrefix`). It is not a pipeline phase: the
@@ -3401,10 +3430,14 @@ def dischargeObligations (E : Env) (obligations : ProofObligations Expression)
   return (results, stats)
 
 /-- The obligations `extractObligations` reads from a program, each without the generated
-    definitions it does not use (see `pruneUnusedDefinitions`). -/
-def obligationsOf (oblProgram : Program) :
+    definitions it does not use (see `pruneUnusedDefinitions`). A program handed to this back
+    end directly may still have a variable named like a function; such variables are renamed
+    apart first, as the pipeline's last phase does, so no program is refused for it. -/
+def obligationsOf (oblProgram : Program)
+    (factory : @Lambda.Factory CoreLParams := Lambda.Factory.default) :
     Except Message (ProofObligations Expression) :=
-  match Core.ObligationExtraction.extractObligations oblProgram with
+  match Core.ObligationExtraction.extractObligations
+      (Core.ObligationExtraction.separated oblProgram factory) with
   | .ok obs => .ok (obs.map pruneUnusedDefinitions)
   | .error e => .error (Message.fromFormat f!"ObligationExtraction error: {e}")
 
@@ -3422,7 +3455,7 @@ def verifySingleEnv (oblProgram : Program)
   -- Build SMT encoding context from the obligations program itself
   let E ← EIO.ofExcept
     (Core.buildEnv options oblProgram factory (registerCustomFunctions := true) |>.map (·.1))
-  let obligations ← EIO.ofExcept (obligationsOf oblProgram)
+  let obligations ← EIO.ofExcept (obligationsOf oblProgram factory)
   dischargeObligations E obligations options counter tempDir axiomCache axiomNames axiomProgram
     mkDischarge pctx
 
@@ -3497,7 +3530,8 @@ def verifyPipeline (program : Program)
       | missing =>
         throw (Message.fromFormat f!"❌ This pipeline does not deliver what the \
           verification back end requires.\nMissing: \
-          {", ".intercalate (missing.map (·.name))}")
+          {", ".intercalate (missing.map (·.name))}\
+          {if missing.contains .varsNotFunctions then separateVarNamesHint else ""}")
     | none =>
       match coreValidatedPipeline options moreFns with
       | .ok vp => pure vp.phases
@@ -3512,7 +3546,7 @@ def verifyPipeline (program : Program)
     if p.phase.name == (recursiveAxiomsPhase).phase.name then recursiveAxiomsPhase options
     else p
   let (oblProgram, factory, pipelineStats, inputs) ← pctx.withPhase "programTransformations" do
-    let (prog, state, inputs) ← runTransformsRecording program pipelinePhases
+    let (prog, state, _, inputs) ← runTransformsRecording false program pipelinePhases
       (initState := { Transform.CoreTransformState.emp with factory := factory })
       (pipelineCtx := some pctx)
       (keepAllFilesPrefix := options.keepAllFilesPrefix)
@@ -3537,7 +3571,7 @@ def verifyPipeline (program : Program)
       -- the definitions each reads, when the default back end discharges them.
       if options.verbose >= .debug && solver.isNone &&
           !(externalPhases ++ phases).any (·.name == "symbolicEval") then
-        if let .ok obligations := obligationsOf oblProgram then
+        if let .ok obligations := obligationsOf oblProgram factory then
           dbg_trace f!"{Std.Format.line}VCs:"
           dbg_trace f!"{formatProofObligationsWithReads obligations}"
           pure ()

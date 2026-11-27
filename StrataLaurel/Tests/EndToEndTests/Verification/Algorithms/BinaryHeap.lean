@@ -54,10 +54,10 @@ procedure insert(h: Sequence<int>, size: int, v: int) returns (res: Sequence<int
   {
     var p: int := (i - 1) / 2;
     var tmp: int := seqSelect(s, p);
-//  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
+//                  ^^^^^^^^^^^^^^^ error: precondition could not be proved
 // desired: verifies
     s := seqUpdate(s, p, seqSelect(s, i));
-//  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
+//       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
 // desired: verifies
     s := seqUpdate(s, i, tmp);
     i := p
@@ -112,9 +112,9 @@ procedure insert(h: Sequence<int>, size: int, v: int) returns (res: Sequence<int
   {
     var p: int := (i - 1) / 2;
     var tmp: int := seqSelect(s, p);
-//  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
+//                  ^^^^^^^^^^^^^^^ error: precondition could not be proved
     s := seqUpdate(s, p, seqSelect(s, i));
-//  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
+//       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
     s := seqUpdate(s, i, tmp);
     i := p
   };

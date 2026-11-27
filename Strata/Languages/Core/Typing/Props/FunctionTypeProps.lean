@@ -308,7 +308,6 @@ theorem FuncHasTypeExact_transport {C : LContext CoreLParams}
   annotsScoped := h.annotsScoped
   writtenAnnotsOk := fun e he =>
     writtenAnnotsOk_of_aliases_eq hR.aliases (h.writtenAnnotsOk e he)
-  formalsNotFunctions := h.formalsNotFunctions
   typeArgsNotReserved := h.typeArgsNotReserved
   constrNoBody := h.constrNoBody
 
@@ -849,7 +848,6 @@ theorem TypeSpec.FuncHasTypeExact_idents_irrel
   annotsScoped := h.annotsScoped
   writtenAnnotsOk := fun e he =>
     writtenAnnotsOk_idents_irrel C j _ e (h.writtenAnnotsOk e he)
-  formalsNotFunctions := h.formalsNotFunctions
   typeArgsNotReserved := h.typeArgsNotReserved
   constrNoBody := h.constrNoBody
 

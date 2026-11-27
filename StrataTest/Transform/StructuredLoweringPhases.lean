@@ -72,18 +72,14 @@ private def loopWithInit : Program :=
 /-! ### Loop-init hoist -/
 
 /--
-info: wellFormedCalls, noCFGBodies, noCalls, noLoopInvariants, noLoopMeasures, uniqueInits,
-  noBetaRedexes, noLambdas, noPrecondsFromFuncs, noNondetGuards, noProcedureContracts, noPolymorphicProcedures,
-  noPolymorphicFunctions, exitsCovered, armsHaveObligations, noCFGCycles
+info: wellFormedCalls, noCFGBodies, noCalls, noLoopInvariants, noLoopMeasures, uniqueInits, noBetaRedexes, noLambdas, noPrecondsFromFuncs, noNondetGuards, noProcedureContracts, noPolymorphicProcedures, noPolymorphicFunctions, exitsCovered, armsHaveObligations, noCFGCycles, varsNotFunctions
 -/
 #guard_msgs (whitespace := lax) in
 #eval IO.println (factNames loopWithInit)
 
 /--
 info: changed: true
-facts: wellFormedCalls, noCFGBodies, noCalls, noLoopInvariants, noLoopMeasures, uniqueInits,
-  loopBodyNoInits, noBetaRedexes, noLambdas, noPrecondsFromFuncs, noNondetGuards, noProcedureContracts,
-  noPolymorphicProcedures, noPolymorphicFunctions, exitsCovered, armsHaveObligations, noCFGCycles
+facts: wellFormedCalls, noCFGBodies, noCalls, noLoopInvariants, noLoopMeasures, uniqueInits, loopBodyNoInits, noBetaRedexes, noLambdas, noPrecondsFromFuncs, noNondetGuards, noProcedureContracts, noPolymorphicProcedures, noPolymorphicFunctions, exitsCovered, armsHaveObligations, noCFGCycles, varsNotFunctions
 claims hold: true
 -/
 #guard_msgs (whitespace := lax) in
@@ -96,7 +92,7 @@ info: changed: false
 facts: wellFormedCalls, noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures,
   uniqueInits, loopBodyNoInits, staticSingleAssignment, noBetaRedexes, noLambdas, noPrecondsFromFuncs,
   noNondetGuards, hasObligationForm, noProcedureContracts, noPolymorphicProcedures,
-  noPolymorphicFunctions, treeForm, exitsCovered, armsHaveObligations, noCFGCycles
+  noPolymorphicFunctions, treeForm, exitsCovered, armsHaveObligations, noCFGCycles, varsNotFunctions
 claims hold: true
 -/
 #guard_msgs (whitespace := lax) in
@@ -117,7 +113,7 @@ claims hold: true
 
 /--
 info: changed: true
-facts: wellFormedCalls, noCalls, noLoops, noLoopInvariants, noLoopMeasures, uniqueInits, loopBodyNoInits, noBetaRedexes, noLambdas, noPrecondsFromFuncs, noNondetGuards, noProcedureContracts, noPolymorphicProcedures, noPolymorphicFunctions, treeForm, exitsCovered, armsHaveObligations
+facts: wellFormedCalls, noCalls, noLoops, noLoopInvariants, noLoopMeasures, uniqueInits, loopBodyNoInits, noBetaRedexes, noLambdas, noPrecondsFromFuncs, noNondetGuards, noProcedureContracts, noPolymorphicProcedures, noPolymorphicFunctions, treeForm, exitsCovered, armsHaveObligations, varsNotFunctions
 claims hold: true
 -/
 #guard_msgs in
@@ -130,7 +126,8 @@ info: changed: false
 facts: wellFormedCalls, noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures,
   uniqueInits, loopBodyNoInits, staticSingleAssignment, noBetaRedexes, noLambdas, noPrecondsFromFuncs,
   noNondetGuards, hasObligationForm, noProcedureContracts, noPolymorphicProcedures,
-  noPolymorphicFunctions, noInits, treeForm, exitsCovered, armsHaveObligations, noCFGCycles
+  noPolymorphicFunctions, noInits, treeForm, exitsCovered, armsHaveObligations, noCFGCycles,
+  varsNotFunctions
 claims hold: true
 -/
 #guard_msgs (whitespace := lax) in
@@ -182,7 +179,7 @@ info: changed: true
 facts: wellFormedCalls, noCalls, noLoops, noLoopInvariants, noLoopMeasures, uniqueInits,
   loopBodyNoInits, staticSingleAssignment, noBetaRedexes, noLambdas, noPrecondsFromFuncs, noNondetGuards,
   hasObligationForm, noProcedureContracts, noPolymorphicProcedures, noPolymorphicFunctions, noInits,
-  treeForm, exitsCovered, armsHaveObligations, noCFGCycles
+  treeForm, exitsCovered, armsHaveObligations, noCFGCycles, varsNotFunctions
 claims hold: true
 -/
 #guard_msgs (whitespace := lax) in
@@ -197,7 +194,7 @@ info: changed: true
 facts: wellFormedCalls, noCalls, noLoops, noLoopInvariants, noLoopMeasures, uniqueInits,
   loopBodyNoInits, staticSingleAssignment, noBetaRedexes, noLambdas, noPrecondsFromFuncs, noNondetGuards,
   hasObligationForm, noProcedureContracts, noPolymorphicProcedures, noPolymorphicFunctions,
-  treeForm, exitsCovered, armsHaveObligations, noCFGCycles
+  treeForm, exitsCovered, armsHaveObligations, noCFGCycles, varsNotFunctions
 claims hold: true
 -/
 #guard_msgs (whitespace := lax) in
@@ -210,7 +207,7 @@ The hoist establishes `loopBodyNoInits`, which the lowering requires. -/
 
 /--
 info: changed: true
-facts: wellFormedCalls, noCalls, noLoops, noLoopInvariants, noLoopMeasures, uniqueInits, loopBodyNoInits, noBetaRedexes, noLambdas, noPrecondsFromFuncs, noNondetGuards, noProcedureContracts, noPolymorphicProcedures, noPolymorphicFunctions, treeForm, exitsCovered, armsHaveObligations
+facts: wellFormedCalls, noCalls, noLoops, noLoopInvariants, noLoopMeasures, uniqueInits, loopBodyNoInits, noBetaRedexes, noLambdas, noPrecondsFromFuncs, noNondetGuards, noProcedureContracts, noPolymorphicProcedures, noPolymorphicFunctions, treeForm, exitsCovered, armsHaveObligations, varsNotFunctions
 claims hold: true
 -/
 #guard_msgs in

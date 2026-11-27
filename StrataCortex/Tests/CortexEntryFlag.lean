@@ -36,7 +36,7 @@ private meta def runEntry (name : String) (block : StrataDDM.SourcedProgram) : I
 #eval runEntry "failing" <|
 #strata
 program Laurel;
-procedure lib() opaque;
+procedure lib() opaque { };
 procedure failing()
   opaque
 {

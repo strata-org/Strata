@@ -88,4 +88,73 @@ procedure main() entry
     printMessages outcome.diagnostics.toList
     for (name, reason) in outcome.errors do IO.println s!"stopped: '{name}': {reason}"
 
+/-- A stack value read from an array element keeps the value it had when it was pushed,
+    across a later call that writes the element: Java's `int r = a[0] + bump(a)`. -/
+private def stackReadBeforeArrayWrite := "
+procedure bump(a: Array<int>)
+  opaque
+  modifies *
+{
+    a[0] := 5
+};
+
+procedure main() entry
+  opaque
+  modifies *
+{
+    var a: Array<int> := new Array<int>(1);
+    stki := a[0];
+    bump(a);
+    var r: int := stki;
+    assert r == 0
+};
+"
+
+/-- info: passed -/
+#guard_msgs in
+#eval show IO Unit from do
+  match Cortex.interpretEntries (← parse stackReadBeforeArrayWrite) with
+  | .error e => IO.println s!"error: {e}"
+  | .ok outcome =>
+    if outcome.diagnostics.isEmpty && outcome.errors.isEmpty then IO.println "passed"
+    printMessages outcome.diagnostics.toList
+    for (name, reason) in outcome.errors do IO.println s!"stopped: '{name}': {reason}"
+
+/-- The same, when the element is read by a call: a procedure that reads an array it is given
+    reads the heap, so the stack value of the call is not read after the write. -/
+private def stackCallReadBeforeArrayWrite := "
+procedure get(a: Array<int>) returns (r: int)
+{
+    a[0]
+};
+
+procedure bump(a: Array<int>)
+  opaque
+  modifies *
+{
+    a[0] := 5
+};
+
+procedure main() entry
+  opaque
+  modifies *
+{
+    var a: Array<int> := new Array<int>(1);
+    stki := get(a);
+    bump(a);
+    var r: int := stki;
+    assert r == 0
+};
+"
+
+/-- info: passed -/
+#guard_msgs in
+#eval show IO Unit from do
+  match Cortex.interpretEntries (← parse stackCallReadBeforeArrayWrite) with
+  | .error e => IO.println s!"error: {e}"
+  | .ok outcome =>
+    if outcome.diagnostics.isEmpty && outcome.errors.isEmpty then IO.println "passed"
+    printMessages outcome.diagnostics.toList
+    for (name, reason) in outcome.errors do IO.println s!"stopped: '{name}': {reason}"
+
 end Cortex.TranslateTest

@@ -490,7 +490,7 @@ theorem Procedure.typeCheckIn_annotRel (scope progSigs : Thunk (Std.HashSet Stri
     ProcAnnotRel Env.context.aliases proc proc' := by
   have hnd := Procedure.typeCheckIn_typeArgs_nodup h
   have hcore := Procedure.typeCheckIn_core_ok h
-  obtain ⟨-, hdecl, -⟩ := Procedure.typeCheckIn_renamed_headerNames h
+  obtain ⟨-, hdecl⟩ := Procedure.typeCheckIn_renamed_headerNames h
   unfold Procedure.renamedForCheck at hdecl
   have htn : ∀ n ∈ procTyNames
       (proc.renameReservedTypeArgs (fun _ => Statement.substTyVars Env ++ scopeTyVars C Env)

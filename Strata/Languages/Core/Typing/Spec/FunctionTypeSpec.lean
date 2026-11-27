@@ -95,8 +95,6 @@ structure FuncHasTypeExact (C : LContext CoreLParams) (Γ : TContext Unit) (func
   annotsScoped : ∀ e ∈ func.exprs, AnnotsInScope func.typeArgs (fun _ => none) e
   /-- Every expression's written annotations are valid in the function context. -/
   writtenAnnotsOk : ∀ e ∈ func.exprs, WrittenAnnotsOk C (funcContext Γ func) e
-  /-- No formal parameter is named like an in-scope function. -/
-  formalsNotFunctions : ∀ id ∈ func.inputs.keys, id.name ∉ C.functions
   /-- A constructor has no body. -/
   constrNoBody : func.isConstr = true → func.body = none
 

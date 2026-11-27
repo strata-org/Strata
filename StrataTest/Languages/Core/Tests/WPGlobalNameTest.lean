@@ -19,10 +19,8 @@ denotes a global `c`. Each assertion below holds only of the global `c` (axiom `
 arbitrary parameter `c`, so it must not be proved, in symbolic mode and in
 `--vcgen wp` alike.
 
-The type checker rejects a parameter named like a function or a constant, so `Core.verify`
-rejects each program. The same programs, written as type-annotated ASTs, are then run through
-the phases that follow the type check, supplied with a proof that the facts the type check
-establishes hold. -/
+The same programs, written as type-annotated ASTs, are then run through the phases that follow
+the type check, supplied with a proof that the facts the type check establishes hold. -/
 
 namespace Strata.WPGlobalNameTest
 
@@ -75,25 +73,196 @@ procedure P(c : int, out r : int)
 #end
 
 /--
-error: ❌ Type checking error.
-Procedure 'P': parameter 'c' collides with a function or constant of the same name
+info: symbolic pc: refuted
+wp pc: refuted
 -/
 #guard_msgs in
 #eval printModesProved functionPgm
 
 /--
-error: ❌ Type checking error.
-Procedure 'P': parameter 'c' collides with a function or constant of the same name
+info: symbolic pc: refuted
+wp pc: refuted
 -/
 #guard_msgs in
 #eval printModesProved constPgm
 
 /--
-error: ❌ Type checking error.
-Procedure 'P': parameter 'c' collides with a function or constant of the same name
+info: symbolic pr: refuted
+wp pr: refuted
 -/
 #guard_msgs in
 #eval printModesProved assignPgm
+
+/-- An in-out parameter named like a constant, its starting value read as `old(c)` in the
+    contract. The contract is about the parameter, and its `old` value, so it is proved; the
+    assertion holds only of the global `c`. -/
+def inoutPgm :=
+#strata
+program Core;
+
+const c : int;
+axiom [c0]: c == 0;
+
+procedure P(inout c : int)
+spec {
+  ensures [inc]: c == int.add(old(c), 1);
+}
+{
+  assert [pc]: c == 0;
+  c := int.add(c, 1);
+};
+
+#end
+
+/--
+info: symbolic pc: refuted
+symbolic inc: proved
+wp pc: refuted
+wp inc: proved
+-/
+#guard_msgs in
+#eval printModesProved inoutPgm
+
+/-! A pipeline that does not end with `separateVarNames` is accepted, and its program reaches
+the back end with a variable named like the constant; each back end renames it apart itself
+before it extracts, so the verdicts are those above, on the per-obligation and the incremental
+back end alike. -/
+
+/-- `printProved` on `pgm` for each of the two `modes`, through the default order without its
+    last phase, `separateVarNames`, on the per-obligation back end and on the incremental one. -/
+private def printWithoutSeparation (pgm : StrataDDM.SourcedProgram) : IO Unit := do
+  for (mode, opts) in modes do
+    for (backEnd, incremental) in [("per-obligation", false), ("incremental", true)] do
+      let opts := { opts with incremental }
+      let phases := (Core.corePipelinePhases opts).filter (Core.phaseName · != "separateVarNames")
+      match Core.validatePipeline phases with
+      | .error e => IO.println s!"{mode} {backEnd}: rejected: {e}"
+      | .ok vp => printProved pgm opts (pipeline := some vp) (pre := s!"{mode} {backEnd} ")
+
+/--
+info: symbolic per-obligation pc: refuted
+symbolic per-obligation inc: proved
+symbolic incremental pc: refuted
+symbolic incremental inc: proved
+wp per-obligation pc: refuted
+wp per-obligation inc: proved
+wp incremental pc: refuted
+wp incremental inc: proved
+-/
+#guard_msgs in
+#eval printWithoutSeparation inoutPgm
+
+/-- A function-typed parameter named like a global function and applied: the application is
+    of the parameter, so the assertion, true of the global `g`, is not proved. -/
+def appliedParamPgm :=
+#strata
+program Core;
+
+function g(x : int) : int { x }
+
+procedure P(g : int -> int)
+{
+  assert [paramApplied]: g(1) == 1;
+};
+
+#end
+
+/--
+info: symbolic paramApplied: refuted
+wp paramApplied: refuted
+-/
+#guard_msgs in
+#eval printModesProved appliedParamPgm
+
+/-- A constant used before a local of its name is declared: the first assertion reads the
+    constant, the second the local. -/
+def globalBeforeLocalPgm :=
+#strata
+program Core;
+
+const c : int;
+axiom [c0]: c == 0;
+
+procedure P()
+{
+  assert [globalBefore]: c == 0;
+  var c : int;
+  assert [localAfter]: c == 0;
+};
+
+#end
+
+/--
+info: symbolic globalBefore: proved
+symbolic localAfter: refuted
+wp globalBefore: proved
+wp localAfter: refuted
+-/
+#guard_msgs in
+#eval printModesProved globalBeforeLocalPgm
+
+/-! The incremental back end keeps them apart too. -/
+
+/--
+info: globalBefore: proved
+localAfter: refuted
+-/
+#guard_msgs in
+#eval printProved globalBeforeLocalPgm { Core.VerifyOptions.quiet with incremental := true }
+
+/-- An output parameter named like a constant, assigned twice, beside a variable already named
+    `c@1`: the versions symbolic evaluation gives the parameter avoid `c@1`, and neither is the
+    global `c`. The counterexample shows the parameter's last version under `c@…`. -/
+def renamedBesideVersionsPgm :=
+#strata
+program Core;
+
+const c : int;
+axiom [c0]: c == 0;
+
+procedure P(|c@1| : int, out c : int)
+{
+  c := |c@1|;
+  c := int.add(c, 1);
+  assert [renamedNotGlobal]: c == 1;
+  assert [versionsApart]: c == int.add(|c@1|, 1);
+};
+
+#end
+
+/--
+info: [Strata.Core] Type checking succeeded.
+
+
+VCs:
+Label: renamedNotGlobal
+Property: assert
+Assumptions:
+c0: c == 0
+Obligation:
+int.add(c@2, 1) == 1
+
+Label: versionsApart
+Property: assert
+Assumptions:
+c0: c == 0
+Obligation:
+true
+
+---
+info:
+Obligation: renamedNotGlobal
+Property: assert
+Result: ❌ fail
+Model:
+(c@2, int.neg(1))
+
+Obligation: versionsApart
+Property: assert
+Result: ✅ pass
+-/
+#guard_msgs in
+#eval Core.verify renamedBesideVersionsPgm
 
 /-! ### The phases after the type check, on type-annotated ASTs -/
 
@@ -230,7 +399,7 @@ private def validation (names : List String) : Except String String := do
   | .error e => pure e
 
 /--
-info: Except.ok "phase #19 `commonSubexprElim` requires `noInits` but preceding phases only guarantee `noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noBetaRedexes, noLambdas, noPrecondsFromFuncs, hasObligationForm, noProcedureContracts, noPolymorphicProcedures, noPolymorphicFunctions, typeAnnotated, exitsCovered, armsHaveObligations`"
+info: Except.ok "phase #20 `commonSubexprElim` requires `noInits` but preceding phases only guarantee `noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noBetaRedexes, noLambdas, noPrecondsFromFuncs, hasObligationForm, noProcedureContracts, noPolymorphicProcedures, noPolymorphicFunctions, typeAnnotated, exitsCovered, armsHaveObligations, varsNotFunctions`"
 -/
 #guard_msgs in
 #eval validation wpThenCSE
@@ -239,7 +408,7 @@ info: Except.ok "phase #19 `commonSubexprElim` requires `noInits` but preceding 
 nameable under `--vcgen wp`, the same list is rejected with the same diagnostic. -/
 
 /--
-info: Except.ok "phase #19 `commonSubexprElim` requires `noInits` but preceding phases only guarantee `noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noBetaRedexes, noLambdas, noPrecondsFromFuncs, hasObligationForm, noProcedureContracts, noPolymorphicProcedures, noPolymorphicFunctions, typeAnnotated, exitsCovered, armsHaveObligations`"
+info: Except.ok "phase #20 `commonSubexprElim` requires `noInits` but preceding phases only guarantee `noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noBetaRedexes, noLambdas, noPrecondsFromFuncs, hasObligationForm, noProcedureContracts, noPolymorphicProcedures, noPolymorphicFunctions, typeAnnotated, exitsCovered, armsHaveObligations, varsNotFunctions`"
 -/
 #guard_msgs in
 #eval show Except String String from do
@@ -255,7 +424,8 @@ info: Except.ok "phase #19 `commonSubexprElim` requires `noInits` but preceding 
 
 /-! The rewrite loop reduces the redexes of procedure bodies only, so it does not establish
 `noBetaRedexes`, which the back end requires: the default order of `--vcgen wp`, which ends with
-`betaReduce` and `lambdaLift`, is accepted, and the same order without those two is rejected. -/
+`betaReduce`, `lambdaLift` and `separateVarNames`, is accepted, and the same order without
+`betaReduce` and `lambdaLift` is rejected. -/
 
 /-- The phase names of the `--vcgen wp` order. -/
 private def wpOrder : List String :=
@@ -266,9 +436,9 @@ private def wpOrder : List String :=
 #eval validation wpOrder
 
 /--
-info: Except.ok "phase #17 `the verification back end` requires:\n  • `noBetaRedexes`: preceding phases only guarantee `noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noPrecondsFromFuncs, hasObligationForm, noProcedureContracts, noPolymorphicProcedures, noPolymorphicFunctions, typeAnnotated, exitsCovered, armsHaveObligations`\n  • `noLambdas`: preceding phases only guarantee `noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noPrecondsFromFuncs, hasObligationForm, noProcedureContracts, noPolymorphicProcedures, noPolymorphicFunctions, typeAnnotated, exitsCovered, armsHaveObligations`"
+info: Except.ok "phase #18 `the verification back end` requires:\n  • `noBetaRedexes`: preceding phases only guarantee `noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noPrecondsFromFuncs, hasObligationForm, noProcedureContracts, noPolymorphicProcedures, noPolymorphicFunctions, typeAnnotated, exitsCovered, armsHaveObligations, varsNotFunctions`\n  • `noLambdas`: preceding phases only guarantee `noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noPrecondsFromFuncs, hasObligationForm, noProcedureContracts, noPolymorphicProcedures, noPolymorphicFunctions, typeAnnotated, exitsCovered, armsHaveObligations, varsNotFunctions`"
 -/
 #guard_msgs in
-#eval validation (wpOrder.dropLast.dropLast)
+#eval validation (wpOrder.filter (fun n => n != "betaReduce" && n != "lambdaLift"))
 
 end Strata.WPGlobalNameTest

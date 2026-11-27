@@ -188,7 +188,7 @@ private def readStmts (facts : Array (PathConditionEntry Expression))
     and no others, which is what `ObligationExtraction` accumulates as it walks. That
     prefix is a chain of ancestors, so procedures sharing a prelude share the nodes
     holding it. -/
-private def readDecls (funcNames : List String)
+private def readDecls
     (facts : Array (PathConditionEntry Expression))
     (goals : Array Goal) (kids : Array VTree) (ds : List Decl) : Except String VTree :=
   match ds with
@@ -198,23 +198,23 @@ private def readDecls (funcNames : List String)
     -- its children, and everything after keeps the declaration order.
     let below (facts' : Array (PathConditionEntry Expression)) (goals' : Array Goal) :
         Except String VTree := do
-      let t ← readDecls funcNames facts' goals' #[] rest
+      let t ← readDecls facts' goals' #[] rest
       .ok { facts, goals, children := kids.push t }
     let global (entry : PathConditionEntry Expression) : Except String VTree :=
-      if kids.isEmpty && goals.isEmpty then readDecls funcNames (facts.push entry) goals kids rest
+      if kids.isEmpty && goals.isEmpty then readDecls (facts.push entry) goals kids rest
       else below #[entry] #[]
     -- A function of `()`, so the rest is read only on the paths that use it.
     let definition (_ : Unit) : Except String VTree :=
-      if kids.isEmpty && goals.isEmpty then readDecls funcNames facts goals kids rest
+      if kids.isEmpty && goals.isEmpty then readDecls facts goals kids rest
       else below #[] #[]
     match d with
     | .ax a _ => global (.assumption a.name a.e)
     | .distinct name es _ => global (.distinct (toString name) es)
-    -- Read from the statements `extractObligations` reads, so a parameter named like a
-    -- function is renamed apart here too and a procedure with a contract is refused.
+    -- Read from the statements `extractObligations` reads, so a procedure with a contract is
+    -- refused here too.
     | .proc proc _ => do
-      let t ← readStmts #[] #[] (← ObligationExtraction.procedureStatements funcNames proc)
-      readDecls funcNames facts goals (kids.push t) rest
+      let t ← readStmts #[] #[] (← ObligationExtraction.procedureStatements proc)
+      readDecls facts goals (kids.push t) rest
     -- A function reaches a solver as a definition when a term mentions it. Goals declared
     -- after it are read in a child, so a solver holding its definition never checks a goal
     -- declared before it: a definition need not be a conservative extension (a recursive one,
@@ -235,16 +235,18 @@ private def readDecls (funcNames : List String)
       let goal : Goal := { label := toString l.name,
                            property := Imperative.convertMetaDataPropertyType md,
                            expr := l.e, md }
-      if kids.isEmpty then readDecls funcNames facts (goals.push goal) kids rest
+      if kids.isEmpty then readDecls facts (goals.push goal) kids rest
       else below #[] #[goal]
-    | _ => readDecls funcNames facts goals kids rest
+    | _ => readDecls facts goals kids rest
 
 /-- Read a program as one tree. Every verdict of this back end rests on the tree holding exactly
     the obligations `extractObligations` finds, each under the same assumptions in the same order.
     That agreement is proved: whenever this succeeds, so does `extractObligations`, with exactly
-    the tree's obligations. -/
+    the tree's obligations. Like `extractObligations`, it refuses a program in which a procedure
+    variable has the name of a function or constant. -/
 def readProgram (p : Program) : Except String VTree :=
-  readDecls p.funcNames #[] #[] #[] p.decls
+  if !p.varsNotFunctions then .error ObligationExtraction.varsNotFunctionsError
+  else readDecls #[] #[] #[] p.decls
 
 /-- A position in the tree, as the child indices taken from the root. -/
 abbrev Pos := Array Nat
@@ -1479,7 +1481,9 @@ def verifyProgramWith (session : SessionFactory) (program : Program) (sessions :
   match buildEnv options program factory (registerCustomFunctions := true) with
   | .error e => return .error f!"{e.message}"
   | .ok (E, _) =>
-    match readProgram program with
+    -- A program handed to this back end directly may still have a variable named like a
+    -- function; rename such variables apart, as the pipeline's last phase does.
+    match readProgram (ObligationExtraction.separated program factory) with
     | .error e => return .error f!"{e}"
     | .ok tree =>
       let smtCtx := { SMT.Context.default with
@@ -1516,7 +1520,9 @@ def verifyProgram (program : Program) (sessions : Nat := 1)
   match buildEnv options program factory (registerCustomFunctions := true) with
   | .error e => return .error f!"{e.message}"
   | .ok (E, _) =>
-    match readProgram program with
+    -- A program handed to this back end directly may still have a variable named like a
+    -- function; rename such variables apart, as the pipeline's last phase does.
+    match readProgram (ObligationExtraction.separated program factory) with
     | .error e => return .error f!"{e}"
     | .ok tree =>
       let smtCtx := { SMT.Context.default with

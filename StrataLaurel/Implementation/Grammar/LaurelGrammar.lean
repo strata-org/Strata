@@ -39,6 +39,7 @@ module
 -- Rebuild trigger token: heap field locations ($heapfield ... as Owner.field, prec 0)
 -- Rebuild trigger token: inferred throws clauses
 -- Rebuild trigger token: goto and block invariants
+-- Rebuild trigger token: native arrays (Array<T>, new Array<T>(n), a[i]) 7
 public import Strata.Init
 public import StrataDDM.AST
 import StrataDDM.BuiltinDialects.Init

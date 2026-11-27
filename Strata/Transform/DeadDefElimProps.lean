@@ -309,7 +309,7 @@ public section
 /-- The environment `ρ'` at the end of a run of the output of `deadDefElim` corresponds to the
     environment `ρ` at the end of the source run: same factory, and the store of `ρ'` is the
     store of `ρ` with some bindings removed. -/
-@[expose] def DDOut (ρ ρ' : Env Expression) : Prop :=
+@[expose] def DDOut (ρ ρ' : Imperative.Env Expression) : Prop :=
   ρ'.factory = ρ.factory ∧ StoreAgreement ρ'.store ρ.store
 
 /-! ## Call-free Core runs are runs over `EvalE` -/
@@ -650,7 +650,8 @@ theorem deadDefElim_defUse_fvarTypes {ss : Statements} (hss : Block.noLoops ss =
 /-- The output of `deadDefElim` is well formed from every environment the input is: the
     gate `BlockInitEnvWF` of the input gives that of the output. -/
 theorem blockInitEnvWF_dd {params : InitEnvWFParams} {ss : Statements}
-    {ρ : Env Expression} (hss : Block.noLoops ss = true) (hnc : Statements.noCalls ss = true)
+    {ρ : Imperative.Env Expression} (hss : Block.noLoops ss = true)
+    (hnc : Statements.noCalls ss = true)
     (h : BlockInitEnvWF params ss ρ) : BlockInitEnvWF params (deadDefElim [] ss) ρ := by
   have hdu := dd_defUse params.declaredFuncs [] ss _ _ hss hnc h.defUseOk (fun _ h => h)
     fun _ h _ => h

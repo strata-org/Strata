@@ -70,7 +70,6 @@ private theorem declA_typed :
     StatementHasType prog ctx emptyScope (fun _ => none) [] (declX aTy)
       ctx (scopeX aTy) envA := by
   have hfind : emptyScope.types.find? xId = none := rfl
-  have hfun : xId.name ∉ ctx.functions := Factory.default_empty _
   have hdecl : ScopedAnnotInst emptyScope.aliases ctx.rigidTypeVars (fun _ => none)
       Strata.Util.HMap.empty aTy aTy ∧ ValidDeclaredTy ctx emptyScope.aliases aTy := by
     refine ⟨⟨(fun v hv => nomatch hv), fun _ _ t hbound => ?_, ?_⟩, ?_⟩
@@ -84,7 +83,7 @@ private theorem declA_typed :
   exact .cmd _ _ _ _ _ _ _ _
     (.cmd _ _ _ _ _
       (.init_nondet _ _ xId (.forAll [] aTy) aTy aTy Strata.Util.HMap.empty .empty (scopeX aTy)
-        hfind hfun rfl hdecl (wellKinded_ftvar "a") (TContext.Equiv.refl _)))
+        hfind rfl hdecl (wellKinded_ftvar "a") (TContext.Equiv.refl _)))
     (TContext.Equiv.refl _)
 
 /-- The type variable `a` occurs free in the type `a`. -/
@@ -168,7 +167,7 @@ private theorem declInt_binds_nothing {C1 : LContext CoreLParams} {Γ1 : TContex
     C1 = ctx ∧ ∀ v, (Δ1 v).isSome = false :=
   match h with
   | .cmd _ _ _ _ _ _ _ _
-      (.cmd _ _ _ _ _ (.init_nondet _ _ _ _ _ _ _ _ _ _ _ hxty _ _ _)) _ => by
+      (.cmd _ _ _ _ _ (.init_nondet _ _ _ _ _ _ _ _ _ _ hxty _ _ _)) _ => by
     refine ⟨rfl, fun v => ?_⟩
     cases hxty
     simp [WrittenEnv.bindFirst, LMonoTy.freeVars, LMonoTys.freeVars]
@@ -214,7 +213,7 @@ private theorem declReserved_untypable {v : TyIdentifier}
     False :=
   match h with
   | .cmd _ _ _ _ _ _ _ _
-      (.cmd _ _ _ _ _ (.init_nondet _ _ _ _ _ _ _ _ _ _ _ hxty hdecl _ _)) _ => by
+      (.cmd _ _ _ _ _ (.init_nondet _ _ _ _ _ _ _ _ _ _ hxty hdecl _ _)) _ => by
     cases hxty
     obtain ⟨-, r, hwf⟩ := hdecl
     obtain ⟨hresolve, htype⟩ := hwf

@@ -675,17 +675,15 @@ run_elab do
       unless printed == "Lean export: a: wrote f (not appended to export.log)\n" do
         throw <| IO.userError s!"A line that cannot be logged is not printed: {printed.quote}"
 
-/-! A variable with the name of a function. The type checker rejects a procedure whose own
-variable has a function's name, but the phase that names common subexpressions `$__cse.<n>`
-does not look at the functions. The procedure below gets two such variables. With a function
-named like the first or like the second, the context of each check has one symbol for the
-two: neither check is exported and each is reported, on the per-obligation path and sent alone
-by the incremental backend. With another function name both checks are exported. Walked by the
-incremental backend under `--vcgen symexec`, which puts the two checks into one session and
-merges paths, no phase names common subexpressions, so both checks are exported with every
-function name. With contextual rewriting after `betaReduce` in that order (`rewrite`, through
-`--phases`), the phase proves `b` from the assumption `h`, so only `a` reaches the solver and is
-exported. -/
+/-! A variable with the name of a function. The phase that names common subexpressions
+`$__cse.<n>` does not look at the functions, so the procedure below gets two variables, and
+a function may be named like the first or the second. The back end renames such a variable
+apart before it extracts the checks (`separateVarNames`), so each check has one symbol for the
+function and another for the variable, and both checks are exported, whatever the function's
+name: on the per-obligation path, sent alone by the incremental backend, and walked by it
+(symbolic execution puts the two checks into one session). With contextual rewriting after
+`betaReduce` in that order (`rewrite`, through `--phases`), the phase proves `b` from the
+assumption `h`, so only `a` reaches the solver and is exported. -/
 #guard_msgs in
 run_elab do
   liftM (m := IO) <| withSolver fun standIn => IO.FS.withTempDir fun root => do
@@ -694,8 +692,7 @@ run_elab do
         ("rewrite", #["--incremental", "--vcgen", "symexec", "--phases", ",".intercalate
           (withRewriteNames { Core.VerifyOptions.quiet with symExec := some .always })])] do
       for function in ["$__cse.0", "$__cse.1", "c"] do
-        let exported := if name == "rewrite" then ["a"]
-          else if name == "walk" || function == "c" then ["a", "b"] else []
+        let exported := if name == "rewrite" then ["a"] else ["a", "b"]
         let source := root / s!"shadow-{function}.core.st"
         IO.FS.writeFile source s!"program Core;\n\
           function {function}() : bool \{ false }\n\

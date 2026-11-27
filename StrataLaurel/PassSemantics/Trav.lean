@@ -33,12 +33,14 @@ open Strata.Laurel.Interpreter
 
 def NoStack : Variable → Prop
   | .Stack _ => False
+  | .ArrayElement .. => False
   | _ => True
 
 def Basic (e : StmtExprMd) : Prop :=
   match e.val with
   | .Yield | .Resume .. | .HasNext .. => False
   | .Var (.Stack _) => False
+  | .Var (.ArrayElement ..) | .NewArray .. | .ArrayLength _ => False
   | .Assign ts v => NotYield v ∧ ∀ t ∈ ts, NoStack t.val
   | .IncrDecr _ _ t | .CompoundAssign _ t _ => NoStack t.val
   | .ContractOf ty _ => ty ≠ .Precondition
@@ -60,6 +62,7 @@ def VarOK : Variable → Prop
   | .Declare p => ¬ Reserved.res p.name.text ∧ NotV p.name.text
   | .Field .. => True
   | .Stack _ => True
+  | .ArrayElement .. => True
 
 def NamesOK (e : StmtExprMd) : Prop :=
   match e.val with
@@ -279,6 +282,7 @@ theorem trav_shape {P : StmtExprMd → Prop} [TyEqC] (hP : ∀ e, P e → Basic 
     | Field t fn =>
       exact ⟨_, _, rfl, Shape.var ⟨trav_kid (kid t (by simp [stmtExprChildren, variableChildren])) _ _, rfl⟩⟩
     | Stack _ => exact absurd hb (by simp [Basic])
+    | ArrayElement _ _ => exact absurd hb (by simp [Basic])
   case Call r fn as ta =>
     cases r with
     | none =>
@@ -309,12 +313,15 @@ theorem trav_shape {P : StmtExprMd → Prop} [TyEqC] (hP : ∀ e, P e → Basic 
         match (dependent := true) v with
         | ⟨.Field target fieldName, vs⟩ =>
           pure ⟨Variable.Field (← mapStmtExprUsedM f true target) fieldName, vs⟩
+        | ⟨.ArrayElement a i, vs⟩ =>
+          pure ⟨Variable.ArrayElement (← mapStmtExprUsedM f true a) (← mapStmtExprUsedM f true i), vs⟩
         | ⟨.Local _, _⟩ | ⟨.Declare _, _⟩ | ⟨.Stack _, _⟩ => pure v)
       (fun x st => by
         rcases x with ⟨⟨vv, vs⟩, hx⟩
         have hv : VarOK vv ∧ WOK vv := hn _ hx
         cases vv with
         | Stack _ => exact absurd (hb.2 _ hx) (by simp [NoStack])
+        | ArrayElement _ _ => exact absurd (hb.2 _ hx) (by simp [NoStack])
         | Local n => exact ⟨⟨rfl, hv.1⟩, hv.2⟩
         | Declare p => exact ⟨⟨rfl, ORel.tyRefl hte _, hv.1⟩, trivial⟩
         | Field t fn =>
@@ -333,6 +340,7 @@ theorem trav_shape {P : StmtExprMd → Prop} [TyEqC] (hP : ∀ e, P e → Basic 
     | Field tg fn =>
       exact ⟨_, _, rfl, Shape.incr ⟨trav_kid (kid tg (by simp [stmtExprChildren, variableChildren])) _ _, rfl⟩ hn.2⟩
     | Stack _ => exact absurd hb (by simp [Basic, NoStack])
+    | ArrayElement _ _ => exact absurd hb (by simp [Basic, NoStack])
   case CompoundAssign op t r =>
     rcases t with ⟨tv, ts⟩
     cases tv with
@@ -345,6 +353,7 @@ theorem trav_shape {P : StmtExprMd → Prop} [TyEqC] (hP : ∀ e, P e → Basic 
       exact ⟨_, _, rfl, Shape.compound ⟨trav_kid (kid tg (by simp [stmtExprChildren, variableChildren])) _ _, rfl⟩
         hn.2.1 (trav_kid (kid r (by simp [stmtExprChildren, variableChildren])) _ _) hn.2.2⟩
     | Stack _ => exact absurd hb (by simp [Basic, NoStack])
+    | ArrayElement _ _ => exact absurd hb (by simp [Basic, NoStack])
   case Quantifier md p tr b =>
     exact ⟨_, _, rfl, Shape.quant rfl (hte.refl _) hn.1 hn.2 (trav_kid (kid b (by simp [stmtExprChildren])) _ _)⟩
   case Try b cs fin =>
@@ -368,6 +377,8 @@ theorem trav_shape {P : StmtExprMd → Prop} [TyEqC] (hP : ∀ e, P e → Basic 
   case ContractOf ty fn =>
     have hu : Unsup (.ContractOf ty fn) := by simpa [Basic, Unsup] using hb
     exact ⟨_, _, rfl, Shape.unsup hu (by simpa [Unsup] using hu)⟩
+  case NewArray => exact absurd hb (by simp [Basic])
+  case ArrayLength => exact absurd hb (by simp [Basic])
   all_goals first
     | exact ⟨_, _, rfl, Shape.unsup trivial trivial⟩
 
@@ -457,6 +468,7 @@ theorem shape_refl {P : StmtExprMd → Prop} [TyEqC] (hP : ∀ e, P e → Basic 
     | Declare p => exact Shape.var ⟨rfl, ORel.tyRefl hte _, hn⟩
     | Field t fn => exact Shape.var ⟨⟨rfl, kid t (by simp [stmtExprChildren, variableChildren])⟩, rfl⟩
     | Stack _ => exact absurd hb (by simp [Basic])
+    | ArrayElement _ _ => exact absurd hb (by simp [Basic])
   case Call r fn as ta =>
     cases r with
     | none =>
@@ -489,6 +501,7 @@ theorem shape_refl {P : StmtExprMd → Prop} [TyEqC] (hP : ∀ e, P e → Basic 
         have hv : VarOK tv ∧ WOK tv := hn _ ht
         cases tv with
         | Stack _ => exact absurd (hb.2 _ ht) (by simp [NoStack])
+        | ArrayElement _ _ => exact absurd (hb.2 _ ht) (by simp [NoStack])
         | Local n => exact ⟨⟨rfl, hv.1⟩, hv.2⟩
         | Declare p => exact ⟨⟨rfl, ORel.tyRefl hte _, hv.1⟩, trivial⟩
         | Field tg fn =>
@@ -508,6 +521,7 @@ theorem shape_refl {P : StmtExprMd → Prop} [TyEqC] (hP : ∀ e, P e → Basic 
     | Declare p => exact Shape.incr ⟨rfl, ORel.tyRefl hte _, hn.1⟩ hn.2
     | Field tg fn => exact Shape.incr ⟨⟨rfl, kid tg (by simp [stmtExprChildren, variableChildren])⟩, rfl⟩ hn.2
     | Stack _ => exact absurd hb (by simp [Basic, NoStack])
+    | ArrayElement _ _ => exact absurd hb (by simp [Basic, NoStack])
   case CompoundAssign op t r =>
     rcases t with ⟨tv, ts⟩
     have hr : Same P r r := ⟨rfl, kid r (by simp [stmtExprChildren, variableChildren])⟩
@@ -517,6 +531,7 @@ theorem shape_refl {P : StmtExprMd → Prop} [TyEqC] (hP : ∀ e, P e → Basic 
     | Field tg fn =>
       exact Shape.compound ⟨⟨rfl, kid tg (by simp [stmtExprChildren, variableChildren])⟩, rfl⟩ hn.2.1 hr hn.2.2
     | Stack _ => exact absurd hb (by simp [Basic, NoStack])
+    | ArrayElement _ _ => exact absurd hb (by simp [Basic, NoStack])
   case Try b cs fin =>
     have hcs : L2 (CatchRel (Same P)) cs cs := by
       have hall : ∀ c ∈ cs, CatchRel (Same P) c c := by
@@ -537,6 +552,8 @@ theorem shape_refl {P : StmtExprMd → Prop} [TyEqC] (hP : ∀ e, P e → Basic 
     | none => trivial
     | some e => exact ⟨rfl, kid e (by simp only [stmtExprChildren]; simp)⟩
   case ContractOf ty fn => exact Shape.unsup (by simpa [Basic, Unsup] using hb) (by simpa [Basic, Unsup] using hb)
+  case NewArray => exact absurd hb (by simp [Basic])
+  case ArrayLength => exact absurd hb (by simp [Basic])
   all_goals exact Shape.unsup trivial trivial
 
 

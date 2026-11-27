@@ -247,7 +247,7 @@ theorem triple (base : InitEnvWFParams)
       ∧ Block.uniqueInits (C := Command) ss
       ∧ Block.exitsCoveredByBlocks (CmdT := Command) [] ss
       ∧ Block.userLabelsShapeNodup (C := Command) ss)
-    {F : Lambda.Factory CoreLParams} {Pre Post Post' : Env Expression → Prop}
+    {F : Lambda.Factory CoreLParams} {Pre Post Post' : Imperative.Env Expression → Prop}
     (hpin : ∀ ρ₀, Pre ρ₀ → ρ₀.factory.factory = F)
     (hpost : ∀ ρ₀ ρ' ρ'', Pre ρ₀ →
       Core.Logic.BlockInitEnvWF

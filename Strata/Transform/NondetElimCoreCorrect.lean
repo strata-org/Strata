@@ -324,7 +324,7 @@ theorem triple (base : InitEnvWFParams)
     (hnoCalls : Statements.noCalls ss = Bool.true)
     (hprefixes : prefixesDisjoint base.prefixIdents
       Imperative.NondetElim.isGeneratedName)
-    {F : Lambda.Factory CoreLParams} {Pre Post : Env Expression → Prop}
+    {F : Lambda.Factory CoreLParams} {Pre Post : Imperative.Env Expression → Prop}
     (hpin : ∀ ρ₀, Pre ρ₀ → ρ₀.factory.factory = F)
     (hpost : ∀ ρ' ρ'', Env.ExtendsWith
         (Imperative.IdentOfStringKind Imperative.NondetElim.isGeneratedName) ρ' ρ'' →

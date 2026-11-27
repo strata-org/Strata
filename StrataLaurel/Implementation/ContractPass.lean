@@ -333,7 +333,7 @@ private def rewriteAssignedCall (model : SemanticModel) (info : ContractInfo) (t
   let (tempDecls, tempRefs) ← mkTempAssignments model args info.inputParams src
   let callArgs := mkCallArgs info args tempRefs
   let callWithTemps : StmtExprMd := ⟨.Assign targets ⟨.Call none callee callArgs typeArgs, callSrc⟩, src⟩
-  let preCheck := mkPreChecks info tempRefs src
+  let preCheck := mkPreChecks info tempRefs callSrc
   let outputArgs := targets.filterMap fun t =>
     match t.val with
     | .Local name => some (mkMd (.Var (.Local name)) src)

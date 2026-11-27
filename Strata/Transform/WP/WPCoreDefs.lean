@@ -69,7 +69,7 @@ public section
     of `tys`.  WP copies a variable it saves into a fresh `init` of its declared type, and declares
     fresh names that avoid only the variables of `tys`, the identifiers of the list and the
     global names. -/
-@[expose] def EntryRel (tys : Tys Expression) (ρ ρ' : Env Expression) : Prop :=
+@[expose] def EntryRel (tys : Tys Expression) (ρ ρ' : Imperative.Env Expression) : Prop :=
   ρ' = ρ ∧ TyOK ρ.factory tys (tys.map (·.1)) (tys.map (·.1)) ρ.store ∧
     ∀ x, (ρ.store x).isSome → ∀ (b : String) (k : Nat), x = freshName b k → x ∈ tys.map (·.1)
 

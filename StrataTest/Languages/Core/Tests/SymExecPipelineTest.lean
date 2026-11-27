@@ -69,9 +69,10 @@ private def runPhases (prog : Core.Program) (phases : List Core.PipelinePhase) :
 private def vcPhases (mode : Core.MergeMode) : List String :=
   ((Core.corePipelinePhases (symOpts mode)).map Core.phaseName).dropWhile (· != "symExec")
 
-#guard vcPhases .never == ["symExec", "betaReduce", "commonSubexprElim", "lambdaLift"]
-#guard vcPhases (.pathsAbove 2) == ["symExec", "betaReduce", "lambdaLift"]
-#guard vcPhases .always == ["symExec", "betaReduce", "lambdaLift"]
+#guard vcPhases .never ==
+  ["symExec", "betaReduce", "commonSubexprElim", "lambdaLift", "separateVarNames"]
+#guard vcPhases (.pathsAbove 2) == ["symExec", "betaReduce", "lambdaLift", "separateVarNames"]
+#guard vcPhases .always == ["symExec", "betaReduce", "lambdaLift", "separateVarNames"]
 
 /-- Two branches; `pos` fails on the else branch; `big` is reachable. -/
 private def branchPgm :=
@@ -868,6 +869,7 @@ symExec: all claims hold
 betaReduce: all claims hold
 commonSubexprElim: all claims hold
 lambdaLift: all claims hold
+separateVarNames: all claims hold
 -/
 #guard_msgs in
 #eval allClaims (parse cfgFactsPgm) .never
@@ -889,6 +891,7 @@ nondetElim: all claims hold
 symExec: all claims hold
 betaReduce: all claims hold
 lambdaLift: all claims hold
+separateVarNames: all claims hold
 -/
 #guard_msgs in
 #eval allClaims (parse cfgFactsPgm) .always
@@ -910,6 +913,7 @@ nondetElim: all claims hold
 symExec: all claims hold
 betaReduce: all claims hold
 lambdaLift: all claims hold
+separateVarNames: all claims hold
 -/
 #guard_msgs in
 #eval allClaims (parse cfgFactsPgm) (.pathsAbove 2)

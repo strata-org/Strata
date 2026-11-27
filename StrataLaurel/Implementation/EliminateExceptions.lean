@@ -153,7 +153,7 @@ private def usedNames (proc : Procedure) : Std.HashSet String :=
         targets.foldl (fun acc t =>
           match t.val with
           | .Local id => acc.insert id.text
-          | .Declare _ | .Field _ _ | .Stack _ => acc) acc
+          | .Declare _ | .Field _ _ | .Stack _ | .ArrayElement .. => acc) acc
       | _ => acc) acc b
   let acc := (proc.inputs ++ proc.outputs).foldl
     (fun (acc : Std.HashSet String) p => acc.insert p.name.text) {}
@@ -615,7 +615,7 @@ private def lowerThrowingCall (ctx : Ctx) (callNode : StmtExprMd)
         | .Declare param =>
             (param.type.getD o.type, [⟨.Var (.Declare param), t.source⟩], ⟨.Local param.name, t.source⟩)
         | .Local x => ((model.get x).getType, [], t)
-        | .Field _ _ | .Stack _ => (o.type, [], t)
+        | .Field _ _ | .Stack _ | .ArrayElement .. => (o.type, [], t)
       inoutTemps := inoutTemps ++ [⟨.Declare ⟨mkId temp, targetTy⟩, .unknown⟩]
       inoutDecls := inoutDecls ++ decl
       inoutAssigns := inoutAssigns ++ [nn (.Assign [target] (localRef temp))]
