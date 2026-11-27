@@ -34,7 +34,8 @@ interpretation interprets it as `!`.
 
 It also provides the factory-membership facts `coreFactory_boolNot`, `coreFactory_intLt`,
 `coreFactory_intLe`, `coreFactory_intGe`, `coreFactory_intGt`, `coreFactory_intAdd`,
-`coreFactory_intSub`, `coreFactory_intMul`, `coreFactory_boolAnd`, `coreFactory_boolOr`
+`coreFactory_intSub`, `coreFactory_intMul`, `coreFactory_intDiv`, `coreFactory_intMod`,
+`coreFactory_boolAnd`, `coreFactory_boolOr`
 and `coreFactory_boolImplies`, sharing the generic `coreFactory_get?_of_mem`,
 and the operator expressions `coreIntLeOpExpr` / `coreIntAddOpExpr`.
 
@@ -413,6 +414,26 @@ theorem coreFactory_intMul :
     (Core.Factory)["Int.Mul"]? = some (Lambda.intMulFunc (T := CoreLParams)).func :=
   coreFactory_get?_of_mem (wf := Lambda.intMulFunc (T := CoreLParams)) (by
     refine Array.mem_map.mpr ⟨Lambda.intMulFunc (T := CoreLParams), ?_, rfl⟩
+    rw [Array.mem_def]
+    unfold WFFactoryArray
+    simp only [Array.toList_appendList]
+    repeat (first | exact List.Mem.head _ | apply List.Mem.tail))
+
+/-- `Int.Div` resolves in the concrete `Core.Factory` to `intDivFunc`. -/
+theorem coreFactory_intDiv :
+    (Core.Factory)["Int.Div"]? = some (Lambda.intDivFunc (T := CoreLParams)).func :=
+  coreFactory_get?_of_mem (wf := Lambda.intDivFunc (T := CoreLParams)) (by
+    refine Array.mem_map.mpr ⟨Lambda.intDivFunc (T := CoreLParams), ?_, rfl⟩
+    rw [Array.mem_def]
+    unfold WFFactoryArray
+    simp only [Array.toList_appendList]
+    repeat (first | exact List.Mem.head _ | apply List.Mem.tail))
+
+/-- `Int.Mod` resolves in the concrete `Core.Factory` to `intModFunc`. -/
+theorem coreFactory_intMod :
+    (Core.Factory)["Int.Mod"]? = some (Lambda.intModFunc (T := CoreLParams)).func :=
+  coreFactory_get?_of_mem (wf := Lambda.intModFunc (T := CoreLParams)) (by
+    refine Array.mem_map.mpr ⟨Lambda.intModFunc (T := CoreLParams), ?_, rfl⟩
     rw [Array.mem_def]
     unfold WFFactoryArray
     simp only [Array.toList_appendList]
