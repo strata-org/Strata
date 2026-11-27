@@ -177,6 +177,7 @@ inductive ExtE : CortexExpression.Factory → SemanticStore CortexExpression →
     | none => .call n (args.map (CallArg.inArg (P := CortexExpression)) ++
         lhs.map (CallArg.outArg (P := CortexExpression))) md some
     | some p =>
+      if callsWithoutBody p then .ext else
       match callArgs p lhs args with
       | some cas => .call n cas md some
       | none => .ext
@@ -204,7 +205,10 @@ private theorem kind_of_view {prog : UnorderedProgram} (c : IRCmd) :
     simp only [view, kind]
     cases hp : prog.findProcedure? n with
     | none => simp
-    | some p => cases hc : callArgs p lhs args <;> simp [hc]
+    | some p =>
+      cases hb : callsWithoutBody p
+      · cases hc : callArgs p lhs args <;> simp [hb, hc]
+      · simp [hb]
   all_goals simp [view, kind]
 
 /-- A Core value a runtime value denotes is a value of some type (its own sort). -/
@@ -305,10 +309,14 @@ theorem viewSound (prog : UnorderedProgram) :
       cases hp : prog.findProcedure? n with
       | none => simp
       | some p =>
-        cases hc : callArgs p lhs args with
-        | some => simp [hc]
-        | none =>
-          simp only [hc, Calls.CmdView.ext.injEq]
+        cases hb : callsWithoutBody p
+        · cases hc : callArgs p lhs args with
+          | some => simp [hb, hc]
+          | none =>
+            simp only [hb, hc, Bool.false_eq_true, ite_false, Calls.CmdView.ext.injEq]
+            rintro rfl
+            exact absurd hr (hthrow _ _)
+        · simp only [hb, ite_true, Calls.CmdView.ext.injEq]
           rintro rfl
           exact absurd hr (hthrow _ _)
     case cast x ty e mode md =>
@@ -369,7 +377,7 @@ private theorem callRuns_calleeTable {prog : UnorderedProgram} {p : IProcedure}
   · have hi : inst = some := by
       cases c <;> simp only [sem, kind] at hk
       all_goals first
-        | (split at hk <;> (try split at hk) <;> simp_all)
+        | (split at hk <;> (try split at hk) <;> (try split at hk) <;> simp_all)
         | simp_all
     subst hi
     cases hinst

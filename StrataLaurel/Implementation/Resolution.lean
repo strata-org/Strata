@@ -626,6 +626,7 @@ private def mentionsTypeParam (ctx : TypeLattice) (typeParams : List String)
        | _ => false)
   | .TVar name => typeParams.contains name.text
   | .TSet et => mentionsTypeParam ctx typeParams et
+  | .TArray et => mentionsTypeParam ctx typeParams et
   | .TMap kt vt =>
     mentionsTypeParam ctx typeParams kt || mentionsTypeParam ctx typeParams vt
   | .Applied base args =>
@@ -801,6 +802,9 @@ def resolveHighType (ty : HighTypeMd) : ResolveM HighTypeMd := do
   | .TSet et =>
     let et' ← resolveHighType et
     pure (.TSet et')
+  | .TArray et =>
+    let et' ← resolveHighType et
+    pure (.TArray et')
   | .TMap kt vt =>
     let kt' ← resolveHighType kt
     let vt' ← resolveHighType vt
@@ -1028,7 +1032,7 @@ private def join (ctx : TypeLattice)
     make sense on composite/datatype references. -/
 private def isReference (ctx : TypeLattice) (ty : HighTypeMd) : Bool :=
   match (ctx.unfold ty).val with
-  | .UserDefined _ | .Unknown => true
+  | .UserDefined _ | .Unknown | .TArray _ => true
   | _ => false
 
 /-- A local declared without a type that is read, or that the body ends, before any
@@ -1592,6 +1596,7 @@ private def incrDecrTargetType (target : VariableMd) : ResolveM (Option HighType
     | none => pure none
   | .Declare param => pure (param.type.map (·.val))
   | .Stack t => pure (t.map (·.val))
+  | .ArrayElement .. => pure none
 
 /-- Emit a diagnostic if `++`/`--` is applied to an unsupported element type.
     Only `int` and int-based constrained types (e.g. `nat`) are supported by the
@@ -2391,6 +2396,8 @@ private def finishUntypedDecls (body : StmtExprMd) : ResolveM StmtExprMd := do
   pure (if (collectStmtExprList unannotatedDeclares patched).isEmpty then patched else body)
 
 set_option linter.unusedVariables false in
+set_option maxHeartbeats 400000 in
+-- The match of `Synth.resolveStmtExpr` over every `StmtExpr` constructor, with the array arms, exceeds the default budget.
 mutual
 
 -- ### Dispatch
@@ -2437,6 +2444,7 @@ def Synth.resolveStmtExpr (exprMd : StmtExprMd)
     Synth.compoundAssign exprMd op target rhs source (by rw [h_node, h_expr])
   | .Var (.Field target fieldName) =>
     Synth.varField exprMd target fieldName source (by rw [h_node, h_expr])
+  | .Var (.ArrayElement ..) | .NewArray .. | .ArrayLength _ => Synth.array exprMd source
   -- (Decl-Synth) `var x := e`: a sole unannotated declaration target with an
   -- initializer is handled specially so the binding's type is recovered from
   -- the synthesized RHS. All other assignment shapes go to `Synth.assign`.
@@ -2691,6 +2699,38 @@ def Synth.varField (exprMd : StmtExprMd)
     have hsz := exprMd.sizeOf_val_lt
     rw [h] at hsz
     term_by_mem
+
+def Synth.array (exprMd : StmtExprMd) (source : FileRange) :
+    ResolveM (StmtExpr × HighTypeMd) := do
+  let unknown : HighTypeMd := { val := .Unknown, source := source }
+  match h : exprMd.val with
+  | .Var (.ArrayElement array index) =>
+    let (array', arrayTy) ← Synth.resolveStmtExpr array
+    let index' ← Check.resolveStmtExpr index { val := .TInt, source := index.source }
+    let ty ← match ((← get).typeLattice.unfold arrayTy).val with
+      | .TArray elem => pure elem
+      | .Unknown => pure unknown
+      | _ =>
+        typeMismatch array'.source none "expected an array type" arrayTy
+        pure unknown
+    pure (.Var (.ArrayElement array' index'), ty)
+  | .NewArray elementType length =>
+    let elementType' ← resolveHighType elementType
+    let length' ← Check.resolveStmtExpr length { val := .TInt, source := length.source }
+    pure (.NewArray elementType' length', { val := .TArray elementType', source := source })
+  | .ArrayLength array =>
+    let (array', arrayTy) ← Synth.resolveStmtExpr array
+    match ((← get).typeLattice.unfold arrayTy).val with
+    | .TArray _ | .Unknown => pure ()
+    | _ => typeMismatch array'.source none "expected an array type" arrayTy
+    pure (.ArrayLength array', { val := .TInt, source := source })
+  | other => pure (other, unknown)
+  termination_by sizeOf exprMd * 5 + 1
+  decreasing_by
+    all_goals
+      have hsz := exprMd.sizeOf_val_lt
+      rw [h] at hsz
+      term_by_mem
 
 /-- (Var-Declare)
     ```
@@ -3537,6 +3577,16 @@ def Synth.assign (exprMd : StmtExprMd)
         | some ty => resolveHighType ty
         | none => pure (stackTargetType targets inferInfo compTy vs)
       pure (Sum.inl ((⟨.Stack (some ty'), vs⟩ : VariableMd), ty'))
+    | ⟨.ArrayElement array index, vs⟩ =>
+      let (array', arrayTy) ← Synth.resolveStmtExpr array
+      let index' ← Check.resolveStmtExpr index { val := .TInt, source := index.source }
+      let elemTy : HighTypeMd ← match ((← get).typeLattice.unfold arrayTy).val with
+        | .TArray elem => pure elem
+        | .Unknown => pure { val := .Unknown, source := vs }
+        | _ =>
+          typeMismatch array'.source none "expected an array type" arrayTy
+          pure { val := .Unknown, source := vs }
+      pure (Sum.inl ((⟨.ArrayElement array' index', vs⟩ : VariableMd), elemTy))
     | ⟨.Declare param, vs⟩ =>
       let ty' ← match param.type with
         | some ty => resolveHighType ty
@@ -3721,6 +3771,9 @@ def Synth.incrDecr (exprMd : StmtExprMd)
     | .Stack t => do
       stackNotUpdatable target.source
       pure ((⟨.Stack t, target.source⟩ : VariableMd), t.getD { val := .Unknown, source := target.source })
+    | .ArrayElement a i => do
+      typeMismatch target.source none "an array element cannot be incremented or decremented in place" { val := .Unknown, source := target.source }
+      pure ((⟨.ArrayElement a i, target.source⟩ : VariableMd), { val := .Unknown, source := target.source })
     | .Declare param =>
       -- Should not occur — the translator rejects a declaration target;
       -- treat conservatively by resolving its type only.
@@ -3769,6 +3822,9 @@ def Synth.compoundAssign (exprMd : StmtExprMd)
     | .Stack t => do
       stackNotUpdatable target.source
       pure (⟨.Stack t, target.source⟩ : VariableMd)
+    | .ArrayElement a i => do
+      typeMismatch target.source none "an array element cannot be the target of a compound assignment" { val := .Unknown, source := target.source }
+      pure (⟨.ArrayElement a i, target.source⟩ : VariableMd)
     | .Declare param =>
       -- Should not occur — the translator rejects a declaration target;
       -- treat conservatively by resolving its type only.
@@ -3782,6 +3838,7 @@ def Synth.compoundAssign (exprMd : StmtExprMd)
     | .Declare param => pure (param.type.getD { val := .Unknown, source := target.source })
     | .Stack t => pure (t.getD { val := .Unknown, source := target.source })
     | .Field _ fieldName => getVarType fieldName
+    | .ArrayElement .. => pure { val := .Unknown, source := target.source }
   let rhs' ← Check.resolveStmtExpr rhs resultTy
   pure (.CompoundAssign op target' rhs', resultTy)
   termination_by sizeOf exprMd * 5 + 1
@@ -4271,6 +4328,9 @@ def Synth.instanceCall (exprMd : StmtExprMd)
     ResolveM (StmtExpr × HighTypeMd) := do
   let errorsBefore := (← get).errors.size
   let (target', targetTy) ← Synth.resolveStmtExpr target
+  if callee.text == "length" && args.isEmpty then
+    if let .TArray _ := ((← get).typeLattice.unfold targetTy).val then
+      return (.ArrayLength target', { val := .TInt, source := source })
   let unbound : ResolveM (StmtExpr × HighTypeMd) := do
     let args' ← args.attach.mapM (fun ⟨a, hMem⟩ => do
       have := hMem
@@ -5709,6 +5769,7 @@ private def collectHighType (map : Std.HashMap Nat ResolvedNode) (ty : HighTypeM
   | AstNode.mk val _ =>
   match val with
   | .TSet et => collectHighType map et
+  | .TArray et => collectHighType map et
   | .TMap kt vt =>
     let map := collectHighType map kt
     collectHighType map vt
@@ -6940,7 +7001,7 @@ private def isGlobalTarget (model : SemanticModel) (target : VariableMd) : Bool 
   | .Local name => match model.get? name with
       | some (.field owner _) => owner.text == "$static"
       | _ => false
-  | .Field _ _ | .Declare _ | .Stack _ => false
+  | .Field _ _ | .Declare _ | .Stack _ | .ArrayElement .. => false
 
 
 private def globalDependentIds (program : LaurelProgram) (analysis : InitialEffectAnalysis) : Std.HashSet Nat :=
@@ -7013,15 +7074,25 @@ private def foldRestrictedStmtExprM [Monad m]
   | .Assign targets value =>
     targets.attach.forM fun ⟨target, _⟩ => match target with
       | ⟨.Field receiver _, _⟩ => foldRestrictedStmtExprM f restricted receiver
+      | ⟨.ArrayElement a i, _⟩ => do
+        foldRestrictedStmtExprM f restricted a; foldRestrictedStmtExprM f restricted i
       | ⟨.Local _, _⟩ | ⟨.Declare _, _⟩ | ⟨.Stack _, _⟩ => pure ()
     foldRestrictedStmtExprM f restricted value
   | .Var (.Field target _) => foldRestrictedStmtExprM f restricted target
+  | .Var (.ArrayElement a i) =>
+    foldRestrictedStmtExprM f restricted a; foldRestrictedStmtExprM f restricted i
+  | .NewArray _ n => foldRestrictedStmtExprM f restricted n
+  | .ArrayLength a => foldRestrictedStmtExprM f restricted a
   | .IncrDecr _ _ target => match (dependent := true) target with
     | ⟨.Field receiver _, _⟩ => foldRestrictedStmtExprM f restricted receiver
+    | ⟨.ArrayElement a i, _⟩ => do
+      foldRestrictedStmtExprM f restricted a; foldRestrictedStmtExprM f restricted i
     | ⟨.Local _, _⟩ | ⟨.Declare _, _⟩ | ⟨.Stack _, _⟩ => pure ()
   | .CompoundAssign _ target rhs =>
     match (dependent := true) target with
     | ⟨.Field receiver _, _⟩ => foldRestrictedStmtExprM f restricted receiver
+    | ⟨.ArrayElement a i, _⟩ => do
+      foldRestrictedStmtExprM f restricted a; foldRestrictedStmtExprM f restricted i
     | ⟨.Local _, _⟩ | ⟨.Declare _, _⟩ | ⟨.Stack _, _⟩ => pure ()
     foldRestrictedStmtExprM f restricted rhs
   | .PureFieldUpdate target _ value => foldRestrictedStmtExprM f restricted target; foldRestrictedStmtExprM f restricted value
@@ -7405,7 +7476,7 @@ private def firstInitializerEffectSource (model : SemanticModel)
         containsProcId model.heapReaders callee || containsProcId model.heapWriters callee
     -- A field read is a heap read; every constructor `HeapAnalysis` flags as a heap effect needs an
     -- arm here.
-    | .Var (.Field ..) => true
+    | .Var (.Field ..) | .Var (.ArrayElement ..) | .NewArray .. | .ArrayLength _ => true
     | _ => false
   (foldStmtExprM (m := StateM (Option FileRange)) (fun node => do
     if (← get).isNone && isEffect node then
@@ -7794,6 +7865,7 @@ private def keptParts (model : SemanticModel) (kept : Std.HashMap Nat (List Bool
     | _ => args
   | .TMap k v => [k, v]
   | .TSet e => [e]
+  | .TArray e => [e]
   | .Intersection ts => ts
   | _ => []
 

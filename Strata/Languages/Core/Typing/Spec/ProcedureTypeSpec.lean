@@ -121,9 +121,6 @@ structure ProcHasTypeExact (P : Program) (C : LContext CoreLParams) (Γ : TConte
   bodyTyped : ProcBodyHasType P
     { C with rigidTypeVars := C.rigidTypeVars ++ proc.header.typeArgs }
     (procBodyContext Γ proc) proc.body
-  /-- No input or output parameter is named like an in-scope function. -/
-  formalsNotFunctions : ∀ id ∈ proc.header.inputs.keys ++ proc.header.outputs.keys,
-    id.name ∉ C.functions
 
 /-- `proc'` is `proc` with some of its reserved type parameters renamed throughout, injectively
     and to names that neither `proc` nor the context `C`, `Γ` uses (`TyArgRenaming`). -/

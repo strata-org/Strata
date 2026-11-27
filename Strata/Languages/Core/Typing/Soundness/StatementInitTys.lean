@@ -81,7 +81,7 @@ theorem Statement.typeCheckCmd_declTyRel
     refine ⟨_, (CmdType.postprocess_inv C _ _ _ _ hpost).1, ?_⟩
     exact InitTyRel.subst (TContext.AliasesWF.mem hwf) _ (InitTyRel.of_aliasEquiv hae)
   cases typeCheckCmd_ok_inv h with
-  | cmd run hfun =>
+  | cmd run =>
     cases run with
     | initDet hlookup hself hpre hinfer hunify hpost =>
       exact List.Rel₂.cons (hinit hpre hpost) List.Rel₂.nil

@@ -150,9 +150,9 @@ private theorem DeclHasType_transport {P : Program}
     exact ⟨Ξ, .lemma C Ξ l l' md (hv.congr rfl hR) (HasType_FindEq C _ _ l'.e _ hR hty)
       (writtenAnnotsOk_of_aliases_eq hR.aliases hannots) hnodup hallowed hscoped, hR⟩
   case distinct =>
-    rename_i l es md hlen hscoped hall hannots
+    rename_i l es md hscoped hall hannots
     obtain ⟨mty, hall⟩ := hall
-    exact ⟨Ξ, .distinct C Ξ l es md hlen
+    exact ⟨Ξ, .distinct C Ξ l es md
       ⟨mty, fun e he => HasType_FindEq C _ _ e _ hR (hall e he)⟩
       (fun e he => writtenAnnotsOk_of_aliases_eq hR.aliases (hannots e he)) hscoped, hR⟩
   case proc =>
@@ -186,38 +186,6 @@ theorem DeclsHasType_transport {P : Program}
     obtain ⟨Ξ1, hd', hR1⟩ := DeclHasType_transport hR hd
     obtain ⟨Ξ2, hds', hR2⟩ := IH hR1
     exact ⟨Ξ2, .cons _ _ _ _ _ _ _ _ hd' hds', hR2⟩
-
-/-- The functions in scope after a well-typed declaration are functions of its output table, when
-    the scope before it consisted of functions of its input table. -/
-theorem DeclWellTyped.extendScope_subset {P : Program} {C C' : LContext CoreLParams}
-    {ts : TypeScopes} {d : Decl} {fns : String → Prop} (hfns : ∀ n, fns n → n ∈ C.functions)
-    (h : DeclWellTyped P C ts d C') :
-    ∀ n, d.extendScope fns n → n ∈ C'.functions := by
-  refine And.elim (Decl.extendScope_subset hfns) ?_
-  match h with
-  | .type_con _ _ _ _ _ hadd =>
-    exact ⟨fun _ hn => (addKnownTypeWithError_functions_eq _ _ _ _ hadd) ▸ hn, nofun⟩
-  | .type_syn .. => exact ⟨fun _ hn => hn, nofun⟩
-  | .type_data _ _ _ _ _ hadd =>
-    refine ⟨fun n hn => addMutualBlock_mem_functions hadd n (.inl hn), fun n hn => ?_⟩
-    simp only [Decl.funcNames, List.map_map] at hn
-    obtain ⟨m, hm, rfl⟩ := List.mem_map.mp hn
-    exact addMutualBlock_mem_functions hadd _ (.inr hm)
-  | .ax .. => exact ⟨fun _ hn => hn, nofun⟩
-  | .lemma .. => exact ⟨fun _ hn => hn, nofun⟩
-  | .distinct .. => exact ⟨fun _ hn => hn, nofun⟩
-  | .proc .. => exact ⟨fun _ hn => hn, nofun⟩
-  | .func _ _ _ _ _ _ _ _ hext =>
-    refine ⟨fun _ hn => hext.mem_old hn, fun n hn => ?_⟩
-    simp only [Decl.funcNames, List.map_cons, List.map_nil, List.mem_singleton] at hn
-    subst hn
-    exact hext.mem_new (List.mem_singleton_self _)
-  | .recFuncBlock _ _ _ _ _ _ _ _ _ _ _ _ hfull _ hext _ _ =>
-    refine ⟨fun _ hn => hext.mem_old hn, fun n hn => ?_⟩
-    simp only [Decl.funcNames, List.map_map] at hn
-    obtain ⟨f, hf, rfl⟩ := List.mem_map.mp hn
-    subst hfull
-    exact hext.mem_new (List.mem_map_of_mem hf)
 
 /-- A well-typed function stays well typed from variable scopes with the same lookups. -/
 theorem FuncWellTyped.of_find? {C : LContext CoreLParams} {ts ts' : TypeScopes}
@@ -290,8 +258,8 @@ theorem DeclWellTyped.of_find? {P : Program} {C C' : LContext CoreLParams}
   | .type_data _ _ _ _ _ hadd => .type_data _ _ _ _ _ hadd
   | .ax _ _ _ _ hty hsc => .ax _ _ _ _ (hty.of_find? hfind) hsc
   | .lemma _ _ _ _ hty hnd hsc => .lemma _ _ _ _ (hty.of_find? hfind) hnd hsc
-  | .distinct _ _ _ _ _ hlen ⟨mty, hty⟩ hsc =>
-    .distinct _ _ _ _ _ hlen ⟨mty, fun e he => (hty e he).of_find? hfind⟩ hsc
+  | .distinct _ _ _ _ _ ⟨mty, hty⟩ hsc =>
+    .distinct _ _ _ _ _ ⟨mty, fun e he => (hty e he).of_find? hfind⟩ hsc
   | .proc _ _ _ _ hp => .proc _ _ _ _ (hp.of_find? hfind)
   | .func _ _ _ _ _ hnr hfresh hf hext => .func _ _ _ _ _ hnr hfresh (hf.of_find? hfind) hext
   | .recFuncBlock _ _ _ _ _ _ _ _ hne hfresh hinl hstubs hfull hextS hext hfs hrec =>

@@ -140,3 +140,68 @@ procedure main()
 };
 #end
 
+
+/-! A postcondition is checked where the procedure returns. -/
+
+#eval testLaurelExecution { skipCortexInterpreter := false } <|
+#strata
+program Laurel;
+procedure inc(x: int) returns (r: int)
+  opaque
+  ensures r == x + 2 summary "result is two more"
+//        ^^^^^^^^^^ error: result is two more does not hold
+{
+  r := x + 1
+};
+
+procedure main()
+  entry
+  opaque
+{
+  var y: int := inc(1)
+};
+#end
+
+/-! A postcondition reads an input at its value on entry, even when the body reassigns it. -/
+
+#eval testLaurelExecution { skipCortexInterpreter := false } <|
+#strata
+program Laurel;
+procedure inc(x: int) returns (r: int)
+  opaque
+  ensures r == x + 1 summary "result is one more than the argument"
+{
+  x := x + 1;
+  r := x
+};
+
+procedure main()
+  entry
+  opaque
+{
+  var y: int := inc(1);
+  assert y == 2
+};
+#end
+
+/-! The same body against a postcondition over the reassigned value, which does not hold. -/
+
+#eval testLaurelExecution { skipCortexInterpreter := false } <|
+#strata
+program Laurel;
+procedure inc(x: int) returns (r: int)
+  opaque
+  ensures r == x summary "result is the argument"
+//        ^^^^^^ error: result is the argument does not hold
+{
+  x := x + 1;
+  r := x
+};
+
+procedure main()
+  entry
+  opaque
+{
+  var y: int := inc(1)
+};
+#end

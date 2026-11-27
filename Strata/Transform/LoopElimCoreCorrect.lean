@@ -149,7 +149,7 @@ theorem evalInterp_trueStutterHolds (allowed : Expression.Factory → Prop) :
     `{Pre} ss {Post}` at `params` with `Core.loopElimPrefix` reserved for block labels. -/
 theorem triple (params : InitEnvWFParams) {ss ss' : Statements}
     (ht : Imperative.Block.loopElim ss = some ss') (hnc : Statements.noCalls ss = Bool.true)
-    {F : Lambda.Factory CoreLParams} {Pre Post : Env Expression → Prop}
+    {F : Lambda.Factory CoreLParams} {Pre Post : Imperative.Env Expression → Prop}
     (hpin : ∀ ρ₀, Pre ρ₀ → ρ₀.factory.factory = F)
     (h : Core.Logic.Hoare.Triple π params Pre ss' Post F) :
     Core.Logic.Hoare.Triple π (params.extendBlockLabels [loopElimPrefix]) Pre ss Post F :=
@@ -219,7 +219,7 @@ theorem triple_coreProgram (params : InitEnvWFParams) {p p' : Program} {c : Bool
     (hproc : p.decls[i]? = some (.proc proc md)) (hbody : proc.body = .structured ss opq)
     (hnc : Statements.noCalls ss = Bool.true) :
     ∃ ss', p'.decls[i]? = some (.proc { proc with body := .structured ss' opq } md) ∧
-      ∀ {F : Lambda.Factory CoreLParams} {Pre Post : Env Expression → Prop},
+      ∀ {F : Lambda.Factory CoreLParams} {Pre Post : Imperative.Env Expression → Prop},
         (∀ ρ₀, Pre ρ₀ → ρ₀.factory.factory = F) →
         Core.Logic.Hoare.Triple π params Pre ss' Post F →
         Core.Logic.Hoare.Triple π params Pre ss Post F :=

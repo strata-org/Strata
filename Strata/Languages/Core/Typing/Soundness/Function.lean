@@ -91,24 +91,14 @@ theorem checkTypeArgsAllowed_ok {pfx : String} {ta : List String}
     have hneg := List.find?_eq_none.mp hfind a ha
     simpa using hneg
 
-/-- An accepted signature-name check has distinct type parameters covering `sigVars`, and
-    parameters not named like a function, that is, a name satisfying `isFunction`. -/
-theorem checkSignatureNames_ok {isFunction : String → Prop} [DecidablePred isFunction]
-    {kind name : String} {typeArgs sigVars : List String} {params : List CoreIdent}
-    (h : checkSignatureNames isFunction kind name typeArgs sigVars params = .ok ()) :
-    typeArgs.Nodup ∧ (∀ v ∈ sigVars, v ∈ typeArgs) ∧ ∀ id ∈ params, ¬ isFunction id.name := by
+/-- An accepted signature-name check has distinct type parameters covering `sigVars`. -/
+theorem checkSignatureNames_ok {kind name : String} {typeArgs sigVars : List String}
+    (h : checkSignatureNames kind name typeArgs sigVars = .ok ()) :
+    typeArgs.Nodup ∧ ∀ v ∈ sigVars, v ∈ typeArgs := by
   unfold checkSignatureNames at h
   simp only [bind, Except.bind, pure, Except.pure] at h
   elim_err h with _ hta
-  elim_err h with hsig
-  elim_err h with _ hloop
-  have hparams : ∀ id ∈ params, ¬ isFunction id.name := by
-    intro id hid
-    have hall := List.forIn_yield_ok_mem _ _ _
-      (fun x _ => by split_ns <;> simp_all) hloop id hid
-    elim_err hall with hidFree
-    exact hidFree
-  refine ⟨checkTypeArgsNodup_ok hta, ?_, hparams⟩
+  refine ⟨checkTypeArgsNodup_ok hta, ?_⟩
   intro v hv
   cases hcv : typeArgs.contains v with
   | true => simpa using hcv
@@ -117,13 +107,10 @@ theorem checkSignatureNames_ok {isFunction : String → Prop} [DecidablePred isF
       List.mem_eraseDups.mpr (List.mem_filter.mpr ⟨hv, by simp only [hcv, Bool.not_false]⟩)
     simp_all
 
-/-- The signature-name check accepts distinct type parameters that cover `sigVars`, with
-    parameters not named like a function, that is, a name satisfying `isFunction`. -/
-private theorem checkSignatureNames_eq_ok {isFunction : String → Prop} [DecidablePred isFunction]
-    {kind name : String} {typeArgs sigVars : List String} {params : List CoreIdent}
-    (hnd : typeArgs.Nodup) (hsig : ∀ v ∈ sigVars, v ∈ typeArgs)
-    (hparams : ∀ id ∈ params, ¬ isFunction id.name) :
-    checkSignatureNames isFunction kind name typeArgs sigVars params = .ok () := by
+/-- The signature-name check accepts distinct type parameters that cover `sigVars`. -/
+private theorem checkSignatureNames_eq_ok {kind name : String} {typeArgs sigVars : List String}
+    (hnd : typeArgs.Nodup) (hsig : ∀ v ∈ sigVars, v ∈ typeArgs) :
+    checkSignatureNames kind name typeArgs sigVars = .ok () := by
   have hcovered : ∀ v ∈ sigVars, ¬ (!typeArgs.contains v) = true := by
     intro v hv
     simp only [List.contains_iff_mem.mpr (hsig v hv), Bool.not_true, Bool.false_eq_true,
@@ -133,17 +120,6 @@ private theorem checkSignatureNames_eq_ok {isFunction : String → Prop} [Decida
   unfold checkSignatureNames checkTypeArgsNodup
   simp only [decide_eq_true hnd, Bool.not_true, Bool.false_eq_true, ite_false, hfilter,
     List.eraseDups_nil, List.isEmpty_nil, bind, Except.bind, pure, Except.pure]
-  rw [List.forIn_ok_of_yield _ _ fun id hid => ite_eq_right (hparams id hid)]
-
-/-- A function's signature names that pass the check against one set of function names pass it
-    against any set contained in it. -/
-theorem Function.checkHeaderNames_mono {isFunction isFunction' : String → Prop}
-    [DecidablePred isFunction] [DecidablePred isFunction'] {func : Function}
-    (hsub : ∀ n, isFunction' n → isFunction n)
-    (h : Function.checkHeaderNames isFunction func = .ok ()) :
-    Function.checkHeaderNames isFunction' func = .ok () := by
-  obtain ⟨hnd, hsig, hformals⟩ := checkSignatureNames_ok h
-  exact checkSignatureNames_eq_ok hnd hsig fun id hid hfn => hformals id hid (hsub _ hfn)
 
 /-- What a successful signature resolution and definition check establish: their guards held,
     and `func'` and `EnvCore` are built from the resolved types `outR`, `insR` and the checked
@@ -159,8 +135,6 @@ private structure Function.CoreRun (sc : Thunk (Std.HashSet String))
   /-- Every type variable of the declared signature is a declared type parameter. -/
   sigDeclared : ∀ v ∈ LMonoTy.freeVars (LMonoTy.mkArrow' func.output func.inputs.values),
     v ∈ func.typeArgs
-  /-- No formal shares its name with a function in scope. -/
-  formalsNotFunctions : ∀ id ∈ func.inputs.keys, id.name ∉ C.functions
   /-- A constructor declares no body. -/
   constrNoBody : func.isConstr = true → func.body = none
   /-- Only a recursive function declares a measure. -/
@@ -174,8 +148,10 @@ private structure Function.CoreRun (sc : Thunk (Std.HashSet String))
       func.inputs.values insR
   /-- Each resolved input is registered. -/
   insKnown : List.Rel₂ (fun _ ty' => isInstanceOfKnownType ty' C = true) func.inputs.values insR
-  /-- Checking the four expression positions returned `positions`. -/
-  positionsOk : Function.checkPositions (addSkolemTypes C (Function.rigidNames sc C func tn)) Env
+  /-- Checking the four expression positions, with self-calls read as some `self` says,
+      returned `positions`. -/
+  positionsOk : ∃ self, Function.checkPositions self
+    (addSkolemTypes C (Function.rigidNames sc C func tn)) Env
     func outR insR (Function.rigidNames sc C func tn) = .ok positions
   /-- The returned environment is the positions' final state. -/
   envCore : EnvCore = positions.env
@@ -247,6 +223,22 @@ theorem Function.checkBoolProp_ok_inv
   obtain ⟨rfl, rfl, rfl⟩ := h
   exact ⟨et, rfl, hrw, rfl, rfl⟩
 
+/-- A definition `Function.checkDefinition` accepts is accepted by `Function.checkDefinitionWith`
+    with self-calls read in one of its two ways. -/
+theorem Function.checkDefinition_ok_inv {sc : Thunk (Std.HashSet String)}
+    {C : Expression.TyContext} {Env : Expression.TyEnv} {func : Function} {outR : LMonoTy}
+    {insR : LMonoTys} {tn : Unit → List String} {r : Function × Expression.TyEnv}
+    (h : Function.checkDefinition sc C Env func outR insR tn = .ok r) :
+    ∃ self, Function.checkDefinitionWith self sc C Env func outR insR tn = .ok r := by
+  unfold Function.checkDefinition at h
+  split at h
+  · rename_i hok
+    exact ⟨_, hok.trans h⟩
+  · split at h
+    · rename_i hok
+      exact ⟨_, hok.trans h⟩
+    · split at h <;> cases h
+
 /-- What the checker establishes for the function it checks: its signature names pass
     `checkHeaderNames`, its type parameters are allowed names, its signature resolves, and
     `Function.checkDefinition` accepts it at that signature with result `func'` and `EnvCore`,
@@ -255,7 +247,7 @@ private structure Function.Checked (sc : Thunk (Std.HashSet String))
     (tn : Unit → List String) (C : Expression.TyContext) (Env EnvCore : Expression.TyEnv)
     (func func' : Function) : Prop where
   /-- The signature names pass the header check against the functions in scope. -/
-  names : Function.checkHeaderNames (· ∈ C.functions) func = .ok ()
+  names : Function.checkHeaderNames func = .ok ()
   /-- Every type parameter is an allowed name. -/
   allowed : ∀ a ∈ func.typeArgs, isAllowedName a = true
   /-- The signature resolves, and the definition check accepts the function at it. -/
@@ -270,7 +262,7 @@ private theorem Function.Checked.run
     ∃ outR insR positions,
       Function.CoreRun sc tn C Env EnvCore func func' outR insR positions := by
   obtain ⟨outS, insS, hsigOk, h⟩ := hchecked.core
-  obtain ⟨hta, hsig, hformals⟩ := checkSignatureNames_ok hchecked.names
+  obtain ⟨hta, hsig⟩ := checkSignatureNames_ok hchecked.names
   unfold Function.resolveSignature at hsigOk
   simp only [bind, Except.bind] at hsigOk
   elim_err hsigOk with hnd
@@ -286,7 +278,8 @@ private theorem Function.Checked.run
   elim_err hsigOk with hphantom
   simp only [Except.ok.injEq, Prod.mk.injEq] at hsigOk
   obtain ⟨rfl, rfl⟩ := hsigOk
-  unfold Function.checkDefinition at h
+  obtain ⟨self, h⟩ := Function.checkDefinition_ok_inv h
+  unfold Function.checkDefinitionWith at h
   simp only [bind, Except.bind] at h
   elim_err h with hconstr
   elim_err h with hrec
@@ -316,14 +309,13 @@ private theorem Function.Checked.run
     { inputsNodup := by simpa using hnd
       typeArgsNodup := hta
       sigDeclared := hsig
-      formalsNotFunctions := hformals
       constrNoBody := ?_
       measureOnlyRecursive := ?_
       outResolved := hOutRes
       outKnown := by simpa using houtKnown
       insResolveEach := hIns.imp fun _ _ hr => hr.1
       insKnown := hIns.imp fun _ _ hr => hr.2.2
-      positionsOk := hpositions
+      positionsOk := ⟨self, hpositions⟩
       envCore := rfl
       typeArgsInSig := by simpa using hphantom
       stored := hfunc.symm
@@ -337,32 +329,25 @@ private theorem Function.Checked.run
     simpa using hrec
 
 /-- The checker's renaming of the reserved type parameters of a function does not change
-    whether its signature names pass the check, against any set of function names. -/
-private theorem Function.checkHeaderNames_renameReservedTypeArgs {isFunction : String → Prop}
-    [DecidablePred isFunction] {C : Expression.TyContext} {Env : Expression.TyEnv}
-    {func : Function} :
-    Function.checkHeaderNames isFunction (Function.renameReservedTypeArgs C Env func
+    whether its signature names pass the check. -/
+private theorem Function.checkHeaderNames_renameReservedTypeArgs
+    {C : Expression.TyContext} {Env : Expression.TyEnv} {func : Function} :
+    Function.checkHeaderNames (Function.renameReservedTypeArgs C Env func
         (fun _ => func.annotTys)) = .ok () ↔
-      Function.checkHeaderNames isFunction func = .ok () := by
+      Function.checkHeaderNames func = .ok () := by
   constructor
   · intro h
-    obtain ⟨hnd', hsig', hformals'⟩ := checkSignatureNames_ok h
+    obtain ⟨hnd', hsig'⟩ := checkSignatureNames_ok h
     have hnd := Function.typeArgs_nodup_of_renameReservedTypeArgs C Env func _ hnd'
     obtain ⟨ren, hren, heq⟩ := Function.renameReservedTypeArgs_alphaVariant C Env func hnd
-    rw [heq, LFuncDefined.renameTypeArgs_inputs_keys] at hformals'
     rw [heq] at hsig'
     exact checkSignatureNames_eq_ok hnd (Function.sigDeclared_of_renameTypeArgs hren.1 hsig')
-      hformals'
   · intro h
-    obtain ⟨hnd, hsig, hformals⟩ := checkSignatureNames_ok h
+    obtain ⟨hnd, hsig⟩ := checkSignatureNames_ok h
     obtain ⟨ren, hren, heq⟩ := Function.renameReservedTypeArgs_alphaVariant C Env func hnd
     obtain ⟨hnd', hsig'⟩ := Function.renameTypeArgs_sigDeclared hren.1 hnd hsig
-    have hformals' :
-        ∀ id ∈ (func.renameTypeArgs ren).inputs.keys, ¬ isFunction id.name := by
-      rw [LFuncDefined.renameTypeArgs_inputs_keys]
-      exact hformals
     rw [heq]
-    exact checkSignatureNames_eq_ok hnd' hsig' hformals'
+    exact checkSignatureNames_eq_ok hnd' hsig'
 
 /-- `Function.typeCheckIn` returns the checker's renaming of the reserved type parameters of the
     function, and checks that renaming (`Function.Checked`), with rigid constants avoiding the
@@ -381,7 +366,7 @@ private theorem Function.typeCheckIn_checked {scope : Thunk (Std.HashSet String)
   obtain ⟨rfl, rfl⟩ := hfin
   obtain ⟨hren, hres, -, htn⟩ := Function.renameAndResolve_ok_inv hsig
   rw [htn] at hdef
-  have hnames' : Function.checkHeaderNames (· ∈ C.functions) sig.func = .ok () := by
+  have hnames' : Function.checkHeaderNames sig.func = .ok () := by
     rw [hren]
     exact Function.checkHeaderNames_renameReservedTypeArgs.mpr hnames
   have hallowed : ∀ a ∈ sig.func.typeArgs, isAllowedName a = true := by
@@ -555,15 +540,15 @@ private theorem Function.Checked.elaborated_shape
 
 /-- A successful position walk runs the body, measure, precondition and axiom checks in that
     order, each from the state the previous one returned, and returns their results. -/
-private theorem checkPositions_inv
+private theorem checkPositions_inv {self : Option String}
     {C : Expression.TyContext} {Env : Expression.TyEnv} {func : Function}
     {outR : LMonoTy} {insR : LMonoTys} {σ : RigidNames}
     {positions : Function.CheckedPositions}
-    (h : Function.checkPositions C Env func outR insR σ = .ok positions) :
+    (h : Function.checkPositions self C Env func outR insR σ = .ok positions) :
     ∃ Ebody Emeasure Epre,
-      Function.checkBody C Env func outR σ (func.inputs.keys.zip insR)
+      Function.checkBody self C Env func outR σ (func.inputs.keys.zip insR)
           = .ok (positions.body, Ebody)
-      ∧ Function.checkMeasure C Ebody func σ (func.inputs.keys.zip insR)
+      ∧ Function.checkMeasure self C Ebody func σ (func.inputs.keys.zip insR)
           = .ok (positions.measure, Emeasure)
       ∧ Function.checkPreconditions C Emeasure func.name.name σ (func.inputs.keys.zip insR)
           func.preconditions = .ok (positions.preconditions, Epre)
@@ -579,23 +564,23 @@ private theorem checkPositions_inv
   exact ⟨Ebody, Emeasure, Epre, hbody, hmeasure, hpre, hax⟩
 
 /-- Checking a missing body records no body and keeps the state unchanged. -/
-private theorem checkBody_of_none
+private theorem checkBody_of_none (self : Option String)
     (C : Expression.TyContext) (Env : Expression.TyEnv) (func : Function)
     (outR : LMonoTy) (σ : RigidNames) (sig : @LMonoTySignature Unit)
     (hbody : func.body = none) :
-    Function.checkBody C Env func outR σ sig = .ok (none, Env) := by
+    Function.checkBody self C Env func outR σ sig = .ok (none, Env) := by
   simp only [Function.checkBody, hbody]
 
 /-- If the source function has no body, the position walk records no body. -/
-private theorem checkPositions_body_none
+private theorem checkPositions_body_none {self : Option String}
     (C : Expression.TyContext) (Env : Expression.TyEnv) (func : Function)
     (outR : LMonoTy) (insR : LMonoTys) (σ : RigidNames)
     (positions : Function.CheckedPositions)
-    (h : Function.checkPositions C Env func outR insR σ = .ok positions)
+    (h : Function.checkPositions self C Env func outR insR σ = .ok positions)
     (hbody : func.body = none) :
     positions.body = none := by
   obtain ⟨Ebody, -, -, hb, -⟩ := checkPositions_inv h
-  rw [checkBody_of_none C Env func outR σ (func.inputs.keys.zip insR) hbody] at hb
+  rw [checkBody_of_none self C Env func outR σ (func.inputs.keys.zip insR) hbody] at hb
   simp only [Except.ok.injEq, Prod.mk.injEq] at hb
   exact hb.1.symm
 
@@ -607,7 +592,8 @@ private theorem Function.Checked.constr_no_body
   obtain ⟨_, _, _, run⟩ := h.run
   rw [run.stored]
   intro hc
-  have hnone := checkPositions_body_none _ _ _ _ _ _ _ run.positionsOk (run.constrNoBody hc)
+  have hnone := checkPositions_body_none _ _ _ _ _ _ _ run.positionsOk.choose_spec
+    (run.constrNoBody hc)
   simp only [hnone, Option.map_none]
 
 /-! ## Elaborated signature types are registered -/
@@ -830,11 +816,11 @@ private theorem PositionRun.threaded
 
 /-- A successful position elaboration is a position run against the given type. -/
 private theorem resolvePosition_inv
-    {C : Expression.TyContext} {Env Env' : Expression.TyEnv} {name : String}
+    {C : Expression.TyContext} {Env Env' : Expression.TyEnv} {self : Option String}
     {σ : RigidNames} {sig : @LMonoTySignature Unit} {e : Expression.Expr} {expected : LMonoTy}
     {typeErr : ResolveWithTypeError → Std.Format} {et : LExprT CoreLParams.mono}
-    (h : Function.resolvePosition C Env name σ sig e expected typeErr = .ok (et, Env')) :
-    PositionRun C Env σ sig (skolemizeBody (some name) σ e) expected et Env' := by
+    (h : Function.resolvePosition C Env self σ sig e expected typeErr = .ok (et, Env')) :
+    PositionRun C Env σ sig (skolemizeBody self σ e) expected et Env' := by
   simp only [Function.resolvePosition] at h
   obtain ⟨⟨eT, eEnv⟩, hresMap, h3⟩ := (Except.bind_is_ok _ _ _).mp h
   simp only [Except.ok.injEq, Prod.mk.injEq] at h3
@@ -846,12 +832,12 @@ private theorem resolvePosition_inv
 /-- A successful position check is a position run against the given type whose result reads
     only formals of `sig`. -/
 private theorem checkPosition_inv
-    {C : Expression.TyContext} {Env Env' : Expression.TyEnv} {name : String}
+    {C : Expression.TyContext} {Env Env' : Expression.TyEnv} {self : Option String}
     {σ : RigidNames} {sig : @LMonoTySignature Unit} {e : Expression.Expr} {expected : LMonoTy}
     {typeErr : ResolveWithTypeError → Std.Format} {extraErr : List String → Std.Format}
     {et : LExprT CoreLParams.mono}
-    (h : Function.checkPosition C Env name σ sig e expected typeErr extraErr = .ok (et, Env')) :
-    PositionRun C Env σ sig (skolemizeBody (some name) σ e) expected et Env'
+    (h : Function.checkPosition C Env self σ sig e expected typeErr extraErr = .ok (et, Env')) :
+    PositionRun C Env σ sig (skolemizeBody self σ e) expected et Env'
       ∧ Function.nonInputVars sig et = [] := by
   simp only [Function.checkPosition] at h
   obtain ⟨⟨eT, Enext⟩, hres, h2⟩ := (Except.bind_is_ok _ _ _).mp h
@@ -866,19 +852,19 @@ private theorem checkPosition_inv
 
 /-- A successful body check either finds no body and keeps the state, or checks the body as one
     position against the skolemized output type, reading only formals. -/
-private theorem checkBody_inv
+private theorem checkBody_inv {self : Option String}
     {C : Expression.TyContext} {Env Env' : Expression.TyEnv} {func : Function}
     {outR : LMonoTy} {σ : RigidNames} {sig : @LMonoTySignature Unit}
     {bodyT : Option (LExprT CoreLParams.mono)}
-    (h : Function.checkBody C Env func outR σ sig = .ok (bodyT, Env')) :
+    (h : Function.checkBody self C Env func outR σ sig = .ok (bodyT, Env')) :
     (func.body = none ∧ bodyT = none ∧ Env' = Env)
       ∨ ∃ body et, func.body = some body ∧ bodyT = some et
-          ∧ PositionRun C Env σ sig (skolemizeBody (some func.name.name) σ body)
+          ∧ PositionRun C Env σ sig (skolemizeBody self σ body)
               (skolemizeTy σ outR) et Env'
           ∧ Function.nonInputVars sig et = [] := by
   cases hb : func.body with
   | none =>
-    rw [checkBody_of_none C Env func outR σ sig hb] at h
+    rw [checkBody_of_none self C Env func outR σ sig hb] at h
     simp only [Except.ok.injEq, Prod.mk.injEq] at h
     exact Or.inl ⟨rfl, h.1.symm, h.2.symm⟩
   | some body =>
@@ -892,14 +878,14 @@ private theorem checkBody_inv
 
 /-- A successful optional-measure check either finds no measure, or checks the measure as one
     position against its `measureTy` and finds that it reads only formals. -/
-private theorem checkMeasure_inv
+private theorem checkMeasure_inv {self : Option String}
     {C : Expression.TyContext} {Env Env' : Expression.TyEnv} {func : Function}
     {σ : RigidNames} {sig : @LMonoTySignature Unit}
     {measureT : Option (LExprT CoreLParams.mono)}
-    (h : Function.checkMeasure C Env func σ sig = .ok (measureT, Env')) :
+    (h : Function.checkMeasure self C Env func σ sig = .ok (measureT, Env')) :
     (func.measure = none ∧ measureT = none ∧ Env' = Env)
       ∨ ∃ m et, func.measure = some m ∧ measureT = some et
-          ∧ PositionRun C Env σ sig (skolemizeBody (some func.name.name) σ m)
+          ∧ PositionRun C Env σ sig (skolemizeBody self σ m)
               (skolemizeTy σ (Function.measureTy C sig m)) et Env'
           ∧ Function.nonInputVars sig et = [] := by
   cases hm : func.measure with
@@ -923,7 +909,7 @@ private theorem Function.Checked.measureOnlyRecursive
   obtain ⟨_, _, _, run⟩ := h.run
   rw [run.stored]
   intro hr
-  obtain ⟨_, _, _, -, hm, -⟩ := checkPositions_inv run.positionsOk
+  obtain ⟨_, _, _, -, hm, -⟩ := checkPositions_inv run.positionsOk.choose_spec
   rcases checkMeasure_inv hm with ⟨-, hnone, -⟩ | ⟨m, -, hsome, -⟩
   · simp only [hnone, Option.map_none]
   · rw [run.measureOnlyRecursive hr] at hsome
@@ -1011,7 +997,7 @@ private theorem Function.Checked.closed
     ∧ ∀ p ∈ func'.preconditions,
       (LExpr.freeVars p.expr).map (fun p => p.1.name) ⊆ func'.inputs.map (fun p => p.1.name) := by
   obtain ⟨outR, insR, positions, run⟩ := h.run
-  obtain ⟨_, _, _, hbody, -, hpre, -⟩ := checkPositions_inv run.positionsOk
+  obtain ⟨_, _, _, hbody, -, hpre, -⟩ := checkPositions_inv run.positionsOk.choose_spec
   rw [run.stored]
   refine ⟨?_, ?_⟩
   · intro b hb
@@ -1103,12 +1089,12 @@ theorem LFuncWF_of_typeCheckIn
     present source expression with its resolver run against its ground type, reading only
     formals. -/
 private theorem optPosition_trace
-    {C : Expression.TyContext} {Env Env' : Expression.TyEnv} {name : String}
+    {C : Expression.TyContext} {Env Env' : Expression.TyEnv} {self : Option String}
     {σ : RigidNames} {sig : @LMonoTySignature Unit} {src : Option Expression.Expr}
     {mtyOf : Expression.Expr → LMonoTy} {resT : Option (LExprT CoreLParams.mono)}
     (hinv : (src = none ∧ resT = none ∧ Env' = Env)
       ∨ ∃ e et, src = some e ∧ resT = some et
-          ∧ PositionRun C Env σ sig (skolemizeBody (some name) σ e) (mtyOf e) et Env'
+          ∧ PositionRun C Env σ sig (skolemizeBody self σ e) (mtyOf e) et Env'
           ∧ Function.nonInputVars sig et = [])
     (hground : ∀ e, src = some e → LMonoTy.freeVars (mtyOf e) = [])
     (henv : LExpr.TEnvWF (T := CoreLParams) Env)
@@ -1118,10 +1104,10 @@ private theorem optPosition_trace
       ∧ LExpr.TEnvWF (T := CoreLParams) Env'
       ∧ Subst.absorbs Env'.stateSubstInfo.subst Env.stateSubstInfo.subst
       ∧ (∀ e, src = some e → ∃ et, resT = some et
-          ∧ ThreadedPosition C Env Env' σ sig (skolemizeBody (some name) σ e) (mtyOf e) et
+          ∧ ThreadedPosition C Env Env' σ sig (skolemizeBody self σ e) (mtyOf e) et
           ∧ Function.nonInputVars sig et = [])
       ∧ (∀ et, resT = some et → ∃ e, src = some e
-          ∧ ThreadedPosition C Env Env' σ sig (skolemizeBody (some name) σ e) (mtyOf e) et
+          ∧ ThreadedPosition C Env Env' σ sig (skolemizeBody self σ e) (mtyOf e) et
           ∧ Function.nonInputVars sig et = []) := by
   rcases hinv with ⟨hsrc, rfl, rfl⟩ | ⟨e, et, hsrc, rfl, hrun, hclosed⟩
   · refine ⟨rfl, henv, Subst.absorbs_refl _ Env'.stateSubstInfo.isWF, ?_, ?_⟩
@@ -1253,11 +1239,11 @@ private theorem checkAxioms_boolWalk (C : Expression.TyContext) (name : String)
 
 /-- The complete position walk threads one well-formed, absorbing inference state through body,
     measure, preconditions, and axioms in that order. -/
-private theorem checkPositions_trace
+private theorem checkPositions_trace {self : Option String}
     (C : Expression.TyContext) (Env : Expression.TyEnv) (func : Function)
     (outR : LMonoTy) (insR : LMonoTys) (σ : RigidNames)
     (positions : Function.CheckedPositions)
-    (h : Function.checkPositions C Env func outR insR σ = .ok positions)
+    (h : Function.checkPositions self C Env func outR insR σ = .ok positions)
     (henv : LExpr.TEnvWF (T := CoreLParams) Env)
     (hnud : ∀ v ∈ LMonoTys.freeVars (ListMap.values (func.inputs.keys.zip insR)),
       v ∈ σ.map Prod.fst)
@@ -1269,11 +1255,11 @@ private theorem checkPositions_trace
       ∧ (∀ body, func.body = some body → ∃ et,
           positions.body = some et
             ∧ ThreadedPosition C Env positions.env σ (func.inputs.keys.zip insR)
-                (skolemizeBody (some func.name.name) σ body)
+                (skolemizeBody self σ body)
                 (skolemizeTy σ outR) et)
       ∧ (∀ m, func.measure = some m → ∃ et, positions.measure = some et
           ∧ ThreadedPosition C Env positions.env σ (func.inputs.keys.zip insR)
-              (skolemizeBody (some func.name.name) σ m)
+              (skolemizeBody self σ m)
               (skolemizeTy σ (Function.measureTy C (func.inputs.keys.zip insR) m)) et
           ∧ Function.nonInputVars (func.inputs.keys.zip insR) et = [])
       ∧ List.Rel₂
@@ -1289,11 +1275,11 @@ private theorem checkPositions_trace
           func.axioms positions.axioms
       ∧ (∀ et, positions.body = some et → ∃ body, func.body = some body
           ∧ ThreadedPosition C Env positions.env σ (func.inputs.keys.zip insR)
-              (skolemizeBody (some func.name.name) σ body)
+              (skolemizeBody self σ body)
               (skolemizeTy σ outR) et)
       ∧ (∀ et, positions.measure = some et → ∃ m, func.measure = some m
           ∧ ThreadedPosition C Env positions.env σ (func.inputs.keys.zip insR)
-              (skolemizeBody (some func.name.name) σ m)
+              (skolemizeBody self σ m)
               (skolemizeTy σ (Function.measureTy C (func.inputs.keys.zip insR) m)) et
           ∧ Function.nonInputVars (func.inputs.keys.zip insR) et = []) := by
   obtain ⟨Ebody, Emeasure, Epre, hbody, hmeasure, hpre, hax⟩ := checkPositions_inv h
@@ -1366,40 +1352,40 @@ private theorem axiom_mem_func_exprs {IdentT ExprT TyT MetadataT : Type}
 
 /-- A property that every run of one of the function's positions preserves holds after a
     successful position walk if it held before. -/
-private theorem checkPositions_preserves_src
+private theorem checkPositions_preserves_src {self : Option String}
     {C : Expression.TyContext} {Env : Expression.TyEnv} {func : Function}
     {outR : LMonoTy} {insR : LMonoTys} {σ : RigidNames}
     {positions : Function.CheckedPositions}
     (P : Expression.TyEnv → Prop)
-    (hP : ∀ E e0 mty et E', P E → e0 ∈ func.exprs
+    (hP : ∀ (self : Option String) E e0 mty et E', P E → e0 ∈ func.exprs
       → (mty = skolemizeTy σ outR
           ∨ mty = skolemizeTy σ (Function.measureTy C (func.inputs.keys.zip insR) e0)
           ∨ mty = LMonoTy.bool)
-      → PositionRun C E σ (func.inputs.keys.zip insR) (skolemizeBody (some func.name.name) σ e0)
+      → PositionRun C E σ (func.inputs.keys.zip insR) (skolemizeBody self σ e0)
           mty et E' → P E')
-    (h : Function.checkPositions C Env func outR insR σ = .ok positions)
+    (h : Function.checkPositions self C Env func outR insR σ = .ok positions)
     (h0 : P Env) :
     P positions.env := by
   obtain ⟨Ebody, Emeasure, Epre, hbody, hmeasure, hpre, hax⟩ := checkPositions_inv h
   have hPbody : P Ebody := by
     rcases checkBody_inv hbody with ⟨-, -, rfl⟩ | ⟨body, _, hb, -, hrun, -⟩
     · exact h0
-    · refine hP _ _ _ _ _ h0 ?_ (Or.inl rfl) hrun
+    · refine hP _ _ _ _ _ _ h0 ?_ (Or.inl rfl) hrun
       simp only [Strata.DL.Util.Func.exprs, hb, Option.toList_some, List.append_assoc,
         List.cons_append, List.mem_cons, true_or]
   have hPmeasure : P Emeasure := by
     rcases checkMeasure_inv hmeasure with ⟨-, -, rfl⟩ | ⟨m, _, hm, -, hrun, -⟩
     · exact hPbody
-    · refine hP _ _ _ _ _ hPbody ?_ (Or.inr (Or.inl rfl)) hrun
+    · refine hP _ _ _ _ _ _ hPbody ?_ (Or.inr (Or.inl rfl)) hrun
       simp only [Strata.DL.Util.Func.exprs, hm, Option.toList_some, List.mem_append,
         List.mem_singleton, or_true]
   exact (checkAxioms_boolWalk C func.name.name σ _).preserves P func.axioms
     (fun E ax et E' hE hax hr =>
-      hP E ax _ et E' hE (axiom_mem_func_exprs hax) (Or.inr (Or.inr rfl)) hr)
+      hP _ E ax _ et E' hE (axiom_mem_func_exprs hax) (Or.inr (Or.inr rfl)) hr)
     Epre positions.env _ hax
     ((checkPreconditions_boolWalk C func.name.name σ _).preserves P func.preconditions
       (fun E p et E' hE hp hr =>
-        hP E p.expr _ et E' hE (precondition_expr_mem_func_exprs hp) (Or.inr (Or.inr rfl)) hr)
+        hP _ E p.expr _ et E' hE (precondition_expr_mem_func_exprs hp) (Or.inr (Or.inr rfl)) hr)
       Emeasure Epre _ hpre hPmeasure)
 
 /-! ### Registered substitution ranges through the position walk -/
@@ -1431,11 +1417,11 @@ private theorem closeFormals_RangeKnown
 
 /-- The complete position walk keeps the substitution range registered when function arrows,
     Booleans, literal types, integers, and the skolemized signature types are registered. -/
-private theorem checkPositions_RangeKnown
+private theorem checkPositions_RangeKnown {self : Option String}
     (C : Expression.TyContext) (Env : Expression.TyEnv) (func : Function)
     (outR : LMonoTy) (insR : LMonoTys) (σ : RigidNames)
     (positions : Function.CheckedPositions)
-    (h : Function.checkPositions C Env func outR insR σ = .ok positions)
+    (h : Function.checkPositions self C Env func outR insR σ = .ok positions)
     (henv : LExpr.TEnvWF (T := CoreLParams) Env)
     (hnud : ∀ v ∈ LMonoTys.freeVars (ListMap.values (func.inputs.keys.zip insR)),
       v ∈ σ.map Prod.fst)
@@ -1450,16 +1436,16 @@ private theorem checkPositions_RangeKnown
       LMonoTy.knownInstance (skolemizeTy σ ty) C.knownTypes = true)
     (hrange : Subst.RangeKnown Env.stateSubstInfo.subst C.knownTypes) :
     Subst.RangeKnown positions.env.stateSubstInfo.subst C.knownTypes := by
-  have hstep : ∀ E e0 mty et E',
+  have hstep : ∀ (self : Option String) E e0 mty et E',
       (LExpr.TEnvWF (T := CoreLParams) E ∧ Subst.RangeKnown E.stateSubstInfo.subst C.knownTypes)
       → (mty = skolemizeTy σ outR
           ∨ mty = skolemizeTy σ (Function.measureTy C (func.inputs.keys.zip insR) e0)
           ∨ mty = LMonoTy.bool)
-      → PositionRun C E σ (func.inputs.keys.zip insR) (skolemizeBody (some func.name.name) σ e0)
+      → PositionRun C E σ (func.inputs.keys.zip insR) (skolemizeBody self σ e0)
           mty et E'
       → LExpr.TEnvWF (T := CoreLParams) E'
           ∧ Subst.RangeKnown E'.stateSubstInfo.subst C.knownTypes := by
-    intro E e0 mty et E' hE hmty hrun
+    intro self E e0 mty et E' hE hmty hrun
     have hgroundMty : LMonoTy.freeVars mty = [] := by
       rcases hmty with rfl | rfl | rfl
       · exact hground
@@ -1478,7 +1464,8 @@ private theorem checkPositions_RangeKnown
     exact ⟨hwf, closeFormals_RangeKnown C E EnvR σ _ _ et mty hres hE.1 hnud hfac harrow hbool
       hlit hknownMty hE.2⟩
   exact (checkPositions_preserves_src _
-    (fun E e0 mty et E' hE _ hmty hr => hstep E e0 mty et E' hE hmty hr) h ⟨henv, hrange⟩).2
+    (fun self E e0 mty et E' hE _ hmty hr => hstep self E e0 mty et E' hE hmty hr) h
+    ⟨henv, hrange⟩).2
 
 /-! ### The stored form of a checked position -/
 
@@ -1615,7 +1602,8 @@ private theorem Function.Checked.inputTyped
   have hfacSk := FactorySigWF.addSkolemTypes C (Function.rigidNames sc C func tn) h_fac
   have htrace := checkPositions_trace
     (addSkolemTypes C (Function.rigidNames sc C func tn)) Env func outR insR
-    (Function.rigidNames sc C func tn) positions run.positionsOk h_env hnudSig hgroundOut hfacSk
+    (Function.rigidNames sc C func tn) positions run.positionsOk.choose_spec h_env hnudSig
+    hgroundOut hfacSk
   have hall := Function.rigidNames_annots sc C func tn htn
   have hlits := Function.rigidNames_consts sc C func tn htn
   have hexprs : func.exprs = func.body.toList ++ func.axioms
@@ -1633,21 +1621,22 @@ private theorem Function.Checked.inputTyped
       exact haeList
     exact LExpr.HasType_pushScope_aliasEquiv C Env.context func.inputs
       (func.inputs.keys.zip insR) e mty h_aw hkeys.symm haeInputs hh
-  have hpos : ∀ (e : Expression.Expr) (mty : LMonoTy) (eT : LExprT CoreLParams.mono),
+  have hpos : ∀ (self : Option String) (e : Expression.Expr) (mty : LMonoTy)
+      (eT : LExprT CoreLParams.mono),
       e ∈ func.exprs → LMonoTy.freeVars mty = [] →
       ThreadedPosition (addSkolemTypes C (Function.rigidNames sc C func tn)) Env positions.env
         (Function.rigidNames sc C func tn) (func.inputs.keys.zip insR)
-        (skolemizeBody (some func.name.name) (Function.rigidNames sc C func tn) e) mty eT →
+        (skolemizeBody self (Function.rigidNames sc C func tn) e) mty eT →
       LExpr.HasType (T := CoreLParams) C (funcContext Env.context func) e
         (.forAll [] (deskolemizeTy (Function.rigidNames sc C func tn) mty)) := by
-    intro e mty eT hmem hground hthread
+    intro self e mty eT hmem hground hthread
     obtain ⟨Estart, Enext, hctx, hwf, ⟨eE, hres, -⟩, -⟩ := hthread
     have hws := resolveWithType_WellScoped _ _ _ _ _ _ hres
     have hclosedStart : LExpr.checkContextTypesClosed (T := CoreLParams) Estart := by
       rw [LExpr.checkContextTypesClosed_of_context_eq (T := CoreLParams) Estart Env hctx]
       exact h_closed
     have hht := funcPosition_HasType C Estart eE (Function.rigidNames sc C func tn) hpfx hnd
-      (some func.name.name) (func.inputs.keys.zip insR) e mty eT hres hws hwf
+      self (func.inputs.keys.zip insR) e mty eT hres hws hwf
       hclosedStart h_fac (by simpa only [hctx] using h_amb)
       (by simpa only [hctx] using h_mono) hnudSig hrtSig (hall e hmem) (hlits e hmem) hground
     rw [hctx] at hht
@@ -1656,7 +1645,7 @@ private theorem Function.Checked.inputTyped
   · intro body hbody
     obtain ⟨bT, -, hthread⟩ := htrace.2.2.2.1 body hbody
     have hmem : body ∈ func.exprs := by rw [hexprs, hbody]; simp
-    have hht := hpos body _ bT hmem hgroundOut hthread
+    have hht := hpos _ body _ bT hmem hgroundOut hthread
     rw [hrtOut] at hht
     exact LExpr.HasType.talias (T := CoreLParams) _ body outR func.output
       (LExpr.AliasEquiv.symm hoe) hht
@@ -1664,7 +1653,7 @@ private theorem Function.Checked.inputTyped
     obtain ⟨mT, -, hthread, hclosed⟩ := htrace.2.2.2.2.1 m hm
     rw [Function.measureTy_addSkolemTypes] at hthread
     have hmem : m ∈ func.exprs := by rw [hexprs, hm]; simp
-    have htyped := hpos m _ mT hmem
+    have htyped := hpos _ m _ mT hmem
       (Function.freeVars_skolemizeTy_measureTy C _ _ m hnudSig) hthread
     rw [Function.deskolemizeTy_skolemizeTy_measureTy C _ m hpfx hrtSig] at htyped
     have hkey : ∀ md x ann, m = .fvar md x ann → x ∈ func.inputs.keys := by
@@ -1679,11 +1668,11 @@ private theorem Function.Checked.inputTyped
   · intro p hp
     obtain ⟨pt, -, -, hthread⟩ := List.Rel₂.exists_of_mem_left htrace.2.2.2.2.2.1 hp
     simpa only [deskolemizeTy_bool hpfx] using
-      hpos p.expr LMonoTy.bool pt.2 (precondition_expr_mem_func_exprs hp) rfl hthread
+      hpos _ p.expr LMonoTy.bool pt.2 (precondition_expr_mem_func_exprs hp) rfl hthread
   · intro ax hax
     obtain ⟨aT, -, hthread⟩ := List.Rel₂.exists_of_mem_left htrace.2.2.2.2.2.2.1 hax
     simpa only [deskolemizeTy_bool hpfx] using
-      hpos ax LMonoTy.bool aT (axiom_mem_func_exprs hax) rfl hthread
+      hpos _ ax LMonoTy.bool aT (axiom_mem_func_exprs hax) rfl hthread
 
 /-! ## Facts about the input function from a successful check -/
 
@@ -1703,13 +1692,6 @@ private theorem Function.Checked.typeArgsInSignature_input
     exact mem_freeVars_mkArrow'_output func.output ta func.inputs.values (hOutFree ta hout)
   · obtain ⟨k, hk⟩ := ListMap.mem_values _ ty (hInEq ▸ hty)
     exact hInsFree ty (List.of_mem_zip hk).2 ta hvty
-
-/-- No declared formal parameter shares its name with a function in scope. -/
-private theorem Function.Checked.formalsNotFunctions_input
-    (h : Function.Checked sc tn C Env Env' func func') :
-    ∀ id ∈ func.inputs.keys, id.name ∉ C.functions := by
-  obtain ⟨_, _, _, run⟩ := h.run
-  exact run.formalsNotFunctions
 
 /-- With no type alias in scope, every input and output type of the renaming of the reserved
     type parameters that `Function.typeCheckIn` returns is a registered instance. -/
@@ -1805,7 +1787,7 @@ private theorem Function.checkedRun_storedPositionsAt
   obtain ⟨hnudSig, -, hground, -⟩ := run.signature h_env.aliasesWF
   have htrace := checkPositions_trace
     (addSkolemTypes C (Function.rigidNames sc C func tn)) Env func outR insR
-    (Function.rigidNames sc C func tn) positions run.positionsOk h_env hnudSig hground
+    (Function.rigidNames sc C func tn) positions run.positionsOk.choose_spec h_env hnudSig hground
     (FactorySigWF.addSkolemTypes C (Function.rigidNames sc C func tn) h_fac)
   have hst := run.stored
   subst hst
@@ -1855,7 +1837,7 @@ private theorem Function.checkedRun_storedPositionsAt
           (Function.formalsEnv Estart (Function.rigidNames sc C func tn)
             (func.inputs.keys.zip insR))
           EnvR
-          (skolemizeBody (some func.name.name) (Function.rigidNames sc C func tn) m0)
+          (skolemizeBody _ (Function.rigidNames sc C func tn) m0)
           LMonoTy.int et hres
           (skolemizeBody_ne_fvar _ _ m0 hnon)
           (Function.rigidNames sc C func tn) EnvCore.stateSubstInfo.subst
@@ -2283,7 +2265,8 @@ private theorem Function.checkedRun_RangeKnown
   rw [run.envCore]
   exact checkPositions_RangeKnown
     (addSkolemTypes C (Function.rigidNames sc C func tn)) Env func outR
-    insR (Function.rigidNames sc C func tn) positions run.positionsOk h_env hnudSig hground
+    insR (Function.rigidNames sc C func tn) positions run.positionsOk.choose_spec h_env hnudSig
+    hground
     (FactorySigWF.addSkolemTypes C (Function.rigidNames sc C func tn) h_fac) harrowSk hboolSk
     hlitSk hint hboolK
     (knownInstance_skolemizeTy C hfresh outR run.outKnown) hinsK
@@ -2384,19 +2367,6 @@ private theorem Function.Checked.funcWellTyped_of_exprsTyped {ts : TypeScopes}
       annotsScoped := Function.Checked.annotsScoped_output C Env Env' func func' h
       constrNoBody := Function.Checked.constr_no_body C Env Env' func func' h }
 
-/-- No formal of a checked function's elaborated form is named like a function of `C`. -/
-private theorem Function.Checked.funcNamesWF
-    (h : Function.Checked sc tn C Env Env' func func') :
-    FuncNamesWF (· ∈ C.functions) func' := by
-  obtain ⟨⟨insR, hInEq⟩, -⟩ :=
-    Function.Checked.signature_shape C Env Env' func func' h
-  have hkeysSub : func'.inputs.keys.Sublist func.inputs.keys := by
-    rw [hInEq, ListMap.keys_eq_map_fst (func.inputs.keys.zip insR)]
-    exact List.map_fst_zip_sublist _ _
-  intro x hx
-  exact Function.Checked.formalsNotFunctions_input C Env Env' func func' h x
-    (hkeysSub.subset hx)
-
 /-- At a threaded position, every free-variable annotation written in the source is a valid source
     type with no reserved type-variable name, and no written binder annotation uses one. -/
 private theorem ThreadedPosition.writtenAnnotsOk
@@ -2449,7 +2419,8 @@ private theorem Function.Checked.writtenAnnotsOk
   have hfacSk := FactorySigWF.addSkolemTypes C (Function.rigidNames sc C func tn) h_fac
   obtain ⟨-, -, -, hbodyTrace, hmeasureTrace, hpreTrace, haxiomTrace, -, -⟩ :=
     checkPositions_trace (addSkolemTypes C (Function.rigidNames sc C func tn)) Env func outR insR
-      (Function.rigidNames sc C func tn) positions run.positionsOk h_env hnudSig hgroundOut hfacSk
+      (Function.rigidNames sc C func tn) positions run.positionsOk.choose_spec h_env hnudSig
+      hgroundOut hfacSk
   have hrigAdm : ∀ p ∈ Function.rigidNames sc C func tn,
       TyVarAdmissibility.notGeneratedOrRigid p.1 = true := by
     intro p hp
@@ -2463,7 +2434,7 @@ private theorem Function.Checked.writtenAnnotsOk
     at hcases
   rcases hcases with ((hb | hax) | ⟨p, hp, rfl⟩) | hm
   · obtain ⟨et, -, hthread⟩ := hbodyTrace e hb
-    exact hthread.writtenAnnotsOk C Env positions.env _ _ (some func.name.name) e _ et
+    exact hthread.writtenAnnotsOk C Env positions.env _ _ _ e _ et
       hnd hAliases hrigAdm (hallowedData e he)
   · obtain ⟨axT, -, hthread⟩ := List.Rel₂.exists_of_mem_left haxiomTrace hax
     exact hthread.writtenAnnotsOk C Env positions.env _ _ (some func.name.name) e
@@ -2472,7 +2443,7 @@ private theorem Function.Checked.writtenAnnotsOk
     exact hthread.writtenAnnotsOk C Env positions.env _ _ (some func.name.name) p.expr
       LMonoTy.bool pt.2 hnd hAliases hrigAdm (hallowedData p.expr he)
   · obtain ⟨et, -, hthread, -⟩ := hmeasureTrace e hm
-    exact hthread.writtenAnnotsOk C Env positions.env _ _ (some func.name.name) e
+    exact hthread.writtenAnnotsOk C Env positions.env _ _ _ e
       _ et hnd hAliases hrigAdm (hallowedData e he)
 
 /-! ## Soundness theorems -/
@@ -2524,14 +2495,12 @@ private theorem Function.Checked.sound
         annotsInScope_of_unboundAnnotVar? hnoScope (run.writtenScoped e he)
       writtenAnnotsOk :=
         Function.Checked.writtenAnnotsOk C Env Env' func func' h hcov htn h_env h_fac
-      formalsNotFunctions :=
-        Function.Checked.formalsNotFunctions_input C Env Env' func func' h
       typeArgsNotReserved := hallowed
       constrNoBody := run.constrNoBody }
 
 /-- Output soundness for a function the checker checks (`Function.Checked`) against a set `sc`
     holding every type name in scope: the elaborated form is well typed over the alias-resolved
-    variable scopes, and its names are valid. -/
+    variable scopes. -/
 private theorem Function.Checked.sound_output
     (h : Function.Checked sc tn C Env Env' func func')
     (hcov : ∀ n ∈ scopeTyNames C Env, n ∈ sc.get)
@@ -2546,8 +2515,7 @@ private theorem Function.Checked.sound_output
     (h_mono : MonoScope Env.context) (h_known : AmbientTypesKnown C.knownTypes Env)
     (h_aliasNamesFresh : ∀ al ∈ Env.context.aliases, C.knownTypes.containsName al.name = false)
     (h_sigsFixed : FactorySigsFixed Env.context.aliases C.functions) :
-    FuncWellTyped C Env.context.dealias.types func' ∧ FuncNamesWF (· ∈ C.functions) func' := by
-  refine ⟨?_, Function.Checked.funcNamesWF C Env Env' func func' h⟩
+    FuncWellTyped C Env.context.dealias.types func' := by
   have hbind := Function.Checked.binderAnnotsKnown C Env Env' func func' h htn h_env h_fac
     h_arrow h_lit h_substRange
   obtain ⟨outR, insR, positions, run⟩ := h.run
@@ -2641,7 +2609,7 @@ theorem Function.typeCheckIn_sound (scope : Thunk (Std.HashSet String))
 
 /-- Output soundness for functions checked against a given set of type names: when `scope` holds
     every type name in scope, the elaborated form `Function.typeCheckIn` returns is well typed
-    over the alias-resolved variable scopes, and its names are valid.
+    over the alias-resolved variable scopes.
     The environment is well formed with closed monotype schemes whose alias-resolved types are
     registered; no alias body mentions an alias, and no registered type is named like an alias;
     the factory's function signatures are well formed and built from registered types; and
@@ -2661,7 +2629,7 @@ theorem Function.typeCheckIn_sound_output (scope : Thunk (Std.HashSet String))
     (h_mono : MonoScope Env.context) (h_known : AmbientTypesKnown C.knownTypes Env)
     (h_aliasNamesFresh : ∀ al ∈ Env.context.aliases, C.knownTypes.containsName al.name = false)
     (h_sigsFixed : FactorySigsFixed Env.context.aliases C.functions) :
-    FuncWellTyped C Env.context.dealias.types func' ∧ FuncNamesWF (· ∈ C.functions) func' := by
+    FuncWellTyped C Env.context.dealias.types func' := by
   obtain ⟨rfl, EnvCore, hc⟩ := Function.typeCheckIn_checked h
   have htn := Function.tyNames_renameReservedTypeArgs C Env func (fun _ => func.annotTys)
   exact Function.Checked.sound_output C Env EnvCore _ func' hc hcov
@@ -2736,7 +2704,7 @@ theorem Function.typeCheck_sound
     h_env h_fac h_closed h_mono
 
 /-- Output soundness for functions: the elaborated form of an accepted function is well typed over
-    the alias-resolved variable scopes, and its names are valid.
+    the alias-resolved variable scopes.
     The environment is well formed with closed monotype schemes whose alias-resolved types are
     registered; no alias body mentions an alias, and no registered type is named like an alias;
     the factory's function signatures are well formed and built from registered types; and
@@ -2755,7 +2723,7 @@ theorem Function.typeCheck_sound_output
     (h_mono : MonoScope Env.context) (h_known : AmbientTypesKnown C.knownTypes Env)
     (h_aliasNamesFresh : ∀ al ∈ Env.context.aliases, C.knownTypes.containsName al.name = false)
     (h_sigsFixed : FactorySigsFixed Env.context.aliases C.functions) :
-    FuncWellTyped C Env.context.dealias.types func' ∧ FuncNamesWF (· ∈ C.functions) func' := by
+    FuncWellTyped C Env.context.dealias.types func' := by
   have hIn := Function.typeCheck_in h
   exact Function.typeCheckIn_sound_output _ C Env func _ func' hIn (scopeTyNameThunk_cover C Env)
     h_env h_fac h_resolved h_arrow h_lit h_substRange h_closed h_mono h_known
@@ -2806,7 +2774,7 @@ theorem Function.typeCheckIn_funcShapeAgree (scope : Thunk (Std.HashSet String))
     FuncShapeAgree renamed.toLFunc func'.toLFunc := by
   obtain ⟨-, EnvCore, h⟩ := Function.typeCheckIn_checked h
   obtain ⟨_, _, _, run⟩ := h.run
-  obtain ⟨_, _, _, hb, hm, hp, ha⟩ := checkPositions_inv run.positionsOk
+  obtain ⟨_, _, _, hb, hm, hp, ha⟩ := checkPositions_inv run.positionsOk.choose_spec
   have hbody : renamed.body.isSome = func'.body.isSome := by
     rw [run.stored]
     rcases checkBody_inv hb with ⟨hnone, hT, -⟩ | ⟨body, et, hsome, hT, -⟩

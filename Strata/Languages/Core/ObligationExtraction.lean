@@ -10,6 +10,7 @@ public import Strata.DL.Imperative.Counterexample.Run
 public import Strata.DL.Imperative.Counterexample.BackLink
 import all Strata.DL.Imperative.EvalContext
 public import Strata.Languages.Core.Program
+public import Strata.Languages.Core.ShadowingBinders
 /-! # Proof Obligation Extraction
 
 A Core-to-obligations pass that walks a post-PE program and extracts
@@ -100,38 +101,6 @@ def extractFromStatements
   extractGo pathConditions ss #[]
 end
 
-/-- Give every parameter of `proc` whose name is in `taken` a fresh name in its body.
-
-    A body's parameters reach the obligations as free variables under their own
-    names. One named like a function or constant would be read as that function,
-    constrained by its axioms, so a check on the parameter could hold for the
-    constant's value instead. Each clashing parameter is renamed to `x@n`, the first
-    such name that no function, constant, parameter, variable of the body or
-    earlier fresh name has.
-
-    This matters only for a program whose procedures still carry their parameters, as
-    in a pipeline that runs `simplify` in place of symbolic evaluation. The obligation
-    program symbolic evaluation builds has procedures without parameters, its former
-    parameters renamed apart already, so there the rename does nothing. -/
-def renameShadowingParams (taken : List String) (proc : Procedure) (ss : Statements) :
-    Statements :=
-  let params := proc.header.inputs ++ proc.header.outputs
-  let used := taken ++ params.map (·.1.name) ++ Statements.varNames ss
-  let fresh (used : List String) (x : String) : String :=
-    let rec go (n : Nat) (fuel : Nat) : String :=
-      match fuel with
-      | 0 => s!"{x}@{n}"
-      | fuel + 1 =>
-        let c := s!"{x}@{n}"
-        if used.contains c then go (n + 1) fuel else c
-    go 1 (used.length + 1)
-  (params.foldl (init := (ss, used)) fun (ss, used) (x, ty) =>
-    if taken.contains x.name then
-      let name := fresh used x.name
-      let x' : Expression.Ident := ⟨name, x.metadata⟩
-      (Block.renameLhs (Block.substFvar ss x (.fvar valueLoc x' (some ty))) x x', name :: used)
-    else (ss, used)).1
-
 mutual
 /-- Deterministic completion path through a statement, used when an assertion is after a
     nondeterministic join: choose else at each nested branch and retain all choices needed
@@ -193,20 +162,21 @@ def extractLinkedFromStatements (pathConditions : RevPathConditions Expression)
     (statements : Statements) : Except String (Array LinkedObligation) :=
   extractGoLinked statements pathConditions [] statements #[]
 
-/-- The statements a procedure's obligations are read from: its structured body, with the
-    parameters named like a function in `funcNames` renamed apart. A procedure that still
+/-- The statements a procedure's obligations are read from: its structured body. A procedure
+    whose variables may be named like a function is read through `separated` first. A procedure
+    that still
     carries a contract is refused, since only the body is read: an `ensures` would be left
     unchecked and a `requires` missing from the path condition. So is a CFG body, which
     cannot be walked: returning no obligations would report success on a procedure whose
     assertions were never checked. -/
-def procedureStatements (funcNames : List String) (proc : Procedure) :
+def procedureStatements (proc : Procedure) :
     Except String Statements := do
   if !(proc.spec.preconditions.isEmpty && proc.spec.postconditions.isEmpty) then
     throw ("ObligationExtraction: procedure '" ++ toString proc.header.name ++
       "' still carries a requires or ensures clause; obligations can only be " ++
       "extracted from procedures without a contract")
   match proc.body with
-  | .structured ss _ => .ok (renameShadowingParams funcNames proc ss)
+  | .structured ss _ => .ok ss
   | .cfg _ _ =>
     .error ("ObligationExtraction: procedure '" ++ toString proc.header.name ++
       "' has a CFG body; obligations can only be extracted from " ++
@@ -215,7 +185,7 @@ def procedureStatements (funcNames : List String) (proc : Procedure) :
 
 /-- One step of `extractObligations`: read the declaration `decl`, given the global
     path-condition facts declared before it (newest first) and the obligations found so far. -/
-private def extractDecl (funcNames : List String) :
+private def extractDecl :
     PathCondition Expression × Array (ProofObligation Expression) → Decl →
     Except String (PathCondition Expression × Array (ProofObligation Expression))
   | (globalPc, allObs), decl =>
@@ -241,7 +211,7 @@ private def extractDecl (funcNames : List String) :
           "extracting obligations")
       | none => .ok (globalPc, allObs)
     | .proc proc _md => do
-      let ss ← procedureStatements funcNames proc
+      let ss ← procedureStatements proc
       -- `globalPC` is accumulated newest-first (via ::) which
       -- is what RevPathConditions expects.
       let obs ← extractFromStatements ⟨[globalPc]⟩ ss
@@ -257,12 +227,30 @@ private def extractDecl (funcNames : List String) :
       .ok (globalPc, allObs.push ob)
     | _ => .ok (globalPc, allObs)
 
-/-- Extract proof obligations from a program. Axioms become global assumptions
-    and `distinct` declarations become distinctness facts. -/
+/-- `p` with each variable named like a function or constant of `p` or of `factory` renamed
+    apart (`Program.renameShadowingBinders`), as the verification pipeline's last phase
+    (`separateVarNames`) does with the factory of the run: the obligations read variables and
+    functions under one namespace. A program that phase has run on is unchanged. -/
+def separated (p : Program) (factory : @Lambda.Factory CoreLParams := Lambda.Factory.default) :
+    Program :=
+  (p.renameShadowingBinders (fun n => decide (n ∈ factory)) factory.toArray.size).getD p
+
+/-- The refusal of a program in which a procedure variable has the name of a function or
+    constant: the obligations would read the variable as the function. -/
+def varsNotFunctionsError : String :=
+  "ObligationExtraction: a procedure variable has the name of a function or constant, which " ++
+    "the obligations would read as that function; end the pipeline with separateVarNames"
+
+/-- Extract proof obligations from a program. Axioms become global assumptions and `distinct`
+    declarations become distinctness facts. The program must have no procedure variable named
+    like a function or constant (`Program.varsNotFunctions`), as the obligations read both in one
+    namespace; a program without that fact is refused. The check guards this function's
+    contract: a caller renames such variables apart first (`separateVarNames`, `separated`). -/
 def extractObligations (p : Program) : Except String (ProofObligations Expression) := do
+  if !p.varsNotFunctions then throw varsNotFunctionsError
   -- Accumulate global path-condition facts (axioms and distinct groups) and
   -- obligations as we walk declarations in order.
-  let (_, allObs) ← p.decls.foldlM (extractDecl p.funcNames)
+  let (_, allObs) ← p.decls.foldlM extractDecl
     (([] : PathCondition Expression), (#[] : Array (ProofObligation Expression)))
   return allObs
 
@@ -270,22 +258,24 @@ def extractObligations (p : Program) : Except String (ProofObligations Expressio
     obligations it adds paired with their back-links into the procedure body they come from.
     A lemma is refused: symbolic evaluation turns each lemma into an obligation, so a lemma
     reaching this pass was never checked, and its obligation would carry no back-link. -/
-def extractLinkedDecl (funcNames : List String) :
+def extractLinkedDecl :
     PathCondition Expression × Array LinkedObligation → Decl →
     Except String (PathCondition Expression × Array LinkedObligation)
   | _, .lemma l _ => .error ("ObligationExtraction: lemma '" ++ toString l.name ++
       "' reached linked obligation extraction; lemmas must be turned into \
       obligations before extraction")
   | (globalPc, allObs), decl => do
-    let (globalPc', obs) ← extractDecl funcNames (globalPc, #[]) decl
+    let (globalPc', obs) ← extractDecl (globalPc, #[]) decl
     let entry ← match decl with
-      | .proc proc _ => procedureStatements funcNames proc
+      | .proc proc _ => procedureStatements proc
       | _ => pure []
     pure (globalPc', allObs ++ attachLinks entry obs (linkEventsGo [] entry))
 
-/-- Program-level extraction retaining one adjacent link for every assertion and cover. -/
+/-- Program-level extraction retaining one adjacent link for every assertion and cover. A
+    program `extractObligations` refuses for a variable named like a function is refused too. -/
 def extractLinkedObligations (p : Program) : Except String (Array LinkedObligation) := do
-  let (_, allObs) ← p.decls.foldlM (extractLinkedDecl p.funcNames)
+  if !p.varsNotFunctions then throw varsNotFunctionsError
+  let (_, allObs) ← p.decls.foldlM extractLinkedDecl
     (([] : PathCondition Expression), (#[] : Array LinkedObligation))
   return allObs
 

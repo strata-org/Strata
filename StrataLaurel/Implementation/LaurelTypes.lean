@@ -123,6 +123,12 @@ def computeExprTypeWith (lattice? : Option TypeLattice)
   | .Var (.Local id) => (model.get id).getType
   | .Var (.Declare _) => ⟨ .TVoid, source ⟩
   | .Var (.Stack t) => t.getD ⟨ .Unknown, source ⟩
+  | .Var (.ArrayElement array _) =>
+    match (computeExprTypeWith lattice? model array).val with
+    | .TArray elem => elem
+    | _ => ⟨ .Unknown, source ⟩
+  | .NewArray elementType _ => ⟨ .TArray elementType, source ⟩
+  | .ArrayLength _ => ⟨ .TInt, source ⟩
   -- Field access
   | .Var (.Field target fieldName) =>
     let declared := (model.get fieldName).getType
@@ -180,12 +186,14 @@ def computeExprTypeWith (lattice? : Option TypeLattice)
     match target.val with
     | .Local id => (model.get id).getType
     | .Field _ fieldName => (model.get fieldName).getType
+    | .ArrayElement .. => ⟨ .Unknown, source ⟩
     | .Declare _ | .Stack _ => ⟨ .TVoid, source ⟩  -- shouldn't happen; rejected by translator
   | .CompoundAssign _ target _ =>
     -- Yields the new value, whose type is the target variable's type.
     match target.val with
     | .Local id => (model.get id).getType
     | .Field _ fieldName => (model.get fieldName).getType
+    | .ArrayElement .. => ⟨ .Unknown, source ⟩
     | .Declare _ | .Stack _ => ⟨ .TVoid, source ⟩  -- shouldn't happen; rejected by translator
   | .Assert .. => ⟨ .TVoid, source ⟩
   | .Assume _ => ⟨ .TVoid, source ⟩

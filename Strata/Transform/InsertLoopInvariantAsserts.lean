@@ -22,6 +22,15 @@ def insertLoopInvAssertReservedPrefix : String := "$__loop"
 /-- Label prefix for invariant/measure asserts inserted by
     `InsertLoopInvariantAsserts`. -/
 def insertLoopInvAssertPrefix : String := "insertLoopInvAssert_"
+/-- Label prefix of the entry-invariant assertions. -/
+@[expose] def loopInvEntryPrefix : String := insertLoopInvAssertPrefix ++ "entry_invariant_"
+/-- Label prefix of the maintained-invariant assertions. -/
+@[expose] def loopInvMaintainPrefix : String :=
+  insertLoopInvAssertPrefix ++ "arbitrary_iter_maintain_invariant_"
+/-- Label prefix of the measure lower-bound assertions. -/
+@[expose] def loopInvMeasureLbPrefix : String := insertLoopInvAssertPrefix ++ "measure_lb_"
+/-- Label prefix of the measure-decrease assertions. -/
+@[expose] def loopInvMeasureDecPrefix : String := insertLoopInvAssertPrefix ++ "measure_decrease_"
 
 /-! ## Inserting loop invariant / measure assertions
 
@@ -124,7 +133,7 @@ def invSuffix (i : Nat) (lbl : String) : String :=
 /-- The label of the assertion, before loop `n`, of the invariant at index `i` with source
     label `lbl`. -/
 def entryAssertLabel (n : String) (i : Nat) (lbl : String) : String :=
-  s!"{Core.insertLoopInvAssertPrefix}entry_invariant_{n}_{invSuffix i lbl}"
+  s!"{Core.loopInvEntryPrefix}{n}_{invSuffix i lbl}"
 
 /-- The label of the assumption, before loop `n`, of the invariant at index `i` with source
     label `lbl`. -/
@@ -139,7 +148,7 @@ def midAssumeLabel (n : String) (i : Nat) (lbl : String) : String :=
 /-- The label of the assertion, at the end of an iteration of loop `n`, of the invariant at index
     `i` with source label `lbl`. -/
 def maintainAssertLabel (n : String) (i : Nat) (lbl : String) : String :=
-  s!"{Core.insertLoopInvAssertPrefix}arbitrary_iter_maintain_invariant_{n}_{invSuffix i lbl}"
+  s!"{Core.loopInvMaintainPrefix}{n}_{invSuffix i lbl}"
 
 /-- The label of the assumption, after loop `n`, of the invariant at index `i` with source label
     `lbl`. -/
@@ -208,7 +217,7 @@ def measurePre [HasIdent P] [HasFvar P] [HasFvars P] [HasBoolOps P] [HasInt P]
   | none => []
   | some m =>
     [Stmt.cmd (HasInit.init (measureIdent n) HasInt.intTy (.det m) md),
-     Stmt.cmd (HasPassiveCmds.assert s!"{Core.insertLoopInvAssertPrefix}measure_lb_{n}"
+     Stmt.cmd (HasPassiveCmds.assert s!"{Core.loopInvMeasureLbPrefix}{n}"
       (HasBoolOps.not (HasIntOps.lt (HasFvar.mkTypedFvar (measureIdent n) HasInt.intTy)
         HasInt.zero)) md)]
 
@@ -220,7 +229,7 @@ def measurePost [HasIdent P] [HasFvar P] [HasFvars P] [HasBoolOps P] [HasInt P]
   match measure with
   | none => []
   | some m =>
-    [Stmt.cmd (HasPassiveCmds.assert s!"{Core.insertLoopInvAssertPrefix}measure_decrease_{n}"
+    [Stmt.cmd (HasPassiveCmds.assert s!"{Core.loopInvMeasureDecPrefix}{n}"
       (HasIntOps.lt m (HasFvar.mkTypedFvar (measureIdent n) HasInt.intTy)) md)]
 
 /-- The body of the checked loop `n`: the body `body` between the checks of the invariants

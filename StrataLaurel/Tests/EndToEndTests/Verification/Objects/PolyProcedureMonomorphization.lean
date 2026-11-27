@@ -156,7 +156,7 @@ procedure violatedPreconditionOnClone()
   var bx: Box<int> := new Box<int>;
   bx#val := 5;
   var got: int := getIf(bx, 7);
-//^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition does not hold
+//                ^^^^^^^^^^^^ error: precondition does not hold
   assert got == 7
 //^^^^^^^^^^^^^^^ error: assertion does not hold
 };

@@ -83,7 +83,7 @@ procedure unguardedDowncast(p: Parent)
   modifies p
 {
   var c: Child := p as Child;
-//^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition does not hold
+//                ^^^^^^^^^^ error: precondition does not hold
   c#y := 9;
   assert c#y == 9
 };
@@ -202,7 +202,7 @@ procedure heapNeutralUnguardedDowncast(p: Parent) returns (r: int)
   ensures true
 {
   var c: Child := p as Child;
-//^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition does not hold
+//                ^^^^^^^^^^ error: precondition does not hold
   r := c#y
 };
 #end

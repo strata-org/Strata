@@ -1230,7 +1230,7 @@ private theorem bodyTyped_skolemized
     (∃ C1 ts1, StatementsWellTyped (p.resolveSigs Env.context.aliases) (addSkolemTypes C σ)
         (TContext.subst (Function.formalsEnv Env σ sig).context.dealias
           EnvX.stateSubstInfo.subst).types [] ssOut C1 ts1) ∧
-      StatementsNamesWF (p.resolveSigs Env.context.aliases) (· ∈ C.functions) ssOut := by
+      StatementsNamesWF (p.resolveSigs Env.context.aliases) ssOut := by
   have hwf := formalsEnv_TEnvWF Env σ sig h_env h_sigFreeVars
   have hares := formalsEnv_AliasesResolved Env σ sig h_resolved
   have hfac' := FactorySigWF.addSkolemTypes C σ h_fac
@@ -1246,7 +1246,7 @@ private theorem bodyTyped_skolemized
       (addSkolemTypes C σ) _ EnvX p
       (some proc) _ ssOut hB hwf hfac' hares (skolemScopeEnv_types_ne σ Env sig)
       (formalsEnv_MonoScope Env σ sig h_mono) hfreshSk hsigSk
-  rw [LContext.resolveTable_eq_self hsigSk, hal, addSkolemTypes_functions] at hwff
+  rw [LContext.resolveTable_eq_self hsigSk, hal] at hwff
   exact hwff
 
 /-- A checked skolemized body, deskolemized, is well typed against the alias-resolved procedures in
@@ -1283,7 +1283,7 @@ private theorem bodyTyped_output_core
         { C with rigidTypeVars := C.rigidTypeVars ++ σ.map Prod.fst }
         (Env.context.dealias.types.push (formalsScope sig)) []
         (mapStmtsTys (deskolemizeTy σ) ssOut) Cout tsOut) ∧
-      StatementsNamesWF (p.resolveSigs Env.context.aliases) (· ∈ C.functions)
+      StatementsNamesWF (p.resolveSigs Env.context.aliases)
         (mapStmtsTys (deskolemizeTy σ) ssOut) := by
   obtain ⟨⟨C1, ts1, hj⟩, hnames⟩ := bodyTyped_skolemized C Env EnvX p proc σ sig ssIn ssOut hB
     h_env h_fac h_resolved h_mono h_sigFreeVars h_aliasFresh h_sigsFixed
@@ -1973,7 +1973,7 @@ private theorem Procedure.typeCheckCore_bodyTyped_output
       { C with rigidTypeVars := C.rigidTypeVars ++ proc'.header.typeArgs }
       (procBodyScopes Env.context.dealias.types proc') proc'.body ∧
     ∀ ss o, proc'.body = .structured ss o →
-      StatementsNamesWF (p.resolveSigs Env.context.aliases) (· ∈ C.functions) ss := by
+      StatementsNamesWF (p.resolveSigs Env.context.aliases) ss := by
   have hresP := Procedure.typeCheckCore_paramTypes_resolved C Env Env' p proc proc' md h
     h_aliasNamesFresh
   refine Procedure.typeCheckCore_body_cases C Env Env' p proc proc' md h hcov hdecl h_env
@@ -1982,7 +1982,7 @@ private theorem Procedure.typeCheckCore_bodyTyped_output
       { C with rigidTypeVars := C.rigidTypeVars ++ proc'.header.typeArgs }
       (procBodyScopes Env.context.dealias.types proc') b ∧
       ∀ ss o, b = .structured ss o →
-        StatementsNamesWF (p.resolveSigs Env.context.aliases) (· ∈ C.functions) ss)
+        StatementsNamesWF (p.resolveSigs Env.context.aliases) ss)
     (fun c o => ⟨.cfg c o, fun _ _ hss => nomatch hss⟩) ⟨.abstract, fun _ _ hss => nomatch hss⟩ ?_
   intro ssIn ssOut EnvX o hbodyEq hB hta hpfx hfactoryRel hfactorySafe haliasNoSkolem hrt hσ
     hfreshSk hresSk
@@ -2017,8 +2017,7 @@ private theorem sourceTyWF_of_resolve_known {C : Expression.TyContext}
 
 /-- A procedure with allowed type parameters that the checker proper (`typeCheckCore`) accepts
     satisfies `ProcHasTypeExact` in the ambient context, when its header has distinct type
-    parameters, declares every type variable of its signature and has no parameter named like a
-    function. -/
+    parameters and declares every type variable of its signature. -/
 private theorem Procedure.typeCheckCore_sound
     (C : Expression.TyContext) (Env Env' : Expression.TyEnv) (p : Program)
     (proc proc' : Procedure) (md : MetaData Expression)
@@ -2027,8 +2026,6 @@ private theorem Procedure.typeCheckCore_sound
     (htn : ∀ n ∈ procTyNames proc (procAnnotTys proc), n ∈ tn ())
     (hP : ∀ n ∈ Program.procSigTyNames p, n ∈ ps.get)
     (hnd : proc.header.typeArgs.Nodup) (hdecl : proc.header.SigDeclared)
-    (hformals : ∀ id ∈ proc.header.inputs.keys ++ proc.header.outputs.keys,
-      id.name ∉ C.functions)
     (h_env : LExpr.TEnvWF (T := CoreLParams) Env) (h_fac : FactorySigWF C.functions)
     (h_closed : LExpr.checkContextTypesClosed (T := CoreLParams) Env)
     (h_mono : MonoScope Env.context)
@@ -2070,13 +2067,12 @@ private theorem Procedure.typeCheckCore_sound
       Procedure.typeCheckCore_postconditionsInScope_input C Env Env' p proc proc' md h
     bodyTyped :=
       Procedure.typeCheckCore_bodyTyped_input C Env Env' p proc proc' md h hcov htn hP hdecl h_env
-        h_fac h_closed h_mono h_aliasNames hsigs hS hta
-    formalsNotFunctions := hformals }
+        h_fac h_closed h_mono h_aliasNames hsigs hS hta }
 
 /-- Output soundness for the checker proper (`typeCheckCore`): when the header has distinct type
-    parameters, declares every type variable of its signature and has no parameter named like a
-    function, the returned procedure is well typed over the alias-resolved variable scopes,
-    against the alias-resolved table and program, and its names are valid. -/
+    parameters and declares every type variable of its signature, the returned procedure is well
+    typed over the alias-resolved variable scopes, against the alias-resolved table and program,
+    and its names are valid. -/
 private theorem Procedure.typeCheckCore_sound_output
     (C : Expression.TyContext) (Env Env' : Expression.TyEnv) (p : Program)
     (proc proc' : Procedure) (md : MetaData Expression)
@@ -2085,8 +2081,6 @@ private theorem Procedure.typeCheckCore_sound_output
     (htn : ∀ n ∈ procTyNames proc (procAnnotTys proc), n ∈ tn ())
     (hP : ∀ n ∈ Program.procSigTyNames p, n ∈ ps.get)
     (hnd : proc.header.typeArgs.Nodup) (hdecl : proc.header.SigDeclared)
-    (hformals : ∀ id ∈ proc.header.inputs.keys ++ proc.header.outputs.keys,
-      id.name ∉ C.functions)
     (h_env : LExpr.TEnvWF (T := CoreLParams) Env) (h_fac : FactorySigWF C.functions)
     (h_resolved : TContext.AliasesResolved Env.context)
     (h_mono : MonoScope (IDMeta := Unit) Env.context)
@@ -2100,7 +2094,7 @@ private theorem Procedure.typeCheckCore_sound_output
     (h_known : AmbientTypesKnown C.knownTypes Env) :
     ProcWellTyped (p.resolveSigs Env.context.aliases) (C.resolveTable Env.context.aliases)
       Env.context.dealias.types proc' ∧
-    ProcNamesWF (p.resolveSigs Env.context.aliases) (· ∈ C.functions) proc' := by
+    ProcNamesWF (p.resolveSigs Env.context.aliases) proc' := by
   have hresP := Procedure.typeCheckCore_paramTypes_resolved C Env Env' p proc proc' md h
     h_aliasNamesFresh
   have hin : TContext.FindEq (T := CoreLParams) (procInputContext Env.context.dealias proc')
@@ -2158,10 +2152,9 @@ private theorem Procedure.typeCheckCore_sound_output
       preconditionsTyped := fun c hc => TypeSpec.ExprWellTyped.of_find? hin.1 (hpre c hc)
       postconditionsTyped := fun c hc => TypeSpec.ExprWellTyped.of_find? hbody.1 (hpost c hc)
       bodyTyped := hbody'.withRigid C.rigidTypeVars },
-    ?_, ?_⟩
-  · rw [hinKeys, houtKeys]
-    exact hformals
-  · cases hb : proc'.body with
+    ?_⟩
+  · unfold ProcNamesWF
+    cases hb : proc'.body with
     | structured ss o => exact hbnames ss o hb
     | cfg c o => trivial
     | abstract => trivial
@@ -2527,18 +2520,17 @@ private theorem Procedure.typeCheckCore_forwardCalleeSigResolved
 parameters renamed (`Procedure.renameReservedTypeArgs`). The lemmas below state properties of
 `Procedure.typeCheckIn` for any name sets. -/
 
-/-- A procedure `Procedure.typeCheckIn` accepts has distinct type parameters, declares every type
-    variable of its signature and has no parameter named like a function. -/
+/-- A procedure `Procedure.typeCheckIn` accepts has distinct type parameters and declares every
+    type variable of its signature. -/
 private theorem Procedure.typeCheckIn_headerNames {C : Expression.TyContext}
     {Env Env' : Expression.TyEnv} {p : Program} {proc proc' : Procedure}
     {md : MetaData Expression}
     (h : Procedure.typeCheckIn sc ps C Env p proc md = .ok (proc', Env')) :
-    proc.header.typeArgs.Nodup ∧ proc.header.SigDeclared ∧
-      ∀ id ∈ proc.header.inputs.keys ++ proc.header.outputs.keys, id.name ∉ C.functions := by
+    proc.header.typeArgs.Nodup ∧ proc.header.SigDeclared := by
   unfold Procedure.typeCheckIn at h
   obtain ⟨⟨⟩, hnames, -⟩ := (Except.bind_is_ok _ _ _).mp h
-  obtain ⟨hnd, hdecl, hformals⟩ := checkSignatureNames_ok (Except.mapError_ok_h' hnames)
-  refine ⟨hnd, fun v hv => hdecl v ?_, hformals⟩
+  obtain ⟨hnd, hdecl⟩ := checkSignatureNames_ok (Except.mapError_ok_h' hnames)
+  refine ⟨hnd, fun v hv => hdecl v ?_⟩
   rw [LExpr.LMonoTys.freeVars_append]
   exact hv
 
@@ -2564,25 +2556,17 @@ private theorem Procedure.typeCheckIn_alphaVariant {C : Expression.TyContext}
   exact List.mem_append_right _ hv
 
 /-- The renaming of the reserved type parameters of a procedure `Procedure.typeCheckIn` accepts
-    has distinct type parameters, declares every type variable of its signature and has no
-    parameter named like a function. -/
+    has distinct type parameters and declares every type variable of its signature. -/
 private theorem Procedure.typeCheckIn_renamed_headerNames {C : Expression.TyContext}
     {Env Env' : Expression.TyEnv} {p : Program} {proc proc' : Procedure}
     {md : MetaData Expression}
     (h : Procedure.typeCheckIn sc ps C Env p proc md = .ok (proc', Env')) :
     (Procedure.renamedForCheck C Env proc).header.typeArgs.Nodup ∧
-      (Procedure.renamedForCheck C Env proc).header.SigDeclared ∧
-      ∀ id ∈ (Procedure.renamedForCheck C Env proc).header.inputs.keys ++
-          (Procedure.renamedForCheck C Env proc).header.outputs.keys,
-        id.name ∉ C.functions := by
-  obtain ⟨hnd, hdecl, hformals⟩ := Procedure.typeCheckIn_headerNames h
+      (Procedure.renamedForCheck C Env proc).header.SigDeclared := by
+  obtain ⟨hnd, hdecl⟩ := Procedure.typeCheckIn_headerNames h
   obtain ⟨-, ren, hren, heq⟩ := Procedure.typeCheckIn_alphaVariant h
-  obtain ⟨hnd', hdecl'⟩ := Procedure.renameTypeArgs_sigDeclared hren.1 hnd hdecl
-  obtain ⟨-, hkIn, hkOut⟩ := Procedure.renameTypeArgs_names proc ren
   rw [heq]
-  refine ⟨hnd', hdecl', ?_⟩
-  rw [hkIn, hkOut]
-  exact hformals
+  exact Procedure.renameTypeArgs_sigDeclared hren.1 hnd hdecl
 
 /-- The type parameters of a procedure `Procedure.typeCheckIn` accepts are distinct. -/
 theorem Procedure.typeCheckIn_typeArgs_nodup {scope progSigs : Thunk (Std.HashSet String)}
@@ -2633,10 +2617,10 @@ theorem Procedure.typeCheckIn_sound (scope progSigs : Thunk (Std.HashSet String)
       · exact hnot (List.mem_append_left _ (List.mem_append_right _ hf))
   have htn := Procedure.mem_procTyNames_of_renamed
     (fun _ => Statement.substTyVars Env ++ scopeTyVars C Env) proc (fun _ => procAnnotTys proc)
-  obtain ⟨hnd, hdecl, hformals⟩ := Procedure.typeCheckIn_renamed_headerNames h
+  obtain ⟨hnd, hdecl⟩ := Procedure.typeCheckIn_renamed_headerNames h
   exact ⟨_, (Procedure.typeCheckIn_alphaVariant h).2,
     Procedure.typeCheckCore_sound C Env Env' p _ proc' md (Procedure.typeCheckIn_core_ok h) hcov
-      htn hP hnd hdecl hformals h_env h_fac h_closed h_mono h_aliasNames hsigs hSr
+      htn hP hnd hdecl h_env h_fac h_closed h_mono h_aliasNames hsigs hSr
       (Procedure.renameReservedTypeArgs_typeArgs_allowed _ proc _)⟩
 
 /-- Input soundness for procedures: a procedure the checker accepts satisfies `ProcHasType` in
@@ -2686,12 +2670,12 @@ theorem Procedure.typeCheckIn_sound_output (scope progSigs : Thunk (Std.HashSet 
     (h_known : AmbientTypesKnown C.knownTypes Env) :
     ProcWellTyped (p.resolveSigs Env.context.aliases) (C.resolveTable Env.context.aliases)
       Env.context.dealias.types proc' ∧
-    ProcNamesWF (p.resolveSigs Env.context.aliases) (· ∈ C.functions) proc' :=
+    ProcNamesWF (p.resolveSigs Env.context.aliases) proc' :=
   have hnames := Procedure.typeCheckIn_renamed_headerNames h
   have htn := Procedure.mem_procTyNames_of_renamed
     (fun _ => Statement.substTyVars Env ++ scopeTyVars C Env) proc (fun _ => procAnnotTys proc)
   Procedure.typeCheckCore_sound_output C Env Env' p _ proc' md (Procedure.typeCheckIn_core_ok h)
-    hcov htn hP hnames.1 hnames.2.1 hnames.2.2 h_env h_fac h_resolved h_mono h_aliasNamesFresh
+    hcov htn hP hnames.1 hnames.2 h_env h_fac h_resolved h_mono h_aliasNamesFresh
     h_sigsFixed h_arrow h_lit h_substRange h_closed h_known
 
 /-- Output soundness for procedures: the returned procedure is well typed over the alias-resolved
@@ -2718,7 +2702,7 @@ theorem Procedure.typeCheck_sound_output
     (h_known : AmbientTypesKnown C.knownTypes Env) :
     ProcWellTyped (p.resolveSigs Env.context.aliases) (C.resolveTable Env.context.aliases)
       Env.context.dealias.types proc' ∧
-    ProcNamesWF (p.resolveSigs Env.context.aliases) (· ∈ C.functions) proc' :=
+    ProcNamesWF (p.resolveSigs Env.context.aliases) proc' :=
   Procedure.typeCheckIn_sound_output _ _ C Env Env' p proc proc' md h
     (scopeTyNameThunk_cover C Env) (procSigTyNameThunk_cover p) h_env h_fac h_resolved h_mono
     h_aliasNamesFresh h_sigsFixed h_arrow h_lit h_substRange h_closed h_known
@@ -2784,7 +2768,7 @@ theorem Procedure.typeCheckIn_noUndeclaredVars (scope progSigs : Thunk (Std.Hash
     ∀ v, v ∈ LMonoTys.freeVars proc.header.inputs.values ++
             LMonoTys.freeVars proc.header.outputs.values →
         v ∈ proc.header.typeArgs :=
-  (Procedure.typeCheckIn_headerNames h).2.1
+  (Procedure.typeCheckIn_headerNames h).2
 
 /-- Every parameter type of the procedure `Procedure.typeCheckIn` returns is
     an instance of a registered type. -/
@@ -2864,7 +2848,7 @@ theorem Procedure.typeCheckIn_forwardCalleeSigResolved
   exact Procedure.typeCheckCore_forwardCalleeSigResolved program Ccaller Envcaller Envcaller'
     _ caller' mdcaller Ccallee Envcallee Envcallee' callee callee' mdcallee calleeName ren
     (Procedure.typeCheckIn_core_ok hcaller) hP
-    (Procedure.typeCheckIn_renamed_headerNames hcaller).2.1
+    (Procedure.typeCheckIn_renamed_headerNames hcaller).2
     hcalled' hfind hren.1 hcalleeCore hgrow
     hnoCalleeOnlyAliasIsCallerKnownType hcalleeOnlyAliasDeclared h_env h_fac h_closed
 

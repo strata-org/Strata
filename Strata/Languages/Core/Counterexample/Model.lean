@@ -62,16 +62,55 @@ def obligationReadVars (obligation : ProofObligation Expression) :
     List (Expression.Ident × Lambda.LMonoTy) :=
   (ProofObligation.getVars obligation).filterMap fun (name, ty?) => ty?.map (name, ·)
 
+/-- The fuel at which a map model term's operator expression is evaluated to a literal
+    (`modelMapLiteral?`): enough for literals of `maxLitSize` constants. -/
+def modelMapEvalFuel : Nat := 4096
+
+mutual
+/-- The Core expression that builds the map a solver's array term denotes at the map type
+    `Map kt vt`: `((as const (Array K V)) d)`, lifted as `const` applied to `d`, is
+    `mapConst(d)`, and `(store a i x)` is `update(a, i, x)`; defaults, keys and values are
+    lifted at their types (`annotateConstrValue`), and each operator carries its type at `kt`
+    and `vt`. Any other term has no such expression. -/
+partial def modelMapExpr? (F : @Lambda.Factory CoreLParams) (kt vt : Lambda.LMonoTy) :
+    Expression.Expr → Option Expression.Expr
+  | .app m (.fvar _ c _) d =>
+    if c.name != "const" then none else
+    some (.app m (.op m ⟨"mapConst", ()⟩ (some (.arrow vt (mapTy kt vt))))
+      (annotateConstrValue F vt d))
+  | .app m (.app _ (.app _ (.fvar _ s _) a) i) x =>
+    if s.name != "store" then none else
+    (modelMapExpr? F kt vt a).map fun a' =>
+      let updTy := Lambda.LMonoTy.arrow (mapTy kt vt) (.arrow kt (.arrow vt (mapTy kt vt)))
+      .app m (.app m (.app m (.op m ⟨"update", ()⟩ (some updTy)) a')
+        (annotateConstrValue F kt i)) (annotateConstrValue F vt x)
+  | _ => none
+
+/-- The map literal a solver's array term denotes at the map type `Map kt vt`: its operator
+    expression (`modelMapExpr?`) evaluated by Core's map operations (`evalBounded` under
+    `Core.Factory`, whose `mapConst` and `update` the program's factory may hold only as
+    monomorphic copies), when that gives a constant. -/
+partial def modelMapLiteral? (F : @Lambda.Factory CoreLParams) (kt vt : Lambda.LMonoTy)
+    (e : Expression.Expr) : Option Expression.Expr :=
+  (modelMapExpr? F kt vt e).bind fun b =>
+    (evalBounded modelMapEvalFuel Core.Factory (fun _ => none) b).filter fun
+      | .const _ _ => true
+      | _ => false
+
 /-- Give every datatype-constructor operator of a lifted model value the type
     annotation its constructor has at the expected type `expected`.  A model lifts a
     constructor application with an unannotated head (`smtTermToLExpr`), so its
     `typeOf` is unknown and replay rejects it as ill-typed; the annotation is read
     off the constructor's signature in `F`, instantiating a polymorphic datatype's
-    type parameters by unifying the constructor's output with `expected`.  A value
-    that is not a constructor application of `F`, or whose constructor's output does
-    not unify with `expected`, is returned unchanged. -/
+    type parameters by unifying the constructor's output with `expected`.  At a map type, a
+    solver's array term becomes the map literal it denotes (`modelMapLiteral?`), when it has
+    one.  A value that is not a constructor application of `F`, or whose constructor's
+    output does not unify with `expected`, is returned unchanged. -/
 partial def annotateConstrValue (F : @Lambda.Factory CoreLParams)
     (expected : Lambda.LMonoTy) (e : Expression.Expr) : Expression.Expr :=
+  match expected, e with
+  | .tcons "Map" [kt, vt], _ => (modelMapLiteral? F kt vt e).getD e
+  | _, _ =>
   match e with
   | .fvar m n _ =>
     -- A solver's element of an uninterpreted sort becomes an anonymous value of that
@@ -98,6 +137,16 @@ partial def annotateConstrValue (F : @Lambda.Factory CoreLParams)
       let args' := (args.zip argTys).map fun (a, ty) => annotateConstrValue F ty a
       args'.foldl (fun acc a => .app m acc a) (.op m name (some (inst generic)))
   | _ => e
+end
+
+/-- Does a lifted model value hold a solver's array term: an application of `const` or
+    `store` (the lift of `(as const …)` and `store`, `smtTermToLExpr`)? -/
+def hasArrayModelTerm : Expression.Expr → Bool
+  | .app _ (.fvar _ c _) a => c.name == "const" || hasArrayModelTerm a
+  | .app _ (.app _ (.app _ (.fvar _ s _) a) i) x =>
+    s.name == "store" || hasArrayModelTerm a || hasArrayModelTerm i || hasArrayModelTerm x
+  | .app _ f a => hasArrayModelTerm f || hasArrayModelTerm a
+  | _ => false
 
 /-- `annotateConstrValue` applied to each binding of a lifted model whose variable
     the obligation reads at a known monomorphic type (`obligationReadVars`). -/
@@ -113,7 +162,9 @@ def annotateFlaggedModel (F : @Lambda.Factory CoreLParams)
       -- anonymous values have their constructors (`extendAnon`).
       let liftable := liftable ||
         (!(anonElems value').isEmpty &&
-          Lambda.LExpr.isValue (extendAnon F [value']) value')
+          Lambda.LExpr.isValue (extendAnon F [value']) value') ||
+        -- A value holding a solver's array term is liftable when its arrays became literals.
+        (hasArrayModelTerm value && Lambda.LExpr.isValue F value')
       (name, value', liftable)
     | none => (name, value, liftable)
 

@@ -24,6 +24,6 @@ procedure outOfRange()
 {
   var s: Sequence<int> := seqEmpty();
   var x: int := seqSelect(s, 0)
-//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition does not hold
+//              ^^^^^^^^^^^^^^^ error: precondition does not hold
 };
 #end

@@ -29,18 +29,16 @@ namespace Core
 open Lambda Imperative
 
 /-- An accepted member signature check: the member's name is new to `C`, it is not inline and is
-    marked recursive, its written signature names are valid with the functions of `C` and the
-    members of `funcs` in scope, and the checked signature is the member's
-    `Function.renameAndResolve`. -/
+    marked recursive, its written signature names are valid, and the checked signature is the
+    member's `Function.renameAndResolve`. -/
 private theorem RecFuncBlock.checkSignature_ok_inv
-    {C : Expression.TyContext} {Env : Expression.TyEnv} {funcs : List Function}
+    {C : Expression.TyContext} {Env : Expression.TyEnv}
     {func : Function} {sig : CheckedSignature}
-    (h : RecFuncBlock.checkSignature C Env funcs func = .ok sig) :
+    (h : RecFuncBlock.checkSignature C Env func = .ok sig) :
     func.name.name ∉ C.functions
       ∧ func.attr.any (· == .inline) = false
       ∧ func.isRecursive = true
-      ∧ Function.checkHeaderNames (fun n => n ∈ C.functions ∨ n ∈ funcs.map (·.name.name))
-          func = .ok ()
+      ∧ Function.checkHeaderNames func = .ok ()
       ∧ Function.renameAndResolve C Env func = .ok sig := by
   unfold RecFuncBlock.checkSignature at h
   simp only [bind, Except.bind] at h
@@ -67,7 +65,8 @@ private theorem Function.checkDefinition_signature
     (h : Function.checkDefinition scope C Env func outR insR tyNames = .ok (func', E)) :
     func'.name = func.name ∧ func'.typeArgs = func.typeArgs
       ∧ func'.inputs = func.inputs.keys.zip insR ∧ func'.output = outR := by
-  unfold Function.checkDefinition at h
+  obtain ⟨self, h⟩ := Function.checkDefinition_ok_inv h
+  unfold Function.checkDefinitionWith at h
   simp only [bind, Except.bind] at h
   elim_err h
   elim_err h
@@ -96,15 +95,14 @@ private theorem RecFuncBlock.checkDefinition_stub
 
 /-- A block member whose signature check and whose definition check against `scope` succeed is
     accepted by `Function.typeCheckIn` against `scope` in any context `Cstub` that has the rigid
-    type variables and registered types of `C` and whose functions are those of `C` or members
-    of the block. It returns the renaming of the signature check and the checked definition. -/
+    type variables and registered types of `C`. It returns the renaming of the signature check
+    and the checked definition. -/
 private theorem RecFuncBlock.member_typeCheckIn {scope : Thunk (Std.HashSet String)}
-    {C Cstub : Expression.TyContext} {Env E : Expression.TyEnv} {funcs : List Function}
+    {C Cstub : Expression.TyContext} {Env E : Expression.TyEnv}
     {func func' : Function} {sig : CheckedSignature}
-    (hsig : RecFuncBlock.checkSignature C Env funcs func = .ok sig)
+    (hsig : RecFuncBlock.checkSignature C Env func = .ok sig)
     (hdef : Function.checkDefinition scope Cstub Env sig.func sig.output sig.inputs
       sig.tyNames = .ok (func', E))
-    (hfuncs : ∀ n ∈ Cstub.functions, n ∈ C.functions ∨ n ∈ funcs.map (·.name.name))
     (hrigid : Cstub.rigidTypeVars = C.rigidTypeVars) (hkt : Cstub.knownTypes = C.knownTypes) :
     Function.typeCheckIn scope Cstub Env func = .ok (sig.func, func') := by
   obtain ⟨-, -, -, hnames, hsigC⟩ := RecFuncBlock.checkSignature_ok_inv hsig
@@ -114,7 +112,7 @@ private theorem RecFuncBlock.member_typeCheckIn {scope : Thunk (Std.HashSet Stri
     simp only [Function.renameReservedTypeArgs_congr func _ hrigid rfl,
       Function.resolveSignature_knownTypes hkt]
   unfold Function.typeCheckIn
-  rw [Function.checkHeaderNames_mono hfuncs hnames]
+  rw [hnames]
   simp only [bind, Except.bind, hsig', hdef]
 
 /-- Adding signature stubs to a context keeps its rigid type variables. -/
@@ -157,7 +155,7 @@ private theorem RecFuncBlock.mem_stubContext_functions (C : Expression.TyContext
 private theorem RecFuncBlock.members_of_sigs {scope : Thunk (Std.HashSet String)}
     {C : Expression.TyContext} {Env : Expression.TyEnv} {funcs funcs' : List Function}
     {sigs : List CheckedSignature}
-    (hsigRel : List.Rel₂ (fun f sig => RecFuncBlock.checkSignature C Env funcs f = .ok sig)
+    (hsigRel : List.Rel₂ (fun f sig => RecFuncBlock.checkSignature C Env f = .ok sig)
       funcs sigs)
     (hdefRel : List.Rel₂ (fun sig f' => ∃ E,
       Function.checkDefinition scope (RecFuncBlock.stubContext C (sigs.map (·.stub))) Env
@@ -168,26 +166,13 @@ private theorem RecFuncBlock.members_of_sigs {scope : Thunk (Std.HashSet String)
       ∧ List.Rel₂ (fun f f' => ∃ renamed, Function.typeCheckIn scope
           (RecFuncBlock.stubContext C (sigs.map (·.stub))) Env f = .ok (renamed, f'))
           funcs funcs' := by
-  have hstubNames : (sigs.map (·.stub)).map (·.name.name) = funcs.map (·.name.name) := by
-    rw [List.map_map]
-    refine (hsigRel.map_eq ?_).symm
-    intro f sig hsig
-    obtain ⟨-, -, -, -, hsigC⟩ := RecFuncBlock.checkSignature_ok_inv hsig
-    obtain ⟨hren, -⟩ := Function.renameAndResolve_ok_inv hsigC
-    simp only [Function.comp_apply, CheckedSignature.stub, LFuncDefined.toLFunc,
-      hren, (Function.renameReservedTypeArgs_fields C Env f _).1]
-  have hfuncs : ∀ n ∈ (RecFuncBlock.stubContext C (sigs.map (·.stub))).functions,
-      n ∈ C.functions ∨ n ∈ funcs.map (·.name.name) := by
-    intro n hn
-    rw [← hstubNames]
-    exact RecFuncBlock.mem_stubContext_functions C _ n hn
   have hkt : (RecFuncBlock.stubContext C (sigs.map (·.stub))).knownTypes = C.knownTypes := by
     unfold RecFuncBlock.stubContext
     exact foldl_addFactoryFunction_knownTypes C _ id
   refine ⟨hdefRel.map_eq fun _ _ ⟨_, hdef⟩ => RecFuncBlock.checkDefinition_stub hdef, ?_⟩
   refine (hsigRel.comp hdefRel).imp ?_
   intro f f' ⟨sig, hsig, E, hdef⟩
-  exact ⟨sig.func, RecFuncBlock.member_typeCheckIn hsig hdef hfuncs
+  exact ⟨sig.func, RecFuncBlock.member_typeCheckIn hsig hdef
     (RecFuncBlock.stubContext_rigidTypeVars C _) hkt⟩
 
 /-- The signature stubs of a list of checked functions: each function with its body, contracts
@@ -263,7 +248,7 @@ private theorem RecFuncBlock.typeCheckIn_member_sig {S S' : Std.HashSet String}
     {C C' : Expression.TyContext} {Env Env' : Expression.TyEnv}
     {funcs funcs' : List Function}
     (h : RecFuncBlock.typeCheckIn S C Env funcs = .ok (funcs', C', Env', S')) :
-    ∀ f ∈ funcs, ∃ sig, RecFuncBlock.checkSignature C Env funcs f = .ok sig := by
+    ∀ f ∈ funcs, ∃ sig, RecFuncBlock.checkSignature C Env f = .ok sig := by
   intro f hf
   obtain ⟨sigs, hsigRel, -⟩ :=
     RecFuncBlock.typeCheckIn_decompose S S' C C' Env Env' funcs funcs' h

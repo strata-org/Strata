@@ -2123,7 +2123,8 @@ session 0: 2 checks, 1 contexts
 /-! ### Parameters named like a function, and contracts
 
 A pipeline that runs `simplify` in place of symbolic evaluation leaves procedures their
-parameters. The type checker rejects a program with a parameter named like a function. A procedure
+parameters. A parameter named like a function is then renamed apart, so `c == 5` is a question
+about the argument, which `ax` says nothing about: both goals are refuted. A procedure
 that still has a contract is refused, as by `extractObligations`. -/
 
 private def paramNamedLikeFunction :=
@@ -2399,7 +2400,7 @@ private def paramNamedLikeFunctionAst : Core.Program := { decls := [
     .empty] }
 
 /-! Through a pipeline that runs `simplify` in place of symbolic evaluation, the procedures keep
-their parameters, and in both modes the type checker rejects a parameter named like a function. -/
+their parameters, and both modes refute the goals on a parameter named like a constant. -/
 
 private def withoutSymbolicEval : Option (Core.ValidatedPipeline Core.ProgramFactSet.empty) := do
   let ho ← Core.assertPhaseFor (Core.assertPhaseName .hasObligationForm)
@@ -2412,15 +2413,13 @@ private def withoutSymbolicEval : Option (Core.ValidatedPipeline Core.ProgramFac
       ho, pc, Core.passFunctionInlining, Core.passBetaReduce, Core.passLambdaLift])).toOption
 
 /--
-info: error: ❌ Type checking error.
-Procedure 'P': parameter 'c' collides with a function or constant of the same name
-error: ❌ Type checking error.
-Procedure 'P': parameter 'c' collides with a function or constant of the same name
+info: g ❌ fail, g2 ❌ fail
+g ❌ fail, g2 ❌ fail
 -/
 #guard_msgs in
 #eval show IO Unit from do
   for incremental in [false, true] do
-    match ← (Strata.Core.verifyProgram paramNamedLikeFunctionAst
+    match ← (Strata.Core.verifyProgram (parse paramNamedLikeFunction)
         { VerifyOptions.quiet with incremental } (pipeline := withoutSymbolicEval)).toBaseIO with
     | .ok rs => IO.println (", ".intercalate (rs.toList.map fun r =>
         s!"{r.obligation.label} {r.formatOutcome}"))
@@ -2441,10 +2440,9 @@ session 0: 2 checks, 1 contexts
 #guard_msgs in
 #eval show IO Unit from do
   let p := paramNamedLikeFunctionAst
-  for d in p.decls do
+  for d in (ObligationExtraction.separated p).decls do
     if let .proc proc _ := d then
-      match ObligationExtraction.procedureStatements p.funcNames
-          proc with
+      match ObligationExtraction.procedureStatements proc with
       | .ok ss => IO.println (Std.format ss)
       | .error e => IO.println s!"error: {e}"
   match ← Core.IncrementalSolve.verifyProgram p 1 (typeCheckFirst := false) with
@@ -2487,6 +2485,33 @@ First mismatch: int with bool.
     { τ := Unit, σ := Unit, spawn := fun _ => throw (IO.userError "no solver is opened") }
   report "verifyProgramWith"
     (← Core.IncrementalSolve.verifyProgramWith unused intPlusBoolAst 1 (typeCheckFirst := true))
+
+/-- `function c() : int`, `axiom [ax]: c() == 5`, and a procedure whose LOCAL `c`, named like
+    the function, is asserted to be `5`. -/
+private def localNamedLikeFunctionAst : Core.Program := { decls := [
+  .func { name := "c", inputs := [], output := .int } .empty,
+  .ax { name := "ax", e := .eq Core.coreLoc (.op Core.coreLoc "c" (some .int))
+         (.intConst Core.coreLoc 5) } .empty,
+  .proc { header := { name := "P", typeArgs := [], inputs := [], outputs := [] },
+          spec := { preconditions := [], postconditions := [] },
+          body := .structured
+            [.cmd (.cmd (.init "c" (.forAll [] .int) .nondet .empty)),
+             Core.Statement.assert "l" (.eq Core.coreLoc cParam (.intConst Core.coreLoc 5)) .empty]
+            false }
+    .empty] }
+
+/-! Given to the back end directly, the local is renamed apart from the function as well, so the
+axiom does not prove the goal. -/
+
+/--
+info: l: session 0 REFUTED
+session 0: 1 checks, 1 contexts
+-/
+#guard_msgs in
+#eval show IO Unit from do
+  match ← Core.IncrementalSolve.verifyProgram localNamedLikeFunctionAst 1 with
+  | .ok (results, _, trace) => IO.println (trace.format results)
+  | .error e => IO.println s!"error: {e}"
 
 /-! The same pipeline leaves a node every assertion it had, so through it the programs below put
 several goals on one session, and the walk is compared with the per-obligation path on them. -/

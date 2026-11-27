@@ -484,7 +484,7 @@ theorem ssaEntry_blockInitEnvWF {params : InitEnvWFParams}
     {al : List (Expression.Ident × Expression.Ident)} (hal : ∀ q ∈ al, q.2 ∈ xs)
     {ss₀ : Statements} {ρ0 : Ren Expression} {so : SOut Expression}
     (h : ssaEntry fac G tys xs al ss₀ = .ok (ρ0, so)) (hTF : Block.treeForm ss₀ = true)
-    (hfv : ∀ x ∈ Block.freeVars ss₀, x ∈ xs ∨ x ∈ al.map (·.1)) {ρ ρ' : Env Expression}
+    (hfv : ∀ x ∈ Block.freeVars ss₀, x ∈ xs ∨ x ∈ al.map (·.1)) {ρ ρ' : Imperative.Env Expression}
     (hF : ρ'.factory = ρ.factory)
     (hval : ∀ x ∈ Block.freeVars ss₀, ρ.store x =
       ρ'.store ((ssaEntryRen (inputAvoid G tys ss₀) xs al 0).1.get x) ∧ (ρ.store x).isSome)

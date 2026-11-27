@@ -127,25 +127,16 @@ def reformatResolveError (known : KnownTypes) (σ : RigidNames) :
     | some clean => Std.format clean
     | none => reformatError known σ (format err)
 
-/-- The message for `what`, a parameter or local variable, named like a
-    function or a constant. -/
-def nameClashMsg (what : String) : Format :=
-  f!"{what} collides with a function or constant of the same name"
-
-/-- Check a signature's names: distinct type parameters `typeArgs` that cover the signature's
-    type variables `sigVars`, and parameters not named like a function, that is, a name
-    satisfying `isFunction`. Messages start with `kind` and `name`. -/
-def checkSignatureNames (isFunction : String → Prop) [DecidablePred isFunction]
-    (kind name : String) (typeArgs sigVars : List String) (params : List CoreIdent) :
+/-- Check a signature's type parameter names: distinct type parameters `typeArgs` that cover the
+    signature's type variables `sigVars`. A parameter may have the name of a function, which it
+    shadows. Messages start with `kind` and `name`. -/
+def checkSignatureNames (kind name : String) (typeArgs sigVars : List String) :
     Except Format Unit := do
   checkTypeArgsNodup s!"{kind} '{name}'" typeArgs
   let undeclared := (sigVars.filter (fun v => !typeArgs.contains v)).eraseDups
   if !undeclared.isEmpty then
     throw f!"{kind} '{name}': type variables {undeclared} appear in the signature but are not \
              declared in typeArgs {typeArgs}"
-  for id in params do
-    if isFunction id.name then
-      throw f!"{kind} '{name}': {nameClashMsg s!"parameter '{id.name}'"}"
 
 /-- A scope binding each `(id, mty)` at its skolemized monotype. -/
 def skolemScope (σ : RigidNames) (sig : @LMonoTySignature Unit) :
@@ -230,28 +221,31 @@ def measureTy (C : Core.Expression.TyContext) (sig : @LMonoTySignature Unit)
     | _ => .int
   | _ => .int
 
-/-- Elaborate expression `e` of function `name` in a fresh formal scope against `expected`. -/
+/-- Elaborate expression `e` of a function in a fresh formal scope against `expected`. A
+    reference to the function `self` itself is read at the function's own type parameters; with
+    `self` `none`, it is instantiated afresh like any other call, so a recursive call may be at
+    another type (polymorphic recursion). -/
 private def resolvePosition
-    (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (name : String)
+    (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (self : Option String)
     (sk : RigidNames) (sig : @LMonoTySignature Unit) (e : Core.Expression.Expr)
     (expected : LMonoTy) (typeErr : ResolveWithTypeError → Format) :
     Except Format (LExprT CoreLParams.mono × Core.Expression.TyEnv) := do
-  let eSk := if sk.isEmpty then e else skolemizeBody (some name) sk e
+  let eSk := if sk.isEmpty then e else skolemizeBody self sk e
   let mkBodyEnv := formalsEnv Env sk sig
   let (eT, eEnv) ←
     SourceExpr.orFreeVarError (fun _ => checkFreeVars C mkBodyEnv sk (format e) eSk)
       ((resolveWithType C mkBodyEnv eSk expected).mapError typeErr)
   .ok (eT, closeFormals Env eEnv)
 
-/-- Check expression `e` of function `name` in a fresh formal scope against `expected`,
-    rejecting any non-formal it reads. -/
+/-- Check expression `e` of a function in a fresh formal scope against `expected`,
+    rejecting any non-formal it reads; `self` as in `resolvePosition`. -/
 private def checkPosition
-    (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (name : String)
+    (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (self : Option String)
     (sk : RigidNames) (sig : @LMonoTySignature Unit) (e : Core.Expression.Expr)
     (expected : LMonoTy) (typeErr : ResolveWithTypeError → Format)
     (extraErr : List String → Format) :
     Except Format (LExprT CoreLParams.mono × Core.Expression.TyEnv) := do
-  let (eT, Env') ← resolvePosition C Env name sk sig e expected typeErr
+  let (eT, Env') ← resolvePosition C Env self sk sig e expected typeErr
   let extra := nonInputVars sig eT
   if !extra.isEmpty then
     throw (extraErr extra)
@@ -266,7 +260,7 @@ private def checkPreconditions
         (List (Core.Expression.ExprMetadata × LExprT CoreLParams.mono) × Core.Expression.TyEnv)
   | [] => .ok ([], Env)
   | p :: ps => do
-    let (pT, Env') ← checkPosition C Env name sk sig p.expr LMonoTy.bool
+    let (pT, Env') ← checkPosition C Env (some name) sk sig p.expr LMonoTy.bool
       (reformatResolveError C.knownTypes sk)
       (fun extra => f!"Function '{name}': precondition uses variables {extra} that are not inputs")
     let (psT, Env'') ← checkPreconditions C Env' name sk sig ps
@@ -280,27 +274,29 @@ private def checkAxioms
       Except Format (List (LExprT CoreLParams.mono) × Core.Expression.TyEnv)
   | [] => .ok ([], Env)
   | ax :: axs => do
-    let (axT, Env') ← resolvePosition C Env name sk sig ax LMonoTy.bool
+    let (axT, Env') ← resolvePosition C Env (some name) sk sig ax LMonoTy.bool
       (reformatResolveError C.knownTypes sk)
     let (axsT, Env'') ← checkAxioms C Env' name sk sig axs
     .ok (axT :: axsT, Env'')
 
-/-- Check the optional function body in a fresh formal scope. -/
-private def checkBody
+/-- Check the optional function body in a fresh formal scope, a self-call read at the function's
+    own type parameters when `self` names the function, and instantiated afresh when it is
+    `none`. -/
+private def checkBody (self : Option String)
     (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (func : Function)
     (outR : LMonoTy) (sk : RigidNames) (sig : @LMonoTySignature Unit) :
     Except Format (Option (LExprT CoreLParams.mono) × Core.Expression.TyEnv) :=
   match func.body with
   | none => .ok (none, Env)
   | some body => do
-    let (bodyT, Env') ← checkPosition C Env func.name.name sk sig body (skolemizeTy sk outR)
+    let (bodyT, Env') ← checkPosition C Env self sk sig body (skolemizeTy sk outR)
       (reformatResolveError C.knownTypes sk)
       (fun extra => f!"Function '{func.name.name}': body uses variables {extra} \
                        that are not inputs")
     .ok (some bodyT, Env')
 
-/-- Check the optional measure in a fresh formal scope. -/
-private def checkMeasure
+/-- Check the optional measure in a fresh formal scope, a self-call read as in `checkBody`. -/
+private def checkMeasure (self : Option String)
     (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (func : Function)
     (sk : RigidNames) (sig : @LMonoTySignature Unit) :
     Except Format (Option (LExprT CoreLParams.mono) × Core.Expression.TyEnv) :=
@@ -313,7 +309,7 @@ private def checkMeasure
         let gotTy := deskolemizeTy sk resolvedTy
         f!"recursive function '{func.name.name}': decreases expression must have type int \
            or be a parameter of a datatype type, got '{gotTy}'"
-    let (mT, Env') ← checkPosition C Env func.name.name sk sig m
+    let (mT, Env') ← checkPosition C Env self sk sig m
       (skolemizeTy sk (measureTy C sig m)) typeErr
       (fun extra => f!"recursive function '{func.name.name}': decreases expression uses \
                        variables {extra} that are not parameters")
@@ -328,15 +324,15 @@ private structure CheckedPositions where
   env : Core.Expression.TyEnv
 
 /-- Check the body, measure, preconditions and axioms in order, threading the inference
-    state. -/
-private def checkPositions
+    state; a self-call in the body or measure is read as `self` says (`checkBody`). -/
+private def checkPositions (self : Option String)
     (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (func : Function)
     (outR : LMonoTy) (insR : LMonoTys) (sk : RigidNames) :
     Except Format CheckedPositions := do
   let name := func.name.name
   let sig := func.inputs.keys.zip insR
-  let (bodyT, Env) ← checkBody C Env func outR sk sig
-  let (measureT, Env) ← checkMeasure C Env func sk sig
+  let (bodyT, Env) ← checkBody self C Env func outR sk sig
+  let (measureT, Env) ← checkMeasure self C Env func sk sig
   let (preconditionsT, Env) ← checkPreconditions C Env name sk sig func.preconditions
   let (axiomsT, Env) ← checkAxioms C Env name sk sig func.axioms
   .ok {
@@ -366,12 +362,10 @@ def renameReservedTypeArgs (C : Core.Expression.TyContext) (Env : Core.Expressio
     (fun u => func.mentionedTyVarsIn (annot u) ++ scopeTyVars C Env)
     func.renameTypeArgs func
 
-/-- Check the names of a function signature (`checkSignatureNames`), with `isFunction` the
-    names of the functions in scope. -/
-def checkHeaderNames (isFunction : String → Prop) [DecidablePred isFunction] (func : Function) :
-    Except Format Unit :=
-  checkSignatureNames isFunction "Function" func.name.name func.typeArgs
-    (LMonoTy.mkArrow' func.output func.inputs.values).freeVars func.inputs.keys
+/-- Check the names of a function signature (`checkSignatureNames`). -/
+def checkHeaderNames (func : Function) : Except Format Unit :=
+  checkSignatureNames "Function" func.name.name func.typeArgs
+    (LMonoTy.mkArrow' func.output func.inputs.values).freeVars
 
 /-- Reject `func` when the context `C` already has a function of its name. -/
 def checkNameFresh (C : Core.Expression.TyContext) (func : Function) : Except Format Unit := do
@@ -429,9 +423,11 @@ def renameAndResolve (C : Core.Expression.TyContext) (Env : Core.Expression.TyEn
 /-- Type check the expressions of a `Function` whose signature `resolveSignature` resolved to
     output `outR` and inputs `insR`, with its type parameters as rigid constants that avoid the
     names of `scope` and the type names `tyNames ()` of `func`. Return the definition with the
-    resolved signature and the deskolemized expressions, and the final environment. -/
-def checkDefinition (scope : Thunk (Std.HashSet String)) (C : Core.Expression.TyContext)
-    (Env : Core.Expression.TyEnv) (func : Function) (outR : LMonoTy) (insR : LMonoTys)
+    resolved signature and the deskolemized expressions, and the final environment. A self-call
+    in the body or measure is read as `self` says (`checkBody`). -/
+def checkDefinitionWith (self : Option String) (scope : Thunk (Std.HashSet String))
+    (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (func : Function)
+    (outR : LMonoTy) (insR : LMonoTys)
     (tyNames : Unit → List String) : Except Format (Function × Core.Expression.TyEnv) := do
   let name := func.name.name
   if func.isConstr && func.body.isSome then
@@ -443,7 +439,7 @@ def checkDefinition (scope : Thunk (Std.HashSet String)) (C : Core.Expression.Ty
   -- Skolemize the type parameters to constants that name no registered type.
   let sk := Function.rigidNames scope C func tyNames
   let C' := addSkolemTypes C sk
-  let positions ← checkPositions C' Env func outR insR sk
+  let positions ← checkPositions self C' Env func outR insR sk
   let S := positions.env.stateSubstInfo.subst
   -- Every position is stored under the final substitution, annotated only at declared type
   -- parameters.
@@ -462,13 +458,36 @@ def checkDefinition (scope : Thunk (Std.HashSet String)) (C : Core.Expression.Ty
                          axioms := axiomsF.map (·.1), measure := measureF.map (·.1) }
   .ok (out, positions.env)
 
+/-- Check a function's definition (`checkDefinitionWith`), first with each self-call in its body
+    and measure read at the function's own type parameters, and, if that fails, with each such
+    self-call instantiated afresh, so a recursive call may be at another type (polymorphic
+    recursion). The first reading fixes the type arguments of a self-call that its arguments
+    leave open, such as `f(Nil(), n)`; the second accepts a self-call at another instance. A
+    function both reject is refused with the second reading's message, unless that message is
+    that a type was left open, which the first reading fixes: then with the first reading's,
+    which points at the self-call whose type does not fit. -/
+def checkDefinition (scope : Thunk (Std.HashSet String)) (C : Core.Expression.TyContext)
+    (Env : Core.Expression.TyEnv) (func : Function) (outR : LMonoTy) (insR : LMonoTys)
+    (tyNames : Unit → List String) : Except Format (Function × Core.Expression.TyEnv) :=
+  match checkDefinitionWith (some func.name.name) scope C Env func outR insR tyNames with
+  | .ok r => .ok r
+  | .error rigidErr =>
+    match checkDefinitionWith none scope C Env func outR insR tyNames with
+    | .ok r => .ok r
+    | .error freshErr =>
+      -- The second reading's error names the cause unless it is that a self-call's type was
+      -- left open, which only that reading leaves; the first reading's error then says why the
+      -- function's own instance does not fit.
+      if toString freshErr == toString (storedTyVarMsg func.name.name) then .error rigidErr
+      else .error freshErr
+
 /-- Type check a `Function` after renaming its reserved type parameters, with rigid constants
     that avoid the names of `scope`; return the renamed function and the checked one. The set
     `scope` is evaluated only for a polymorphic function. The signature names are first checked
     as written, so that a message shows the names the user wrote. -/
 def typeCheckIn (scope : Thunk (Std.HashSet String)) (C : Core.Expression.TyContext)
     (Env : Core.Expression.TyEnv) (func : Function) : Except Format (Function × Function) := do
-  checkHeaderNames (· ∈ C.functions) func
+  checkHeaderNames func
   let sig ← renameAndResolve C Env func
   let (func', _) ← checkDefinition scope C Env sig.func sig.output sig.inputs sig.tyNames
   .ok (sig.func, func')

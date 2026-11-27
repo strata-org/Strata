@@ -1078,7 +1078,7 @@ theorem loopElim_body_blockRel {p p' : Program} {c : Bool}
 /-- The `exit` targets of a list satisfying the gate at parameters reserving
     `Core.loopElimPrefix` do not start with it. -/
 private theorem labels_not_startsWith_of_gate {params : InitEnvWFParams} {ss : Statements}
-    {ρ : Env Expression}
+    {ρ : Imperative.Env Expression}
     (hwf : BlockInitEnvWF (params.extendBlockLabels [Core.loopElimPrefix]) ss ρ) :
     ∀ l ∈ Block.labels ss, l.startsWith Core.loopElimPrefix = Bool.false := by
   intro l hl
@@ -1090,7 +1090,7 @@ private theorem labels_not_startsWith_of_gate {params : InitEnvWFParams} {ss : S
 /-- The pure pass eliminates the loops of a list satisfying the gate at parameters reserving
     `Core.loopElimPrefix` for block labels. -/
 theorem blockRel_of_loopElim {params : InitEnvWFParams} {ss ss' : Statements}
-    {ρ : Env Expression} (ht : Imperative.Block.loopElim ss = some ss')
+    {ρ : Imperative.Env Expression} (ht : Imperative.Block.loopElim ss = some ss')
     (hwf : BlockInitEnvWF (params.extendBlockLabels [Core.loopElimPrefix]) ss ρ) :
     BlockRel ss ss' :=
   Imperative.Block.loopElim_rel ht (labels_not_startsWith_of_gate hwf)
@@ -1113,7 +1113,7 @@ theorem single_blockRel {params : InitEnvWFParams} {L : List String} {ss ss' : S
     `BlockInitEnvWF` at `params` wherever `ss` satisfies it at `params` with any block-label
     prefixes `L` reserved. -/
 theorem blockInitEnvWF_of_blockRel {params : InitEnvWFParams} {L : List String}
-    {ss ss' : Statements} {ρ : Env Expression} (hrel : BlockRel ss ss')
+    {ss ss' : Statements} {ρ : Imperative.Env Expression} (hrel : BlockRel ss ss')
     (hwf : BlockInitEnvWF (params.extendBlockLabels L) ss ρ) :
     BlockInitEnvWF params ss' ρ := by
   have hnotOps : ∀ g : Expression.Expr, ∀ o ∈ HasOps.getOps (HasBoolOps.not g),

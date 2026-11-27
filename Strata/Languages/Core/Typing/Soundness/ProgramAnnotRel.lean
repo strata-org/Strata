@@ -117,7 +117,7 @@ private theorem Distinct.typeCheck_eraseTypes {C : Expression.TyContext}
     {Env Env' : Expression.TyEnv} {name : Expression.Ident} {es es' : List Expression.Expr}
     (h : Distinct.typeCheck C Env name es = .ok (es', Env')) :
     es'.map LExpr.eraseTypes = es.map LExpr.eraseTypes := by
-  obtain ⟨ets, S, -, hres, -, rfl, -⟩ := Distinct.typeCheck_success C Env Env' name es _ h
+  obtain ⟨ets, S, hres, -, rfl, -⟩ := Distinct.typeCheck_success C Env Env' name es _ h
   simp only [List.map_map, Function.comp_def, LExpr.eraseTypes_unresolved_applySubstT]
   exact SourceExpr.resolves_unresolved_eraseTypes C es Env ets Env' hres
 

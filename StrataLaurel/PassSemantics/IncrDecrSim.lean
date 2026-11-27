@@ -306,7 +306,7 @@ private theorem fs_stuck_bind {S T U : SimRel} {A : α → β → Prop} (m : Str
     exact RR.ofStuck (.mk m) _⟩
 
 private theorem fs_divPre {G' : StackFrame} {op : Operation} (hop : op = .DivT ∨ op = .ModT) {old : Value}
-    {args : List Value} {n M : Nat} {k : EvalM PM α} {t : EvalM PM γ} {k' : γ → EvalM PM α}
+    {args : List Value} {n M : Nat} {site' : FileRange} {k : EvalM PM α} {t : EvalM PM γ} {k' : γ → EvalM PM α}
     (hpre : ∀ (site site' : FileRange) (P P' : Procedure), ProcRelB (E rt) P P' →
       FS (Sm (E rt) Gl G') Eq (checkPreconditions cfg n site P args) (checkPreconditions cfg M site' P' args))
     (hk : FS (Sm (E rt) Gl G') Eq k (t >>= k')) :
@@ -315,7 +315,7 @@ private theorem fs_divPre {G' : StackFrame} {op : Operation} (hop : op = .DivT �
         | some P => checkPreconditions cfg n st.stmtSite P args >>= fun _ => k
         | none => noFitPrelude st.index op args >>= fun _ => k)
       (get >>= fun (st : EvalState) => (match lookupCallee st.index (mkId op.procName) with
-        | some P => checkPreconditions cfg M st.stmtSite P args >>= fun _ => t
+        | some P => checkPreconditions cfg M site' P args >>= fun _ => t
         | none => missingPrelude (mkId op.procName).text args >>= fun _ => t) >>= k') := by
   refine fs_bind fs_get (fun σ σ' hσ => ?_)
   have hσ : StRel G' (IxRel (E rt)) σ σ' := hσ

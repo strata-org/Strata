@@ -173,11 +173,11 @@ private theorem checkAxioms_erase
 
 /-- Each expression position of a successful position walk, once stored, erases to the
     corresponding written expression, and the precondition metadata is kept. -/
-private theorem checkPositions_erase
+private theorem checkPositions_erase {self : Option String}
     {C : Expression.TyContext} {Env : Expression.TyEnv} {func : Function}
     {outR : LMonoTy} {insR : LMonoTys} {σ : RigidNames}
     {positions : Function.CheckedPositions}
-    (h : Function.checkPositions C Env func outR insR σ = .ok positions) (S : Subst) :
+    (h : Function.checkPositions self C Env func outR insR σ = .ok positions) (S : Subst) :
     positions.body.map (fun et => (finishDeskolemized σ S et).eraseTypes)
         = func.body.map LExpr.eraseTypes
     ∧ positions.measure.map (fun et => (finishDeskolemized σ S et).eraseTypes)
@@ -207,7 +207,7 @@ private theorem Function.CoreRun.eraseAnnots_eq
     (run : Function.CoreRun sc tn C Env EnvCore func func' outR insR positions) :
     func'.eraseAnnots = func.eraseAnnots := by
   obtain ⟨hbody, hmeas, hpre, hax⟩ :=
-    checkPositions_erase run.positionsOk EnvCore.stateSubstInfo.subst
+    checkPositions_erase run.positionsOk.choose_spec EnvCore.stateSubstInfo.subst
   have hlen : func.inputs.keys.length = insR.length := by
     have hl := List.Rel₂.length_eq run.insResolveEach
     have h1 := ListMap.keys.length (ls := func.inputs)

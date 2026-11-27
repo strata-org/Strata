@@ -146,7 +146,7 @@ makes lifting neutral for `noPolymorphicFunctions`. -/
 info: wellFormedCalls, noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, uniqueInits,
   loopBodyNoInits, staticSingleAssignment, noBetaRedexes, noLambdas, noPrecondsFromFuncs, noNondetGuards,
   hasObligationForm, noProcedureContracts, noPolymorphicFunctions, noInits, treeForm, exitsCovered,
-  armsHaveObligations, noCFGCycles
+  armsHaveObligations, noCFGCycles, varsNotFunctions
 -/
 #guard_msgs (whitespace := lax) in
 #eval IO.println (factNames (ofProgramFacts { decls :=
@@ -158,7 +158,7 @@ info: wellFormedCalls, noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMe
 info: wellFormedCalls, noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, uniqueInits,
   loopBodyNoInits, staticSingleAssignment, noBetaRedexes, noLambdas, noPrecondsFromFuncs, noNondetGuards,
   hasObligationForm, noProcedureContracts, noPolymorphicProcedures, noInits, treeForm, exitsCovered,
-  armsHaveObligations, noCFGCycles
+  armsHaveObligations, noCFGCycles, varsNotFunctions
 -/
 #guard_msgs (whitespace := lax) in
 #eval IO.println (factNames (ofProgramFacts { decls :=
@@ -177,7 +177,7 @@ private def loadedProgram : Program :=
 /--
 info: noCFGBodies, uniqueInits, loopBodyNoInits, staticSingleAssignment, noBetaRedexes, noLambdas,
   noPrecondsFromFuncs, noProcedureContracts, noPolymorphicProcedures, noPolymorphicFunctions,
-  noInits, exitsCovered, noCFGCycles
+  noInits, exitsCovered, noCFGCycles, varsNotFunctions
 -/
 #guard_msgs (whitespace := lax) in
 #eval IO.println (factNames (ofProgramFacts loadedProgram))
@@ -186,7 +186,7 @@ info: noCFGBodies, uniqueInits, loopBodyNoInits, staticSingleAssignment, noBetaR
 info: wellFormedCalls, noCFGBodies, noCalls, noLoopInvariants, noLoopMeasures, uniqueInits,
   loopBodyNoInits, staticSingleAssignment, noBetaRedexes, noLambdas, noPrecondsFromFuncs, noProcedureContracts,
   noPolymorphicProcedures, noPolymorphicFunctions, noInits, exitsCovered, armsHaveObligations,
-  noCFGCycles
+  noCFGCycles, varsNotFunctions
 -/
 #guard_msgs (whitespace := lax) in
 #eval IO.println (factNames (ofProgramFacts (progOf [.loop .nondet none [] [] {}])))
@@ -198,7 +198,7 @@ block, or inside either branch of an `ite`. -/
 info: wellFormedCalls, noCFGBodies, noCalls, noLoopInvariants, noLoopMeasures, uniqueInits,
   loopBodyNoInits, staticSingleAssignment, noBetaRedexes, noLambdas, noPrecondsFromFuncs, noNondetGuards,
   noProcedureContracts, noPolymorphicProcedures, noPolymorphicFunctions, noInits, exitsCovered,
-  armsHaveObligations, noCFGCycles
+  armsHaveObligations, noCFGCycles, varsNotFunctions
 -/
 #guard_msgs (whitespace := lax) in
 #eval IO.println (factNames (ofProgramFacts (progOf
@@ -208,7 +208,7 @@ info: wellFormedCalls, noCFGBodies, noCalls, noLoopInvariants, noLoopMeasures, u
 info: wellFormedCalls, noCFGBodies, noCalls, noLoopInvariants, noLoopMeasures, uniqueInits,
   loopBodyNoInits, staticSingleAssignment, noBetaRedexes, noLambdas, noPrecondsFromFuncs, noNondetGuards,
   noProcedureContracts, noPolymorphicProcedures, noPolymorphicFunctions, noInits, exitsCovered,
-  noCFGCycles
+  noCFGCycles, varsNotFunctions
 -/
 #guard_msgs (whitespace := lax) in
 #eval IO.println (factNames (ofProgramFacts (progOf
@@ -218,7 +218,7 @@ info: wellFormedCalls, noCFGBodies, noCalls, noLoopInvariants, noLoopMeasures, u
 info: wellFormedCalls, noCFGBodies, noCalls, noLoopInvariants, noLoopMeasures, uniqueInits,
   loopBodyNoInits, staticSingleAssignment, noBetaRedexes, noLambdas, noPrecondsFromFuncs, noNondetGuards,
   noProcedureContracts, noPolymorphicProcedures, noPolymorphicFunctions, noInits, exitsCovered,
-  noCFGCycles
+  noCFGCycles, varsNotFunctions
 -/
 #guard_msgs (whitespace := lax) in
 #eval IO.println (factNames (ofProgramFacts (progOf
@@ -228,7 +228,7 @@ info: wellFormedCalls, noCFGBodies, noCalls, noLoopInvariants, noLoopMeasures, u
 info: wellFormedCalls, noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, uniqueInits,
   loopBodyNoInits, staticSingleAssignment, noBetaRedexes, noLambdas, noPrecondsFromFuncs, noNondetGuards,
   hasObligationForm, noProcedureContracts, noPolymorphicProcedures, noPolymorphicFunctions, noInits,
-  treeForm, exitsCovered, armsHaveObligations, noCFGCycles
+  treeForm, exitsCovered, armsHaveObligations, noCFGCycles, varsNotFunctions
 -/
 #guard_msgs (whitespace := lax) in
 #eval IO.println (factNames (ofProgramFacts { decls := [] }))
@@ -237,7 +237,7 @@ info: wellFormedCalls, noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMe
 info: noLoops, noLoopInvariants, noLoopMeasures, uniqueInits, loopBodyNoInits,
   staticSingleAssignment, noBetaRedexes, noLambdas, noPrecondsFromFuncs, noNondetGuards, noProcedureContracts,
   noPolymorphicProcedures, noPolymorphicFunctions, noInits, exitsCovered, armsHaveObligations,
-  noCFGCycles
+  noCFGCycles, varsNotFunctions
 -/
 #guard_msgs (whitespace := lax) in
 #eval IO.println
@@ -247,7 +247,7 @@ info: noLoops, noLoopInvariants, noLoopMeasures, uniqueInits, loopBodyNoInits,
 info: wellFormedCalls, noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, uniqueInits,
   loopBodyNoInits, noBetaRedexes, noLambdas, noPrecondsFromFuncs, noNondetGuards, noProcedureContracts,
   noPolymorphicProcedures, noPolymorphicFunctions, noInits, treeForm, exitsCovered,
-  armsHaveObligations, noCFGCycles
+  armsHaveObligations, noCFGCycles, varsNotFunctions
 -/
 #guard_msgs (whitespace := lax) in
 #eval IO.println (factNames (ofProgramFacts (progOf [Statement.set "x" trueExpr {}])))
@@ -256,7 +256,7 @@ info: wellFormedCalls, noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMe
 info: wellFormedCalls, noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, uniqueInits,
   loopBodyNoInits, noBetaRedexes, noLambdas, noPrecondsFromFuncs, noNondetGuards, noProcedureContracts,
   noPolymorphicProcedures, noPolymorphicFunctions, noInits, treeForm, exitsCovered,
-  armsHaveObligations, noCFGCycles
+  armsHaveObligations, noCFGCycles, varsNotFunctions
 -/
 #guard_msgs (whitespace := lax) in
 #eval IO.println (factNames (ofProgramFacts (progOf [Statement.havoc "x" {}])))
@@ -265,7 +265,7 @@ info: wellFormedCalls, noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMe
 info: wellFormedCalls, noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, uniqueInits,
   loopBodyNoInits, staticSingleAssignment, noBetaRedexes, noLambdas, noPrecondsFromFuncs, noNondetGuards,
   hasObligationForm, noProcedureContracts, noPolymorphicProcedures, noPolymorphicFunctions,
-  treeForm, exitsCovered, armsHaveObligations, noCFGCycles
+  treeForm, exitsCovered, armsHaveObligations, noCFGCycles, varsNotFunctions
 -/
 #guard_msgs (whitespace := lax) in
 #eval IO.println (factNames (ofProgramFacts (progOf [Statement.init "x" intTy .nondet {}])))
@@ -274,7 +274,7 @@ info: wellFormedCalls, noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMe
 info: wellFormedCalls, noCFGBodies, noCalls, noLoopInvariants, uniqueInits, loopBodyNoInits,
   staticSingleAssignment, noBetaRedexes, noLambdas, noPrecondsFromFuncs, noNondetGuards, noProcedureContracts,
   noPolymorphicProcedures, noPolymorphicFunctions, noInits, exitsCovered, armsHaveObligations,
-  noCFGCycles
+  noCFGCycles, varsNotFunctions
 -/
 #guard_msgs (whitespace := lax) in
 #eval IO.println
@@ -310,7 +310,7 @@ private def redexExpr : Expression.Expr :=
 info: wellFormedCalls, noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, uniqueInits,
   loopBodyNoInits, staticSingleAssignment, noPrecondsFromFuncs, noNondetGuards, hasObligationForm,
   noProcedureContracts, noPolymorphicProcedures, noPolymorphicFunctions, noInits, treeForm,
-  exitsCovered, armsHaveObligations, noCFGCycles
+  exitsCovered, armsHaveObligations, noCFGCycles, varsNotFunctions
 -/
 #guard_msgs (whitespace := lax) in
 #eval IO.println (factNames (ofProgramFacts (progOf [Statement.assume "a" redexExpr {}])))
@@ -319,7 +319,7 @@ info: wellFormedCalls, noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMe
 info: wellFormedCalls, noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, uniqueInits,
   loopBodyNoInits, staticSingleAssignment, noPrecondsFromFuncs, noNondetGuards, hasObligationForm,
   noProcedureContracts, noPolymorphicProcedures, noPolymorphicFunctions, noInits, treeForm,
-  exitsCovered, armsHaveObligations, noCFGCycles
+  exitsCovered, armsHaveObligations, noCFGCycles, varsNotFunctions
 -/
 #guard_msgs (whitespace := lax) in
 #eval IO.println (factNames (ofProgramFacts { decls := [.distinct "d" [redexExpr] default] }))
@@ -330,7 +330,7 @@ not only a top-level one. -/
 info: wellFormedCalls, noCalls, noLoops, noLoopInvariants, noLoopMeasures, uniqueInits,
   loopBodyNoInits, staticSingleAssignment, noPrecondsFromFuncs, noNondetGuards, hasObligationForm,
   noProcedureContracts, noPolymorphicProcedures, noPolymorphicFunctions, noInits, treeForm,
-  exitsCovered, armsHaveObligations, noCFGCycles
+  exitsCovered, armsHaveObligations, noCFGCycles, varsNotFunctions
 -/
 #guard_msgs (whitespace := lax) in
 #eval IO.println
@@ -344,7 +344,7 @@ that sees a structured body's. -/
 info: wellFormedCalls, noCalls, noLoops, noLoopInvariants, noLoopMeasures, uniqueInits,
   loopBodyNoInits, staticSingleAssignment, noPrecondsFromFuncs, noNondetGuards, hasObligationForm,
   noProcedureContracts, noPolymorphicProcedures, noPolymorphicFunctions, noInits, treeForm,
-  exitsCovered, armsHaveObligations, noCFGCycles
+  exitsCovered, armsHaveObligations, noCFGCycles, varsNotFunctions
 -/
 #guard_msgs (whitespace := lax) in
 #eval IO.println
@@ -354,7 +354,7 @@ info: wellFormedCalls, noCalls, noLoops, noLoopInvariants, noLoopMeasures, uniqu
 info: wellFormedCalls, noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, uniqueInits,
   loopBodyNoInits, staticSingleAssignment, noPrecondsFromFuncs, noNondetGuards, hasObligationForm,
   noPolymorphicProcedures, noPolymorphicFunctions, noInits, treeForm, exitsCovered,
-  armsHaveObligations, noCFGCycles
+  armsHaveObligations, noCFGCycles, varsNotFunctions
 -/
 #guard_msgs (whitespace := lax) in
 #eval IO.println
@@ -367,7 +367,7 @@ private def assumeProg (e : Expression.Expr) : Program :=
 info: wellFormedCalls, noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, uniqueInits,
   loopBodyNoInits, staticSingleAssignment, noPrecondsFromFuncs, noNondetGuards, hasObligationForm,
   noProcedureContracts, noPolymorphicProcedures, noPolymorphicFunctions, noInits, treeForm,
-  exitsCovered, armsHaveObligations, noCFGCycles
+  exitsCovered, armsHaveObligations, noCFGCycles, varsNotFunctions
 -/
 #guard_msgs (whitespace := lax) in
 #eval IO.println (factNames (ofProgramFacts (assumeProg (.ite testLoc trueExpr redexExpr
@@ -377,7 +377,7 @@ info: wellFormedCalls, noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMe
 info: wellFormedCalls, noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, uniqueInits,
   loopBodyNoInits, staticSingleAssignment, noPrecondsFromFuncs, noNondetGuards, hasObligationForm,
   noProcedureContracts, noPolymorphicProcedures, noPolymorphicFunctions, noInits, treeForm,
-  exitsCovered, armsHaveObligations, noCFGCycles
+  exitsCovered, armsHaveObligations, noCFGCycles, varsNotFunctions
 -/
 #guard_msgs (whitespace := lax) in
 #eval IO.println
@@ -387,7 +387,7 @@ info: wellFormedCalls, noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMe
 info: wellFormedCalls, noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, uniqueInits,
   loopBodyNoInits, staticSingleAssignment, noPrecondsFromFuncs, noNondetGuards, hasObligationForm,
   noProcedureContracts, noPolymorphicProcedures, noPolymorphicFunctions, noInits, treeForm,
-  exitsCovered, armsHaveObligations, noCFGCycles
+  exitsCovered, armsHaveObligations, noCFGCycles, varsNotFunctions
 -/
 #guard_msgs (whitespace := lax) in
 #eval IO.println
@@ -398,7 +398,7 @@ info: wellFormedCalls, noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMe
 info: wellFormedCalls, noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, uniqueInits,
   loopBodyNoInits, staticSingleAssignment, noPrecondsFromFuncs, noNondetGuards, hasObligationForm,
   noProcedureContracts, noPolymorphicProcedures, noPolymorphicFunctions, noInits, treeForm,
-  exitsCovered, armsHaveObligations, noCFGCycles
+  exitsCovered, armsHaveObligations, noCFGCycles, varsNotFunctions
 -/
 #guard_msgs (whitespace := lax) in
 #eval IO.println
@@ -408,7 +408,7 @@ info: wellFormedCalls, noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMe
 info: wellFormedCalls, noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, uniqueInits,
   loopBodyNoInits, staticSingleAssignment, noPrecondsFromFuncs, noNondetGuards, hasObligationForm,
   noProcedureContracts, noPolymorphicProcedures, noPolymorphicFunctions, noInits, treeForm,
-  exitsCovered, armsHaveObligations, noCFGCycles
+  exitsCovered, armsHaveObligations, noCFGCycles, varsNotFunctions
 -/
 #guard_msgs (whitespace := lax) in
 #eval IO.println
@@ -418,7 +418,7 @@ info: wellFormedCalls, noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMe
 info: wellFormedCalls, noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, uniqueInits,
   loopBodyNoInits, staticSingleAssignment, noPrecondsFromFuncs, noNondetGuards, hasObligationForm,
   noProcedureContracts, noPolymorphicProcedures, noPolymorphicFunctions, noInits, treeForm,
-  exitsCovered, armsHaveObligations, noCFGCycles
+  exitsCovered, armsHaveObligations, noCFGCycles, varsNotFunctions
 -/
 #guard_msgs (whitespace := lax) in
 #eval IO.println (factNames (ofProgramFacts (assumeProg (.abs testLoc "x" none redexExpr))))
@@ -427,7 +427,7 @@ info: wellFormedCalls, noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMe
 info: wellFormedCalls, noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, uniqueInits,
   loopBodyNoInits, staticSingleAssignment, noPrecondsFromFuncs, noNondetGuards, hasObligationForm,
   noProcedureContracts, noPolymorphicProcedures, noPolymorphicFunctions, noInits, treeForm,
-  exitsCovered, armsHaveObligations, noCFGCycles
+  exitsCovered, armsHaveObligations, noCFGCycles, varsNotFunctions
 -/
 #guard_msgs (whitespace := lax) in
 #eval IO.println (factNames (ofProgramFacts (assumeProg (.eq testLoc trueExpr redexExpr))))
@@ -436,7 +436,7 @@ info: wellFormedCalls, noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMe
 info: wellFormedCalls, noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, uniqueInits,
   loopBodyNoInits, staticSingleAssignment, noBetaRedexes, noPrecondsFromFuncs, noNondetGuards,
   hasObligationForm, noProcedureContracts, noPolymorphicProcedures, noPolymorphicFunctions, noInits,
-  treeForm, exitsCovered, armsHaveObligations, noCFGCycles
+  treeForm, exitsCovered, armsHaveObligations, noCFGCycles, varsNotFunctions
 -/
 #guard_msgs (whitespace := lax) in
 #eval IO.println
@@ -522,6 +522,7 @@ symbolicEval: all
 betaReduce: all
 commonSubexprElim: all
 lambdaLift: all
+separateVarNames: all
 inlineProcedures: all
 unrollBoundedQuantifiers: all
 functionInlining: all
@@ -785,12 +786,12 @@ info: V starts holding here   | holds, and is carried on   + required here, hold
 - required here, holds, and is dropped here   ' was holding, and is dropped here   : not holding, but would be carried
 (blank) not holding, and would not be carried
 WF: wellFormedCalls   CF: noCFGBodies   Ca: noCalls   Lo: noLoops
-LI: noLoopInvariants   LM: noLoopMeasures   UI: uniqueInits   LB: loopBodyNoInits   SS: staticSingleAssignment   BR: noBetaRedexes   La: noLambdas   PF: noPrecondsFromFuncs   NG: noNondetGuards   HO: hasObligationForm   PC: noProcedureContracts   PP: noPolymorphicProcedures   Po: noPolymorphicFunctions   TA: typeAnnotated   In: noInits   TF: treeForm   EC: exitsCovered   AH: armsHaveObligations   Cb: noCFGCycles
+LI: noLoopInvariants   LM: noLoopMeasures   UI: uniqueInits   LB: loopBodyNoInits   SS: staticSingleAssignment   BR: noBetaRedexes   La: noLambdas   PF: noPrecondsFromFuncs   NG: noNondetGuards   HO: hasObligationForm   PC: noProcedureContracts   PP: noPolymorphicProcedures   Po: noPolymorphicFunctions   TA: typeAnnotated   In: noInits   TF: treeForm   EC: exitsCovered   AH: armsHaveObligations   Cb: noCFGCycles   VN: varsNotFunctions
 
                               WF  Ca  LI  UI  SS  La  NG  PC  Po  In  EC  Cb
-phase                           CF  Lo  LM  LB  BR  PF  HO  PP  TA  TF  AH
+phase                           CF  Lo  LM  LB  BR  PF  HO  PP  TA  TF  AH  VN
  1 typeCheck                  V : : : : :     : :   : :   : : : V :   V   :
- 2 assertNoCFGBodies          | V : : : : : : : : : : : : : : : | : : | : :
+ 2 assertNoCFGBodies          | V : : : : : : : : : : : : : : : | : : | : : :
  3 callElim                   + | V : : :           : :   : : : +     |   :
  4 termCheck                  ' | | : : :     :     : :   :     + :   |   :
  5 precondElim                  | | : : :     :     V :   :   : + :   |   :
@@ -804,6 +805,7 @@ phase                           CF  Lo  LM  LB  BR  PF  HO  PP  TA  TF  AH
 13 betaReduce                   | | | | |     | V   | : | | | | + | : | : :
 14 commonSubexprElim            + + + | |     + |   + : | | | | + -   |
 15 lambdaLift                   + | | | |     | + V | : | | + + + : : | :
+16 separateVarNames           : | | | | | : : | | | | : | | | | | : : | : : V
    the backend                  + + +         + + + +   + + + + +
 
 established and preserved, name it once: none
@@ -825,10 +827,10 @@ rather than stopping at it, which is what shows both cells at once. -/
 info: # required here, and does not hold   V starts holding here   ' was holding, and is dropped here
 (blank) not holding, and would not be carried
 WF: wellFormedCalls   CF: noCFGBodies   Ca: noCalls   Lo: noLoops
-LI: noLoopInvariants   LM: noLoopMeasures   UI: uniqueInits   LB: loopBodyNoInits   SS: staticSingleAssignment   BR: noBetaRedexes   La: noLambdas   PF: noPrecondsFromFuncs   NG: noNondetGuards   HO: hasObligationForm   PC: noProcedureContracts   PP: noPolymorphicProcedures   Po: noPolymorphicFunctions   TA: typeAnnotated   In: noInits   TF: treeForm   EC: exitsCovered   AH: armsHaveObligations   Cb: noCFGCycles
+LI: noLoopInvariants   LM: noLoopMeasures   UI: uniqueInits   LB: loopBodyNoInits   SS: staticSingleAssignment   BR: noBetaRedexes   La: noLambdas   PF: noPrecondsFromFuncs   NG: noNondetGuards   HO: hasObligationForm   PC: noProcedureContracts   PP: noPolymorphicProcedures   Po: noPolymorphicFunctions   TA: typeAnnotated   In: noInits   TF: treeForm   EC: exitsCovered   AH: armsHaveObligations   Cb: noCFGCycles   VN: varsNotFunctions
 
                    WF  Ca  LI  UI  SS  La  NG  PC  Po  In  EC  Cb
-phase                CF  Lo  LM  LB  BR  PF  HO  PP  TA  TF  AH
+phase                CF  Lo  LM  LB  BR  PF  HO  PP  TA  TF  AH  VN
  1 testEstablisher   V
  2 testNoop          '
  3 testRequirer      #
@@ -868,7 +870,8 @@ phases:
   betaReduce
   commonSubexprElim
   lambdaLift
-exit: noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noBetaRedexes, noLambdas, noPrecondsFromFuncs, hasObligationForm, noProcedureContracts, noPolymorphicProcedures, noPolymorphicFunctions, typeAnnotated, exitsCovered
+  separateVarNames
+exit: noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noBetaRedexes, noLambdas, noPrecondsFromFuncs, hasObligationForm, noProcedureContracts, noPolymorphicProcedures, noPolymorphicFunctions, typeAnnotated, exitsCovered, varsNotFunctions
 -/
 #guard_msgs in
 #eval report coreValidatedPipeline
@@ -893,7 +896,8 @@ phases:
   betaReduce
   commonSubexprElim
   lambdaLift
-exit: noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noBetaRedexes, noLambdas, noPrecondsFromFuncs, hasObligationForm, noProcedureContracts, noPolymorphicProcedures, noPolymorphicFunctions, typeAnnotated, exitsCovered
+  separateVarNames
+exit: noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noBetaRedexes, noLambdas, noPrecondsFromFuncs, hasObligationForm, noProcedureContracts, noPolymorphicProcedures, noPolymorphicFunctions, typeAnnotated, exitsCovered, varsNotFunctions
 -/
 #guard_msgs in
 #eval report (coreValidatedPipeline
@@ -922,7 +926,8 @@ phases:
   betaReduce
   commonSubexprElim
   lambdaLift
-exit: noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noBetaRedexes, noLambdas, noPrecondsFromFuncs, hasObligationForm, noProcedureContracts, noPolymorphicProcedures, noPolymorphicFunctions, typeAnnotated, exitsCovered
+  separateVarNames
+exit: noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noBetaRedexes, noLambdas, noPrecondsFromFuncs, hasObligationForm, noProcedureContracts, noPolymorphicProcedures, noPolymorphicFunctions, typeAnnotated, exitsCovered, varsNotFunctions
 -/
 #guard_msgs in
 #eval report (do
@@ -943,7 +948,9 @@ somewhere the caller did not ask for. -/
 /-! Anchoring on the last phase is the boundary where nothing follows it, so the
 spliced phases end the list. -/
 
-/-- info: [typeCheck, assertNoCFGBodies, callElim, termCheck, precondElim, insertLoopInvariantAsserts, loopElim, genOpaqueTypeParams, monomorphizeFunctions, simplify, nondetElim, symbolicEval, betaReduce, commonSubexprElim, inlineProcedures, lambdaLift] -/
+/--
+info: [typeCheck, assertNoCFGBodies, callElim, termCheck, precondElim, insertLoopInvariantAsserts, loopElim, genOpaqueTypeParams, monomorphizeFunctions, simplify, nondetElim, symbolicEval, betaReduce, commonSubexprElim, inlineProcedures, lambdaLift, separateVarNames]
+-/
 #guard_msgs in
 #eval IO.println (match Strata.Core.splicePhasesAfter "commonSubexprElim"
     [procedureInliningPipelinePhase] corePipelinePhases with
@@ -988,7 +995,8 @@ phases:
   betaReduce
   commonSubexprElim
   lambdaLift
-exit: noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noBetaRedexes, noLambdas, noPrecondsFromFuncs, hasObligationForm, noProcedureContracts, noPolymorphicProcedures, noPolymorphicFunctions, typeAnnotated, exitsCovered
+  separateVarNames
+exit: noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noBetaRedexes, noLambdas, noPrecondsFromFuncs, hasObligationForm, noProcedureContracts, noPolymorphicProcedures, noPolymorphicFunctions, typeAnnotated, exitsCovered, varsNotFunctions
 -/
 #guard_msgs in
 #eval check withInlining
@@ -1013,7 +1021,8 @@ phases:
   betaReduce
   commonSubexprElim
   lambdaLift
-exit: noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noBetaRedexes, noLambdas, noPrecondsFromFuncs, hasObligationForm, noProcedureContracts, noPolymorphicProcedures, noPolymorphicFunctions, typeAnnotated
+  separateVarNames
+exit: noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noBetaRedexes, noLambdas, noPrecondsFromFuncs, hasObligationForm, noProcedureContracts, noPolymorphicProcedures, noPolymorphicFunctions, typeAnnotated, varsNotFunctions
 -/
 #guard_msgs in
 #eval check withUnrolling
@@ -1045,7 +1054,8 @@ phases:
   betaReduce
   commonSubexprElim
   lambdaLift
-exit: noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noBetaRedexes, noLambdas, noPrecondsFromFuncs, hasObligationForm, noProcedureContracts, noPolymorphicProcedures, noPolymorphicFunctions, typeAnnotated, exitsCovered
+  separateVarNames
+exit: noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noBetaRedexes, noLambdas, noPrecondsFromFuncs, hasObligationForm, noProcedureContracts, noPolymorphicProcedures, noPolymorphicFunctions, typeAnnotated, exitsCovered, varsNotFunctions
 -/
 #guard_msgs in
 #eval check withDeadDefElim
@@ -1109,7 +1119,8 @@ phases:
   betaReduce
   commonSubexprElim
   lambdaLift
-exit: noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noBetaRedexes, noLambdas, noPrecondsFromFuncs, hasObligationForm, noProcedureContracts, noPolymorphicProcedures, noPolymorphicFunctions, typeAnnotated, exitsCovered
+  separateVarNames
+exit: noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noBetaRedexes, noLambdas, noPrecondsFromFuncs, hasObligationForm, noProcedureContracts, noPolymorphicProcedures, noPolymorphicFunctions, typeAnnotated, exitsCovered, varsNotFunctions
 -/
 #guard_msgs in
 #eval report (do
@@ -1136,7 +1147,8 @@ phases:
   betaReduce
   commonSubexprElim
   lambdaLift
-exit: noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noBetaRedexes, noLambdas, noPrecondsFromFuncs, hasObligationForm, noProcedureContracts, noPolymorphicProcedures, noPolymorphicFunctions, typeAnnotated, exitsCovered
+  separateVarNames
+exit: noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noBetaRedexes, noLambdas, noPrecondsFromFuncs, hasObligationForm, noProcedureContracts, noPolymorphicProcedures, noPolymorphicFunctions, typeAnnotated, exitsCovered, varsNotFunctions
 -/
 #guard_msgs in
 #eval report (do
@@ -1165,7 +1177,8 @@ phases:
   betaReduce
   commonSubexprElim
   lambdaLift
-exit: noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noBetaRedexes, noLambdas, noPrecondsFromFuncs, hasObligationForm, noProcedureContracts, noPolymorphicProcedures, noPolymorphicFunctions, typeAnnotated
+  separateVarNames
+exit: noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noBetaRedexes, noLambdas, noPrecondsFromFuncs, hasObligationForm, noProcedureContracts, noPolymorphicProcedures, noPolymorphicFunctions, typeAnnotated, varsNotFunctions
 -/
 #guard_msgs in
 #eval check withInliningAndUnrolling
@@ -1328,7 +1341,7 @@ knows the flags it offers, so this package adds only what the caller passes. -/
 does not, so `typeCheck` stays its only source. -/
 
 /--
-info: assertWellFormedCalls, assertNoCFGBodies, assertNoCalls, assertNoLoops, assertNoLoopInvariants, assertNoLoopMeasures, assertUniqueInits, assertLoopBodyNoInits, assertStaticSingleAssignment, assertNoBetaRedexes, assertNoLambdas, assertNoPrecondsFromFuncs, assertNoNondetGuards, assertHasObligationForm, assertNoProcedureContracts, assertNoPolymorphicProcedures, assertNoPolymorphicFunctions, assertNoInits, assertTreeForm, assertExitsCovered, assertArmsHaveObligations, assertNoCFGCycles
+info: assertWellFormedCalls, assertNoCFGBodies, assertNoCalls, assertNoLoops, assertNoLoopInvariants, assertNoLoopMeasures, assertUniqueInits, assertLoopBodyNoInits, assertStaticSingleAssignment, assertNoBetaRedexes, assertNoLambdas, assertNoPrecondsFromFuncs, assertNoNondetGuards, assertHasObligationForm, assertNoProcedureContracts, assertNoPolymorphicProcedures, assertNoPolymorphicFunctions, assertNoInits, assertTreeForm, assertExitsCovered, assertArmsHaveObligations, assertNoCFGCycles, assertVarsNotFunctions
 -/
 #guard_msgs (whitespace := lax) in
 #eval IO.println (", ".intercalate (ProgramFact.all.filterMap fun f =>
@@ -1434,7 +1447,8 @@ phases:
   betaReduce
   commonSubexprElim
   lambdaLift
-exit: noCFGBodies, noCalls, noLoops, staticSingleAssignment, noBetaRedexes, noLambdas, noPrecondsFromFuncs, hasObligationForm, noProcedureContracts, noPolymorphicProcedures, noPolymorphicFunctions, typeAnnotated, exitsCovered
+  separateVarNames
+exit: noCFGBodies, noCalls, noLoops, staticSingleAssignment, noBetaRedexes, noLambdas, noPrecondsFromFuncs, hasObligationForm, noProcedureContracts, noPolymorphicProcedures, noPolymorphicFunctions, typeAnnotated, exitsCovered, varsNotFunctions
 -/
 #guard_msgs in
 #eval report (Strata.Core.validatePipelineFrom factSet![.noLoops]
@@ -1458,7 +1472,7 @@ the phases that exist but are not in it. -/
 /--
 info: To run the phases in the default order:
 
-  --phases typeCheck,assertNoCFGBodies,callElim,termCheck,precondElim,insertLoopInvariantAsserts,loopElim,genOpaqueTypeParams,monomorphizeFunctions,simplify,nondetElim,symbolicEval,betaReduce,commonSubexprElim,lambdaLift
+  --phases typeCheck,assertNoCFGBodies,callElim,termCheck,precondElim,insertLoopInvariantAsserts,loopElim,genOpaqueTypeParams,monomorphizeFunctions,simplify,nondetElim,symbolicEval,betaReduce,commonSubexprElim,lambdaLift,separateVarNames
 
 You can change this order. Give it back to --phases with no input file and
 Strata reports whether it composes without verifying anything.
@@ -1480,10 +1494,10 @@ assembling a phase list has to compare. -/
 info: # required here, and does not hold   V starts holding here   | holds, and is carried on
 + required here, holds, and is carried on   : not holding, but would be carried   (blank) not holding, and would not be carried
 WF: wellFormedCalls   CF: noCFGBodies   Ca: noCalls   Lo: noLoops
-LI: noLoopInvariants   LM: noLoopMeasures   UI: uniqueInits   LB: loopBodyNoInits   SS: staticSingleAssignment   BR: noBetaRedexes   La: noLambdas   PF: noPrecondsFromFuncs   NG: noNondetGuards   HO: hasObligationForm   PC: noProcedureContracts   PP: noPolymorphicProcedures   Po: noPolymorphicFunctions   TA: typeAnnotated   In: noInits   TF: treeForm   EC: exitsCovered   AH: armsHaveObligations   Cb: noCFGCycles
+LI: noLoopInvariants   LM: noLoopMeasures   UI: uniqueInits   LB: loopBodyNoInits   SS: staticSingleAssignment   BR: noBetaRedexes   La: noLambdas   PF: noPrecondsFromFuncs   NG: noNondetGuards   HO: hasObligationForm   PC: noProcedureContracts   PP: noPolymorphicProcedures   Po: noPolymorphicFunctions   TA: typeAnnotated   In: noInits   TF: treeForm   EC: exitsCovered   AH: armsHaveObligations   Cb: noCFGCycles   VN: varsNotFunctions
 
                              WF  Ca  LI  UI  SS  La  NG  PC  Po  In  EC  Cb
-phase                          CF  Lo  LM  LB  BR  PF  HO  PP  TA  TF  AH
+phase                          CF  Lo  LM  LB  BR  PF  HO  PP  TA  TF  AH  VN
  1 callElim                  # : V : : :           : :   : : : #     :   :
  2 betaReduce                  : | : : :     : V   : : : : : : # : : : : :
    the verification back end   # + #         # + # #   # # # # #
@@ -1677,11 +1691,26 @@ private def withEnsures : Program :=
 
 /-! A procedure's parameters reach the obligations as free variables under their own
 names. One named like a constant would be read as that constant, constrained by its
-axioms, so extraction gives it a fresh name in the body first. -/
+axioms, so the back end's last phase gives it a fresh name first (`separated`, as
+`separateVarNames` does), and extraction refuses a program where that has not happened. -/
 
-/-- The goals extraction produces, as text. -/
+/-- info: rejected: ObligationExtraction: a procedure variable has the name of a function or constant, which the obligations would read as that function; end the pipeline with separateVarNames -/
+#guard_msgs in
+#eval IO.println (match Core.ObligationExtraction.extractObligations
+    { decls := [.func { name := "r", inputs := .empty, output := Lambda.LMonoTy.tcons "int" [] }
+                  default,
+                .proc { header := { name := "p", typeArgs := [],
+                                    inputs := [("r", Lambda.LMonoTy.tcons "int" [])],
+                                    outputs := [] },
+                        spec := { preconditions := [], postconditions := [] },
+                        body := .structured [] false } default] } with
+  | .ok _ => "extracted"
+  | .error e => s!"rejected: {e}")
+
+/-- The goals extraction produces, as text, from the program with its variables named like a
+    function renamed apart. -/
 private def extractedGoals (p : Program) : String :=
-  match Core.ObligationExtraction.extractObligations p with
+  match Core.ObligationExtraction.extractObligations (Core.ObligationExtraction.separated p) with
   | .ok obs => toString (obs.toList.map fun o => Std.format o.obligation)
   | .error e => s!"rejected: {e}"
 

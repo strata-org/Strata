@@ -795,12 +795,15 @@ private def runVerifyPath (block : SourcedProgram) (options : LaurelVerifyOption
       run by `Cortex.interpretLaurel`). `true` by default. A block that sets it
       `false` needs a parameterless `entry` procedure and is held to the same
       annotations. The Core program that Cortex emits for the block is
-      type-checked as well (`checkCortexCFGTypes`). -/
+      type-checked as well (`checkCortexCFGTypes`).
+    - `skipCortexCoreCheck` — skip that type check, for a block whose Cortex program
+      the translation to Core does not support yet, such as one with arrays. -/
 public structure MultiplePathTestOptions where
   skipVerification : Bool := false
   skipCoreInterpreter : Bool := false
   skipLaurelInterpreter : Bool := false
   skipCortexInterpreter : Bool := true
+  skipCortexCoreCheck : Bool := false
   deriving Inhabited
 
 /-- Run the full Laurel pipeline (translate + resolve + verify) on a
@@ -978,7 +981,8 @@ public def testLaurelExecution (paths : MultiplePathTestOptions := {}) (block : 
       throw <| IO.userError
         "testLaurelExecution: skipCortexInterpreter is false but no `entry` procedure \
          is marked, so the Cortex interpreter has nothing to run."
-    checkCortexCFGTypes block.program options.translateOptions
+    if !paths.skipCortexCoreCheck then
+      checkCortexCFGTypes block.program options.translateOptions
   if !paths.skipLaurelInterpreter then
     -- Standalone Laurel interpreter path, checked against the same annotations.
     -- Like the Core path above, `none` means nothing is marked `entry`; with

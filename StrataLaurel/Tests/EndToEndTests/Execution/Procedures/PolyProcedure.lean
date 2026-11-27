@@ -551,7 +551,7 @@ procedure freshenedPreconditionGates()
   opaque
 {
   var g: int := pos(-3, 9);
-//^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition does not hold
+//              ^^^^^^^^^^ error: precondition does not hold
   assert 1 == 1
 };
 #end

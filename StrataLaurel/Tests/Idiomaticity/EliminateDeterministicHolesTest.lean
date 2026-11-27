@@ -552,4 +552,35 @@ procedure test<A, B>(x: A) returns (r: B)
 };
 #end
 
+-- Holes inside array constructs: an index and a length are typed `int`.
+/--
+info: procedure $hole_0(a: (Array<int>)): int
+  opaque;
+procedure $hole_1(a: (Array<int>)): int
+  opaque;
+procedure $hole_2(a: (Array<int>)): int
+  opaque;
+procedure test(a: (Array<int>))
+  opaque
+  modifies *
+{
+  var x: int := a[$hole_0(a)];
+  var b: Array<int> := new Array<int>($hole_1(a));
+  a[$hole_2(a)] := 1
+};
+-/
+#guard_msgs in
+#eval parseElimAndPrint <|
+#strata
+program Laurel;
+procedure test(a: Array<int>)
+  opaque
+  modifies *
+{
+  var x: int := a[<?>];
+  var b: Array<int> := new Array<int>(<?>);
+  a[<?>] := 1
+};
+#end
+
 end Laurel

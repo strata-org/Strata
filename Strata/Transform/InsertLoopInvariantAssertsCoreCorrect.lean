@@ -149,7 +149,7 @@ theorem triple_coreProgram (base : InitEnvWFParams)
     (hproc : p.decls[i]? = some (.proc proc md)) (hbody : proc.body = .structured ss opq)
     (hnc : Statements.noCalls ss = Bool.true) :
     ∃ ss', p'.decls[i]? = some (.proc { proc with body := .structured ss' opq } md) ∧
-      ∀ {F : Lambda.Factory CoreLParams} {Pre Post : Env Expression → Prop},
+      ∀ {F : Lambda.Factory CoreLParams} {Pre Post : Imperative.Env Expression → Prop},
         (∀ ρ₀, Pre ρ₀ → ρ₀.factory.factory = F) →
         Core.Logic.Hoare.Triple π base Pre ss' Post F →
         Core.Logic.Hoare.Triple π (base.extend prefixesReserved) Pre ss Post F :=

@@ -201,7 +201,7 @@ theorem deadDefElimH_assertValid (π : String → Option Procedure) (params : In
     the same factory (`DDOut`). -/
 theorem deadDefElim_triple (π : String → Option Procedure) (params : InitEnvWFParams)
     {ss : Statements} (hss : Block.noLoops ss = true) (hnc : Statements.noCalls ss = true)
-    {F : Lambda.Factory CoreLParams} {Pre Post : Env Expression → Prop}
+    {F : Lambda.Factory CoreLParams} {Pre Post : Imperative.Env Expression → Prop}
     (hpin : ∀ ρ₀, Pre ρ₀ → ρ₀.factory.factory = F)
     (hpost : ∀ ρ' ρ'', DDOut ρ' ρ'' → Post ρ'' → Post ρ')
     (h : Core.Logic.Hoare.Triple π params Pre (deadDefElim [] ss) Post F) :
@@ -216,7 +216,7 @@ theorem deadDefElim_triple (π : String → Option Procedure) (params : InitEnvW
     `deadDefElimH`. -/
 theorem deadDefElimH_triple (π : String → Option Procedure) (params : InitEnvWFParams)
     {ss : Statements} (hss : Block.noLoops ss = true) (hnc : Statements.noCalls ss = true)
-    {F : Lambda.Factory CoreLParams} {Pre Post : Env Expression → Prop}
+    {F : Lambda.Factory CoreLParams} {Pre Post : Imperative.Env Expression → Prop}
     (hpin : ∀ ρ₀, Pre ρ₀ → ρ₀.factory.factory = F)
     (hpost : ∀ ρ' ρ'', DDOut ρ' ρ'' → Post ρ'' → Post ρ')
     (h : Core.Logic.Hoare.Triple π params Pre (deadDefElimH [] ss) Post F) :

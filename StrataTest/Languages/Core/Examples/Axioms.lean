@@ -23,7 +23,7 @@ axiom [a1]: x == 5;
 const y : int;
 axiom [a2]: y == 2;
 
-function f(n: int): int;
+function f(x: int): int;
 axiom [f1]: (forall y : int :: int.gt(f(y), y));
 
 procedure P(out ret : int)

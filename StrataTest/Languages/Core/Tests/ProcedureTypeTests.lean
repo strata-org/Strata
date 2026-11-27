@@ -856,7 +856,8 @@ decreases n
 #eval
   Std.format (Core.typeCheck .default (translate monoRecIntMeasurePgm))
 
--- Calling the recursive function at `int` would refine its rigid parameter.
+-- A recursive call at `int` is accepted (polymorphic recursion); the measure `x : a` is not an
+-- `int` or a datatype parameter, which is rejected.
 /-- `rec function r<a>(x : a) : int decreases x { r(42) }`, with the
     self-call annotated `a → int`. -/
 private def polyRecFunc : Function :=
@@ -868,7 +869,7 @@ private def polyRecFunc : Function :=
     attr := #[.inlineIfAllValues] }
 
 /--
-info: REJECTED: Rigid type variable 'a' was refined to 'int'
+info: REJECTED: recursive function 'r': decreases expression must have type int or be a parameter of a datatype type, got 'a'
 -/
 #guard_msgs in
 #eval coreVerdict { decls := [.recFuncBlock [polyRecFunc] .empty] }
@@ -972,7 +973,7 @@ info: REJECTED: Procedure 'CaptureIntResult': Rigid type variable 't' was refine
 #guard_msgs (whitespace := lax) in
 #eval coreVerdict (translate captureIntResultPgm)
 
--- A procedure parameter may not share its name with a constant.
+-- A procedure parameter may share its name with a constant, which it shadows.
 open Strata in
 private def procParamCollidesPgm :=
 #strata
@@ -984,7 +985,16 @@ procedure P(y : int) {
 #end
 
 /--
-info: error: Procedure 'P': parameter 'y' collides with a function or constant of the same name
+info: [Strata.Core] Type checking succeeded.
+
+---
+info: ok: program Core;
+
+function y () : int;
+procedure P (y : int)
+{
+  
+};
 -/
 #guard_msgs in
 #eval
@@ -1188,7 +1198,7 @@ variable
 #guard_msgs (whitespace := lax) in
 #eval Std.format (Core.typeCheck .default procModifiesInputPgm)
 
--- A local variable may not share its name with a constant.
+-- A local variable may share its name with a constant, which it shadows.
 private def localVarCollidesPgm : Program :=
   { decls := [
       Decl.const ⟨"c", ()⟩ .int,
@@ -1200,7 +1210,16 @@ private def localVarCollidesPgm : Program :=
   ]}
 
 /--
-info: error: Procedure 'P': Local variable 'c' collides with a function or constant of the same name
+info: [Strata.Core] Type checking succeeded.
+
+---
+info: ok: program Core;
+
+function c () : int;
+procedure P ()
+{
+  var c : int;
+};
 -/
 #guard_msgs in
 #eval Std.format (Core.typeCheck .default localVarCollidesPgm)

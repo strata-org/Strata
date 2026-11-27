@@ -706,7 +706,7 @@ theorem extracted_sliced_counterexample_extends {F : Expression.Factory}
     {σ : SemanticStore Expression} {p : Program} {obs : ProofObligations Expression}
     (hp : ObligationExtraction.extractObligations p = .ok obs)
     (hwf : ∀ q md ss, Decl.proc q md ∈ p.decls →
-      ObligationExtraction.procedureStatements p.funcNames q = .ok ss →
+      ObligationExtraction.procedureStatements q = .ok ss →
         ∃ D df, Imperative.Block.defUseWellFormed D df ss = true)
     (obligation : ProofObligation Expression) (hob : obligation ∈ obs)
     (heval : ∀ i (hi : i < (droppedDefinitions (unreadDefinitions

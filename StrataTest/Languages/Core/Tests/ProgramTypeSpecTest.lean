@@ -131,9 +131,8 @@ private theorem idAt_rename :
   · simp [ren0, renameTyArgList, subst_ren0, LExpr.replaceUserProvidedType]
 
 /-- `f<a>(x : a) : a := x` satisfies the typechecker spec for functions in the
-    empty type scope, when `x` is not a function of `C`. -/
-private theorem idAt_a_hasType {C : LContext CoreLParams}
-    (hx : "x" ∉ C.functions) : FuncHasTypeExact C {} (idAt "a") := by
+    empty type scope. -/
+private theorem idAt_a_hasType {C : LContext CoreLParams} : FuncHasTypeExact C {} (idAt "a") := by
   have hfv : LMonoTy.freeVars
       (LMonoTy.mkArrow' (idAt "a").output (idAt "a").inputs.values) =
         ["a", "a"] := by rfl
@@ -169,7 +168,6 @@ private theorem idAt_a_hasType {C : LContext CoreLParams}
       axiomsTyped := fun _ h => nomatch h
       annotsScoped := ?_
       writtenAnnotsOk := ?_
-      formalsNotFunctions := ?_
       constrNoBody := fun h => nomatch h }
   · intro ta hta
     rw [List.mem_singleton.mp hta, isAllowedName_eq_toList]
@@ -202,17 +200,13 @@ private theorem idAt_a_hasType {C : LContext CoreLParams}
       nomatch ht
     · rw [hb] at ht
       nomatch ht
-  · intro id hid
-    rw [hkeys, List.mem_singleton] at hid
-    rw [hid]
-    exact hx
 
 /-- The function `f<$__ty0>(x : $__ty0) : $__ty0 := x`, whose type parameter
     has a reserved prefix, satisfies `DeclHasType.func` through its renaming to
-    `f<a>`, whenever `f<a>` can be registered, neither `f` nor `x` is a function
-    of `C`, and `a` is not a rigid type variable of `C`. -/
+    `f<a>`, whenever `f<a>` can be registered, `f` is not a function of `C`, and
+    `a` is not a rigid type variable of `C`. -/
 example {C C' : LContext CoreLParams} {P : Program} (md : MetaData Expression)
-    (hf : "f" ∉ C.functions) (hx : "x" ∉ C.functions)
+    (hf : "f" ∉ C.functions)
     (hrigid : "a" ∉ C.rigidTypeVars)
     (hext : FactoryExtendedBy (FuncEntryOk {}) C C' [(idAt "a").toLFunc]) :
     DeclHasType P C {} (.func (idAt "$__ty0") md) C' {} := by
@@ -237,6 +231,6 @@ example {C C' : LContext CoreLParams} {P : Program} (md : MetaData Expression)
   have hv : FuncAlphaVariant C {} (idAt "$__ty0") (idAt "a") :=
     ⟨ren0, hren, idAt_rename.symm⟩
   exact .func C C' {} (idAt "$__ty0") (idAt "a") md (fun h => nomatch h) hf hv
-    (idAt_a_hasType hx) hext
+    idAt_a_hasType hext
 
 end Core.ProgramTypeSpecTest

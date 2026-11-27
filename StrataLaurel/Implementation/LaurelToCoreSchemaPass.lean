@@ -160,6 +160,10 @@ def translateType (ty : HighTypeMd) : TranslateM LMonoTy := do
   | .TBv n => return LMonoTy.bitvec n
   | .TVoid => return LMonoTy.bool -- Using bool as placeholder for void
   | .TSet elementType => return Core.mapTy (← translateType elementType) LMonoTy.bool
+  | .TArray elementType =>
+    let d := diagnosticFromSource ty.source "arrays are not yet supported by the translation to Core" MessageKind.notYetImplemented
+    unless (← get).coreDiagnostics.contains d do emitCoreDiagnostic d
+    return .tcons "Array" [← translateType elementType]
   | .TMap keyType valueType => return Core.mapTy (← translateType keyType) (← translateType valueType)
   | .UserDefined name =>
     -- A `UserDefined` whose name is a primitive keyword lowers to that primitive
@@ -921,6 +925,7 @@ def translateExpr (expr : StmtExprMd)
   | .IsType _ _ =>
       emitExprDiagnostic $ diagnosticFromSource expr.source "IsType should have been lowered" MessageKind.strataBug
   | .New .. => emitExprDiagnostic $ diagnosticFromSource expr.source s!"New should have been eliminated by lowerComposite" MessageKind.strataBug
+  | .NewArray .. | .ArrayLength .. | .Var (.ArrayElement ..) => emitExprDiagnostic $ diagnosticFromSource expr.source "arrays are not yet supported by the translation to Core" MessageKind.notYetImplemented
   | .AsType target _ => emitExprDiagnostic $ diagnosticFromSource expr.source "AsType expression translation" MessageKind.notYetImplemented
   | .Assigned _ => emitExprDiagnostic $ diagnosticFromSource expr.source "assigned expression translation" MessageKind.notYetImplemented
   | .Old _ (some label) =>
@@ -1118,6 +1123,8 @@ def translateStmt (stmt : StmtExprMd)
         throwStmtDiagnostic $ md.toDiagnostic "Field targets in assignment should have been lowered by heap parameterization" MessageKind.strataBug
       else if targets.any (·.val matches .Stack _) then
         throwStmtDiagnostic $ md.toDiagnostic "a stack value should have been turned into a local" MessageKind.strataBug
+      else if targets.any (·.val matches .ArrayElement ..) then
+        throwStmtDiagnostic $ md.toDiagnostic "arrays are not yet supported by the translation to Core" MessageKind.notYetImplemented
       else
       -- Dispatch over targets, calling onDeclare/onLocal per target type.
       let dispatchTargets
@@ -1134,7 +1141,7 @@ def translateStmt (stmt : StmtExprMd)
           | .Local name =>
             let ident : Core.CoreIdent := ⟨name.text, ()⟩
             result := result ++ (← onLocal ident)
-          | .Field _ _ | .Stack _ => pure () -- already handled above
+          | .Field _ _ | .Stack _ | .ArrayElement .. => pure () -- already handled above
         return result
       -- Partition targets into init-nondet statements and CoreIdent list (for procedure calls).
       let initTargetsNondet : TranslateM (List Core.Statement × List Core.CoreIdent) := do
@@ -1150,7 +1157,7 @@ def translateStmt (stmt : StmtExprMd)
           | .Local name =>
             let ident : Core.CoreIdent := ⟨name.text, ()⟩
             lhs := lhs ++ [ident]
-          | .Field _ _ | .Stack _ => pure () -- already handled above
+          | .Field _ _ | .Stack _ | .ArrayElement .. => pure () -- already handled above
         return (inits, lhs)
       -- Translate a procedure/instance call: init Declare targets with nondet, then emit call.
       let translateCallTargets (calleeId : Identifier) (args : List StmtExprMd) : TranslateM (List Core.Statement) := do
@@ -1161,7 +1168,7 @@ def translateStmt (stmt : StmtExprMd)
         let targetTypes : List HighTypeMd := targets.filterMap fun t => match t.val with
           | .Declare param => some (param.type.getD ⟨.Unknown, t.source⟩)
           | .Local name => some (model.get name).getType
-          | .Field _ _ | .Stack _ => none
+          | .Field _ _ | .Stack _ | .ArrayElement .. => none
         let mut callArgs := callArgs
         let mut outArgs : List (Imperative.CallArg Core.Expression) := []
         let mut tempInits : List Core.Statement := []

@@ -419,7 +419,7 @@ procedure genericMethodPreconditionGated()
   var bx: BoxP<int> := new BoxP<int>;
   bx#val := 5;
   var g: int := bx#getIf(7);
-//^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition does not hold
+//              ^^^^^^^^^^^ error: precondition does not hold
   assert 1 == 1
 };
 #end

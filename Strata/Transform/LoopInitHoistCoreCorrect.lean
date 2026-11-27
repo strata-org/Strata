@@ -150,7 +150,7 @@ theorem triple (params : InitEnvWFParams)
     (hpre :
       Statements.noCalls ss = Bool.true
       ∧ Block.uniqueInits (C := Command) ss)
-    {F : Lambda.Factory CoreLParams} {Pre Post : Env Expression → Prop}
+    {F : Lambda.Factory CoreLParams} {Pre Post : Imperative.Env Expression → Prop}
     (hpin : ∀ ρ₀, Pre ρ₀ → ρ₀.factory.factory = F)
     (hpost : ∀ ρ₀ ρ' ρ'', Pre ρ₀ → Core.Logic.BlockInitEnvWF params ss ρ₀ →
       ρ'.factory = ρ₀.factory →

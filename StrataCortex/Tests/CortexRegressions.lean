@@ -251,7 +251,7 @@ procedure main() entry
 {
     var q: int := 0;
     var z: int := 10 % q;
-//  ^^^^^^^^^^^^^^^^^^^^ error: modulus is non-zero does not hold
+//                ^^^^^^ error: modulus is non-zero does not hold
     assert 1 == 2
 //  ^^^^^^^^^^^^^ error: assertion does not hold
 };
@@ -279,7 +279,7 @@ procedure main() entry
 {
     var q: int := 0;
     var z: int := 10 / q;
-//  ^^^^^^^^^^^^^^^^^^^^ error: divisor is non-zero does not hold
+//                ^^^^^^ error: divisor is non-zero does not hold
     assert 1 == 2
 //  ^^^^^^^^^^^^^ error: assertion does not hold
 };
@@ -342,81 +342,38 @@ procedure uninitialisedComposite() entry
 };
 #end
 
--- A call to a procedure without a body returns the default value of each output
--- that is not of composite type and leaves the existing objects as they are,
--- and the caller runs on: the assertions after the call are checked.
+-- A call to a procedure without a body fails the run there: the interpreter has nothing to
+-- run, and does not make up the callee's results. A contract on the callee does not change that.
+/-- error: cortex-interpret: 'main': a call to 'lib', which has no body to run (diagnostics: [the interpreter fails here: a call to 'lib', which has no body to run]) -/
 #guard_msgs in
 #eval testLaurelExecution { skipVerification := true, skipCoreInterpreter := true, skipLaurelInterpreter := true, skipCortexInterpreter := false } <|
 #strata
 program Laurel;
-composite Node { var v: int }
 procedure lib(x: int) returns (r: int) opaque;
-procedure touch(n: Node) opaque modifies *;
 
 procedure main() entry
   opaque
 {
     var a: int := lib(3);
-    assert a == 0;
-    assert 1 == 2
-//  ^^^^^^^^^^^^^ error: assertion does not hold
-};
-
-procedure heapUnchanged() entry
-  opaque
-  modifies *
-{
-    var n: Node := new Node;
-    n#v := 1;
-    touch(n);
-    assert n#v == 1
+    assert a == 0
 };
 #end
 
--- A result of composite type of a procedure without a body is a fresh object
--- whose fields hold their default values, so the caller can read and write
--- them. Each call allocates its own object: the write to `a` shows in neither
--- `b` nor `k`.
+/-- error: cortex-interpret: 'main': a call to 'lib', which has no body to run (diagnostics: [the interpreter fails here: a call to 'lib', which has no body to run]) -/
 #guard_msgs in
 #eval testLaurelExecution { skipVerification := true, skipCoreInterpreter := true, skipLaurelInterpreter := true, skipCortexInterpreter := false } <|
 #strata
 program Laurel;
-composite Node { var v: int }
-procedure mk() returns (r: Node) opaque;
+procedure lib(x: int) returns (r: int)
+  requires x >= 0
+  opaque
+  ensures r == x;
 
 procedure main() entry
   opaque
-  modifies *
 {
-    var k: Node := new Node;
-    k#v := 5;
-    var a: Node := mk();
-    var b: Node := mk();
-    assert a#v == 0;
-    a#v := 3;
-    assert a#v == 3;
-    assert b#v == 0;
-    assert k#v == 5;
-    assert 1 == 2
-//  ^^^^^^^^^^^^^ error: assertion does not hold
-};
-#end
-
--- The value a procedure without a body returns is the default of the base type,
--- here 0, which need not satisfy a constrained output type: the interpreter
--- does not act on what such a callee guarantees, so `v > 0` is reported.
-#guard_msgs in
-#eval testLaurelExecution { skipVerification := true, skipCoreInterpreter := true, skipLaurelInterpreter := true, skipCortexInterpreter := false } <|
-#strata
-program Laurel;
-constrained pos = x: int where x > 0 witness 1
-procedure g() returns (r: pos) opaque;
-procedure main() entry
-  opaque
-{
-    var v: pos := g();
-    assert v > 0
-//  ^^^^^^^^^^^^ error: assertion does not hold
+    var a: int := lib(3);
+    assert a == 3
 };
 #end
 

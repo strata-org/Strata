@@ -133,9 +133,11 @@ partial def defaultOf (prog : UnorderedProgram) (t : Core.Expression.Ty) : Excep
     if (prog.findComposite? n).isSome then
       .ok (mkCall LowerComposites.compositeCtor [intLit (-1), LowerComposites.tagOf n])
     else if n == LowerComposites.compositeTy || n.startsWith "$Any" then
-      match prog.composites with
-      | c :: _ => .ok (mkCall LowerComposites.compositeCtor [intLit (-1), LowerComposites.tagOf c.name])
-      | [] => .error s!"no default value of type {n}"
+      match prog.composites, prog.datatypes.find? (·.name == LowerComposites.typeTagTy) with
+      | c :: _, _ => .ok (mkCall LowerComposites.compositeCtor [intLit (-1), LowerComposites.tagOf c.name])
+      | [], some { constrs := tag :: _, .. } =>
+        .ok (mkCall LowerComposites.compositeCtor [intLit (-1), mkOp tag.name.name])
+      | [], _ => .error s!"no default value of type {n}"
     else match prog.constrained.find? (·.name == n) with
       | some c => match c.witness with
         | some w => .ok w

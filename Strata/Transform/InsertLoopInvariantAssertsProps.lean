@@ -1395,7 +1395,8 @@ private theorem checkExprFacts {df : Expression.Ident → Bool}
 
 /-- No variable of a list satisfying the gate with `prefixesReserved` reserved starts with the
     reserved prefix. -/
-theorem idents_not_reserved {base : InitEnvWFParams} {ss : Statements} {ρ : Env Expression}
+theorem idents_not_reserved {base : InitEnvWFParams} {ss : Statements}
+    {ρ : Imperative.Env Expression}
     (hwf : BlockInitEnvWF (base.extend prefixesReserved) ss ρ) :
     ∀ x ∈ Block.idents ss,
       ¬ measurePrefix.toList.isPrefixOf x.name.toList := by
@@ -1859,7 +1860,7 @@ theorem blockInitEnvWF_of_blockRel {base : InitEnvWFParams}
     (hprefixes : ∀ p ∈ base.prefixIdents,
       ¬ p.toList.isPrefixOf measurePrefix.toList ∧ ¬ measurePrefix.toList.isPrefixOf p.toList)
     {ss ss' : Statements}
-    (hrel : BlockRel [] ss ss') {ρ : Env Expression}
+    (hrel : BlockRel [] ss ss') {ρ : Imperative.Env Expression}
     (hwf : BlockInitEnvWF (base.extend prefixesReserved) ss ρ) : BlockInitEnvWF base ss' ρ := by
   have hp : measurePrefix ∈
       (base.extend prefixesReserved).prefixIdents := by

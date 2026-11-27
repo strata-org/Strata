@@ -59,6 +59,10 @@ macro "noj_tac" : tactic => `(tactic|
     | with_reducible exact noJ_strictField _ _ _
     | with_reducible exact noJ_readField _ _
     | with_reducible exact noJ_writeField _ _ _
+    | with_reducible exact noJ_arrayObject _
+    | with_reducible exact noJ_arrayPosition _ _
+    | with_reducible exact noJ_readElement _ _
+    | with_reducible exact noJ_writeElement _ _ _
     | with_reducible exact noJ_allocateObject
     | with_reducible exact noJ_missingPrelude _ _
     | with_reducible exact noJ_noFitPrelude _ _ _
@@ -103,6 +107,18 @@ theorem noJ_readField (target : Value) (name : String) : NoJ (readField target n
 
 theorem noJ_writeField (target : Value) (name : String) (v : Value) : NoJ (writeField target name v : EvalM PM Unit) := by
   unfold writeField; noj_tac
+
+theorem noJ_arrayObject (target : Value) : NoJ (arrayObject target : EvalM PM (Nat × HeapObject)) := by
+  unfold arrayObject; noj_tac
+
+theorem noJ_arrayPosition (obj : HeapObject) (index : Value) : NoJ (arrayPosition obj index : EvalM PM Nat) := by
+  unfold arrayPosition; noj_tac
+
+theorem noJ_readElement (target index : Value) : NoJ (readElement target index : EvalM PM Value) := by
+  unfold readElement; noj_tac
+
+theorem noJ_writeElement (target index v : Value) : NoJ (writeElement target index v : EvalM PM Unit) := by
+  unfold writeElement; noj_tac
 
 theorem noJ_allocateObject : NoJ (allocateObject : EvalM PM Value) := by
   unfold allocateObject; noj_tac

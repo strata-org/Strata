@@ -428,7 +428,6 @@ private theorem imperativeCmd_sound_initDet
     (C : LContext CoreLParams) (Env Env' : TEnv Unit) (x : CoreIdent) (xty : LTy)
     (expr : Expression.Expr) (md : MetaData Expression) (c' : Cmd Expression) (S : Subst)
     (run : ImperativeCmdRun C Env (.init x xty (.det expr) md) c' Env')
-    (hfun : x.name ∉ C.functions)
     (h_env : LExpr.TEnvWF (T := CoreLParams) Env)
     (h_fac : FactorySigWF C.functions) (h_mono : MonoScope Env.context)
     (h_aliasNames : ∀ al ∈ Env.context.aliases, C.knownTypes.containsName al.name = false)
@@ -497,7 +496,7 @@ private theorem imperativeCmd_sound_initDet
     have hrule := CmdHasType.init_det (substEnv S) (TContext.subst Env.context S) x
       (.forAll [] m0) expr
       (LMonoTy.subst S mtyP) m0 (restrictTo (fun v => LMonoTy.subst S (.ftvar v)) m0) md _
-      hfind hfun hfv
+      hfind hfv
       rfl ⟨hrac, hvalid⟩ hwk hexpr
       (resolveSource_writtenAnnotsOk C Env E2 expr ea hres S) hscope (TContext.Equiv.refl _)
     rwa [hbind] at hrule
@@ -509,7 +508,6 @@ private theorem imperativeCmd_sound
     (C : LContext CoreLParams) (Env Env' : TEnv Unit)
     (cc c' : Cmd Expression) (S : Subst)
     (run : ImperativeCmdRun C Env cc c' Env')
-    (hfun : ∀ x xty e md, cc = .init x xty e md → x.name ∉ C.functions)
     (h_env : LExpr.TEnvWF (T := CoreLParams) Env)
     (h_fac : FactorySigWF C.functions) (h_mono : MonoScope Env.context)
     (h_aliasNames : ∀ al ∈ Env.context.aliases, C.knownTypes.containsName al.name = false)
@@ -540,13 +538,12 @@ private theorem imperativeCmd_sound
     have hrule := CmdHasType.init_nondet (substEnv S) (TContext.subst Env.context S) x
       (.forAll [] m0) (LMonoTy.subst S mtyP) m0
       (restrictTo (fun v => LMonoTy.subst S (.ftvar v)) m0) md _
-      hfind
-      (hfun x (.forAll [] m0) .nondet md rfl) rfl
+      hfind rfl
       ⟨hrac, hvalid⟩ hwk (TContext.Equiv.refl _)
     rwa [WrittenEnv.bindFirst_substEnv] at hrule
   | @initDet x xty ty1 ety ty3 expr e1 md E1 E2 E3 E4 hlk' hxfv hpre hinf hunif hpost =>
     exact imperativeCmd_sound_initDet C Env _ x xty expr md _ S
-      (.initDet hlk' hxfv hpre hinf hunif hpost) (hfun x xty (.det expr) md rfl) h_env h_fac
+      (.initDet hlk' hxfv hpre hinf hunif hpost) h_env h_fac
       h_mono h_aliasNames h_stored h_absorbs h_wf hfix
   | @setNondet x xty md hlk' hmono =>
     obtain ⟨mty, rfl⟩ := LTy.eq_forAll_nil_of_isMonoType hmono
@@ -1184,9 +1181,9 @@ theorem Statement.typeCheckCmd_sound_absorbing
       hrun h_env h_fac h_mono h_aliasNames h_stored h_absorbs h_wf
   | cmd cc =>
     cases hrun with
-    | @cmd _ cc' Env' run hfun =>
+    | @cmd _ cc' Env' run =>
       obtain ⟨Δ', hcmd, hfind⟩ :=
-        imperativeCmd_sound C Env Env' cc cc' S run hfun h_env h_fac h_mono
+        imperativeCmd_sound C Env Env' cc cc' S run h_env h_fac h_mono
           h_aliasNames h_stored h_absorbs h_wf hfix
       exact ⟨Δ', CmdExtHasType.cmd (P := P) _ _ _ _ _ hcmd, hfind⟩
 
@@ -2009,17 +2006,15 @@ theorem TypeSpec.CmdExtHasType.deskolemize
   have hσrig : ∀ q ∈ σ, q.1 ∈ Crig.rigidTypeVars := by
     rw [← hrig]
     exact hσ
-  have hfresh : ∀ x, Γ.types.find? x = none → x.name ∉ Csk.functions →
-      Γ'.types.find? x = none ∧ x.name ∉ Crig.functions := by
-    intro x hfind hfun
-    refine ⟨?_, fun hx => hfun ((hamb.functions_deskol.mem_iff x.name).mpr hx)⟩
+  have hfresh : ∀ x, Γ.types.find? x = none → Γ'.types.find? x = none := by
+    intro x hfind
     rw [hsc.2 x, hfind]
     rfl
   cases h with
   | cmd =>
     rename_i hc
     cases hc with
-    | init_det x xty e mty mty₀ ρ md _ hfind hfun hfv hxty hdecl hwk hexpr hann hin heqv =>
+    | init_det x xty e mty mty₀ ρ md _ hfind hfv hxty hdecl hwk hexpr hann hin heqv =>
       subst hxty
       simp only [allCmdTys, allLTyTys, allExprOrNondetTys, Bool.and_eq_true] at h_ann
       have hdecl' := h_declΔ ρ mty₀ mty h_ann.1 hdecl
@@ -2032,7 +2027,7 @@ theorem TypeSpec.CmdExtHasType.deskolemize
       have hlit := h_lit e (List.mem_singleton.mpr rfl)
       have hexpr' := h_expr _ _ e mty hout hnp h_read (h_src.2 e rfl) h_ann.2 hlit hexpr
       rw [hrig] at hout hnp hexpr' ⊢
-      obtain ⟨hfind', hfun'⟩ := hfresh x hfind hfun
+      have hfind' := hfresh x hfind
       have hfv' : x ∉ HasFvars.getFvars (P := Expression) (mapExprTys (deskolemizeTy σ) e) := by
         rw [getFvars_mapExprTys]
         exact hfv
@@ -2043,10 +2038,10 @@ theorem TypeSpec.CmdExtHasType.deskolemize
       change CmdExtHasType Crig P Δ' Γ'
         (.cmd (.init x (.forAll [] (deskolemizeTy σ mty₀))
           (.det (mapExprTys (deskolemizeTy σ) e)) md)) _ _
-      exact .cmd _ _ _ _ _ (.init_det _ _ _ _ _ _ _ _ _ _ hfind' hfun' hfv' rfl hdecl'
+      exact .cmd _ _ _ _ _ (.init_det _ _ _ _ _ _ _ _ _ _ hfind' hfv' rfl hdecl'
         (h_wk mty hwk) hexpr' (h_written e hann) hscope
         (TContext.Equiv.refl _))
-    | init_nondet x xty mty mty₀ ρ md _ hfind hfun hxty hdecl hwk heqv =>
+    | init_nondet x xty mty mty₀ ρ md _ hfind hxty hdecl hwk heqv =>
       subst hxty
       simp only [allCmdTys, Bool.and_eq_true] at h_ann
       have hdecl' := h_declΔ ρ mty₀ mty h_ann.1 hdecl
@@ -2054,14 +2049,14 @@ theorem TypeSpec.CmdExtHasType.deskolemize
         (fun v hv _ => h_keep mty₀ h_ann.1 v hv)
       have hnp := NoParamBinding.bindFirst mty₀ ρ h_np hσ
       rw [hrig] at hout hnp ⊢
-      obtain ⟨hfind', hfun'⟩ := hfresh x hfind hfun
+      have hfind' := hfresh x hfind
       refine ⟨{ Γ' with types := Γ'.types.insert x (.forAll [] (deskolemizeTy σ mty)) }, _,
         ?_,
         DeskolemizesScope.of_equiv_left σ _ _ _ heqv (DeskolemizesScope.insert σ Γ Γ' hsc x mty),
         hout, hnp⟩
       change CmdExtHasType Crig P Δ' Γ'
         (.cmd (.init x (.forAll [] (deskolemizeTy σ mty₀)) .nondet md)) _ _
-      exact .cmd _ _ _ _ _ (.init_nondet _ _ _ _ _ _ _ _ _ hfind' hfun' rfl hdecl'
+      exact .cmd _ _ _ _ _ (.init_nondet _ _ _ _ _ _ _ _ _ hfind' rfl hdecl'
         (h_wk mty hwk) (TContext.Equiv.refl _))
     | set_det x mty e md _ hfind hexpr hann hin heqv =>
       simp only [allCmdTys] at h_ann
@@ -2310,7 +2305,7 @@ theorem Statement.typeCheckCmd_vars_eq
     Command.modifiedVars c' = Command.modifiedVars c ∧
     Command.definedVars c' = Command.definedVars c := by
   cases Statement.typeCheckCmd_ok_inv h with
-  | cmd run hfun => cases run <;> exact ⟨rfl, rfl⟩
+  | cmd run => cases run <;> exact ⟨rfl, rfl⟩
   | call =>
     refine ⟨?_, rfl⟩
     simp only [Command.modifiedVars]
@@ -2351,7 +2346,7 @@ theorem Statement.typeCheckCmd_litTyNames_eq
     unfold exprLitTyNames
     rw [hab]
   cases Statement.typeCheckCmd_ok_inv h with
-  | cmd run hfun =>
+  | cmd run =>
     cases run with
     | initDet hlookup hself hpre hinfer hunify hpost =>
       simp only [Statement.cmdExprs, Cmd.readExprs, ExprOrNondet.toList, List.flatMap_cons,
@@ -2412,7 +2407,7 @@ theorem Statement.typeCheckCmd_eraseAnnots_eq
     (h : Statement.typeCheckCmd C Env P c = .ok (c', Env')) :
     Command.eraseAnnots c' = Command.eraseAnnots c := by
   cases typeCheckCmd_ok_inv h with
-  | cmd run hfun =>
+  | cmd run =>
     cases run with
     | initDet hlookup hself hpre hinfer hunify hpost =>
       simp only [Command.eraseAnnots, Command.mapExpr, CmdType.substExpr,
@@ -3094,7 +3089,7 @@ theorem Statement.typeCheckCmd_varsAvoid {ps : List TyIdentifier}
     rw [LTy.freeVars_forAll_nil]
     exact (AliasEquiv.freeVars_iff he.aliasesWF.mem hae v).mpr hv
   cases Statement.typeCheckCmd_ok_inv h with
-  | cmd run _ =>
+  | cmd run =>
     cases run with
     | initDet hlookup hself hpre hinf hunif hpost =>
       obtain ⟨hty, hexpr⟩ := hc

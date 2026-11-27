@@ -261,6 +261,7 @@ import Strata.Transform.ContextualRewrite
    on it -/
 import Strata.DL.Imperative.InterpreterFuelMono
 import Strata.DL.Imperative.InterpreterTowerProps
+import Strata.DL.Imperative.InterpreterNested
 import Strata.Languages.Core.ConfigWF
 import Strata.Languages.Core.EnvProps
 import Strata.Languages.Core.ReplayWF
@@ -282,10 +283,8 @@ import Strata.Languages.Core.Counterexample.ModelToValuation
 import Strata.Languages.Core.Counterexample.ModelToValuationProps
 import Strata.Languages.Core.Counterexample.ModelProps
 import Strata.Languages.Core.Counterexample.ModelAnonymousProps
-import Strata.Languages.Core.Counterexample.BackLinkRelSim
 import Strata.Languages.Core.Counterexample.BackLinkRelSimProps
 import Strata.Languages.Core.Counterexample.BackLinkExactProps
-import Strata.Languages.Core.Counterexample.BackLinkExact
 import Strata.Languages.Core.InterpreterCallComplete
 import Strata.Languages.Core.InterpreterCallSound
 import Strata.Languages.Core.InterpreterComplete
@@ -312,6 +311,27 @@ import Strata.Languages.Core.SymExecReplay
 import Strata.Languages.Core.SymExecReplayProps
 import Strata.Languages.Core.SymExecTree
 import Strata.Languages.Core.StmtCallFree
+
+-- Counterexample lifting: per-phase back-links, exact-phase relations,
+-- pipeline composition
+import Strata.Languages.Core.Counterexample.ValuationToRunDriveA
+import Strata.Languages.Core.Counterexample.ValuationToRunDrive
+import Strata.Languages.Core.Counterexample.BackLinkExactNondet
+import Strata.Languages.Core.Counterexample.BackLinkTargetLinks
+import Strata.Languages.Core.Counterexample.RunTargetSound
+import Strata.Languages.Core.ObligationIds
+import Strata.Languages.Core.PipelineRunRecords
+import Strata.Languages.Core.Counterexample.BackLinkCallElimProps
+import Strata.Languages.Core.Counterexample.BackLinkExactFilterProps
+import Strata.Languages.Core.Counterexample.BackLinkExactInsertProps
+import Strata.Languages.Core.Counterexample.BackLinkExactNondetProps
+import Strata.Languages.Core.Counterexample.BackLinkExactTermCheckProps
+import Strata.Languages.Core.Counterexample.BackLinkLoopElimProps
+import Strata.Languages.Core.Counterexample.BackLinkTargetLinksProps
+import Strata.Languages.Core.PipelinePhaseUnitsProps
+import Strata.Languages.Core.PipelineRunRecordsProps
+import Strata.Languages.Core.PipelineUnitChainProps
+import Strata.Languages.Core.ProcedureUnitProps
 
  -- deletion candidates: nothing imports these modules:
 

@@ -56,7 +56,7 @@ procedure callsRequires()
   opaque
 {
   var bad: int := needsPositive(-1);
-//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition does not hold
+//                ^^^^^^^^^^^^^^^^^ error: precondition does not hold
   var good: int := needsPositive(1);
   // A `free requires` is assumed by the implementation but never checked at
   // the call site, so passing -1 verifies.

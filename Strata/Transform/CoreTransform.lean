@@ -206,6 +206,9 @@ def CoreTransformState.emp : CoreTransformState :=
     currentProcedureName := .none, cachedAnalyses := .emp,
     factory := Lambda.Factory.default }
 
+/-- A transform state exists: the empty one. -/
+instance : Nonempty CoreTransformState := ⟨.emp⟩
+
 abbrev Err := Strata.Message
 
 abbrev CoreTransformM := ExceptT Err (StateM CoreTransformState)

@@ -263,11 +263,13 @@ decreasing_by
     | (have := Value.sz_ent hx; simp at *; omega)
     | (have := Value.sz_ent hy; simp at *; omega)
 
-/-- One composite instance on the heap: its runtime type name (what `is`/`as`
-    test against) and its fields. -/
+/-- One composite instance or array on the heap: its runtime type name (what `is`/`as`
+    test against), its fields, and for an array its element type and elements. -/
 structure HeapObject where
   typeName : String
   fields   : Std.HashMap String Value
+  elementType : Option HighType := none
+  elements : Array Value := #[]
   deriving Inhabited
 
 /-- One call frame: local variables (keyed by name) to their evaluated values.
@@ -1699,6 +1701,38 @@ def writeField (target : Value) (name : String) (v : Value) : EvalM m Unit := do
   | v' => (hostFail (
       s!"field write '{name}' on a non-composite {reprVariant v'}"))
 
+/-- The address and heap object of an array reference. -/
+def arrayObject (target : Value) : EvalM m (Nat × HeapObject) := do
+  match target with
+  | .ref a _ => do
+    let st ← get
+    let some obj := st.heap[a]?
+      | if st.inOld then evalError "`old(...)` reads an object allocated after the procedure was entered"
+        else hostFail s!"dangling reference #{a}"
+    if obj.elementType.isNone then evalError s!"array access on a {obj.typeName}, which is not an array"
+    pure (a, obj)
+  | v => evalError s!"array access on a non-array {reprVariant v}"
+
+/-- The position `index` denotes in `obj`, an array: an error unless `0 ≤ index < |obj|`. -/
+def arrayPosition (obj : HeapObject) (index : Value) : EvalM m Nat := do
+  match index with
+  | .int ⟨i⟩ =>
+    if 0 ≤ i && i < obj.elements.size then pure i.toNat
+    else evalError s!"index {i} is out of range for an array of length {obj.elements.size}"
+  | v => evalError s!"array index {reprVariant v} is not an int"
+
+/-- Read element `index` of an array. -/
+def readElement (target index : Value) : EvalM m Value := do
+  let (_, obj) ← arrayObject target
+  let i ← arrayPosition obj index
+  pure (obj.elements[i]?.getD .unset)
+
+/-- Write element `index` of an array, in place, so every alias of the array observes it. -/
+def writeElement (target index v : Value) : EvalM m Unit := do
+  let (a, obj) ← arrayObject target
+  let i ← arrayPosition obj index
+  modify fun s => { s with heap := s.heap.set! a { obj with elements := obj.elements.set! i v } }
+
 
 def methodOf (index : ProgramIndex) (typeName name : String) : Option Procedure :=
   let chain := index.ancestors[typeName]?.getD [typeName]
@@ -1919,12 +1953,14 @@ def assignLocal (name : Identifier) (v : Value) : EvalM m Unit := modify fun s =
 inductive UpdateTarget where
   | local (name : Identifier)
   | field (target : Value) (field : String)
+  | element (array : Value) (index : Value)
   | declare (name : String)
   | stack
 
 def writeUpdate : UpdateTarget → Value → EvalM m Unit
   | .local name, nv => assignLocal name nv
   | .field tv field, nv => writeField tv field nv
+  | .element av iv, nv => writeElement av iv nv
   | .declare name, nv => modify fun s => { s with stack := declareLocal s.stack name nv }
   | .stack, nv => modify fun s => { s with operands := nv :: s.operands }
 
@@ -1956,10 +1992,12 @@ def coverOf : Value → Option String → List (Nat × Option String)
 def frameHolds (pre post : Array HeapObject) (cov : List (Nat × Option String)) : Bool :=
   (List.range pre.size).all fun a => cov.contains (a, none) ||
     match pre[a]?, post[a]? with
-    | some o, some o' => o.fields.toList.all fun (f, v) => cov.contains (a, some f) ||
+    | some o, some o' => (o.fields.toList.all fun (f, v) => cov.contains (a, some f) ||
         match o'.fields[f]? with
         | some w => Value.eq v w
-        | none => false
+        | none => false) &&
+      o.elements.size == o'.elements.size &&
+        (o.elements.toList.zip o'.elements.toList).all fun (v, w) => Value.eq v w
     | _, _ => true
 
 def entrySnapshot (skip : Bool) (s : EvalState) : Array HeapObject × Std.HashMap String Value :=
@@ -2079,6 +2117,27 @@ def evalExpr (cfg : ExternalBackendM m) : Nat → StmtExpr → EvalM m Value
           | none => pure (defaultValue st.index fty)
         writeField (.ref addr ref.text) fname v
       pure (.ref addr ref.text)
+  | fuel + 1, .NewArray elementType length => do
+      let n ← match ← evalExprMd cfg fuel length with
+        | .int ⟨n⟩ => pure n
+        | v => evalError s!"array length {reprVariant v} is not an int"
+      if n < 0 then evalError s!"array length {n} is negative"
+      let st ← get
+      if let some sr := cfg.strict then
+        if sr.heapBound ≤ st.heap.size then hostFail "strict: heap bound reached"
+      let tag := s!"Array<{toString (formatHighTypeVal elementType.val)}>"
+      let addr := st.heap.size
+      let obj : HeapObject := { typeName := tag, fields := {}, elementType := some elementType.val,
+                                elements := Array.replicate n.toNat (defaultValue st.index elementType.val) }
+      modify fun s => { s with heap := s.heap.push obj }
+      pure (.ref addr tag)
+  | fuel + 1, .Var (Variable.ArrayElement array index) => do
+      let av ← evalExprMd cfg fuel array
+      let iv ← evalExprMd cfg fuel index
+      readElement av iv
+  | fuel + 1, .ArrayLength array => do
+      let (_, obj) ← arrayObject (← evalExprMd cfg fuel array)
+      pure (.int ⟨obj.elements.size⟩)
   | fuel + 1, .IsType target ty => do
       let tv ← evalExprMd cfg fuel target
       if cfg.strict.isSome && !strictRef (← get) tv then hostFail "strict: `is` on a non-reference"
@@ -2180,10 +2239,10 @@ def evalExpr (cfg : ExternalBackendM m) : Nat → StmtExpr → EvalM m Value
           -- Only the partial operators have a `requires` on their prelude wrapper,
           -- so only they pay for looking it up.
           if isPartialOp op then
-            -- Reported on the enclosing statement, as Core places the check.
+            -- Reported at the operator, as the other routes report it.
             let st ← get
             match lookupCallee st.index callee with
-            | some proc => checkPreconditions cfg fuel st.stmtSite proc argVals
+            | some proc => checkPreconditions cfg fuel site proc argVals
             | none => missingPrelude callee.text argVals
           liftM (opCall cfg op argVals)
       | none => do
@@ -2197,10 +2256,10 @@ def evalExpr (cfg : ExternalBackendM m) : Nat → StmtExpr → EvalM m Value
           -- call, since no argument determines it.
           let absent := absentOf st.index typeArgs
           -- The partial sequence operations carry a `requires` on their prelude
-          -- declaration, checked on the enclosing statement, as Core places it.
+          -- declaration, checked at the call, as the other routes report it.
           if isPartialSeqOp name then
             match lookupCallee st.index callee with
-            | some proc => checkPreconditions cfg fuel st.stmtSite proc argVals
+            | some proc => checkPreconditions cfg fuel site proc argVals
             | none => missingPrelude name argVals
           if cfg.strict.isSome && isMapBuiltin name && argVals.any Value.hasRef then
             hostFail s!"strict: map operation '{name}' on a value holding a reference"
@@ -2338,6 +2397,10 @@ def assignTarget (cfg : ExternalBackendM m) (fuel : Nat) (target : Variable) : E
         strictField cfg tv field
         pure (.field tv field.text)
     | .Stack _ => pure .stack
+    | .ArrayElement array index => do
+        let av ← evalExprMd cfg fuel array
+        let iv ← evalExprMd cfg fuel index
+        pure (.element av iv)
 
 /-- The current value of an update target, and how to write it back, with any
     receiver evaluated exactly once. -/
@@ -2356,6 +2419,10 @@ def readForUpdate (cfg : ExternalBackendM m) (fuel : Nat) (target : Variable)
         pure (v, .field tv field.text)
     | .Declare param => evalError s!"cannot update the declaration of '{param.name.text}'"
     | .Stack _ => evalError "a stack value cannot be updated in place"
+    | .ArrayElement array index => do
+        let av ← evalExprMd cfg fuel array
+        let iv ← evalExprMd cfg fuel index
+        pure (← readElement av iv, .element av iv)
 
 /-- Evaluate a Laurel statement for its side effects on the eval state. May
     throw `Control.return_` to unwind to the nearest `invokeProc`. -/

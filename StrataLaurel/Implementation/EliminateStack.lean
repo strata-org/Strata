@@ -18,13 +18,13 @@ public section
 
 private def writesNonLocal (globals : List String) (v : VariableMd) : Bool :=
   match v.val with
-  | .Field .. => true
+  | .Field .. | .ArrayElement .. => true
   | .Local name => globals.contains name.text
   | .Declare _ | .Stack _ => false
 
 private def impureNode (globals : List String) (e : StmtExprMd) : Bool :=
   match e.val with
-  | .Assert .. | .Assume _ | .New .. | .Call (some _) .. | .Hole .. | .While ..
+  | .Assert .. | .Assume _ | .New .. | .NewArray .. | .Call (some _) .. | .Hole .. | .While ..
   | .Throw _ | .Try .. | .Yield | .Resume .. | .HasNext _ | .Snapshot _ => true
   | .Assign targets _ => targets.any (writesNonLocal globals)
   | .IncrDecr _ _ target | .CompoundAssign _ target _ => writesNonLocal globals target
@@ -272,7 +272,7 @@ private def callLike (pure : String → Bool) (e : StmtExprMd) : Bool :=
     | .Call none callee _ _ => !(callee.text.startsWith "$" && pure callee.text)
     | .Assign [⟨.Declare _, _⟩] _ => false
     | .Block _ none [] none => false
-    | .Call (some _) .. | .New .. | .Assign .. | .IncrDecr .. | .CompoundAssign .. | .Quantifier ..
+    | .Call (some _) .. | .New .. | .NewArray .. | .Assign .. | .IncrDecr .. | .CompoundAssign .. | .Quantifier ..
     | .AsType .. | .Hole .. | .Assert .. | .Assume .. | .Block .. | .Return .. | .Throw .. => true
     | _ => false) e
 
@@ -683,15 +683,16 @@ private def readsHeapOutsideOld (e : StmtExprMd) : Bool :=
   let withoutOld := mapStmtExpr (fun n => match n.val with
     | .Old .. => ⟨.LiteralBool true, n.source⟩
     | _ => n) e
-  anyStmtExpr (·.val matches .Var (.Field ..)) withoutOld
+  anyStmtExpr (fun n => n.val matches .Var (.Field ..) | .Var (.ArrayElement ..)) withoutOld
 
 private def writesHeap (writers : Option (Std.HashSet Nat)) (e : StmtExprMd) : Bool :=
   let writer (callee : Identifier) : Bool := match writers, callee.uniqueId with
     | some ws, some id => ws.contains id
     | _, _ => true
   anyStmtExpr (fun n => match n.val with
-    | .Assign targets _ => targets.any (·.val matches .Field ..)
+    | .Assign targets _ => targets.any (·.val matches .Field .. | .ArrayElement ..)
     | .IncrDecr _ _ ⟨.Field .., _⟩ | .CompoundAssign _ ⟨.Field .., _⟩ _ => true
+    | .IncrDecr _ _ ⟨.ArrayElement .., _⟩ | .CompoundAssign _ ⟨.ArrayElement .., _⟩ _ => true
     | .Call none callee _ _ => !callee.text.startsWith "$" && writer callee
     | .Call (some _) callee _ _ => writer callee
     | _ => false) e

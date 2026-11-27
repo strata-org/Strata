@@ -1402,12 +1402,16 @@ def SMT.encodeAssumptionItem (factory : @Lambda.Factory CoreLParams)
     Except Format (Term × SMT.Context × SMT.PendingFnQueue) :=
   Core.toSMTTerm factory [] e ctx pending
 
-/-- Encode one distinctness group entry into a single `distinct` assertion. -/
+/-- Encode one distinctness group entry into a single `distinct` assertion. SMT-LIB's
+    `distinct` takes two or more terms, so a group of fewer expressions, which holds
+    trivially, is encoded as `true`. -/
 def SMT.encodeDistinctItem (factory : @Lambda.Factory CoreLParams)
     (es : List (LExpr CoreLParams.mono)) (ctx : SMT.Context) (pending : SMT.PendingFnQueue) :
     Except Format (Term × SMT.Context × SMT.PendingFnQueue) := do
   let (ts, ctx, pending) ← Core.toSMTTerms factory es ctx pending
-  .ok (Term.app (.core .distinct) ts .bool, ctx, pending)
+  match ts with
+  | _ :: _ :: _ => .ok (Term.app (.core .distinct) ts .bool, ctx, pending)
+  | _ => .ok (Term.bool true, ctx, pending)
 
 /-- Encode one variable-definition entry (`init name ty (.det e)`), emitted by
     callers as `define-fun`. -/

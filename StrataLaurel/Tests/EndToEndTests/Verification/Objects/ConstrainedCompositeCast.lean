@@ -34,7 +34,7 @@ procedure guardedCast(x: Box) opaque {
   if (x#n > 0) then { var y: PositiveBox := x as PositiveBox; assert y is PositiveBox } else { }
 };
 procedure unguardedCast(x: Box) opaque { var y: PositiveBox := x as PositiveBox };
-//                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition does not hold
+//                                                             ^^^^^^^^^^^^^^^^ error: precondition does not hold
 //                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
 procedure testIsTheConstraint(x: Box) opaque { assert x is PositiveBox };
 //                                             ^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
@@ -60,7 +60,7 @@ constrained PD = d: Dog where true witness <??>
 procedure ancestorIsPD(a: Animal) opaque { assert a is PD };
 //                                         ^^^^^^^^^^^^^^ error: assertion does not hold
 procedure ancestorAsPD(a: Animal) opaque { var p: PD := a as PD };
-//                                         ^^^^^^^^^^^^^^^^^^^^ error: precondition does not hold
+//                                                      ^^^^^^^ error: precondition does not hold
 //                                         ^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
 procedure catIsNotPD() opaque { var c: Animal := new Cat; assert !(c is PD) };
 procedure dogIsPD() opaque { var d: Animal := new Dog; assert d is PD; var p: PD := d as PD };

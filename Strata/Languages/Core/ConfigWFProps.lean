@@ -17,7 +17,9 @@ Key theorems:
 * `StoreClosed.update`, `StoreClosed.empty`: closed stores are preserved by closed updates, and
   the empty store is closed.
 * `cfgWF_stmts`, `cfgWF_stmt`, `CfgWF.getEnv`: a configuration's well-formedness and that of its
-  active environment. -/
+  active environment.
+* `cfgWF_wrapSeqs`, `cfgWF_unseqs`: wrapping a configuration in sequence contexts, and expanding
+  its sequence towers, keep and reflect its well-formedness. -/
 
 namespace Core
 open Imperative
@@ -44,6 +46,17 @@ theorem CfgWF.getEnv {CmdT : Type} :
     ∀ {c : IConfig Expression CmdT}, CfgWF c → EnvWF c.getEnv := by
   intro c
   induction c <;> simp_all!
+
+/-- A configuration under `k` sequence contexts with no remaining statements is well-formed
+    (`CfgWF`) exactly when the configuration itself is. -/
+theorem cfgWF_wrapSeqs {CmdT : Type} (c : IConfig Expression CmdT) (k : Nat) :
+    CfgWF (c.wrapSeqs k) ↔ CfgWF c := by
+  induction k <;> simp_all [IConfig.wrapSeqs, CfgWF]
+
+/-- Expanding the sequence towers of a configuration (`IConfig.unseqs`) keeps it well-formed
+    (`CfgWF`), and reflects it. -/
+theorem cfgWF_unseqs {CmdT : Type} (c : IConfig Expression CmdT) : CfgWF c.unseqs ↔ CfgWF c := by
+  induction c <;> simp_all [IConfig.unseqs, CfgWF, cfgWF_wrapSeqs]
 
 end
 end Core

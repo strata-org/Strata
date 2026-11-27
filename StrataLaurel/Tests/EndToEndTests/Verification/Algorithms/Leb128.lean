@@ -107,7 +107,7 @@ procedure decode(input: Sequence<int>, maxBytes: int) returns (ok: bool, value: 
     invariant scale >= 1
   {
     var b: int := seqSelect(input, i);
-//  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
+//                ^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
 // desired: error: precondition does not hold
     if b < 0 || b > 255 then { done := true }
     else {

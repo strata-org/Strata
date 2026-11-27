@@ -34,7 +34,7 @@ procedure factoryContract()
 {
   var a: int := arb(true, 1);
   var b: bool := arb(true, 0)
-//^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition does not hold
+//               ^^^^^^^^^^^^ error: precondition does not hold
 };
 #end
 
