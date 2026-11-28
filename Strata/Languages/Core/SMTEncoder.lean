@@ -9,6 +9,7 @@ import all Strata.DL.Lambda.LTyProps
 public import Strata.DL.Imperative.PathConditionsFold
 public import Strata.DL.Imperative.SMTUtils
 public import Strata.DL.SMT.Factory
+public import Strata.DL.SMT.DenoteDatatypes
 public import Strata.Languages.Core.Env
 public import Strata.Util.Name
 public import Strata.Util.OrderedSet
@@ -310,6 +311,18 @@ def datatypeConstructorsToSMT (d : LDatatype CoreLParams.IDMeta) (useArrayTheory
     let fields := c.args.map fun (name, fieldTy) =>
       (Lambda.destructorFuncName d name, lMonoTyToTermType useArrayTheory fieldTy)
     { name := c.name.name, args := fields }
+
+/-- The datatypes a query uses, as `Strata.DL.SMT.Denote` declares them: name and
+    constructors with selector symbols and field sorts, in factory order. `none` if a
+    used datatype is parametric, which the denotation does not cover. -/
+def SMT.Context.denotedDatatypes (ctx : SMT.Context) : Option Strata.SMT.DT.Decls := do
+  let mut out : Array (String × List SMTConstructor) := #[]
+  for block in ctx.datatypes.factory.toList do
+    for d in block do
+      if ctx.seenDatatypes.contains d.name then
+        if !d.typeArgs.isEmpty then failure
+        out := out.push (d.name, datatypeConstructorsToSMT d ctx.useArrayTheory)
+  return out.toList
 
 /-- Does a datatype of `names` occur in the argument or the result of a function
     type within `ty`? Such a datatype, e.g. `Tree { Node(kids: int -> Tree) }` or
