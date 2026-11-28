@@ -54,7 +54,13 @@ end Core.FoldAxioms
     a precondition, since folding can expand a function body, which is only right where
     its precondition holds. It changes only axioms, so it preserves every fact about
     procedure bodies, and `noBetaRedexes` because a fold that leaves a redex is
-    discarded. -/
+    discarded.
+
+    Its contract is declared, not proved. Every fact but `noBetaRedexes` and `typeAnnotated`
+    follows from the phase keeping procedures (`ProgramFact.holds_of_procs_eq`), but those two
+    read the folded axioms, and showing that `LExpr.eval` keeps annotations and that the
+    discarding check is exact needs the evaluator's properties, which the deductive
+    verification proofs establish only for the programs their own restrictions admit. -/
 def Core.foldAxiomsPhase : Core.PipelinePhase :=
   Core.modelPreservingPipelinePhase "foldAxioms" Core.FoldAxioms.runFoldAxioms
     (requires := factSet![.noPrecondsFromFuncs, .typeAnnotated])

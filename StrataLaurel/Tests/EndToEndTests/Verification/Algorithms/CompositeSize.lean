@@ -108,10 +108,10 @@ procedure addLeft(parent: Sequence<int>, lf: Sequence<int>, rt: Sequence<int>, s
     invariant seqLength(s) == seqLength(sz)
   {
     s := seqUpdate(s, cur, seqSelect(s, cur) + 1);
-//  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
+//       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
 //                         ^^^^^^^^^^^^^^^^^ error: precondition could not be proved
     cur := seqSelect(pa, cur)
-//  ^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
+//         ^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
   };
   par2 := pa;
   lf2 := l;

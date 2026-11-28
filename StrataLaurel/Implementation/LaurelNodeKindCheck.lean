@@ -45,7 +45,9 @@ decreasing_by exact highTypeChildren_sizeOf_lt t c hc
 theorem variableChildren_sizeOf_lt (v : Variable) (c : StmtExprMd)
     (h : c ∈ variableChildren v) : sizeOf c < sizeOf v := by
   cases v <;> simp only [variableChildren, List.mem_cons, List.not_mem_nil, or_false] at h
-  subst h; simp <;> omega
+  all_goals first
+    | (subst h; simp <;> omega)
+    | (rcases h with h | h <;> subst h <;> simp <;> omega)
 
 theorem stmtExprChildren_sizeOf_lt (e c : StmtExprMd) (h : c ∈ stmtExprChildren e.val) :
     sizeOf c < sizeOf e := by

@@ -116,6 +116,6 @@ procedure callsBodilessNeg()
   opaque
 {
   var y: int := bodilessNeedsPositive(-1)
-//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition does not hold
+//              ^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition does not hold
 };
 #end

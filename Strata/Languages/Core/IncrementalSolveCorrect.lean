@@ -228,32 +228,32 @@ private theorem readStmts_extract (ss : Statements) : ReadsLikeExtract ss := by
 /-- Reading the declarations `ds` into a node holding `facts`, `goals` and `kids`, under the facts
     `ctx` above it, and folding `extractDecl` over `ds` from the global facts `ctx ++ facts`
     (newest first) and the obligations of that node so far, agree. -/
-private abbrev DeclsLikeExtract (fn : List String) (ds : List Decl) : Prop :=
+private abbrev DeclsLikeExtract (ds : List Decl) : Prop :=
   ∀ (facts : Array (PathConditionEntry Expression)) (goals : Array Goal) (kids : Array VTree)
-    (t : VTree), readDecls fn facts goals kids ds = .ok t →
+    (t : VTree), readDecls facts goals kids ds = .ok t →
     ∀ (ctx : List (PathConditionEntry Expression)) (allObs : Array (ProofObligation Expression))
       (pre : List (ProofObligation Expression)),
     allObs.toList = pre ++ nodeObligations ctx facts goals kids →
-    ∃ r, ds.foldlM (extractDecl fn) ((ctx ++ facts.toList).reverse, allObs) = .ok r ∧
+    ∃ r, ds.foldlM (extractDecl) ((ctx ++ facts.toList).reverse, allObs) = .ok r ∧
       r.2.toList = pre ++ t.obligations ctx
 
 /-- The declarations after a goal or a child are read in a new child holding `facts'` and
     `goals'`, which sees the node's facts, as extraction has them. -/
-private theorem below_extract (fn : List String) (facts : Array (PathConditionEntry Expression))
+private theorem below_extract (facts : Array (PathConditionEntry Expression))
     (goals : Array Goal) (kids : Array VTree) (rest : List Decl) (t : VTree)
     (ctx : List (PathConditionEntry Expression)) (allObs : Array (ProofObligation Expression))
     (pre : List (ProofObligation Expression))
     (hacc : allObs.toList = pre ++ nodeObligations ctx facts goals kids)
     (facts' : Array (PathConditionEntry Expression)) (goals' : Array Goal)
-    (ih : DeclsLikeExtract fn rest)
+    (ih : DeclsLikeExtract rest)
     (h : (do
-      let t' ← readDecls fn facts' goals' #[] rest
+      let t' ← readDecls facts' goals' #[] rest
       (Except.ok { facts := facts, goals := goals, children := kids.push t' } :
         Except String VTree)) = .ok t)
     (allObs' : Array (ProofObligation Expression))
     (hacc' : allObs'.toList = allObs.toList ++
       goals'.toList.map (Goal.obligation (ctx ++ facts.toList ++ facts'.toList))) :
-    ∃ r, rest.foldlM (extractDecl fn) ((ctx ++ facts.toList ++ facts'.toList).reverse, allObs') =
+    ∃ r, rest.foldlM (extractDecl) ((ctx ++ facts.toList ++ facts'.toList).reverse, allObs') =
       .ok r ∧ r.2.toList = pre ++ t.obligations ctx := by
   obtain ⟨t', ht', h⟩ := (Except.bind_is_ok _ _ _).mp h
   obtain rfl := Except.ok.inj h
@@ -265,51 +265,51 @@ private theorem below_extract (fn : List String) (facts : Array (PathConditionEn
 
 /-- An axiom or `distinct` group, the fact `e`: it joins the node when nothing precedes it there,
     and otherwise starts a child holding the declarations after it. -/
-private theorem global_extract (fn : List String) (facts : Array (PathConditionEntry Expression))
+private theorem global_extract (facts : Array (PathConditionEntry Expression))
     (goals : Array Goal) (kids : Array VTree) (rest : List Decl) (t : VTree)
     (ctx : List (PathConditionEntry Expression)) (allObs : Array (ProofObligation Expression))
     (pre : List (ProofObligation Expression))
     (hacc : allObs.toList = pre ++ nodeObligations ctx facts goals kids)
-    (e : PathConditionEntry Expression) (ih : DeclsLikeExtract fn rest)
-    (h : (if (kids.isEmpty && goals.isEmpty) = true then readDecls fn (facts.push e) goals kids rest
+    (e : PathConditionEntry Expression) (ih : DeclsLikeExtract rest)
+    (h : (if (kids.isEmpty && goals.isEmpty) = true then readDecls (facts.push e) goals kids rest
       else do
-        let t' ← readDecls fn #[e] #[] #[] rest
+        let t' ← readDecls #[e] #[] #[] rest
         (Except.ok { facts := facts, goals := goals, children := kids.push t' } :
           Except String VTree)) = .ok t) :
-    ∃ r, rest.foldlM (extractDecl fn) (e :: (ctx ++ facts.toList).reverse, allObs) = .ok r ∧
+    ∃ r, rest.foldlM (extractDecl) (e :: (ctx ++ facts.toList).reverse, allObs) = .ok r ∧
       r.2.toList = pre ++ t.obligations ctx := by
   split at h
   · rename_i hk
     simp only [Bool.and_eq_true, Array.isEmpty_iff] at hk
     obtain ⟨rfl, rfl⟩ := hk
     simpa using ih _ _ _ t h ctx allObs pre (by simpa using hacc)
-  · simpa using below_extract fn facts goals kids rest t ctx allObs pre hacc #[e] #[] ih h allObs
+  · simpa using below_extract facts goals kids rest t ctx allObs pre hacc #[e] #[] ih h allObs
       (by simp)
 
 /-- A function or a block of them, which holds no fact: the declarations after it go in a child
     when a goal or a child precedes it. -/
-private theorem definition_extract (fn : List String)
+private theorem definition_extract
     (facts : Array (PathConditionEntry Expression))
     (goals : Array Goal) (kids : Array VTree) (rest : List Decl) (t : VTree)
     (ctx : List (PathConditionEntry Expression)) (allObs : Array (ProofObligation Expression))
     (pre : List (ProofObligation Expression))
     (hacc : allObs.toList = pre ++ nodeObligations ctx facts goals kids)
-    (ih : DeclsLikeExtract fn rest)
-    (h : (if (kids.isEmpty && goals.isEmpty) = true then readDecls fn facts goals kids rest
+    (ih : DeclsLikeExtract rest)
+    (h : (if (kids.isEmpty && goals.isEmpty) = true then readDecls facts goals kids rest
       else do
-        let t' ← readDecls fn #[] #[] #[] rest
+        let t' ← readDecls #[] #[] #[] rest
         (Except.ok { facts := facts, goals := goals, children := kids.push t' } :
           Except String VTree)) = .ok t) :
-    ∃ r, rest.foldlM (extractDecl fn) ((ctx ++ facts.toList).reverse, allObs) = .ok r ∧
+    ∃ r, rest.foldlM (extractDecl) ((ctx ++ facts.toList).reverse, allObs) = .ok r ∧
       r.2.toList = pre ++ t.obligations ctx := by
   split at h
   · exact ih _ _ _ t h ctx allObs pre hacc
-  · simpa using below_extract fn facts goals kids rest t ctx allObs pre hacc #[] #[] ih h allObs
+  · simpa using below_extract facts goals kids rest t ctx allObs pre hacc #[] #[] ih h allObs
       (by simp)
 
 /-- `readDecls` and the fold of `extractDecl` agree on every list of declarations: see
     `DeclsLikeExtract`. -/
-private theorem readDecls_extract (fn : List String) (ds : List Decl) : DeclsLikeExtract fn ds := by
+private theorem readDecls_extract (ds : List Decl) : DeclsLikeExtract ds := by
   intro facts goals kids t h ctx allObs pre hacc
   match ds with
   | [] =>
@@ -318,14 +318,14 @@ private theorem readDecls_extract (fn : List String) (ds : List Decl) : DeclsLik
     refine ⟨_, rfl, ?_⟩
     rw [hacc, obligations_mk]
   | d :: rest =>
-    have ih := readDecls_extract fn rest
+    have ih := readDecls_extract rest
     unfold readDecls at h
     dsimp only at h
     rw [List.foldlM_cons]
     split at h
     case h_1 | h_2 =>
       simp only [extractDecl, Except.ok_bind]
-      exact global_extract fn facts goals kids rest t ctx allObs pre hacc _ ih h
+      exact global_extract facts goals kids rest t ctx allObs pre hacc _ ih h
     case h_3 =>
       obtain ⟨ss, hss, h⟩ := (Except.bind_is_ok _ _ _).mp h
       obtain ⟨tp, htp, h⟩ := (Except.bind_is_ok _ _ _).mp h
@@ -339,14 +339,14 @@ private theorem readDecls_extract (fn : List String) (ds : List Decl) : DeclsLik
       split at h
       · rename_i hpre
         simp only [extractDecl, hpre, Except.ok_bind, ite_true]
-        exact definition_extract fn facts goals kids rest t ctx allObs pre hacc ih h
+        exact definition_extract facts goals kids rest t ctx allObs pre hacc ih h
       · cases h
     case h_5 =>
       split at h
       · cases h
       · rename_i hfind
         simp only [extractDecl, hfind, Except.ok_bind]
-        exact definition_extract fn facts goals kids rest t ctx allObs pre hacc ih h
+        exact definition_extract facts goals kids rest t ctx allObs pre hacc ih h
     case h_6 =>
       simp only [extractDecl, Except.ok_bind]
       split at h
@@ -355,7 +355,7 @@ private theorem readDecls_extract (fn : List String) (ds : List Decl) : DeclsLik
         subst hk
         exact ih _ _ _ t h ctx _ pre
           (by simp [hacc, Goal.obligation, RevPathConditions.consume])
-      · simpa using below_extract fn facts goals kids rest t ctx allObs pre hacc #[] _ ih h _
+      · simpa using below_extract facts goals kids rest t ctx allObs pre hacc #[] _ ih h _
           (by simp [Goal.obligation, RevPathConditions.consume])
     case h_7 =>
       -- A type declaration, the one kind both sides skip.
@@ -371,10 +371,15 @@ private theorem readDecls_extract (fn : List String) (ds : List Decl) : DeclsLik
 theorem readProgram_obligations {p : Program} {t : VTree} (h : readProgram p = .ok t) :
     ∃ obs, extractObligations p = .ok obs ∧
       obs.toList = (layoutOf t).tasks.toList.map obligationOf := by
-  obtain ⟨r, hr, hr'⟩ := readDecls_extract _ p.decls #[] #[] #[] t h [] #[] [] (by simp)
+  unfold readProgram at h
+  split at h
+  · cases h
+  rename_i hv
+  obtain ⟨r, hr, hr'⟩ := readDecls_extract _ #[] #[] #[] t h [] #[] [] (by simp)
   refine ⟨r.2, ?_, by rw [hr', layoutOf_obligations]; simp⟩
   simp only [List.append_nil, List.reverse_nil] at hr
   unfold extractObligations
+  simp only [hv, Bool.false_eq_true, ↓reduceIte]
   rw [hr]
   rfl
 

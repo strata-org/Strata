@@ -135,6 +135,73 @@ def valuationToEnv (factory : @Lambda.Factory CoreLParams)
       oracle := oracle ++ [value]
   return ({ store := .ofStore store, factory }, oracle)
 
+/-- The oracle value `valuationToEnv` reads for one replay event: a branch's boolean, and a
+    nondeterministic write's value from `valuation` (else a default value of its expected type),
+    checked to be a value of that type. -/
+def eventOracleValue (factory : @Lambda.Factory CoreLParams) (valuation : RStore Expression) :
+    ObligationExtraction.ExtractReplayEvent → Except StopReason Expression.Expr
+  | .branch takeThen => pure (if takeThen then HasBool.tt else HasBool.ff)
+  | .nondetWrite name expectedType => do
+    let value ← match valuation name with
+      | some value => pure value
+      | none => match expectedType.bind (fun ty => Lambda.LTy.toMonoType? ty)
+                      |>.bind (defaultValueIn factory) with
+        | some value => pure value
+        | none => throw (.missingBinding name.name)
+    if !Lambda.LExpr.isValue factory value then throw .expectedValueChoice
+    if let some ty := expectedType then
+      if !valueHasType factory value ty then throw .illTypedValue
+    pure value
+
+/-- A loop in `Except` whose body appends one value to its state, the value of `g` at the
+    element, is `mapM g` appended to the initial state. -/
+private theorem forIn_yield_append {α β ε : Type} (xs : List α) (acc : List β)
+    (body : α → List β → Except ε (ForInStep (List β))) (g : α → Except ε β)
+    (h : ∀ x s, body x s = (fun v => ForInStep.yield (s ++ [v])) <$> g x) :
+    forIn xs acc body = (acc ++ ·) <$> xs.mapM g := by
+  induction xs generalizing acc with
+  | nil => simp
+  | cons x xs ih =>
+    rw [List.forIn_cons, h, List.mapM_cons]
+    cases g x <;> cases hm : List.mapM g xs <;>
+      simp [ih, hm, Except.map, bind, Except.bind, pure, Except.pure, Functor.map]
+
+/-- `valuationToEnv` with its oracle read by `mapM` of `eventOracleValue`, in time linear in the
+    number of replay events. -/
+def valuationToEnvLinear (factory : @Lambda.Factory CoreLParams)
+    (unit : PassiveUnit) (obligation : ProofObligation Expression)
+    (link : ObligationExtraction.ExtractBackLink) (valuation : RStore Expression) :
+    Except StopReason (IEnv Expression × OracleSeed) := do
+  if link.targetLabel != obligation.label then
+    throw .extractionLinkDoesNotMatchObligation
+  let mut inputBindings : LExprModel := []
+  for (name, ty) in unit.inputs do
+    let value ← match valuation name with
+      | some value => pure value
+      | none => match defaultValueIn factory ty with
+        | some value => pure value
+        | none => throw (.missingBinding name.name)
+    if !Lambda.LExpr.isValue factory value then throw .expectedValueChoice
+    if !valueHasMonoType factory value ty then throw .illTypedValue
+    inputBindings := inputBindings ++ [(name, value)]
+  let store : RStore Expression := fun name =>
+    (inputBindings.find? fun (candidate, _) => candidate == name).map Prod.snd
+  let oracle ← link.events.mapM (eventOracleValue factory valuation)
+  return ({ store := .ofStore store, factory }, oracle)
+
+/-- `valuationToEnv` is `valuationToEnvLinear`, which the compiler runs in its place. -/
+@[csimp] theorem valuationToEnv_eq_linear : @valuationToEnv = @valuationToEnvLinear := by
+  funext factory unit obligation link valuation
+  simp only [valuationToEnv, valuationToEnvLinear]
+  rw [forIn_yield_append (xs := link.events) _ _ (eventOracleValue factory valuation)]
+  · simp
+  · intro e s
+    cases e <;> simp only [eventOracleValue]
+    · rfl
+    · (repeat' split) <;> simp_all only [bind, Except.bind, pure, Except.pure,
+        Bool.not_eq_eq_eq_not, Bool.not_true, throw, throwThe, MonadExceptOf.throw, Functor.map,
+        Except.map, imp_false, Option.bind_some] <;> (repeat' split) <;> simp_all
+
 /-- **Fuel-bounded level-`(b)` validity.**  `store` is a level-`(b)` counterexample
     to `obligation` whose VC decides at fuel `fb`: the obligation check under the
     *bounded* evaluator `evalBounded fb` (assumptions reduce to `true`, goal to `ff`)

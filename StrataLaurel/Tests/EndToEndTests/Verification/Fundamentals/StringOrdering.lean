@@ -276,7 +276,7 @@ procedure smaller(a: string, b: string) returns (r: string)
 };
 procedure p(x: string, y: string) opaque {
   var z: string := smaller(x, y);
-//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition does not hold
+//                 ^^^^^^^^^^^^^ error: precondition does not hold
   assert z <= y
 };
 #end

@@ -17,8 +17,9 @@ evaluation phase, whatever `--vcgen` says (`vcgenFlagIssues`); `--path-cap none`
 is accepted. `--vcgen symexec[:MODE]` runs symbolic execution in place of symbolic evaluation
 (`symexec` alone means `symexec:merged`); a path cap is refused under it whatever its merge mode,
 since `--vcgen symexec:merge-above:N` sets its merging. `--vcgen symexec` is refused for an
-explicit pipeline without a symbolic execution phase. Every mode names the same phases
-(`nameablePhases`).
+explicit pipeline without a symbolic execution phase. No default order runs the contextual
+rewriting phase; `--phases` runs it, after `betaReduce` in the order of `--vcgen symexec` or
+`--vcgen wp`. Every mode names the same phases (`nameablePhases`).
 `verify --phases` with no input file refuses the same flags (`phasesReport`). -/
 
 meta section
@@ -28,7 +29,7 @@ open Strata.Cli
 /--
 info: To run the phases in the default order:
 
-  --phases typeCheck,assertNoCFGBodies,callElim,termCheck,precondElim,insertLoopInvariantAsserts,loopElim,genOpaqueTypeParams,monomorphizeFunctions,simplify,nondetElim,declObligations,wp,ssa,wpLoop,betaReduce
+  --phases typeCheck,assertNoCFGBodies,callElim,termCheck,precondElim,insertLoopInvariantAsserts,loopElim,genOpaqueTypeParams,monomorphizeFunctions,simplify,nondetElim,declObligations,wp,ssa,wpLoop,betaReduce,lambdaLift,separateVarNames
 
 You can change this order. Give it back to --phases with no input file and
 Strata reports whether it composes without verifying anything.
@@ -43,6 +44,7 @@ Available, not in the default order:
   functionInlining
   foldAxioms
   equalitySimplification
+  contextualRewrite
   guardFwd
   defInline
   deadDefElim
@@ -52,6 +54,7 @@ Available, not in the default order:
   hoistNondetChoices
   cfgLoopElim
   passiveVC
+  lambdaLiftIfNeeded
 -/
 #guard_msgs in
 #eval IO.println (displayPhasesFor {} { Core.VerifyOptions.quiet with vcgen := .wp })
@@ -123,6 +126,51 @@ of this run has no symbolic execution phase.] -/
 #guard_msgs in
 #eval do IO.println (← issuesOf [("vcgen", "symexec:per-path")]
   (some [Core.symExecPipelinePhase]))
+
+/-! No default order runs the `contextualRewrite` phase: not those of `--vcgen symexec` and
+`--vcgen wp`, nor those of the legacy symbolic evaluator, `--vcgen usp` and `--vcgen uwp`. -/
+
+/-- The phases the default order of the options these flags parse to runs after `betaReduce`. -/
+private def afterBetaReduce (flags : List (String × String)) : IO Unit := do
+  let pflags := flags.foldl (fun acc (k, v) => ParsedFlags.insert acc k (some v)) {}
+  let o ← parseVerifyOptions pflags Core.VerifyOptions.quiet
+  IO.println (((Core.corePipelinePhases o).map Strata.Core.phaseName).dropWhile (· != "betaReduce"))
+
+/--
+info: [betaReduce, lambdaLift, separateVarNames]
+-/
+#guard_msgs in
+#eval afterBetaReduce [("vcgen", "symexec")]
+
+/--
+info: [betaReduce, commonSubexprElim, lambdaLift, separateVarNames]
+-/
+#guard_msgs in
+#eval afterBetaReduce [("vcgen", "symexec:per-path")]
+
+/--
+info: [betaReduce, lambdaLift, separateVarNames]
+-/
+#guard_msgs in
+#eval afterBetaReduce [("vcgen", "wp")]
+
+/--
+info: [betaReduce, lambdaLift, separateVarNames]
+-/
+#guard_msgs in
+#eval afterBetaReduce [("vcgen", "usp")]
+
+/--
+info: [betaReduce, lambdaLift, separateVarNames]
+-/
+#guard_msgs in
+#eval afterBetaReduce [("vcgen", "uwp")]
+
+/--
+info: [betaReduce, commonSubexprElim, lambdaLift, separateVarNames]
+-/
+#guard_msgs in
+#eval afterBetaReduce []
 
 /-! `--path-cap N` is refused under `--vcgen symexec` whatever the merge mode: it bounds the
 legacy symbolic evaluator's paths, and `--vcgen symexec:merge-above:N` sets when symbolic
@@ -207,7 +255,10 @@ private def modes : List Core.VerifyOptions :=
 #guard resolves Core.VerifyOptions.quiet "symExec"
 #guard resolves { Core.VerifyOptions.quiet with symExec := some .never } "symbolicEval"
 #guard modes.all fun o => ["symExec", "symbolicEval", "commonSubexprElim", "wp", "ssa",
-  "declObligations", "deadDefElim"].all (resolves o)
+  "declObligations", "deadDefElim", "contextualRewrite"].all (resolves o)
+#guard (modes ++ [{ Core.VerifyOptions.quiet with vcgen := .usp },
+    { Core.VerifyOptions.quiet with vcgen := .uwp }]).all fun o =>
+  !((Core.corePipelinePhases o).map Strata.Core.phaseName).contains "contextualRewrite"
 #guard modes.all fun o =>
   let names := (Strata.Core.nameablePhases o).map Strata.Core.phaseName
   names.eraseDups.length == names.length
@@ -318,10 +369,33 @@ private def reportOf (flags : List (String × String)) : IO Unit := do
 #eval reportOf [("path-cap", "3"), ("phases", wpOrder)]
 
 /--
-info: This order composes: typeCheck, assertNoCFGBodies, callElim, termCheck, precondElim, insertLoopInvariantAsserts, loopElim, genOpaqueTypeParams, monomorphizeFunctions, simplify, nondetElim, declObligations, wp, ssa, wpLoop, betaReduce
+info: This order composes: typeCheck, assertNoCFGBodies, callElim, termCheck, precondElim, insertLoopInvariantAsserts, loopElim, genOpaqueTypeParams, monomorphizeFunctions, simplify, nondetElim, declObligations, wp, ssa, wpLoop, betaReduce, lambdaLift, separateVarNames
 -/
 #guard_msgs in
 #eval reportOf [("vcgen", "wp"), ("phases", wpOrder)]
+
+/-! The default orders of `--vcgen symexec` and `--vcgen wp` with `contextualRewrite` after
+`betaReduce` compose. -/
+
+/-- The phase names of the default order of `o` with `contextualRewrite` after `betaReduce`,
+    comma-separated. -/
+private def withRewrite (o : Core.VerifyOptions) : String :=
+  ",".intercalate ((Core.corePipelinePhases o).map Strata.Core.phaseName |>.flatMap fun n =>
+    if n == "betaReduce" then [n, "contextualRewrite"] else [n])
+
+/--
+info: This order composes: hoistNondetChoices, typeCheck, cfgLoopElim, callElim, termCheck, precondElim, insertLoopInvariantAsserts, loopElim, genOpaqueTypeParams, monomorphizeFunctions, simplify, nondetElim, symExec, betaReduce, contextualRewrite, commonSubexprElim, lambdaLift, separateVarNames
+-/
+#guard_msgs in
+#eval reportOf [("vcgen", "symexec:per-path"),
+  ("phases", withRewrite { Core.VerifyOptions.quiet with symExec := some .never })]
+
+/--
+info: This order composes: typeCheck, assertNoCFGBodies, callElim, termCheck, precondElim, insertLoopInvariantAsserts, loopElim, genOpaqueTypeParams, monomorphizeFunctions, simplify, nondetElim, declObligations, wp, ssa, wpLoop, betaReduce, contextualRewrite, lambdaLift, separateVarNames
+-/
+#guard_msgs in
+#eval reportOf [("vcgen", "wp"),
+  ("phases", withRewrite { Core.VerifyOptions.quiet with vcgen := .wp })]
 
 
 /-! The passive generators: `--vcgen usp` and `--vcgen uwp` name them, with no symbolic

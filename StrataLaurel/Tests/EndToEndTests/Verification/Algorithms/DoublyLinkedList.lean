@@ -47,7 +47,7 @@ procedure insertAfter(nx: Sequence<int>, pv: Sequence<int>, head: int, len: int,
   var n1: Sequence<int> := seqUpdate(seqBuild(nx, after), at, k);
   var p1: Sequence<int> := seqBuild(pv, at);
   if after != -1 then { p1 := seqUpdate(p1, after, k) };
-//                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
+//                            ^^^^^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
 // desired: verifies
   nx2 := n1;
   pv2 := p1
@@ -92,7 +92,7 @@ procedure insertAfter(nx: Sequence<int>, pv: Sequence<int>, head: int, len: int,
   var n1: Sequence<int> := seqUpdate(seqBuild(nx, after), at, k);
   var p1: Sequence<int> := seqBuild(pv, at);
   if after != -1 then { p1 := seqUpdate(p1, after, at) };
-//                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
+//                            ^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
   nx2 := n1;
   pv2 := p1
 };

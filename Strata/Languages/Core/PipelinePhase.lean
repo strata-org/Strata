@@ -8,16 +8,29 @@ module
 public import Strata.Pipeline.Messages
 public import Strata.Transform.CoreTransform
 public import Strata.DL.Imperative.SMTUtils
+public import Strata.DL.Imperative.Counterexample.Run
+public import Strata.DL.Imperative.Counterexample.BackLink
+public import Strata.Languages.Core.Counterexample.RunTarget
 public import Strata.Languages.Core.DDMTransform.ASTtoCST
 public import Strata.Languages.Core.ProgramFactProps
 public import Strata.Languages.Core.ProgramFactSetProps
+public import Strata.Languages.Core.ProcedureUnit
+public import Strata.Languages.Core.Interpreter
+public import Strata.Util.DecidableEqProps
 
 /-! # Pipeline Phase Definitions for Model Validation
 
 This module defines the types used to describe how verification pipeline
 phases affect model soundness. Individual transform passes define their
 own pipeline phases using these types, ensuring that the soundness
-annotation lives next to the transform implementation. -/
+annotation lives next to the transform implementation.
+
+The import of `Core.Interpreter` is public because the types of
+`RuntimeBackLink`'s constructors mention `BackLink Expression Command Command`, whose
+`InterpLang Expression` instance the interpreter provides, so that instance has to be
+reachable wherever `RuntimeBackLink` is used. It therefore puts `Core.Env` in scope: a
+consumer inside `namespace Core` writes `Imperative.Env` for the imperative execution
+environment, since a bare `Env` there is `Core.Env`. -/
 
 namespace Core
 open Imperative Lambda
@@ -121,56 +134,57 @@ def markerValidation (obligation : ProofObligation Expression) (pfxs : List Stri
   if guards.isEmpty then .modelPreserving else .markersOnPath guards
 
 
-/-! ## Proof obligations, deferred
+/-- The label of the assumption a phase places on the path of an obligation whose
+    models may be spurious: a phase whose output over-approximates what the
+    solver's models can represent, so that a model of the output's query need not
+    be one of the input. Like every name starting with `$__`, it cannot be written
+    in a user's program. The SMT back end reports a satisfiable query for a marked
+    obligation as unknown, not as a counterexample. -/
+def spuriousModelsLabel : String := "$__spuriousModels"
+
+/-- The metadata field that marks a lemma, an obligation of its own with no statement to
+    place a marker before: a lemma's obligation carries the lemma's metadata, so the field
+    marks that obligation alone. -/
+@[match_pattern]
+abbrev spuriousModelsField : Imperative.MetaDataElem.Field Expression := .label spuriousModelsLabel
+
+/-- The assumption `assume [spuriousModelsLabel]: true` that marks an obligation
+    whose models may be spurious; `e` is its `true`, carrying the marking phase's
+    location. -/
+def spuriousModelsMarker (e : Expression.Expr) : Statement :=
+  Statement.assume spuriousModelsLabel e .empty
+
+/-- The model validation of a phase that marks obligations with
+    `spuriousModelsMarker`: a model of a marked obligation is reported as unknown,
+    never as a counterexample; any other obligation is unaffected. -/
+def spuriousModelsValidation (obligation : ProofObligation Expression) : ModelValidation :=
+  let marked := obligationHasLabelPrefix obligation spuriousModelsLabel ||
+    (obligation.metadata.findElem spuriousModelsField).isSome
+  if marked then .modelToValidate (fun _ _ => none)
+  else .modelPreserving
+
+/-! ## Proof obligations
 
 A phase's `establishes` and `preserves` are claims about the program its
 transform produces, and `establishes_ok` and `preserves_ok` state that those
-claims hold. Proving one relates a transform to a `Prop` about its output; no
-production transform has such a proof yet, so contracts are checked for
-*composition* while the facts themselves are declared. -/
+claims hold, for every claimed fact the phase does not list in `unproved`.
+Proving one relates a transform to a `Prop` about its output. Every contract
+is checked for *composition*, proved or not. -/
 
-/-- Require every phase to prove every fact it claims, whatever its own
-    `PipelinePhase.provesContract` says.
-
-    Temporary: it exists only because `true` is not yet reachable. Once
-    every phase discharges its obligations, this switch and the
-    `PhaseContractObligation` guard it feeds go away and the obligations become
-    ordinary fields. -/
-@[expose] def proveAllPhaseContracts : Bool := false
-
-/-- A claim a phase makes about its output program: the claim itself when a
-    proof is owed — `proveAllPhaseContracts` or the phase's own
-    `provesContract` is `true` — and `True` otherwise.
-
-    Guarding the obligation rather than omitting it keeps the statement
-    written down and checked for well-formedness, and makes turning a phase
-    from declared to proved a one-word edit. -/
-@[expose] def PhaseContractObligation (provesContract : Bool) (P : Prop) : Prop :=
-  if proveAllPhaseContracts || provesContract then P else True
-
-/-- When neither the global switch nor the phase's own `provesContract` flag is
-    set, the obligation is trivially satisfied. -/
-theorem PhaseContractObligation.deferred {b : Bool} {P : Prop}
-    (h : (proveAllPhaseContracts || b) = false) : PhaseContractObligation b P := by
-  simp [PhaseContractObligation, h]
-
-/-- An obligation that *is* owed, from a proof of the claim itself. Also
-    accepted where nothing is owed, so a phase that proves its contract need
-    not know which switch turned the obligation on. -/
-theorem PhaseContractObligation.intro {b : Bool} {P : Prop} (h : P) : PhaseContractObligation b P := by
-  unfold PhaseContractObligation; split
-  · exact h
-  · trivial
-
-/-- Close a contract obligation that nobody owes yet. Fails when the phase sets
-    `provesContract := true`, or when `proveAllPhaseContracts` is `true`,
-    which is the point: the proof is then owed here. -/
-macro "deferred_contract" : tactic =>
+/-- Close a contract obligation that owes nothing: every fact the phase claims is
+    in its `unproved` set, which is checked by `decide`. Fails as soon as a claimed
+    fact is not in `unproved`, which is the point: its proof is then owed here. -/
+macro "unproved_contract" : tactic =>
   `(tactic| first
-      | exact PhaseContractObligation.deferred (by decide)
-      | fail "this phase's contract is owed a proof, because it sets \
-              `provesContract := true` or `proveAllPhaseContracts` is `true`. \
-              Prove the claim and wrap it in `PhaseContractObligation.intro`.")
+      | (intro _ _ _ _ _ _ _ f _ hu
+         exact absurd Strata.Pipeline.mem_allFactSet hu)
+      | (intro f _ hu
+         exact absurd Strata.Pipeline.mem_allFactSet hu)
+      | (intro _ _ _ _ _ _ _ f hf hu; exact absurd ((by decide : _ ⊑ _) f hf) hu)
+      | (intro f hf hu; exact absurd ((by decide : _ ⊑ _) f hf) hu)
+      | fail "this phase claims a fact that is not in its `unproved` set, so its \
+              contract is owed a proof of it: prove the claim, or, if it is true \
+              but not yet proved, add it to `unproved` with the reason.")
 
 /-! ## Pipeline phase
 
@@ -188,6 +202,134 @@ whatever it is handed. And write `preserves` out fact by fact rather than as
 phase's claim — the exception is a phase that returns its input unchanged, where
 `ProgramFactSet.all` is the honest answer. -/
 
+/-! ## Pipeline composition: runtime carriers and reverse composition
+
+`RuntimeBackLink`, `composeRuntimeBackLinks`, and `runTransformsWithBackLinks`
+are the pipeline-specific half of the back-link layer: they accumulate one
+carrier per executed phase and compose the carriers in reverse.  They are
+distinct from the per-transformation back-link *implementations* (in
+`Strata.Languages.Core.Counterexample.BackLinkPhases`) and from the generic back-link
+*specification* and `composeBackLinks` (in `Strata.DL.Imperative.Counterexample.BackLink`). -/
+
+/-- Runtime carrier of a phase's back-link: the back-link cannot be built at the
+    transform boundary, because back-links bake in the target id and the procedure
+    environment `π` — both known only per failed obligation, at counterexample-lift time.
+    So the carrier holds a *deferred builder* `Target → Option String → π → BackLink`,
+    instantiated once the target, the name of the obligation's procedure and `π` are
+    known. -/
+inductive RuntimeBackLink where
+  /-- A linked phase.  `build` is the deferred back-link builder, instantiated at the
+      phase's *upstream* target id and at `procBelow`, the name of the obligation's
+      procedure in the phase's output, passed up by the phases downstream.
+      `sourceUnit downstreamTarget procBelow` is the phase's input verification unit for
+      the obligation (the statement list the back-link lifts at); a recorded phase keeps a
+      non-empty supplied unit, and where the supplied unit is empty it lifts at the unit
+      `Program.sourceUnitFor` picks in the phase's input and output programs.
+      `upstreamTarget downstreamTarget procBelow` maps the phase's downstream target id to
+      the id the same obligation has in the phase's input (identity except where a phase
+      synthesizes the obligation, e.g. call elimination's precondition asserts). -/
+  | linked (build : Target → Option String → (String → Option Procedure) →
+      BackLink Expression Command Command)
+      (sourceUnit : Target → Option String → List (Stmt Expression Command) := fun _ _ => [])
+      (upstreamTarget : Target → Option String → Target := fun target _ => target)
+  | unavailable (phase : String)
+
+/-- The structured body of the procedure named `n`, if the declaration is that procedure
+    with a structured body. -/
+@[expose] def Decl.bodyNamed (n : String) : Decl → Option (List (Stmt Expression Command))
+  | .proc procedure _ =>
+    if procedure.header.name.1 == n then
+      match procedure.body with
+      | .structured statements _ => some statements
+      | .cfg _ _ | .abstract => none
+    else none
+  | _ => none
+
+/-- Does the program declare a procedure named `n`? -/
+@[expose] def Program.hasProc (p : Program) (n : String) : Bool :=
+  p.decls.any fun d => match d with
+    | .proc q _ => q.header.name.1 == n
+    | _ => false
+
+/-- The unit (`WPObl.procPassive`: preconditions assumed, body, postconditions asserted)
+    of the procedure named `n`, if the declaration is that procedure with a structured
+    body. -/
+@[expose] def Decl.unitNamed (n : String) : Decl → Option (List (Stmt Expression Command))
+  | .proc procedure _ =>
+    if procedure.header.name.1 == n then
+      match procedure.body with
+      | .structured statements _ => some (WPObl.procPassive procedure statements)
+      | .cfg _ _ | .abstract => none
+    else none
+  | _ => none
+
+/-- The unit of the procedure named `n` at a phase: its contract-wrapped body
+    (`Decl.unitNamed`) in the phase's `input`; for a procedure the phase generated (absent
+    from its input), its unit in the phase's `output` — the *derived unit* the phase
+    built.  `[]` when there is no such structured
+    body.  An obligation-program procedure has an empty contract, so its unit is its
+    body. -/
+@[expose] def Program.unitOf (input output : Program)
+    (n : String) : List (Stmt Expression Command) :=
+  if input.hasProc n then (input.decls.findSome? (Decl.unitNamed n)).getD []
+  else (output.decls.findSome? (Decl.unitNamed n)).getD []
+
+/-- A phase's input verification unit for the obligation `target`, with the name of
+    its procedure.  The procedure is identified by name, passed up from downstream:
+    `below` is the procedure the downstream phases lift at (at the bottom, the procedure
+    the verifier extracted the obligation from), and every phase keeps the name of the
+    procedure it transforms, so the unit is that procedure's (`Program.unitOf`: in the
+    phase's `input`, or in its `output` for a procedure the phase generated).  A
+    declaration check carries its derived unit. -/
+def Program.sourceUnitFor (input output : Program) (target : Target)
+    (below : Option String) : List (Stmt Expression Command) × Option String :=
+  match target with
+  | .declCheck id => (id.unit, below)
+  | _ =>
+    match below with
+    | none => ([], none)
+    | some name => (input.unitOf output name, some name)
+
+/-- Record a phase's input/output programs in its carrier: a linked carrier keeps a
+    non-empty unit the phase supplies, and lifts at the unit
+    `Program.sourceUnitFor input output` picks where the supplied unit is empty. -/
+def RuntimeBackLink.withPrograms (link : RuntimeBackLink) (input output : Program) :
+    RuntimeBackLink :=
+  match link with
+  | .linked build su upstreamTarget =>
+    .linked build (fun t below =>
+      let u := su t below
+      if u.isEmpty then (input.sourceUnitFor output t below).1 else u) upstreamTarget
+  | .unavailable phase => .unavailable phase
+
+/-- Lift the outcome `initial`, produced at the last phase's output, back through the
+    phases' carriers `links` (in execution order): instantiate each deferred builder at the
+    concrete `target`/`π` (from the failed obligation) and compose in reverse; once the
+    outcome is empty, or a phase is unavailable, the result is the empty outcome.  The fold
+    threads the target id: each linked phase is built at its upstream id
+    `upstreamTarget t procName` and at `procName` (where `t` is the id at its output and
+    `procName` the name of the obligation's procedure there) and lifts at its input unit
+    `sourceUnit t procName`, as `composeBackLinks` gives each link its own input unit.  The
+    fold passes `procName` up unchanged while the phases find a unit for it; above a phase
+    with the empty unit it passes no name, since the name then names no procedure the
+    phases above transform. -/
+def composeRuntimeBackLinks (target : Target) (π : String → Option Procedure)
+    (links : List RuntimeBackLink) (initial : BackLinkOutcome Expression Command)
+    (procName : Option String := none) :
+    BackLinkOutcome Expression Command :=
+  (links.reverse.foldl (init := (initial, target, procName))
+      fun (outcome, tgt, procName) runtimeLink =>
+    match outcome with
+    | ⟨[], none⟩ => (.empty, tgt, procName)
+    | _ =>
+      match runtimeLink with
+      | .unavailable _ => (.empty, tgt, procName)
+      | .linked build sourceUnit upstreamTarget =>
+        let tgt' := upstreamTarget tgt procName
+        let unit := sourceUnit tgt procName
+        ((build tgt' procName π).lift unit outcome, tgt',
+          if unit.isEmpty then none else procName)).1
+
 /-- A verification pipeline phase: a program transformation, its model
     validation, and its phase contract (empty by default).
 
@@ -204,36 +346,45 @@ structure PipelinePhase where
   transform : Program → Transform.CoreTransformM (Bool × Program)
   /-- The model validation for this phase. -/
   phase : AbstractedPhase
+  /-- Build the runtime counterexample carrier from the exact input/output of this
+      transform: a *deferred* back-link builder (the concrete link needs the
+      per-obligation target id and `π`, supplied at lift time).  The default is
+      `unavailable`: lifting stops at this phase. -/
+  buildBackLink : Program → Program → RuntimeBackLink :=
+    fun _ _ => .unavailable phase.name
   /-- Facts that must hold on the input program for this phase to run. -/
   requires    : ProgramFactSet := factSet![]
   /-- Facts guaranteed to hold on the output program. -/
   establishes : ProgramFactSet := factSet![]
   /-- Facts that, if they held on the input, also hold on the output. -/
   preserves   : ProgramFactSet := factSet![]
-  /-- Whether this phase's `establishes` and `preserves` are backed by
-      proofs rather than declared. Setting it to `true` demands
-      `establishes_ok` and `preserves_ok` from this phase alone, so proofs
-      can arrive one transform at a time. -/
-  provesContract : Bool := false
-  /-- Every fact in `establishes` holds on the output. Vacuously true
-      when `establishes` is `factSet![]`. The shape is "any successful run
-      of the transform produces a program on which every asserted fact
-      holds." `s'` is the final state; `b` is the changed-flag returned
-      by the transform. -/
-  establishes_ok : PhaseContractObligation provesContract
-      (∀ (p : Program) (s : Transform.CoreTransformState)
+  /-- The facts of `establishes` and `preserves` whose proof this phase does not
+      give. Each must be a claim believed true, with a comment saying why it is not
+      proved yet: a claim found false is fixed or dropped, never listed here. By
+      default every fact, so a phase owes no proof until it lists less. A test pins what
+      each shipped phase leaves unproved, so proving a fact means updating that test too. -/
+  unproved : ProgramFactSet := ProgramFactSet.all
+  /-- Every fact in `establishes` that is not `unproved` holds on the output.
+      The shape is "any successful run of the transform on a program meeting
+      `requires` produces a program on which every such fact holds." `s'` is the
+      final state; `b` is the changed-flag returned by the transform. The proof is
+      relative to `requires`: the facts it assumes are those the pipeline's
+      bookkeeping says hold, so it is as good as the claims of the phases before it. -/
+  establishes_ok :
+      ∀ (p : Program) (s : Transform.CoreTransformState)
         (b : Bool) (p' : Program) (s' : Transform.CoreTransformState),
+        requires.holds p →
         (transform p).run s = (.ok (b, p'), s') →
-        establishes.holds p') := by deferred_contract
-  /-- Every preserved fact really is preserved when it held on the
-      input. Vacuously true when `preserves` is `factSet![]`. -/
-  preserves_ok : PhaseContractObligation provesContract
-      (∀ (f : ProgramFact), f ∈ preserves →
+        ∀ f ∈ establishes, f ∉ unproved → f.holds p' := by unproved_contract
+  /-- Every fact in `preserves` that is not `unproved`, holding on an input meeting
+      `requires`, holds on the output. -/
+  preserves_ok :
+      ∀ (f : ProgramFact), f ∈ preserves → f ∉ unproved →
       ∀ (p : Program) (s : Transform.CoreTransformState),
-        f.holds p →
+        requires.holds p → f.holds p →
       ∀ (b : Bool) (p' : Program) (s' : Transform.CoreTransformState),
         (transform p).run s = (.ok (b, p'), s') →
-        f.holds p') := by deferred_contract
+        f.holds p' := by unproved_contract
 
 /-- A model-preserving pipeline phase: the transform is applied but it
     cannot introduce spurious models (e.g. it only removes information). -/
@@ -258,7 +409,8 @@ def ProgramFact.assertPhaseName (f : ProgramFact) : String :=
 /-- What the `assert` phase for `f` reports about a program `f`'s check rejects. For
     `wellFormedCalls`, the first ill-formed call, located at the call; there is one,
     since that check is `(illFormedCalls p).isEmpty`. For `noCFGBodies`, the first
-    procedure with a CFG body, located at its declaration. For the other facts, a
+    procedure with a CFG body, located at its declaration. For `noLambdas`, the first
+    lambda, located where it was written, with the remedy. For the other facts, a
     message naming what is expected. -/
 private def assertFailure (f : ProgramFact) (p : Program) : Strata.Message :=
   let generic :=
@@ -273,6 +425,16 @@ private def assertFailure (f : ProgramFact) (p : Program) : Strata.Message :=
     | some (name, md) => md.toDiagnostic s!"❌ Expected every procedure body to be \
         structured, but found procedure {name} with a CFG body. To verify it, pass \
         --vcgen symexec (for an acyclic one) or --vcgen usp (or uwp)."
+    | none => generic
+  | .noLambdas =>
+    match p.firstLiveLambda? with
+    | some e =>
+      let msg := f!"❌ Expected no lambda, since the verification back end has no term for \
+        one, but found the lambda `{Program.showLambda e}`. Run `lambdaLift` before the back end."
+      match (Lambda.LExpr.metadata e).uri with
+      | some uri =>
+        Strata.Message.withRange { file := uri, range := (Lambda.LExpr.metadata e).range } msg
+      | none => Strata.Message.fromFormat msg
     | none => generic
   | _ => generic
 
@@ -318,20 +480,23 @@ def assertFactPhase (f : ProgramFact) (hc : f.check?.isSome = true := by decide)
     PipelinePhase where
   transform := assertFact f hc
   phase.name := f.assertPhaseName
+  buildBackLink := fun _ _ => .linked (fun _tgt _n _π => {
+    name := f.assertPhaseName
+    lift := fun _st outcome => outcome })
   establishes := ProgramFactSet.ofList [f]
   preserves := ProgramFactSet.all
-  provesContract := true
-  establishes_ok := PhaseContractObligation.intro (by
-    intro p s b p' s' hrun g hg
+  unproved := ProgramFactSet.empty
+  establishes_ok := by
+    intro p s b p' s' _ hrun g hg _
     obtain ⟨rfl, hf⟩ := assertFact_run hrun
     have hg' : g = f := by
       simpa [ProgramFactSet.ofList] using ProgramFactSet.mem_ofList.mp hg
     subst hg'
-    exact (ProgramFact.holds_iff_check_get hc _).mpr hf)
-  preserves_ok := PhaseContractObligation.intro (by
-    intro _ _ p s hp b p' s' hrun
+    exact (ProgramFact.holds_iff_check_get hc _).mpr hf
+  preserves_ok := by
+    intro _ _ _ p s _ hp b p' s' hrun
     obtain ⟨rfl, _⟩ := assertFact_run hrun
-    exact hp)
+    exact hp
 
 /-- The phase that checks `f` on the program and passes it through. A fact with no
     executable check has no such phase, and `by decide` refuses it where it is written:
@@ -417,12 +582,18 @@ abbrev ValidatedPipeline.ofListFromDelivering (σ₀ : ProgramFactSet) (consumer
     Also returns the input of each phase that validates models against its input
     (`AbstractedPhase.getValidationOn`), by position in `phases`, unless an earlier
     phase changed the program and may leave abstractions unmarked
-    (`AbstractedPhase.leavesUnmarkedAbstractions`). -/
-def runTransformsRecording (p : Program) (phases : List PipelinePhase)
+    (`AbstractedPhase.leavesUnmarkedAbstractions`).
+
+    `recordLinks` says whether the run builds the counterexample back-link carrier of each
+    executed phase (`PipelinePhase.buildBackLink`). A carrier keeps its phase's input and output
+    programs alive until the run returns, so a run whose links are not used passes `false`, and
+    the returned list of carriers is then empty. -/
+def runTransformsRecording (recordLinks : Bool) (p : Program) (phases : List PipelinePhase)
     (initState : Transform.CoreTransformState := .emp)
     (pipelineCtx : Option Strata.Pipeline.PipelineContext := none)
     (keepAllFilesPrefix : Option String := none)
-    : EIO Transform.Err (Program × Transform.CoreTransformState × List (Nat × Program)) := do
+    : EIO Transform.Err
+        (Program × Transform.CoreTransformState × List RuntimeBackLink × List (Nat × Program)) := do
   let initState := { initState with currentProgram := .some p }
   if let some pfx := keepAllFilesPrefix then
     if let some parent := (System.FilePath.mk pfx).parent then
@@ -430,6 +601,7 @@ def runTransformsRecording (p : Program) (phases : List PipelinePhase)
         (IO.FS.createDirAll parent)
   let mut current := p
   let mut state := initState
+  let mut links : List RuntimeBackLink := []
   let mut step := 0
   let mut inputs : Array (Nat × Program) := #[]
   let mut unmarked := false
@@ -446,6 +618,8 @@ def runTransformsRecording (p : Program) (phases : List PipelinePhase)
     match result with
     | .ok (changed, next) =>
       unmarked := unmarked || (changed && pp.phase.leavesUnmarkedAbstractions)
+      if recordLinks then
+        links := links ++ [(pp.buildBackLink current next).withPrograms current next]
       current := next
       state := newState
       step := step + 1
@@ -454,16 +628,30 @@ def runTransformsRecording (p : Program) (phases : List PipelinePhase)
         IO.toEIO (fun e => Strata.Message.fromFormat f!"{e}")
           (IO.FS.writeFile path (toString current ++ "\n"))
     | .error e => throw e
-  pure (current, state, inputs.toList)
+  pure (current, state, links, inputs.toList)
 
-/-- `runTransformsRecording` without the recorded inputs. -/
-def runTransforms (p : Program) (phases : List PipelinePhase)
+/-- `runTransformsRecording` with the counterexample back-link carrier of every executed phase
+    recorded, one per phase in order, without the recorded inputs. -/
+def runTransformsWithBackLinks (p : Program) (phases : List PipelinePhase)
     (initState : Transform.CoreTransformState := .emp)
     (pipelineCtx : Option Strata.Pipeline.PipelineContext := none)
     (keepAllFilesPrefix : Option String := none)
-    : EIO Transform.Err (Program × Transform.CoreTransformState) := do
-  let (p, s, _) ← runTransformsRecording p phases initState pipelineCtx keepAllFilesPrefix
-  pure (p, s)
+    : EIO Transform.Err
+        (Program × Transform.CoreTransformState × List RuntimeBackLink) := do
+  let (program, state, links, _) ← runTransformsRecording true p phases initState pipelineCtx
+    keepAllFilesPrefix
+  pure (program, state, links)
+
+/-- `runTransformsRecording` building no counterexample back-link carrier, without the recorded
+    inputs. -/
+def runTransforms (p : Program) (phases : List PipelinePhase)
+    (initState : Transform.CoreTransformState := .emp)
+    (pipelineCtx : Option Strata.Pipeline.PipelineContext := none)
+    (keepAllFilesPrefix : Option String := none) :
+    EIO Transform.Err (Program × Transform.CoreTransformState) := do
+  let (program, state, _, _) ← runTransformsRecording false p phases initState pipelineCtx
+    keepAllFilesPrefix
+  pure (program, state)
 
 /-- `phase` turns `p` into `p'`, from transform state `s` to state `s'`. -/
 @[expose] def PipelinePhase.Runs (phase : PipelinePhase)

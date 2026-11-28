@@ -26,6 +26,6 @@ procedure checkPositive(n: int) returns (ok: bool)
   opaque
 {
   var x: int := divide(3, 0)
-//^^^^^^^^^^^^^^^^^^^^^^^^^^ error: divisor is non-zero does not hold
+//              ^^^^^^^^^^^^ error: divisor is non-zero does not hold
 };
 #end

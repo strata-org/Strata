@@ -61,7 +61,8 @@ variable (π : String → Option Procedure)
     reserved: completed runs of `ss` are replayed by `ss'` with traces related by inserting
     assertions and then checked assumptions, under the entry's factory. -/
 private theorem runs_of_gate {base : InitEnvWFParams} {ss ss' : Statements}
-    (hrel : BlockRel [] ss ss') (hnc : Statements.noCalls ss = Bool.true) {ρ₀ : Env Expression}
+    (hrel : BlockRel [] ss ss') (hnc : Statements.noCalls ss = Bool.true)
+    {ρ₀ : Imperative.Env Expression}
     (hwf : BlockInitEnvWF (base.extend prefixesReserved) ss ρ₀)
     {R : Trace Expression → Trace Expression → Prop}
     (hmono : ∀ {t t' : Trace Expression}, RComp (Trace.InsertsAsserts (· = ρ₀.factory))
@@ -109,7 +110,7 @@ private theorem runs_of_gate {base : InitEnvWFParams} {ss ss' : Statements}
     reserved: finite executions of `ss` are replayed by `ss'` with traces related by inserting
     assertions and then checked assumptions, under the entry's factory. -/
 private theorem prefix_of_gate {base : InitEnvWFParams} {ss ss' : Statements}
-    (hrel : BlockRel [] ss ss') (hnc : Statements.noCalls ss = Bool.true) {ρ₀ : Env Expression}
+    (hrel : BlockRel [] ss ss') (hnc : Statements.noCalls ss = Bool.true) {ρ₀ : Imperative.Env Expression}
     (hwf : BlockInitEnvWF (base.extend prefixesReserved) ss ρ₀)
     {R : Trace Expression → Trace Expression → Prop}
     (hmono : ∀ {t t' : Trace Expression}, RComp (Trace.InsertsAsserts (· = ρ₀.factory))
@@ -201,7 +202,7 @@ theorem overapproximatesTraces_over_of_blockRel (base : InitEnvWFParams)
       (RComp (Trace.InsertsAsserts (fun G : Expression.Factory => G.factory = F))
         (Trace.InsertsCheckedAssumes (fun G : Expression.Factory => G.factory = F) InvCheck []))
       -- Both executions start from the same environment, over `F`.
-      (fun (ρ₀ ρ₀' : Env Expression) => ρ₀ = ρ₀' ∧ ρ₀.factory.factory = F)
+      (fun (ρ₀ ρ₀' : Imperative.Env Expression) => ρ₀ = ρ₀' ∧ ρ₀.factory.factory = F)
       -- Completed runs end in the same environment.
       (· = ·)
       (EventLang.coreBlock π) (EventLang.coreBlock π) T
@@ -279,7 +280,7 @@ theorem triple_of_blockRel (base : InitEnvWFParams)
       ¬ p.toList.isPrefixOf measurePrefix.toList ∧ ¬ measurePrefix.toList.isPrefixOf p.toList)
     {ss ss' : Statements}
     (hrel : BlockRel [] ss ss') (hnc : Statements.noCalls ss = Bool.true)
-    {F : Lambda.Factory CoreLParams} {Pre Post : Env Expression → Prop}
+    {F : Lambda.Factory CoreLParams} {Pre Post : Imperative.Env Expression → Prop}
     (hpin : ∀ ρ₀, Pre ρ₀ → ρ₀.factory.factory = F)
     (h : Core.Logic.Hoare.Triple π base Pre ss' Post F) :
     Core.Logic.Hoare.Triple π (base.extend prefixesReserved) Pre ss Post F := by

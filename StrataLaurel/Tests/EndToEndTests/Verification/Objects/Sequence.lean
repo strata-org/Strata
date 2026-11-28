@@ -320,7 +320,7 @@ procedure selectWithoutBounds(s: Sequence<int>, i: int)
   opaque
 {
   var x: int := seqSelect(s, i)
-//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
+//              ^^^^^^^^^^^^^^^ error: precondition could not be proved
 };
 
 // Non-strict upper bound: `seqTake` needs `0 <= n <= seqLength(s)`.
@@ -328,7 +328,7 @@ procedure takeWithoutBounds(s: Sequence<int>, n: int)
   opaque
 {
   var t: Sequence<int> := seqTake(s, n)
-//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
+//                        ^^^^^^^^^^^^^ error: precondition could not be proved
 };
 
 // A partially guarded index is still reported: the lower bound alone is not enough.
@@ -337,21 +337,21 @@ procedure selectWithLowerBoundOnly(s: Sequence<int>, i: int)
   opaque
 {
   var x: int := seqSelect(s, i)
-//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
+//              ^^^^^^^^^^^^^^^ error: precondition could not be proved
 };
 
 procedure updateWithoutBounds(s: Sequence<int>, i: int, v: int)
   opaque
 {
   var t: Sequence<int> := seqUpdate(s, i, v)
-//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
+//                        ^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
 };
 
 procedure dropWithoutBounds(s: Sequence<int>, n: int)
   opaque
 {
   var t: Sequence<int> := seqDrop(s, n)
-//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
+//                        ^^^^^^^^^^^^^ error: precondition could not be proved
 };
 #end
 

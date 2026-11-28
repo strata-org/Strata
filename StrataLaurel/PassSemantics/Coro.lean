@@ -255,6 +255,10 @@ macro "cn_tac" : tactic => `(tactic|
     | with_reducible exact cn_allocateObject
     | with_reducible exact cn_readField _ _
     | with_reducible exact cn_writeField _ _ _
+    | with_reducible exact cn_arrayObject _
+    | with_reducible exact cn_arrayPosition _ _
+    | with_reducible exact cn_readElement _ _
+    | with_reducible exact cn_writeElement _ _ _
     | with_reducible exact cn_resolveOverride _ _ _
     | with_reducible exact cn_resolveMethod _ _
     | with_reducible exact cn_coroInstance _ _
@@ -430,6 +434,10 @@ macro "cn_tac_r" : tactic => `(tactic|
     | with_reducible exact cn_allocateObject
     | with_reducible exact cn_readField _ _
     | with_reducible exact cn_writeField _ _ _
+    | with_reducible exact cn_arrayObject _
+    | with_reducible exact cn_arrayPosition _ _
+    | with_reducible exact cn_readElement _ _
+    | with_reducible exact cn_writeElement _ _ _
     | with_reducible exact cn_resolveOverride _ _ _
     | with_reducible exact cn_resolveMethod _ _
     | with_reducible exact cn_coroInstance _ _
@@ -503,6 +511,22 @@ theorem cn_readField (target : Value) (name : String) : CN (readField target nam
 theorem cn_writeField (target : Value) (name : String) (v : Value) :
     CN (writeField target name v : EvalM PM Unit) := by
   unfold writeField; cn_tac
+
+theorem cn_arrayObject (target : Value) :
+    CN (arrayObject target : EvalM PM (Nat × HeapObject)) := by
+  unfold arrayObject; cn_tac
+
+theorem cn_arrayPosition (obj : HeapObject) (index : Value) :
+    CN (arrayPosition obj index : EvalM PM Nat) := by
+  unfold arrayPosition; cn_tac
+
+theorem cn_readElement (target index : Value) :
+    CN (readElement target index : EvalM PM Value) := by
+  unfold readElement; cn_tac
+
+theorem cn_writeElement (target index v : Value) :
+    CN (writeElement target index v : EvalM PM Unit) := by
+  unfold writeElement; cn_tac
 
 theorem cn_resolveOverride (target : Value) (id : Nat) (static : Procedure) :
     CN (resolveOverride target id static : EvalM PM Procedure) := by

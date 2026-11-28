@@ -151,7 +151,9 @@ macro "grows_tac" : tactic => `(tactic| repeat' (first
 /-- `TraceRel K` is reflexive when `K.ER` is. -/
 theorem TraceRel.refl_eq {K : RelCtx} (hK : ∀ ev, K.ER ev ev) :
     ∀ l : List (IEvent Expression), TraceRel K l l := fun l => by
-  induction l <;> constructor <;> simp_all
+  induction l with
+  | nil => exact .nil
+  | cons a l ih => exact .cons (hK a) ih
 
 /-- `FiredU` is preserved by trace growth. -/
 theorem FiredU.mono {K : RelCtx} {s s2 : ReplayState Expression} (h : FiredU K s)
@@ -547,14 +549,14 @@ theorem runCallee_dom {K : RelCtx} (hK : K.EqCompat)
 local macro "cel_unfold_step" : tactic =>
   `(tactic| (unfold replayStepCmd Calls.stepCmd
              (try unfold Calls.stepCmdWith)
-             (try dsimp only [Calls.CmdExt.view])
+             (try dsimp only [Calls.CmdExt.view, Calls.dispatchCall, Calls.callBody])
              (try dsimp only)))
 
 /-- `cel_unfold_step` at the hypothesis `h` and at the goal. -/
 local macro "cel_unfold_step" h:ident : tactic =>
   `(tactic| (unfold replayStepCmd Calls.stepCmd at $h:ident ⊢
              (try unfold Calls.stepCmdWith at $h:ident ⊢)
-             (try dsimp only [Calls.CmdExt.view] at $h:ident ⊢)
+             (try dsimp only [Calls.CmdExt.view, Calls.dispatchCall, Calls.callBody] at $h:ident ⊢)
              (try dsimp only at $h:ident ⊢)))
 
 /-- Every run of Core's command stepper grows the trace (any procedure table, any

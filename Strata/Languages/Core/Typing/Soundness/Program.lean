@@ -916,8 +916,7 @@ private theorem Distinct.typeCheck_success
     (name : Expression.Ident) (es es' : List Expression.Expr)
     (h : Distinct.typeCheck C Env name es = .ok (es', Env')) :
     ∃ (ets : List (LExprT CoreLParams.mono)) (S : SubstInfo),
-      2 ≤ es.length
-      ∧ SourceExpr.resolves C Env es = .ok (ets, Env')
+      SourceExpr.resolves C Env es = .ok (ets, Env')
       ∧ Constraints.unify (Distinct.sharedTypeConstraints ets) Env'.stateSubstInfo = .ok S
       ∧ es' = ets.map (fun et =>
           LExpr.unresolved (LExpr.applySubstT et S.subst))
@@ -932,10 +931,6 @@ private theorem Distinct.typeCheck_success
   · simp at h
   rename_i ets EnvR hres
   have hres' := SourceExpr.orFreeVarError_eq_ok.mp hres
-  have hlen : 2 ≤ es.length ∧ SourceExpr.resolves C Env es = .ok (ets, EnvR) := by
-    split at hres'
-    · exact ⟨by simp, hres'⟩
-    · simp at hres'
   split at h
   · simp at h
   rename_i S hunify
@@ -948,7 +943,7 @@ private theorem Distinct.typeCheck_success
       intro et
       rw [finishStored_eq, finishDeskolemized, funext deskolemizeTy_nil]
       exact congrFun mapExprTys_id _
-    refine ⟨ets, S, hlen.1, hlen.2, hunify, ?_, ?_, List.findSome?_eq_none_iff.mp hsc⟩
+    refine ⟨ets, S, hres', hunify, ?_, ?_, List.findSome?_eq_none_iff.mp hsc⟩
     · simp only [List.map_map, Function.comp_def, hfin]
     · intro e he
       obtain ⟨q, hq, rfl⟩ := List.mem_map.mp he
@@ -1593,7 +1588,6 @@ private theorem Program.typeCheck.stepThen_distinct_inversion
     ∃ (idents : Identifiers Unit) (ets : List (LExprT CoreLParams.mono))
       (EnvR : Expression.TyEnv) (S : SubstInfo) (sharedTy : LMonoTy),
       (∃ f, Identifiers.addListWithError i (Decl.distinct l es md).names f = .ok idents)
-      ∧ 2 ≤ es.length
       ∧ (∀ e ∈ es, WrittenTyVarScope.unboundAnnotVar? false [] [] e = none)
       ∧ SourceExpr.resolves { C with idents := i } Env.pushEmptyContext.pushEmptySubstScope es
           = .ok (ets, EnvR)
@@ -1617,7 +1611,7 @@ private theorem Program.typeCheck.stepThen_distinct_inversion
           ((EnvR.popSubstScope.popContext).updateContext Env.context) TS = .ok res := by
   obtain ⟨idents, es', EnvR, hidents, hcheck, hrec⟩ :=
     Program.typeCheck.stepThen_distinct_route program { C with idents := i } Env l es md k res h
-  obtain ⟨ets, S, hcard, hresolve, hunify, hout, hstored, hscope⟩ :=
+  obtain ⟨ets, S, hresolve, hunify, hout, hstored, hscope⟩ :=
     Distinct.typeCheck_success { C with idents := i }
       Env.pushEmptyContext.pushEmptySubstScope EnvR l es es' hcheck
   subst es'
@@ -1658,7 +1652,7 @@ private theorem Program.typeCheck.stepThen_distinct_inversion
       ((EnvR.popSubstScope.popContext).updateContext Env.context) :=
     updateContext_preserves_TEnvWF_of_mono Env EnvR.popSubstScope.popContext
       h_env hwfPop hgen
-  refine ⟨idents, ets, EnvR, S, sharedTy, hidents, hcard, hscope, hsource,
+  refine ⟨idents, ets, EnvR, S, sharedTy, hidents, hscope, hsource,
     hunify, hshared, hstored, hlen, ?_, hwfOut, hrec⟩
   intro idx hi hj
   obtain ⟨Ei, Ei', hri, hwfi, -, heqNe, habsi⟩ := hperNe idx hi hj
@@ -1709,7 +1703,7 @@ private theorem distinct_declHasType
       DeclHasType program C Env.context (Decl.distinct l es md) C2 Env2.context
         ∧ TypeCheckLoopInvariant Q C2 Env2 i'
         ∧ ∃ S2, k d' { C2 with idents := i' } Env2 S2 = .ok res := by
-  obtain ⟨idents, ets, EnvR, S, sharedTy, ⟨regMsg, hidents⟩, hcard, hscope,
+  obtain ⟨idents, ets, EnvR, S, sharedTy, ⟨regMsg, hidents⟩, hscope,
     hsourceAll, -, hshared, -, hlen, hper, hwfOut, hrec⟩ :=
     Program.typeCheck.stepThen_distinct_inversion program C Env i l es md k res hinv.envWF
       (hQ.sigWF _ hinv.factory) h
@@ -1767,7 +1761,7 @@ private theorem distinct_declHasType
       exact ⟨writtenAnnotsOk_of_aliases_eq (hfind.2.trans heqi.2.symm)
           (writtenAnnotsOk_idents_irrel C i Ei.context ei hannotsi),
         HasType_idents_irrel C i Env.context ei (.forAll [] sharedTy) htySub⟩
-    exact DeclHasType.distinct C Env.context l es md hcard
+    exact DeclHasType.distinct C Env.context l es md
       ⟨sharedTy, fun e he => (hmember e he).2⟩ (fun e he => (hmember e he).1)
       fun e he => annotsInScope_of_unboundAnnotVar? (m := []) (fun _ _ hl => nomatch hl)
         (hscope e he)
@@ -2759,7 +2753,7 @@ private theorem DeclWellTyped_checkedProp (P : Program) (C : Expression.TyContex
       Lemma.typeCheckIn scope C' Env l = .ok (l', Env'))
     (hcov : ∀ n ∈ scopeTyNames C' Env, n ∈ scope.get)
     (ht : ExprWellTyped C ts e' .bool) :
-    DeclWellTyped P C ts d' C ∧ ∀ fns, DeclNamesWF P fns d' := by
+    DeclWellTyped P C ts d' C ∧ DeclNamesWF P d' := by
   cases d with
   | ax a md =>
     simp only [Decl.propCheck?, Option.some.injEq] at hd
@@ -2769,7 +2763,7 @@ private theorem DeclWellTyped_checkedProp (P : Program) (C : Expression.TyContex
       typeCheckProp_success _ "axiom" a.name [] C' Env Env' a.e e' _ hax
         (fun hne => absurd rfl hne) fun hne => absurd rfl hne
     exact ⟨DeclWellTyped.ax C ts _ md ht (List.eq_nil_of_subset_nil hfacts.annotTyVars_in),
-      fun _ => trivial⟩
+      trivial⟩
   | lemma l md =>
     simp only [Decl.propCheck?, Option.some.injEq] at hd
     subst hd
@@ -2781,7 +2775,7 @@ private theorem DeclWellTyped_checkedProp (P : Program) (C : Expression.TyContex
           Lemma.exprTyNames_renameReservedTypeArgs C' Env l _ ▸ hn
     exact ⟨DeclWellTyped.lemma C ts _ md ht
       (Lemma.renameReservedTypeArgs_tyArgRenaming C' Env l _ hnodup).2 hfacts.annotTyVars_in,
-      fun _ => trivial⟩
+      trivial⟩
   | _ => simp [Decl.propCheck?] at hd
 
 /-- What one accepted non-procedure walk step from the output invariant establishes, for the
@@ -2798,7 +2792,7 @@ structure OutputNonProcStepFacts (Q : Lambda.Factory CoreLParams → Prop) (prog
   wellTyped : FactorySigsKnown C.knownTypes C.functions → C.DatatypesKnown →
     AmbientTypesKnown C.knownTypes Env → ∀ P : Program,
       DeclWellTyped P C Env.context.dealias.types d' C2
-      ∧ (∀ fns : String → Prop, (∀ n, fns n → n ∈ C.functions) → DeclNamesWF P fns d')
+      ∧ DeclNamesWF P d'
       ∧ TContext.FindEq (T := CoreLParams) Env2.context.dealias Env.context.dealias
   invariant : TypeCheckLoopInvariantOutput Q C2 Env2 i'
   aliasFresh : AliasStepFresh program C Env Env2
@@ -2848,7 +2842,7 @@ private theorem type_con_declWellTyped_output
     exact hs.mono hext
   refine ⟨idents, { ctx with idents := C.idents }, Env, Decl.type (.con tc) md,
     fun _ _ _ P => ⟨DeclWellTyped.type_con C _ Env.context.dealias.types tc md hdefault,
-      fun _ _ => trivial, TContext.FindEq.refl _⟩,
+      trivial, TContext.FindEq.refl _⟩,
     ?_, AliasStepFresh.of_aliases_eq rfl,
     hext, fun hk => AmbientTypesKnown.of_findEq (TContext.FindEq.refl _) hext hk,
     List.Subset.refl _, fun hs hd => ⟨hsigs2 hs, ?_⟩, by simp [Decl.kind], ⟨_, hrec⟩⟩
@@ -2902,7 +2896,7 @@ private theorem type_syn_declWellTyped_output
   refine ⟨idents, C, v, Decl.type (.syn { ts with type := storedTy }) md,
     fun _ _ hk P => ⟨DeclWellTyped.type_syn C Env.context.dealias.types _ md hwfStored
         hw.nameUnregistered hw.bodyTyped.htype,
-      fun _ _ => trivial,
+      trivial,
       (TContext.dealias_FindEq_of_FreshExtension (T := CoreLParams) htypesEq hext hnewFresh
         hk).symm⟩,
     ?_, ?_, KnownTypesExtends.refl _,
@@ -2960,7 +2954,7 @@ private theorem type_data_declWellTyped_output
   refine ⟨idents, { C' with idents := C.idents }, Env,
     Decl.type (TypeDecl.data block_r) md,
     fun _ _ _ _ => ⟨DeclWellTyped.type_data C _ Env.context.dealias.types block_r md hadd',
-      fun _ _ => trivial, TContext.FindEq.refl _⟩,
+      trivial, TContext.FindEq.refl _⟩,
     ?_, AliasStepFresh.of_aliases_eq rfl,
     hext, fun hk => AmbientTypesKnown.of_findEq (TContext.FindEq.refl _) hext hk,
     List.Subset.refl _, htabs, by simp [Decl.kind], ⟨_, hrec⟩⟩
@@ -3046,7 +3040,7 @@ private theorem prop_declWellTyped_output
     fun hs _ hk P =>
       have hset := DeclWellTyped_checkedProp P C Env.context.dealias.types hd hcheckAx hcheckLem
         (scopeTyNames_cover_idents_push i hcov) ⟨hA, hB, hagree hs hk⟩
-      ⟨hset.1, fun fns _ => hset.2 fns, hfeOut.dealias⟩,
+      ⟨hset.1, hset.2, hfeOut.dealias⟩,
     ?_, AliasStepFresh.of_aliases_eq hfeOut.2, KnownTypesExtends.refl _,
     fun hk => AmbientTypesKnown.of_findEq hfeOut (KnownTypesExtends.refl _) hk,
     hfeOut.2 ▸ List.Subset.refl _, fun hs hd => ⟨hs, hd⟩, ?_, ⟨_, hrec⟩⟩
@@ -3085,7 +3079,7 @@ private theorem distinct_declWellTyped_output
     (h : Program.typeCheck.stepThen program PS S { C with idents := i } Env
           (Decl.distinct l es md) k = .ok res) :
     OutputNonProcStep Q program C Env fun d' C' Env2 S2 => k d' C' Env2 S2 = .ok res := by
-  obtain ⟨idents, ets, EnvR, S, sharedTy, ⟨regMsg, hidents⟩, hcard, -, hsource,
+  obtain ⟨idents, ets, EnvR, S, sharedTy, ⟨regMsg, hidents⟩, -, hsource,
     hunify, hshared, hstored, hlen, hper, hwfOut, hrec⟩ :=
     Program.typeCheck.stepThen_distinct_inversion program C Env i l es md _ _ hinv.envWF
       (hQ.sigWF _ hinv.factory) h
@@ -3107,8 +3101,6 @@ private theorem distinct_declWellTyped_output
   have hEnv0 : TContext.FindEq (T := CoreLParams) Env0.context Env.context := by
     rw [TEnv.pushEmptySubstScope_context_eq]
     exact pushEmptyContext_context_FindEq (T := CoreLParams) Env
-  have hcard' : 2 ≤ (ets.map fun et => LExpr.unresolved (LExpr.applySubstT et S.subst)).length := by
-    simpa only [List.length_map, hlen] using hcard
   have helem : ∀ e' ∈ ets.map (fun et => LExpr.unresolved (LExpr.applySubstT et S.subst)),
       (LExpr.HasTypeA [] e' sharedTy ∧ BinderAnnotsKnown C e') ∧
         (FactorySigsKnown C.knownTypes C.functions →
@@ -3156,10 +3148,10 @@ private theorem distinct_declWellTyped_output
   refine ⟨idents, C, (EnvR.popSubstScope.popContext).updateContext Env.context,
     Decl.distinct l
       (ets.map fun et => LExpr.unresolved (LExpr.applySubstT et S.subst)) md,
-    fun hs _ _ P => ⟨DeclWellTyped.distinct C Env.context.dealias.types l _ md hcard'
+    fun hs _ _ P => ⟨DeclWellTyped.distinct C Env.context.dealias.types l _ md
         ⟨sharedTy, fun e' he' => ⟨(helem e' he').1.1, (helem e' he').1.2, (helem e' he').2 hs⟩⟩
         hstored,
-      fun _ _ => trivial, TContext.FindEq.refl _⟩,
+      trivial, TContext.FindEq.refl _⟩,
     ?_, AliasStepFresh.of_aliases_eq rfl, KnownTypesExtends.refl _,
     fun hk => AmbientTypesKnown.of_findEq (TContext.FindEq.refl _) (KnownTypesExtends.refl _) hk,
     List.Subset.refl _, fun hs hd => ⟨hs, hd⟩, by simp [Decl.kind], ⟨_, hrec⟩⟩
@@ -3209,7 +3201,7 @@ private theorem func_declWellTyped_output
   have hfresh0 : AliasNamesFresh C Env.context := hinv.coherent.freshForKnownTypes
   have hmono0 : MonoScope Env.context := hinv.mono
   have hfuncA : FactorySigsKnown C.knownTypes C.functions → AmbientTypesKnown C.knownTypes Env →
-      FuncWellTyped C Env.context.dealias.types func' ∧ FuncNamesWF (· ∈ C.functions) func' := by
+      FuncWellTyped C Env.context.dealias.types func' := by
     intro hs hk
     have hfix : FactorySigsFixed Env.context.aliases
         ({ C with idents := idents } : Expression.TyContext).functions :=
@@ -3224,13 +3216,13 @@ private theorem func_declWellTyped_output
       (AmbientTypesKnown.of_context_eq (TEnv.pushEmptySubstScope_context_eq Env) hk)
       hfresh0.containsName_eq_false hfix
     rw [TEnv.pushEmptySubstScope_context_eq Env] at hsound
-    exact ⟨hsound.1.withIdents, hsound.2⟩
+    exact hsound.withIdents
   have hktExt := KnownTypesExtends.of_knownTypes_eq C _ hktEq
   refine ⟨idents, C.addFactoryFunction func'.toLFunc, Env, Decl.func func' md,
     fun hs _ hk _ => ⟨DeclWellTyped.func C (C.addFactoryFunction func'.toLFunc)
-        Env.context.dealias.types func' md hnotrec' hfresh' (hfuncA hs hk).1
+        Env.context.dealias.types func' md hnotrec' hfresh' (hfuncA hs hk)
         (factoryExtendedBy_addFactoryFunction C func'.toLFunc hfresh'),
-      fun _ hfns => FuncNamesWF.mono hfns (hfuncA hs hk).2, TContext.FindEq.refl _⟩, ?_,
+      trivial, TContext.FindEq.refl _⟩, ?_,
     AliasStepFresh.of_aliases_eq rfl, hktExt,
     fun hk => AmbientTypesKnown.of_findEq (TContext.FindEq.refl _) hktExt hk,
     List.Subset.refl _,
@@ -3353,9 +3345,7 @@ private theorem recFuncBlock_declWellTyped_output
   have hfuncA : FactorySigsKnown C.knownTypes C.functions → C.DatatypesKnown →
       AmbientTypesKnown C.knownTypes Env → ∀ f' ∈ funcs',
         FuncWellTyped (RecFuncBlock.stubContext C (RecFuncBlock.signatureStubs funcs'))
-            Env.context.dealias.types f'
-        ∧ FuncNamesWF (· ∈ (RecFuncBlock.stubContext C
-            (RecFuncBlock.signatureStubs funcs')).functions) f' := by
+            Env.context.dealias.types f' := by
     intro hs hd hk f' hf'
     obtain ⟨f, -, renamed, htcf⟩ := hbwd f' hf'
     have hfix : FactorySigsFixed Env.context.aliases
@@ -3376,16 +3366,7 @@ private theorem recFuncBlock_declWellTyped_output
       (AmbientTypesKnown.of_context_eq (TEnv.pushEmptySubstScope_context_eq Env) hknownS)
       hfreshStub.containsName_eq_false hfix
     rw [TEnv.pushEmptySubstScope_context_eq Env, hCstub_eq] at hsound
-    exact ⟨hsound.1.withIdents, hsound.2⟩
-  have hsubStub : ∀ fns : String → Prop, (∀ n, fns n → n ∈ C.functions) →
-      ∀ n, (Decl.recFuncBlock funcs' md).extendScope fns n →
-        n ∈ (RecFuncBlock.stubContext C (RecFuncBlock.signatureStubs funcs')).functions := by
-    intro fns hfns n hn
-    rcases hn with hold | hnew
-    · exact hstubExt.mem_old (hfns n hold)
-    · simp only [Decl.funcNames, List.map_map] at hnew
-      obtain ⟨f, hf, rfl⟩ := List.mem_map.mp hnew
-      exact hstubExt.mem_new (List.mem_map_of_mem hf)
+    exact hsound.withIdents
   have hktExt := KnownTypesExtends.of_knownTypes_eq C _ hktEq
   refine ⟨v, RecFuncBlock.fullContext C funcs', Env.pushEmptySubstScope.popSubstScope,
     Decl.recFuncBlock funcs' md,
@@ -3393,9 +3374,8 @@ private theorem recFuncBlock_declWellTyped_output
         (RecFuncBlock.signatureStubs funcs'))
         (RecFuncBlock.fullContext C funcs') Env.context.dealias.types funcs' md _ _ hnonempty
         hfreshChecked hnoinline' rfl rfl hstubExt hfullExt
-        (fun f hf => (hfuncA hs hd hk f hf).1) hrecursive,
-      fun fns hfns f hf => FuncNamesWF.mono (hsubStub fns hfns) (hfuncA hs hd hk f hf).2,
-      TContext.FindEq.refl _⟩, ?_,
+        (fun f hf => hfuncA hs hd hk f hf) hrecursive,
+      trivial, TContext.FindEq.refl _⟩, ?_,
     AliasStepFresh.of_aliases_eq (by rw [hpopCtx]), hktExt,
     fun hk => AmbientTypesKnown.of_findEq (TContext.FindEq.refl _) hktExt hk,
     List.Subset.refl _,
@@ -4287,8 +4267,7 @@ private theorem proc_declWellTyped_output
       (ElaboratedPrefixRel (ProcSigRenamedResolved Env.context.aliases) program acc →
           AmbientTypesKnown C.knownTypes Env →
           DeclWellTyped { decls := out } C Env.context.dealias.types d' C2
-          ∧ ∀ fns : String → Prop, (∀ n, fns n → n ∈ C.functions) →
-              DeclNamesWF { decls := out } fns d')
+          ∧ DeclNamesWF { decls := out } d')
         ∧ TypeCheckLoopInvariantOutput Q C2 Env2 i'
         ∧ C2 = C
         ∧ AliasStepFresh program C Env Env2
@@ -4331,8 +4310,7 @@ private theorem proc_declWellTyped_output
   have hagreeJ : ElaboratedPrefixRel (ProcSigRenamedResolved Env.context.aliases) program acc →
       AmbientTypesKnown C.knownTypes Env →
       DeclWellTyped { decls := out } C Env.context.dealias.types (Decl.proc proc' md) C
-      ∧ ∀ fns : String → Prop, (∀ n, fns n → n ∈ C.functions) →
-          DeclNamesWF { decls := out } fns (Decl.proc proc' md) := by
+      ∧ DeclNamesWF { decls := out } (Decl.proc proc' md) := by
     intro hpreR hk
     have hagreeCalls : ProcedureCallsRel ProcSigInstOf (program.resolveSigs Env.context.aliases)
         { decls := out } (Procedure.calledProcedureNames proc') := by
@@ -4364,7 +4342,7 @@ private theorem proc_declWellTyped_output
       exact fun n hn => hn
     exact ⟨DeclWellTyped.proc C Env.context.dealias.types proc' md
         (TypeSpec.ProcWellTyped.program_congr_calls htypeNames hagreeCalls hsound.1.withIdents),
-      fun _ hfns => ProcNamesWF.mono hnames hfns hsound.2⟩
+      ProcNamesWF.mono hnames hsound.2⟩
   refine ⟨idents, C, Env2.popSubstScope, Decl.proc proc' md, hagreeJ,
     TypeCheckLoopInvariantOutput.proc_step _ _ C Env Env2 idents program proc proc' md hinv
       hregmono htc, rfl,
@@ -4375,15 +4353,14 @@ private theorem proc_declWellTyped_output
 
 /-! ### Output soundness of the declaration walk -/
 
-/-- Every successful declaration walk from the output invariant, with a function scope made of
-    functions of the table, a scope type-name set holding every type name in scope and a
-    procedure-signature set holding every type name of the procedure signatures, types the
-    emitted suffix over the alias-resolved variable scopes and gives it valid names. -/
+/-- Every successful declaration walk from the output invariant, with a scope type-name set
+    holding every type name in scope and a procedure-signature set holding every type name of
+    the procedure signatures, types the emitted suffix over the alias-resolved variable scopes
+    and gives it valid names. -/
 private theorem goWith_sound_output_generalized (program : Program)
     (PS : Thunk (Std.HashSet String)) (hP : ∀ n ∈ Program.procSigTyNames program, n ∈ PS.get) :
     ∀ (decls : List Decl) (S : Std.HashSet String) (C : Expression.TyContext)
-      (Env : Expression.TyEnv) (i : Identifiers Unit) (acc out : Decls) (Env' : Expression.TyEnv)
-      (fns : String → Prop),
+      (Env : Expression.TyEnv) (i : Identifiers Unit) (acc out : Decls) (Env' : Expression.TyEnv),
       Program.typeCheck.goWith program PS S { C with idents := i } Env decls acc
         = .ok (out, Env') →
       (∀ n ∈ scopeTyNames C Env, n ∈ S) →
@@ -4394,19 +4371,18 @@ private theorem goWith_sound_output_generalized (program : Program)
       decls <:+ program.decls →
       ElaboratedPrefixRel (ProcSigResolvedKnown Env.context.aliases C.knownTypes) program acc →
       RemainingDeclarationsCoverProcedures program acc decls →
-      (∀ n, fns n → n ∈ C.functions) →
       ∃ L C', out = acc.reverse ++ L
         ∧ DeclsWellTyped { decls := out } C Env.context.dealias.types L C'
-        ∧ DeclsNamesWF { decls := out } fns L := by
+        ∧ DeclsNamesWF { decls := out } L := by
   intro decls
   induction decls with
   | nil =>
-    intro _ C Env i acc out Env' fns h _ _ _ _ _ _ _ _ _ _
+    intro _ C Env i acc out Env' h _ _ _ _ _ _ _ _ _
     simp only [Program.typeCheck.goWith, Except.ok.injEq, Prod.mk.injEq] at h
     obtain ⟨hout, _⟩ := h
     exact ⟨[], C, by simp [← hout], DeclsWellTyped.nil _ _, trivial⟩
   | cons d ds IH =>
-    intro S C Env i acc out Env' fns h hscope hinv hsigs hdts hk hwalk hsuffix hpreR hcov hfns
+    intro S C Env i acc out Env' h hscope hinv hsigs hdts hk hwalk hsuffix hpreR hcov
     have hsuffixTail : ds <:+ program.decls := (List.suffix_cons d ds).trans hsuffix
     have hdecl : ∀ d' ∈ d :: ds, ∀ n ∈ d'.names, DeclaredProgramName program n.name :=
       declaredProgramName_of_suffix hsuffix
@@ -4430,14 +4406,13 @@ private theorem goWith_sound_output_generalized (program : Program)
         exact ElaboratedPrefixRel.step_proc hnameEq hdeclared hself hpreR
       obtain ⟨hJ, hJnames⟩ := hstep (fun x q1 q2 h1 h2 => (hpreR x q1 q2 h1 h2).1) hk
       obtain ⟨L, C3, houtL, hrest, hrestNames⟩ :=
-        IH S C2 Env2 i' (Decl.proc proc' md :: acc) out Env' _ hrec
+        IH S C2 Env2 i' (Decl.proc proc' md :: acc) out Env' hrec
           (scopeTyNames_cover_of_context_eq hctx2 hscope) hinv2 hsigs hdts
           (hamb hk)
           hwalk hsuffixTail hpreR2 (hcov.step_proc hnameEq)
-          (DeclWellTyped.extendScope_subset hfns hJ)
       rw [hctx2] at hrest
       exact ⟨Decl.proc proc' md :: L, C3, by simpa using houtL, .cons _ _ _ _ _ _ hJ hrest,
-        hJnames fns hfns, hrestNames⟩
+        hJnames, hrestNames⟩
     | _ =>
       obtain ⟨i', C2, Env2, d', hstepA, hinv2, hfresh, hext, hamb, -, htabs, hkind, S2, hrec,
           hdet⟩ :=
@@ -4446,22 +4421,21 @@ private theorem goWith_sound_output_generalized (program : Program)
       rw [Program.typeCheck.goWith] at h
       obtain ⟨hsigs2, hdts2⟩ := htabs hsigs hdts
       obtain ⟨hJ, hJnames, hfe⟩ := hstepA hsigs hdts hk { decls := out }
-      obtain ⟨L, C3, houtL, hrest, hrestNames⟩ := IH S2 C2 Env2 i' (d' :: acc) out Env' _ hrec
+      obtain ⟨L, C3, houtL, hrest, hrestNames⟩ := IH S2 C2 Env2 i' (d' :: acc) out Env' hrec
         (Program.typeCheck.stepThen_next_cover program _ _ h hscope hdet) hinv2 hsigs2 hdts2
         (hamb hk) hwalk hsuffixTail
         (ElaboratedPrefixRel.step_of_kind_ne_proc
           (fun _ _ hq => hq.extend hfresh.extension hfresh.newNotKnown' hext) hkind hpreR)
         (hcov.step_of_kind_ne_proc (by simp [Decl.kind]))
-        (DeclWellTyped.extendScope_subset hfns hJ)
       have hfind : ∀ y, Env.context.dealias.types.find? y = Env2.context.dealias.types.find? y :=
         fun y => (hfe.1 y).symm
       exact ⟨d' :: L, C3, by simpa using houtL, .cons _ _ _ _ _ _ hJ (hrest.of_find? hfind),
-        hJnames fns hfns, hrestNames⟩
+        hJnames, hrestNames⟩
 
 /-- Output soundness of the whole-program walk from an empty substitution and accumulator,
     against a set `S` holding every type name in scope: the output declarations are well typed
     against the alias-resolved table over the alias-resolved variable scopes, and their names
-    are valid with the table's functions in scope. -/
+    are valid. -/
 private theorem Program.typeCheck.goWith_sound_output
     (program : Program) (S : Std.HashSet String) (C : Expression.TyContext)
     (Env : Expression.TyEnv) (out : Decls) (Env' : Expression.TyEnv)
@@ -4480,7 +4454,7 @@ private theorem Program.typeCheck.goWith_sound_output
     (h_ambient : AmbientTypesKnown C.knownTypes Env) :
     (∃ C', DeclsWellTyped { decls := out } (C.resolveTable Env.context.aliases)
         Env.context.dealias.types out C')
-      ∧ DeclsNamesWF { decls := out } (· ∈ C.functions) out := by
+      ∧ DeclsNamesWF { decls := out } out := by
   have hinv : TypeCheckLoopInvariantOutput FactorySigWF C
       (Program.typeCheck.startEnv Env) C.idents := by
     refine ⟨⟨TEnv.updateSubst_globalScope_preserves_TEnvWF (T := CoreLParams) Env h_env, h_fac,
@@ -4494,15 +4468,13 @@ private theorem Program.typeCheck.goWith_sound_output
     · exact Subst.RangeKnown_push_empty C.knownTypes _ (Subst.RangeKnown_empty C.knownTypes)
   obtain ⟨L, C', houtL, hA, hN⟩ :=
     goWith_sound_output_generalized program (procSigTyNameThunk program)
-      (procSigTyNameThunk_cover program) program.decls _ C _ C.idents [] out Env'
-      (· ∈ C.functions) h
+      (procSigTyNameThunk_cover program) program.decls _ C _ C.idents [] out Env' h
       (scopeTyNames_cover_of_context_eq (Program.typeCheck.startEnv_context Env) hcov)
       hinv h_sigsKnown h_dts
       (AmbientTypesKnown.of_context_eq (Program.typeCheck.startEnv_context Env)
         h_ambient)
       ⟨C, _, C.idents, _, _, h⟩ (List.suffix_refl program.decls)
       (ElaboratedPrefixRel.init _ program) (RemainingDeclarationsCoverProcedures.init program)
-      (fun _ hn => hn)
   simp only [List.reverse_nil, List.nil_append] at houtL
   subst houtL
   rw [Program.typeCheck.startEnv_context] at hA
@@ -4514,9 +4486,9 @@ private theorem Program.typeCheck.goWith_sound_output
 
 /-- Output soundness of the whole-program walk from an empty substitution and accumulator: the
     output declarations are well typed against the alias-resolved table over the alias-resolved
-    variable scopes, and their names are valid with the table's functions in scope. The ambient
-    context must be well formed as for input soundness. In addition, the types the function
-    signatures, datatypes, `bool`, primitive literals and ambient variables use are registered. -/
+    variable scopes, and their names are valid. The ambient context must be well formed as for
+    input soundness. In addition, the types the function signatures, datatypes, `bool`,
+    primitive literals and ambient variables use are registered. -/
 theorem Program.typeCheck.go_sound_output
     (program : Program) (C : Expression.TyContext) (Env : Expression.TyEnv)
     (out : Decls) (Env' : Expression.TyEnv)
@@ -4534,7 +4506,7 @@ theorem Program.typeCheck.go_sound_output
     (h_ambient : AmbientTypesKnown C.knownTypes Env) :
     (∃ C', DeclsWellTyped { decls := out } (C.resolveTable Env.context.aliases)
         Env.context.dealias.types out C')
-      ∧ DeclsNamesWF { decls := out } (· ∈ C.functions) out :=
+      ∧ DeclsNamesWF { decls := out } out :=
   Program.typeCheck.goWith_sound_output program _ C Env out Env' h (scopeTyNameThunk_cover C Env)
     h_env h_fac h_closed h_aliasBodies h_mono h_coh h_sigsKnown h_dts h_bool h_lit h_ambient
 
@@ -4704,10 +4676,7 @@ theorem Program.typeCheckIn_sound_output (S : Std.HashSet String)
   have hnodup := Program.typeCheck.goWith_getNames_nodup_out program C Env out Env' hgo
   have hnodupDecls : (out.flatMap Decl.names).Nodup := hnodup
   refine ⟨⟨fun _ => (List.filter_sublist.flatMap_of_sublist _).nodup hnodupDecls, C', hA⟩,
-    hnodup, hfresh, ?_⟩
-  have hfresh0 : AliasNamesFresh C Env.context := h_coh.freshForKnownTypes
-  rw [LContext.resolveTable_eq_self (h_sigsKnown.sigsFixed hfresh0.containsName_eq_false)]
-  exact hN
+    hnodup, hfresh, hN⟩
 
 /-- Output soundness: the program `Program.typeCheck` returns is well typed against the
     alias-resolved table over the alias-resolved variable scopes, and its names are valid. The

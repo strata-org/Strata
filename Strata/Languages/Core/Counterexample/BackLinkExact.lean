@@ -17,12 +17,15 @@ import Strata.DL.Imperative.Counterexample.BackLinkProps
 An *exact* phase loses no behaviour: its back-link translates the incoming outcome with no
 replay (`Imperative.exactBackLink`), valid by one proof (`Imperative.exactBackLink_preserves`)
 from a per-phase simulation certificate (`Imperative.ExactCert`).  This module instantiates
-the certificate for Core (`ExactCert`: slice starts well-formed by `CfgWF`) and gives two
+the certificate for Core (`ExactCert`: slice starts well-formed by `CfgWF`) and gives three
 certificates any phase can use when the downstream replays are simulated by the upstream
 ones (`IsReplaySimulation π' π`):
 
 * `ExactCert.ofReplaySimulation` — for a phase that leaves every unit unchanged: all
   four maps are identities.
+* `ExactCert.ofSubTable` — its instance for a phase that leaves every unit unchanged and
+  keeps or filters the procedure table (the downstream table is a sub-table of the upstream
+  one).
 * `ExactCert.ofUnchangedUnit` — for any forward map: a slice start is kept as it is
   when this is consistent with the input unit (`unchangedBackCfg`), so the certificate
   translates the chains of a unit the phase left unchanged.
@@ -59,6 +62,15 @@ abbrev ExactCert (T : List (Stmt Expression Command) → Option (List (Stmt Expr
   claim_back := fun _ _ _ t f _ c' _ _ hg hc => by
     cases hc
     exact claim_back_of_simulation hsim t (Nat.le_refl f) c' hg
+
+/-- **Identity certificate for a phase that keeps or filters the procedure table.**  For a
+    phase that leaves every unit unchanged and whose downstream procedure table `π'` is a
+    sub-table of the upstream table `π` (every procedure `π'` resolves, `π` resolves to the same
+    procedure), all four maps are identities. -/
+@[expose] def ExactCert.ofSubTable {π' π : String → Option Procedure}
+    (hsub : ∀ n p, π' n = some p → π n = some p) :
+    ExactCert (fun st => some st) (genuineFeasible π') (genuineFeasible π) :=
+  ExactCert.ofReplaySimulation (isReplaySimulation_of_sub hsub)
 
 /-- The configuration map of the unchanged-unit certificate: the chain's head maps to
     itself when it starts at the top of the input unit (the phase left the unit

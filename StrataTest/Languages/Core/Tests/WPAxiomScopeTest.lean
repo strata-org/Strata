@@ -389,4 +389,38 @@ q_uses_earlier_axiom: proved
 #guard_msgs in
 #eval namedWPVerdicts
 
+/-! A `distinct` declaration over one constant holds trivially: it is accepted, and it does
+not make the constant differ from another one. -/
+
+def oneDistinctPgm :=
+#strata
+program Core;
+
+const a : int;
+const b : int;
+
+distinct [justA]: [a];
+
+procedure P()
+{
+  assert [p_refl]: a == a;
+  assert [p_ab]: a != b;
+};
+
+#end
+
+/--
+info: p_refl: proved
+p_ab: refuted
+-/
+#guard_msgs in
+#eval printProved oneDistinctPgm
+
+/--
+info: p_refl: proved
+p_ab: refuted
+-/
+#guard_msgs in
+#eval printProved oneDistinctPgm { Core.VerifyOptions.quiet with vcgen := .wp }
+
 end Strata.WPAxiomScopeTest

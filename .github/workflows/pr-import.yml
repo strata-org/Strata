@@ -22,8 +22,8 @@ env:
   DOWNLOAD_FOLDER: '.build-scripts/'
   SCRIPT_LOCATION: 'scripts/pr-import-build.sh'
   IAM_ROLE_ARN: 'arn:aws:iam::361103952626:role/StrataGitHubActions-Role-Prod'
-  ROLE_SESSION_DURATION_SECONDS: 7200
-  TIMEOUT_MINUTES: 120
+  ROLE_SESSION_DURATION_SECONDS: 10800
+  TIMEOUT_MINUTES: 180
   AWS_REGION: 'us-west-2'
   # To target a non-default stage, set START_FUNCTION and STATUS_FUNCTION here.
   # Defaults in pr-import-build.sh are used otherwise.

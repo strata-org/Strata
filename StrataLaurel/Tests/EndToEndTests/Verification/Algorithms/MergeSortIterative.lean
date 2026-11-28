@@ -113,7 +113,7 @@ procedure mergeSort(a: Sequence<int>) returns (res: Sequence<int>)
       var mid: int := if lo + width < n then lo + width else n;
       var hi: int := if lo + 2 * width < n then lo + 2 * width else n;
       s := mergeRuns(s, lo, mid, hi);
-//    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
+//         ^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
 // desired: verifies
       lo := hi
     };
@@ -227,7 +227,7 @@ procedure mergeSort(a: Sequence<int>) returns (res: Sequence<int>)
       var mid: int := lo + width;
       var hi: int := if lo + 2 * width < n then lo + 2 * width else n;
       s := mergeRuns(s, lo, mid, hi);
-//    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
+//         ^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
       lo := hi
     };
     width := width * 2

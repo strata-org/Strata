@@ -277,8 +277,8 @@ private theorem stepCmd_call_completeG
   · obtain ⟨i, rfl⟩ : ∃ k, i = k + 1 := ⟨i - 1, by omega⟩
     obtain ⟨j, rfl⟩ : ∃ k, j = k + 1 := ⟨j - 1, by omega⟩
     rw [stepCmd, stepCmdWith]
-    simp (disch := omega) [CmdExt.view, hπ₀, hinst, hno, CallMode.runsContract, -Body.isOpaque,
-      hf, hev, hro, hlin, hlout, hri.length_eq,
+    simp (disch := omega) [CmdExt.view, dispatchCall, callBody, hπ₀, hinst, hno,
+      CallMode.runsContract, -Body.isOpaque, hf, hev, hro, hlin, hlout, hri.length_eq,
       hrorel.length_eq, e1, hrun i j, e3, hms, hold, hwb, ReadValuesLength hrd, hbind.1,
       -List.forM_eq_forM]
   · simp only [List.map_append, rDefaultAssertEvents_abs, habs, hrb]
@@ -363,7 +363,8 @@ private theorem stepCmd_abstractCall_completeG
   · obtain ⟨i, rfl⟩ : ∃ k, i = k + 1 := ⟨i - 1, by omega⟩
     obtain ⟨j, rfl⟩ : ∃ k, j = k + 1 := ⟨j - 1, by omega⟩
     rw [stepCmd, stepCmdWith]
-    simp (disch := omega) [CmdExt.view, hπ₀, hinst, hab, CallMode.runsContract, -Body.isOpaque,
+    simp (disch := omega) [CmdExt.view, dispatchCall, callBody, hπ₀, hinst, hab,
+      CallMode.runsContract, -Body.isOpaque,
       hf, hev, hro, hlin, hlout, hri.length_eq,
       hrorel.length_eq, e1, runAbstractCallee, hhv j, e3, hms, hold, hwb, ReadValuesLength hrd,
       hbind.1, -List.forM_eq_forM]

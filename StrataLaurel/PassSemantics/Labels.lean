@@ -279,6 +279,10 @@ macro "keep_tac" : tactic => `(tactic|
     | with_reducible exact keeps_allocateObject _
     | with_reducible exact keeps_readField _ _ _
     | with_reducible exact keeps_writeField _ _ _ _
+    | with_reducible exact keeps_arrayObject _ _
+    | with_reducible exact keeps_arrayPosition _ _ _
+    | with_reducible exact keeps_readElement _ _ _
+    | with_reducible exact keeps_writeElement _ _ _ _
     | with_reducible exact keeps_resolveOverride _ _ _ _
     | with_reducible exact keeps_resolveMethod _ _ _
     | with_reducible exact keeps_coroInstance _ _ _
@@ -355,6 +359,22 @@ private theorem keeps_readField (target : Value) (name : String) : KeepsOL (read
 private theorem keeps_writeField (target : Value) (name : String) (v : Value) :
     KeepsOL (writeField target name v : EvalM PM Unit) := fun o => by
   unfold writeField; keep_tac
+
+private theorem keeps_arrayObject (target : Value) :
+    KeepsOL (arrayObject target : EvalM PM (Nat × HeapObject)) := fun o => by
+  unfold arrayObject; keep_tac
+
+private theorem keeps_arrayPosition (obj : HeapObject) (index : Value) :
+    KeepsOL (arrayPosition obj index : EvalM PM Nat) := fun o => by
+  unfold arrayPosition; keep_tac
+
+private theorem keeps_readElement (target index : Value) :
+    KeepsOL (readElement target index : EvalM PM Value) := fun o => by
+  unfold readElement; keep_tac
+
+private theorem keeps_writeElement (target index v : Value) :
+    KeepsOL (writeElement target index v : EvalM PM Unit) := fun o => by
+  unfold writeElement; keep_tac
 
 private theorem keeps_resolveOverride (target : Value) (id : Nat) (static : Procedure) :
     KeepsOL (resolveOverride target id static : EvalM PM Procedure) := fun o => by

@@ -417,6 +417,17 @@ theorem stepBaseCmdStore_rel {K : RelCtx} (hK : K.Compat) (hO : K.freeOracle = f
       (fun a b => StoreAgreeOutside fresh a.get b.get) :=
   cel_stepBaseCmdStore_rel hK hER hkm hF hσ hag c (.inr hO) hc
 
+/-- If `X'` is dominated by `X` with results related by `Ra` (`RelDom`), and every success
+    of `X'` satisfies `P'` and every success of `X` satisfies `P` (`OkPost`), then `X'`
+    is dominated by `X` with results related by `Ra` and satisfying both postconditions. -/
+theorem RelDom.withPost {K : RelCtx} {α' α : Type} {Ra : α' → α → Prop}
+    {X' : ReplayM Expression α'} {X : ReplayM Expression α} {P' : α' → Prop} {P : α → Prop}
+    (h : RelDom K X' X Ra) (h1 : OkPost X' P') (h2 : OkPost X P) :
+    RelDom K X' X (fun a' a => Ra a' a ∧ P' a' ∧ P a) :=
+  ⟨h.1, fun _ _ hs => ⟨fun _ _ hrun' => ((h.2 _ _ hs).1 _ _ hrun').imp
+    (fun ⟨a, s1, hrun, hR, hst⟩ => ⟨a, s1, hrun, ⟨hR, h1 _ _ _ _ hrun', h2 _ _ _ _ hrun⟩, hst⟩) id,
+    (h.2 _ _ hs).2⟩⟩
+
 end -- public section
 
 end Core

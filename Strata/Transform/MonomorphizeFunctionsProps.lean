@@ -894,6 +894,11 @@ def runSt (p : Program) (cap : Nat) (s : Transform.CoreTransformState) :
         if lfunc.typeArgs.isEmpty then
           acc.appendList (collectFromFunction polyfuncDecls F lfunc.toFunc)
         else acc
+    let calls := polyCalls polyfuncDecls F
+    match growingCycle calls
+        (reachedFunctions calls ((seedRefs ++ factorySeedRefs.toList).map (·.name))) with
+    | some cycle => (.error (growingCycleError cycle), s)
+    | none =>
     match (Strata.Worklist.run (seedRefs ++ factorySeedRefs.toList)
       (processFuncSpecialization polyfuncDecls p1 F) cap).run
         { MonoWorklistState.init with cache := cache } with
@@ -922,11 +927,15 @@ private theorem run_eq (p : Program) (cap : Nat) (s : Transform.CoreTransformSta
       PtrCache.empty = r
     obtain ⟨⟨p1, seeds⟩, c⟩ := r
     dsimp only
-    generalize (Strata.Worklist.run (m := StateM MonoWorklistState) (α := FuncSpecialization)
-      _ _ cap) _ = w
-    obtain ⟨fin, st⟩ := w
-    cases fin
-    · rfl
+    generalize growingCycle _ _ = gc
+    cases gc
+    · dsimp only
+      generalize (Strata.Worklist.run (m := StateM MonoWorklistState) (α := FuncSpecialization)
+        _ _ cap) _ = w
+      obtain ⟨fin, st⟩ := w
+      cases fin
+      · rfl
+      · rfl
     · rfl
 
 /-- The specializations the pass seeds its worklist with from the factory: those of every
@@ -972,6 +981,8 @@ private theorem run_ok' {p : Program} {cap : Nat} {s s' : Transform.CoreTransfor
       cases p1; simp only at hdecls hpfx; simp [hdecls, hpfx]
     subst hp1
     dsimp only at h
+    split at h
+    · exact absurd (congrArg Prod.fst h) (by simp)
     generalize hw : (Strata.Worklist.run (m := StateM MonoWorklistState) (α := FuncSpecialization)
       _ _ cap) _ = w at h
     have hinv : CopiesInv (collectPolymorphicFuncDecls p s.factory).copyPrefix

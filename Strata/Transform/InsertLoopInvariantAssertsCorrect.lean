@@ -621,7 +621,7 @@ private theorem ins_invAssumes {inv : List (String × P.Expr)} {B t t' : Trace P
 /-- The label of the assertion of an invariant before loop `n` is a checking one. -/
 private theorem invCheckLabel_entry (n : String) (i : Nat) (lbl : String) :
     invCheckLabel (entryAssertLabel n i lbl) = Bool.true := by
-  simp only [invCheckLabel, entryAssertLabel, Bool.or_eq_true]
+  simp only [invCheckLabel, entryAssertLabel, Core.loopInvEntryPrefix, Bool.or_eq_true]
   refine .inl ?_
   rw [String.startsWith_string_iff]
   simp only [String.toList_append, toString]
@@ -631,7 +631,7 @@ private theorem invCheckLabel_entry (n : String) (i : Nat) (lbl : String) :
     checking one. -/
 private theorem invCheckLabel_maintain (n : String) (i : Nat) (lbl : String) :
     invCheckLabel (maintainAssertLabel n i lbl) = Bool.true := by
-  simp only [invCheckLabel, maintainAssertLabel, Bool.or_eq_true]
+  simp only [invCheckLabel, maintainAssertLabel, Core.loopInvMaintainPrefix, Bool.or_eq_true]
   refine .inr ?_
   rw [String.startsWith_string_iff]
   simp only [String.toList_append, toString]

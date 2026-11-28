@@ -7,6 +7,7 @@ module
 
 public import Strata.Languages.Cortex.Module
 public import Strata.Languages.Core.Factory
+public import Strata.Languages.Cortex.FloatFactory
 public import Strata.DL.Lambda.LExprT
 
 namespace Cortex.TypeCheck
@@ -40,6 +41,7 @@ def eraseTy (prog : UnorderedProgram) (t : Core.Expression.Ty) : Except String L
 
 def context (prog : UnorderedProgram) : Except String Ctx := do
   let C : Ctx := { LContext.default with functions := Core.Factory, knownTypes := Core.KnownTypes }
+  let C := FloatFactory.functions.foldl (init := C) fun C f => C.addFactoryFunction f
   let C ← prog.opaqueTypes.foldlM (init := C) fun C tc =>
     (C.addKnownTypeWithError { name := tc.name, metadata := tc.numargs }
       (Strata.Message.fromString s!"type {tc.name} is already known")).mapError (·.message)

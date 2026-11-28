@@ -1795,6 +1795,22 @@ tp: fail (n, 3) (r, 3) (t, 6)
       if v.obligation.label == "tp" then
         IO.println s!"tp: {if v.isFailure then "fail" else "other"} {Std.format v.lexprModel}"
 
+/-! Under `--incremental` the same: a goal alone in its session is sent the per-obligation way,
+whose reading of the counterexample the replay's refined model is read with again. -/
+
+/--
+info: tp: fail (n, 3) (r, 3) (t, 6) 
+tp: fail (n, 3) (r, 3) (t, 6)
+-/
+#guard_msgs in
+#eval show IO Unit from do
+  for m in [Core.VCGenMode.usp, .uwp] do
+    let r ← Strata.Core.verify runValues
+      (options := { Core.VerifyOptions.quiet with vcgen := m, incremental := true })
+    for v in r do
+      if v.obligation.label == "tp" then
+        IO.println s!"tp: {if v.isFailure then "fail" else "other"} {Std.format v.lexprModel}"
+
 /-! ## Replay with datatype values
 
 Each postcondition fails on every run after its loop. Replay evaluates the datatypes'

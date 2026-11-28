@@ -115,6 +115,8 @@ inductive NodeKind where
   | StmtExpr.Call
   | StmtExpr.This
   | StmtExpr.New
+  | StmtExpr.NewArray
+  | StmtExpr.ArrayLength
   | StmtExpr.PureFieldUpdate
   | StmtExpr.IsType
   | StmtExpr.AsType
@@ -159,6 +161,8 @@ inductive NodeKind where
   /-- A field read, `o#f`. -/
   | StmtExpr.Var.var.Field
   | StmtExpr.Var.var.Stack
+  /-- An array element, `a[i]`. -/
+  | StmtExpr.Var.var.ArrayElement
   -- Types
   | TypeDefinition.Composite
   | TypeDefinition.Constrained

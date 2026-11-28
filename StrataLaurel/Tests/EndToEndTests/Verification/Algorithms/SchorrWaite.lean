@@ -75,25 +75,25 @@ procedure mark(lf0: Sequence<int>, rt0: Sequence<int>, mk0: Sequence<bool>, root
         var q: int := t;
         t := p;
         p := seqSelect(r, p);
-//      ^^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
+//           ^^^^^^^^^^^^^^^ error: precondition could not be proved
 // desired: verifies
         r := seqUpdate(r, t, q)
-//      ^^^^^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
+//           ^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
 // desired: verifies
       } else {
         var q: int := t;
         t := seqSelect(r, p);
-//      ^^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
+//           ^^^^^^^^^^^^^^^ error: precondition could not be proved
 // desired: verifies
         r := seqUpdate(r, p, seqSelect(l, p));
-//      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
+//           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
 //                           ^^^^^^^^^^^^^^^ error: precondition could not be proved
 // desired: verifies
         l := seqUpdate(l, p, q);
-//      ^^^^^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
+//           ^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
 // desired: verifies
         vr := seqUpdate(vr, p, true)
-//      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
+//            ^^^^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
 // desired: verifies
       }
     } else {
@@ -175,20 +175,20 @@ procedure mark(lf0: Sequence<int>, rt0: Sequence<int>, mk0: Sequence<bool>, root
         var q: int := t;
         t := p;
         p := seqSelect(r, p);
-//      ^^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
+//           ^^^^^^^^^^^^^^^ error: precondition could not be proved
         r := seqUpdate(r, t, p)
-//      ^^^^^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
+//           ^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
       } else {
         var q: int := t;
         t := seqSelect(r, p);
-//      ^^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
+//           ^^^^^^^^^^^^^^^ error: precondition could not be proved
         r := seqUpdate(r, p, seqSelect(l, p));
-//      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
+//           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
 //                           ^^^^^^^^^^^^^^^ error: precondition could not be proved
         l := seqUpdate(l, p, q);
-//      ^^^^^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
+//           ^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
         vr := seqUpdate(vr, p, true)
-//      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
+//            ^^^^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
       }
     } else {
       var q: int := p;

@@ -327,10 +327,9 @@ inductive DeclWellTyped (P : Program) :
       l.typeArgs.Nodup →
       (∀ v ∈ annotTyVars l.e, v ∈ l.typeArgs) →
       DeclWellTyped P C ts (.lemma l md) C
-  /-- A `distinct` declaration: two or more expressions of one monotype, with no annotation type
-      variables. -/
+  /-- A `distinct` declaration: expressions of one monotype, any number of them (fewer than two
+      hold trivially), with no annotation type variables. -/
   | distinct : ∀ C ts l es md,
-      2 ≤ es.length →
       (∃ mty, ∀ e ∈ es, ExprWellTyped C ts e mty) →
       (∀ e ∈ es, annotTyVars e = []) →
       DeclWellTyped P C ts (.distinct l es md) C

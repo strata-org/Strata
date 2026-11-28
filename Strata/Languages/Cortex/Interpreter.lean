@@ -17,6 +17,7 @@ public import Strata.Languages.Cortex.LowerHeapExec
 public import Strata.Languages.Cortex.LowerGlobals
 public import Strata.Languages.Cortex.LowerCTE
 public import Strata.Languages.Core.Factory
+public import Strata.Languages.Cortex.FloatFactory
 public import Strata.Languages.Core.Program
 public import Strata.Languages.Core.Interpreter
 public import Strata.Languages.Core.StatementSemantics
@@ -77,6 +78,7 @@ inductive StopReason where
   | exceptionsUnsupported
   | inoutArgumentMismatch (name : ProcName)
   | procedureWithoutBody (name : ProcName)
+  | callWithoutBody (name : ProcName)
   | invalidDatatypes (msg : String)
   /-- A stop that a frontend placed where it has no model (`stopSummary?`). -/
   | stop (summary : String)
@@ -119,10 +121,10 @@ variable {m : Type → Type} [Monad m] [InterpEffects CortexExpression m]
 @[expose] def stepBase (fuel : Nat) (f : LFactory) (σ : Store) (c : Cmd Core.Expression) : m Store :=
   stepBaseCmdStore (P := CortexExpression) fuel f σ c
 
-def datatypeDefault (prog : UnorderedProgram) (n : String) : Option Expr :=
-  if n == LowerComposites.compositeTy then (LowerHeapExec.defaultOf prog (.forAll [] (.tcons n []))).toOption else
+def datatypeDefault (prog : UnorderedProgram) (n : String) (args : List LMonoTy := []) : Option Expr :=
+  if n == LowerComposites.compositeTy && args.isEmpty then (LowerHeapExec.defaultOf prog (.forAll [] (.tcons n []))).toOption else
   prog.datatypes.find? (·.name == n) >>= fun d =>
-    if d.typeArgs.isEmpty then
+    if d.typeArgs.length == args.length then
       (d.constrs.find? (·.args.isEmpty)).map fun c => (constrFunc (T := Core.CoreLParams) c d).opExpr
     else none
 
@@ -136,6 +138,7 @@ def defaultValue (prog : UnorderedProgram) (_f : LFactory) (ty : Core.Expression
   | t@(.forAll [] (.tcons n [])) =>
     if isRefTy prog t then some (.const Core.valueLoc (.intConst (-1)) : Core.Expression.Expr)
     else datatypeDefault prog n
+  | .forAll [] (.tcons n args) => datatypeDefault prog n args
   | _ => none
 
 @[expose] def extCmd (fuel : Nat) (f : LFactory) (σ : Store) : IRCmd → m Store
@@ -175,6 +178,10 @@ where
         | _, _ => none
       | none => (merge is os).map (CallArg.inArg (P := CortexExpression) a :: ·)
 
+/-- Whether a call to `p` fails the run at once: `p` has no body to run, and no precondition of it marks a stop. -/
+@[expose] def callsWithoutBody (p : Procedure) : Bool :=
+  p.body.isNone && (p.requires.findSome? fun pre => stopSummary? pre.cond pre.md).isNone
+
 @[expose] def view (prog : UnorderedProgram) : IRCmd → CmdView CortexExpression IRCmd Hdr m
   | .cmd c =>
     -- A stop ends the run here, rather than continuing on values a frontend invented.
@@ -188,37 +195,14 @@ where
     | none => .call n (args.map (CallArg.inArg (P := CortexExpression)) ++
         lhs.map (CallArg.outArg (P := CortexExpression))) md some
     | some p =>
+      if callsWithoutBody p then .ext fun _ _ => throwThe StopReason (.callWithoutBody n) else
       match callArgs p lhs args with
       | some cas => .call n cas md some
       | none => .ext fun _ _ => throwThe StopReason (.inoutArgumentMismatch n)
   | .virtualCall .. => .ext fun _ _ => throwThe StopReason (.notLowered "virtualCall")
   | .throw _ _ => .ext fun _ _ => throwThe StopReason .exceptionsUnsupported
   | c => .ext fun fuel env => do
-    let σ ← extCmd fuel env.factory env.store c
-    pure (.terminal { env with store := σ })
-
-@[expose] def stubBody (tyProg prog : UnorderedProgram) (p : Procedure) : Except String Body := do
-  let declared := ((tyProg.findProcedure? p.name).map (·.outputs)).getD p.outputs
-  let cmds ← (p.outputs.filter fun (x, _) => !p.inputs.any (·.1 == x)).flatMapM fun (x, ty) =>
-    match ((declared.lookup x).getD ty : LTy) with
-    | .forAll [] t =>
-      match arrayElem? t, t with
-      | some e, _ => LowerHeapExec.lowerCmd (LowerHeapExec.info prog) (.newArray x (mono e) (intLit 0) .empty)
-      | none, .tcons n [] =>
-        if (prog.findComposite? n).isSome then LowerHeapExec.lowerCmd (LowerHeapExec.info prog) (.new x n .empty)
-        else pure (stubChoice x ty)
-      | none, _ => pure (stubChoice x ty)
-    | _ => pure (stubChoice x ty)
-  return { cfg := { entry := "$stub", blocks := [("$stub", { cmds, transfer := .finish .empty })] },
-           handlers := [] }
-where
-  stubChoice (x : Core.Expression.Ident) (ty : Core.Expression.Ty) : List IRCmd :=
-    let tmp : Core.Expression.Ident := ⟨s!"$stub${x.name}", ()⟩
-    [.cmd (.init tmp ty .nondet .empty), .cmd (.set x (.det (mkFvar tmp.name)) .empty)]
-
-@[expose] def withStubBodies (tyProg prog : UnorderedProgram) : Except String UnorderedProgram := do
-  return { prog with procedures := ← prog.procedures.mapM fun p => do
-      if p.body.isSome then pure p else pure { p with body := some (← stubBody tyProg prog p) } }
+    pure (.done (← extCmd fuel env.factory env.store c))
 
 @[expose] def calleeTable (prog : UnorderedProgram) (n : String) : Option IProcedure :=
   (prog.findProcedure? n).map fun p =>
@@ -324,8 +308,11 @@ structure RunResult where
   final : Config
   trace : Trace
 
+/-- The functions an expression of `prog` may call: Core's, the floating-point ones, those of
+the program's datatypes and the program's own. -/
 def programFactory (prog : UnorderedProgram) : Except Strata.Message LFactory := do
-  let F ← prog.datatypes.foldlM (init := Core.Factory) fun F d => do
+  let F ← Lambda.Factory.addFactory Core.Factory FloatFactory.factory
+  let F ← prog.datatypes.foldlM (init := F) fun F d => do
     let bf ← Lambda.genBlockFactory (T := Core.CoreLParams) [d]
     Lambda.Factory.addFactory F bf
   Lambda.Factory.addFactory F (Lambda.Factory.ofArray prog.functions.toArray)
@@ -335,6 +322,17 @@ def isEntry (p : Procedure) : Bool :=
   | some { value := .switch true, .. } => true
   | _ => false
 
+/-- The CFG an entry procedure runs: when `globalInit` is nonempty, the body's CFG with a fresh
+entry block in front, which runs the `globalInit` commands and then jumps to the body's entry;
+otherwise the body's CFG unchanged. -/
+@[expose] def entryCfg (prog : UnorderedProgram) (body : Body) :
+    Imperative.DetCFG Core.Expression IRCmd :=
+  if prog.globalInit.isEmpty then body.cfg else
+    let entry := freshLabel "$globalsEntry" (body.cfg.blocks.map (·.1))
+    let initBlock : Cortex.LBlock :=
+      { cmds := prog.globalInit.map .cmd, transfer := .goto body.cfg.entry }
+    { entry := entry, blocks := (entry, initBlock) :: body.cfg.blocks }
+
 /-- Start `p` as the program's entry: its frame has no caller to take the globals from, so
 the globals are defined by running `globalInit` first, in a block in front of the body. -/
 def startProc (prog : UnorderedProgram) (f : LFactory) (fuel : Nat) (p : Procedure) : HostM Config := do
@@ -343,19 +341,14 @@ def startProc (prog : UnorderedProgram) (f : LFactory) (fuel : Nat) (p : Procedu
   | some body =>
     let outs ← (p.outputs.map Prod.snd).mapM (chooseTyped f Store.empty)
     let σ₀ := Store.empty.bindPositional (p.outputs.map Prod.fst) outs
-    let entry := freshLabel "$globalsEntry" (body.cfg.blocks.map (·.1))
-    let initBlock : Cortex.LBlock := { cmds := prog.globalInit.map .cmd, transfer := .goto body.cfg.entry }
-    let body := if prog.globalInit.isEmpty then body else
-      { body with cfg := { entry := entry, blocks := (entry, initBlock) :: body.cfg.blocks } }
-    runCFG (stepper prog).toStore fuel
-      (.atBlock body.cfg body.cfg.entry { store := σ₀, factory := f })
+    let g := entryCfg prog body
+    runCFG (stepper prog).toStore fuel (.atBlock g g.entry { store := σ₀, factory := f })
 
 def lower (prog : UnorderedProgram) : Except String UnorderedProgram := do
   let typed ← match ← runPasses (sharedPasses true ++ interpreterPasses) (.unordered prog) with
     | .unordered p => pure p
     | .ordered _ => throw "the shared passes gave an ordered program"
   let prog ← (LowerCTE.runWith true typed).mapError (s!"LowerCTE: {·}")
-  let prog ← (withStubBodies typed prog).mapError (s!"stub bodies: {·}")
   return LowerHeapExec.eraseArrays prog
 
 def prepare (prog : UnorderedProgram) : Except StopReason UnorderedProgram := do

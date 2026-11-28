@@ -1843,6 +1843,13 @@ theorem List.findSome?_congr {α β γ : Type} (R : β → γ → Prop) (f : α 
     · simp only [List.findSome?_cons, hf, hg]
       exact Or.inr ⟨b, c, rfl, rfl, hR⟩
 
+/-- Filtering a list by a predicate that is false wherever `f` returns `none` does not
+    change the first `some` result of `f` over the list. -/
+theorem List.findSome?_filter {α β : Type} (f : α → Option β) (q : α → Bool)
+    (hq : ∀ x, q x = false → f x = none) :
+    ∀ l : List α, (l.filter q).findSome? f = l.findSome? f
+  := fun l => by induction l <;> grind
+
 /-- If every result of `f` satisfies `P`, so does the result of `l.findSome? f`. -/
 theorem List.findSome?_prop {α β : Type} (f : α → Option β) (P : β → Prop) (l : List α)
     (hstep : ∀ a ∈ l, ∀ b, f a = some b → P b) :
@@ -2092,5 +2099,15 @@ theorem Std.HashSet.mem_insertMany_of_cover {α : Type} [BEq α] [Hashable α] [
   rcases hsub n hn with hold | hnew
   · exact Or.inl (hcov n hold)
   · exact Or.inr (List.contains_iff_mem.mpr hnew)
+
+
+/-- A property of every element of the list a `foldl` carries in its second component holds at
+    the end, when it holds at the start and each step keeps it. -/
+theorem List.foldl_snd_forall {α β γ : Type} {P : γ → Prop} (g : α × List γ → β → α × List γ)
+    (hg : ∀ x n, (∀ r ∈ x.2, P r) → ∀ r ∈ (g x n).2, P r) :
+    ∀ (names : List β) (init : α × List γ), (∀ r ∈ init.2, P r) →
+      ∀ r ∈ (names.foldl g init).2, P r
+  | [], _, h => h
+  | n :: ns, init, h => List.foldl_snd_forall g hg ns _ (hg init n h)
 
 end

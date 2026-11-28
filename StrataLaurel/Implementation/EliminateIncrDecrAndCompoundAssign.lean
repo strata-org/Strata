@@ -81,6 +81,7 @@ namespace EliminateIncrDecr
   | .Field tgt fieldName => ⟨.Var (.Field tgt fieldName), source⟩
   | .Declare param => ⟨.Var (.Local param.name), source⟩
   | .Stack _ => ⟨.Var (.Local (mkId "$stack")), source⟩
+  | .ArrayElement .. => ⟨.Var (.Local (mkId "$arrayElement")), source⟩
 
 /-- Build `.Assign [target] (target ⊕ rhs)` where `⊕` is `primOp`, yielding the new
     value. Shared by the `IncrDecr` lowering (`rhs = 1`) and `CompoundAssign` (user's

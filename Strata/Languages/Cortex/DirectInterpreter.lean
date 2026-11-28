@@ -8,6 +8,7 @@ module
 public import Strata.Languages.Cortex.Heap
 public import Strata.Languages.Cortex.Module
 public import Strata.Languages.Core.Factory
+public import Strata.Languages.Cortex.FloatFactory
 public import Strata.Languages.Core.Program
 import all Strata.DL.Lambda.FactoryProps
 
@@ -600,8 +601,9 @@ instance : Effects HostM where
   | .ok (c', (t, _)) => .ok (c', t)
   | .error e => .error e
 
-def programFactory (prog : UnorderedProgram) : Except Strata.Message LFactory :=
-  prog.datatypes.foldlM (init := Core.Factory) fun F d => do
+def programFactory (prog : UnorderedProgram) : Except Strata.Message LFactory := do
+  let F ← Lambda.Factory.addFactory Core.Factory FloatFactory.factory
+  prog.datatypes.foldlM (init := F) fun F d => do
     let bf ← Lambda.genBlockFactory (T := Core.CoreLParams) [d]
     Lambda.Factory.addFactory F bf
 

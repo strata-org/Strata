@@ -33,7 +33,7 @@ private def hasSubstr (haystack needle : String) : Bool :=
 
     procedure root() entry opaque {
       var z: int := pureDiv(10, 0);
-    //^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition does not hold
+    //              ^^^^^^^^^^^^^^ error: precondition does not hold
       assert z == 5
     //^^^^^^^^^^^^^ error: assertion does not hold
     };

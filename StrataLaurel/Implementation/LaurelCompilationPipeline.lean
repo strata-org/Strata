@@ -286,7 +286,7 @@ private def runLaurelPasses
   -- sees ordinary ones (see `InferThrows`).
   let result := resolveWithInferredThrows program
                   (realizeCoercion := options.realizeCoercion) (toBool := options.toBool)
-                  (reservedNames := options.reservedNames)
+                  (reservedNames := options.reservedNames) (deferWhileStack := true)
   let resolutionErrors : Std.HashSet Message := Std.HashSet.ofArray result.errors
   let mut laurelProgram := result.program
   let mut program : Program := .Unordered result.program
@@ -336,7 +336,7 @@ private def runLaurelPasses
       | .Unordered p =>
         let result := resolve p (some model)
                         (realizeCoercion := options.realizeCoercion) (toBool := options.toBool)
-                        (reservedNames := options.reservedNames)
+                        (reservedNames := options.reservedNames) (deferWhileStack := true)
         -- `newPostPassResolutionErrors` (mainline) subsumes poly's earlier explicit cascade guard:
         -- it returns `#[]` when the program ALREADY has a non-warning error (initial resolution
         -- failed, or an earlier pass reported one — depth-cap `notYetImplemented` on a divergent

@@ -397,7 +397,7 @@ private theorem set_pre {π : String → Option Core.Procedure} {fac : Core.Expr
     {e : Core.Expression.Expr} {md : MetaData Core.Expression} {emitted}
     (h : Core.EvalCommandE π fac σ (.cmd (.set x (.det e) md)) σ' emitted) :
     (σ x).isSome = true := by
-  rcases h with ⟨hbase⟩
+  have hbase := Imperative.evalCmdExtE_cmd_iff.mp h
   cases hbase with
   | eval_set heval hupdate _ _ =>
     cases hupdate with
@@ -409,7 +409,7 @@ private theorem init_inv {π : String → Option Core.Procedure} {fac : Core.Exp
     {ty : Lambda.LTy} {md : MetaData Core.Expression} {emitted}
     (h : Core.EvalCommandE π fac σ (.cmd (.init x ty .nondet md)) σ' emitted) :
     (∀ y, x ≠ y → σ' y = σ y) ∧ emitted = [] := by
-  rcases h with ⟨hbase⟩
+  have hbase := Imperative.evalCmdExtE_cmd_iff.mp h
   cases hbase with
   | eval_init_unconstrained hinit _ _ =>
     cases hinit with

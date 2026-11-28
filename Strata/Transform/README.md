@@ -33,8 +33,8 @@ The program-level statements used for whole pipelines (`PhaseOverapproximatesFro
 
 A pass named `<Pass>` is laid out as follows.
 
-1. **`<Pass>.lean`** holds the implementation, and it must define the pass's
-   `PipelinePhase`, the form Core's pipeline runs. Ideally the phase's `transform` is a
+1. **`<Pass>.lean`** holds the implementation, and it defines the pass's `PipelinePhase`, the
+   form Core's pipeline runs, unless the phase's contract is proved (item 4). Ideally the phase's `transform` is a
    program-level function of type `Core.Program → CoreTransformM (Bool × Core.Program)`,
    defined in the same file. The `Bool` says whether the program changed. Running in
    `CoreTransformM` is what keeps the fresh names a pass generates apart from those of other
@@ -51,7 +51,20 @@ A pass named `<Pass>` is laid out as follows.
    overapproximation and the Hoare-triple transport over `Core.Logic.EventLang.coreBlock`. A
    Core-level file may come with its own `<Pass>CoreProps.lean` for supporting lemmas. These
    files state only top-level results, so helper lemmas belong in a `*Props.lean` file.
-4. **A pass made of several files** goes in a subdirectory named after it, as `SSA/`,
+4. **`<Pass>FactCorrect.lean`** proves the pass's phase contract, and holds only those
+   statements: for every fact the phase claims and does not list in `unproved`, a `*_keeps`
+   theorem for its `preserves` (`termCheck_keeps`: a fact that holds of the input holds of the
+   output), and a `*_establishes` theorem for its `establishes`, of the shape
+   `requires.holds p → (transform p).run s = .ok (b, p') → f.holds p'`. The lemmas about the
+   implementation they rest on go in `<Pass>Props.lean`. A phase whose contract is proved
+   cannot be defined in `<Pass>.lean`, which this file imports: a small **`<Pass>Phase.lean`**
+   then assembles the `PipelinePhase` from the transform and those theorems, its
+   `establishes_ok` and `preserves_ok` each applying one of them. A phase with
+   `unproved := ProgramFactSet.all` needs neither file. `TerminationCheckPhase.lean` is an
+   example. The proofs are fields of the phase, so a phase that drops a fact from `unproved`
+   does not compile until the proof exists. Each fact left in `unproved` comes with a comment
+   saying why it is not proved.
+5. **A pass made of several files** goes in a subdirectory named after it, as `SSA/`,
    `Simplify/`, `WP/` and `Passive/` do. Each file there should cover one part of the pass, and
    its name should say which part.
 
@@ -111,6 +124,14 @@ validity of that statement gives `ProcedureAssertsValidOnTraces`
 body reaches is valid, and the non-free postconditions hold at the end of every run of the
 body that finishes. `procBodyVerify_procedureCorrectOnTraces` (`ProcBodyVerifyCorrect.lean`)
 is the example.
+
+### The phase contract (`Languages/Core/PipelinePhase.lean`)
+
+A statement about which program facts a phase delivers, not about its semantics: the
+`establishes_ok` and `preserves_ok` fields of `PipelinePhase` prove that each fact the phase
+claims and does not list in `unproved` holds of its output, given its `requires` on the input.
+Pipeline validation relies on these claims to order phases. `<Pass>FactCorrect.lean` holds
+the proofs.
 
 ### `PhaseOverapproximatesFrom` (`DeductiveVerification.lean`)
 

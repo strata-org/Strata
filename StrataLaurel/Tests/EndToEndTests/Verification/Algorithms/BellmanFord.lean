@@ -164,10 +164,10 @@ procedure bellmanFord(n: int, eu: Sequence<int>, ev: Sequence<int>, ew: Sequence
 //                                                                                      ^^^^^^^^^^^^^^^ error: precondition could not be proved
 // desired: error: precondition does not hold
         d := seqUpdate(d, v, seqSelect(d, u) + seqSelect(ew, e));
-//      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
+//           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
 // desired: error: precondition does not hold
         rc := seqUpdate(rc, v, true)
-//      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
+//            ^^^^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
 // desired: error: precondition does not hold
       };
       e := e + 1

@@ -406,7 +406,7 @@ theorem mapStmtExprUsedM_contains {m : Type → Type} [Monad m] [LawfulMonad m] 
         exact hvalues'.1 c hc
     -- `Call`: `StmtExpr.Call.receiver?.some` holds of the rebuilt node because
     -- `Option.mapM` preserves presence.
-    case h_17 receiver? callee args tyArgs =>
+    case h_22 receiver? callee args tyArgs =>
       refine post_bind (post_and
         (post_option_attach_mapM _ _ (fun x => ih x.1 (by
           have hx := x.2
@@ -446,6 +446,19 @@ theorem mapStmtExprUsedM_contains {m : Type → Type} [Monad m] [LawfulMonad m] 
             intro c hc
             simp only [variableChildren, List.mem_singleton] at hc
             exact hc ▸ htarget'⟩
+        | ArrayElement a i =>
+          refine post_bind (ih a (by
+            simp only [stmtExprChildren, List.mem_append, List.mem_flatMap]
+            exact Or.inl ⟨_, hmem, by simp [variableChildren]⟩) true) (fun a' ha' => ?_)
+          refine post_bind (ih i (by
+            simp only [stmtExprChildren, List.mem_append, List.mem_flatMap]
+            exact Or.inl ⟨_, hmem, by simp [variableChildren]⟩) true) (fun i' hi' => ?_)
+          exact post_pure ⟨by simp [variableTypes], by
+            intro c hc
+            simp only [variableChildren, List.mem_cons, List.not_mem_nil, or_false] at hc
+            rcases hc with hc | hc
+            · exact hc ▸ ha'
+            · exact hc ▸ hi'⟩
         | Local name =>
           exact post_pure ⟨by simp [variableTypes], by simp [variableChildren]⟩
         | Declare parameter =>
@@ -475,10 +488,11 @@ theorem mapStmtExprUsedM_contains {m : Type → Type} [Monad m] [LawfulMonad m] 
           · exact hc ▸ hvalue'
     -- Non-field `CompoundAssign`: the target is passed through, so the negative
     -- pattern hypothesis is what says it has no children.
-    case h_15 op target rhs hne =>
+    case h_20 op target rhs hne hne' =>
       obtain ⟨tv, ts⟩ := target
       cases tv
       case Field tgt fieldName => exact absurd rfl (hne tgt fieldName ts)
+      case ArrayElement a i => exact absurd rfl (hne' a i ts)
       all_goals
         refine post_bind (ih rhs (by simp [stmtExprChildren, variableChildren]) true)
           (fun rhs' hrhs' => ?_)
@@ -495,7 +509,7 @@ theorem mapStmtExprUsedM_contains {m : Type → Type} [Monad m] [LawfulMonad m] 
           exact hc ▸ hrhs'
     -- `Old`: `StmtExpr.Old.value.Var.Local` reads the child's constructor, so it
     -- transfers to the rebuilt node only because `f` is `ShapeStable`.
-    case h_23 value label? =>
+    case h_28 value label? =>
       refine post_bind (post_and (ih value (by simp [stmtExprChildren]) true)
         (mapStmtExprUsedM_isVarLocal hshape true value)) (fun value' hvalue' => ?_)
       refine post_bind (Q := Rebuilt s t) (post_pure ⟨?_, ?_, ?_⟩) (fun x hx => hf u x hx)
@@ -516,7 +530,7 @@ theorem mapStmtExprUsedM_contains {m : Type → Type} [Monad m] [LawfulMonad m] 
         exact hc ▸ hvalue'.1
     -- `Try`: children sit inside `CatchClause`es, whose `bindingType` is also a
     -- type annotation the node carries.
-    case h_30 body catches finally? =>
+    case h_35 body catches finally? =>
       refine post_bind (ih body (by simp [stmtExprChildren]) false) (fun body' hbody' => ?_)
       refine post_bind (post_attach_mapM
         (P := fun c' => ContainsType s c'.bindingType
@@ -584,6 +598,7 @@ def HighType.userDefinedNames (ty : HighType) : List String :=
       ++ args.flatMap fun a => HighType.userDefinedNames a.val
   | .Intersection tys => tys.flatMap fun t => HighType.userDefinedNames t.val
   | .MultiValuedExpr tys => tys.flatMap fun t => HighType.userDefinedNames t.val
+  | .TArray e => HighType.userDefinedNames e.val
   | _ => []
   termination_by SizeOf.sizeOf ty
   decreasing_by
@@ -628,7 +643,8 @@ theorem mapType_id (ty : HighType) : HighType.mapType (fun t => t) ty = ty := by
     congr 1
     rw [List.map_congr_left fun t ht => by rw [ih t ht]]
     exact List.map_id' tys
-  | case6 => rfl
+  | case6 e ih => cases e; simp_all
+  | case7 => rfl
 
 /-- **Name-elimination**: for a leaf-substitution callback, every `UserDefined`
     name in the traversal's output satisfies any predicate `p` that holds on
@@ -672,21 +688,26 @@ theorem mapType_substUserDefined_names (p : String → Prop)
       List.flatMap_map, List.mem_flatMap] at hn'
     obtain ⟨t, ht, h⟩ := hn'
     exact ih t ht n' h
-  | case6 ty h1 h2 h3 h4 h5 =>
+  | case6 e ih =>
     intro n' hn'
-    match ty, h1, h2, h3, h4, h5 with
-    | .UserDefined n, _, _, _, _, _ =>
+    simp only [HighType.substUserDefined, HighType.userDefinedNames] at hn'
+    exact ih n' hn'
+  | case7 ty h1 h2 h3 h4 h5 h6 =>
+    intro n' hn'
+    match ty, h1, h2, h3, h4, h5, h6 with
+    | .UserDefined n, _, _, _, _, _, _ =>
       simp only [HighType.substUserDefined] at hn'
       exact hg n n' hn'
-    | .TVoid, _, _, _, _, _ | .TBool, _, _, _, _, _ | .TInt, _, _, _, _, _
-    | .TFloat64, _, _, _, _, _ | .TReal, _, _, _, _, _ | .TString, _, _, _, _, _
-    | .TBv _, _, _, _, _, _ | .TVar _, _, _, _, _, _ | .Unknown, _, _, _, _, _ =>
+    | .TVoid, _, _, _, _, _, _ | .TBool, _, _, _, _, _, _ | .TInt, _, _, _, _, _, _
+    | .TFloat64, _, _, _, _, _, _ | .TReal, _, _, _, _, _, _ | .TString, _, _, _, _, _, _
+    | .TBv _, _, _, _, _, _, _ | .TVar _, _, _, _, _, _, _ | .Unknown, _, _, _, _, _, _ =>
       simp [HighType.substUserDefined, HighType.userDefinedNames] at hn'
-    | .TSet e, h1, _, _, _, _ => exact absurd rfl (h1 e)
-    | .TMap k v, _, h2, _, _, _ => exact absurd rfl (h2 k v)
-    | .Applied b as, _, _, h3, _, _ => exact absurd rfl (h3 b as)
-    | .Intersection ts, _, _, _, h4, _ => exact absurd rfl (h4 ts)
-    | .MultiValuedExpr ts, _, _, _, _, h5 => exact absurd rfl (h5 ts)
+    | .TSet e, h1, _, _, _, _, _ => exact absurd rfl (h1 e)
+    | .TMap k v, _, h2, _, _, _, _ => exact absurd rfl (h2 k v)
+    | .Applied b as, _, _, h3, _, _, _ => exact absurd rfl (h3 b as)
+    | .Intersection ts, _, _, _, h4, _, _ => exact absurd rfl (h4 ts)
+    | .MultiValuedExpr ts, _, _, _, _, h5, _ => exact absurd rfl (h5 ts)
+    | .TArray e, _, _, _, _, _, h6 => exact absurd rfl (h6 e)
 
 /-- **Specification** for recursive leaf substitution: apply `g` to every
     `UserDefined` leaf, recurse through all component types, and preserve every
@@ -708,6 +729,7 @@ def HighType.substUserDefinedAll (g : Identifier → HighType) (ty : HighType) :
     .Intersection (tys.map fun t => ⟨HighType.substUserDefinedAll g t.val, t.source⟩)
   | .MultiValuedExpr tys =>
     .MultiValuedExpr (tys.map fun t => ⟨HighType.substUserDefinedAll g t.val, t.source⟩)
+  | .TArray e => .TArray ⟨HighType.substUserDefinedAll g e.val, e.source⟩
   | t => t
   termination_by SizeOf.sizeOf ty
   decreasing_by
@@ -751,19 +773,22 @@ theorem mapType_substUserDefined_eq (g : Identifier → HighType) (ty : HighType
     simp only [HighType.substUserDefinedAll]
     congr 1
     exact List.map_congr_left fun t ht => by rw [ih t ht]
-  | case6 ty h1 h2 h3 h4 h5 =>
-    match ty, h1, h2, h3, h4, h5 with
-    | .UserDefined n, _, _, _, _, _ =>
+  | case6 e ih =>
+    simp [HighType.substUserDefined, HighType.substUserDefinedAll, ih]
+  | case7 ty h1 h2 h3 h4 h5 h6 =>
+    match ty, h1, h2, h3, h4, h5, h6 with
+    | .UserDefined n, _, _, _, _, _, _ =>
       simp [HighType.substUserDefined, HighType.substUserDefinedAll]
-    | .TVoid, _, _, _, _, _ | .TBool, _, _, _, _, _ | .TInt, _, _, _, _, _
-    | .TFloat64, _, _, _, _, _ | .TReal, _, _, _, _, _ | .TString, _, _, _, _, _
-    | .TBv _, _, _, _, _, _ | .TVar _, _, _, _, _, _ | .Unknown, _, _, _, _, _ =>
+    | .TVoid, _, _, _, _, _, _ | .TBool, _, _, _, _, _, _ | .TInt, _, _, _, _, _, _
+    | .TFloat64, _, _, _, _, _, _ | .TReal, _, _, _, _, _, _ | .TString, _, _, _, _, _, _
+    | .TBv _, _, _, _, _, _, _ | .TVar _, _, _, _, _, _, _ | .Unknown, _, _, _, _, _, _ =>
       simp [HighType.substUserDefined, HighType.substUserDefinedAll]
-    | .TSet e, h1, _, _, _, _ => exact absurd rfl (h1 e)
-    | .TMap k v, _, h2, _, _, _ => exact absurd rfl (h2 k v)
-    | .Applied b as, _, _, h3, _, _ => exact absurd rfl (h3 b as)
-    | .Intersection ts, _, _, _, h4, _ => exact absurd rfl (h4 ts)
-    | .MultiValuedExpr ts, _, _, _, _, h5 => exact absurd rfl (h5 ts)
+    | .TSet e, h1, _, _, _, _, _ => exact absurd rfl (h1 e)
+    | .TMap k v, _, h2, _, _, _, _ => exact absurd rfl (h2 k v)
+    | .Applied b as, _, _, h3, _, _, _ => exact absurd rfl (h3 b as)
+    | .Intersection ts, _, _, _, h4, _, _ => exact absurd rfl (h4 ts)
+    | .MultiValuedExpr ts, _, _, _, _, h5, _ => exact absurd rfl (h5 ts)
+    | .TArray e, _, _, _, _, _, h6 => exact absurd rfl (h6 e)
 
 end -- public section
 

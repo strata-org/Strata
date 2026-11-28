@@ -54,7 +54,9 @@ structure AnalysisResult where
     callee still matches the procedure in the call graph. -/
 private def collectExprNode (expr : StmtExprMd) : StateM AnalysisResult Unit := do
   match expr.val with
-    | .Var (.Field _ _) => modify fun s => { s with readsHeapDirectly := true }
+    | .Var (.Field _ _) | .Var (.ArrayElement ..) | .ArrayLength _ =>
+      modify fun s => { s with readsHeapDirectly := true }
+    | .NewArray .. => modify fun s => { s with writesHeapDirectly := true, allocatesDirectly := true }
     | .Call _ callee _ _ =>
         if callee.text == allocateProcName then
           modify fun s => { s with writesHeapDirectly := true, allocatesDirectly := true }
@@ -64,7 +66,7 @@ private def collectExprNode (expr : StmtExprMd) : StateM AnalysisResult Unit := 
     | .Assign assignTargets _ =>
         for ⟨assignTarget, _⟩ in assignTargets.attach do
           match assignTarget.val with
-          | .Field _ _fieldName => modify fun s => { s with writesHeapDirectly := true }
+          | .Field _ _fieldName | .ArrayElement .. => modify fun s => { s with writesHeapDirectly := true }
           | .Local _ | .Declare _ | .Stack _ => pure ()
     -- `c#f++` / `c#f--` mutate a field just like `.Assign` with a `.Field`
     -- target. This analysis runs at initial resolution, before
@@ -72,13 +74,13 @@ private def collectExprNode (expr : StmtExprMd) : StateM AnalysisResult Unit := 
     -- `IncrDecr` form must be recognized here too.
     | .IncrDecr _ _ target =>
         match target.val with
-        | .Field _ _fieldName => modify fun s => { s with writesHeapDirectly := true }
+        | .Field _ _fieldName | .ArrayElement .. => modify fun s => { s with writesHeapDirectly := true }
         | .Local _ | .Declare _ | .Stack _ => pure ()
     -- `c#f += e` mutates a field just like `c#f++`; recognized here for the same
     -- reason (analysis runs before `EliminateIncrDecrAndCompoundAssign` lowers it).
     | .CompoundAssign _ target _ =>
         match target.val with
-        | .Field _ _fieldName => modify fun s => { s with writesHeapDirectly := true }
+        | .Field _ _fieldName | .ArrayElement .. => modify fun s => { s with writesHeapDirectly := true }
         | .Local _ | .Declare _ | .Stack _ => pure ()
     | _ => pure ()
 

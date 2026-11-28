@@ -126,7 +126,7 @@ theorem overapproximatesTraces_over_of_blockRel (params : InitEnvWFParams)
       (RComp Trace.MayDropEvents
         (Trace.InsertsTrueAssumes (fun G : Expression.Factory => G.factory = F)))
       -- Both executions start from the same environment, over `F`.
-      (fun (ρ₀ ρ₀' : Env Expression) => ρ₀ = ρ₀' ∧ ρ₀.factory.factory = F)
+      (fun (ρ₀ ρ₀' : Imperative.Env Expression) => ρ₀ = ρ₀' ∧ ρ₀.factory.factory = F)
       -- Completed runs end in the same environment.
       (· = ·)
       (EventLang.coreBlock π) (EventLang.coreBlock π) T
@@ -208,7 +208,7 @@ theorem triple_of_blockRel (params : InitEnvWFParams) (L : List String)
     {ss ss' : Statements}
     (hrel : ∀ ρ, BlockInitEnvWF (params.extendBlockLabels L) ss ρ → BlockRel ss ss')
     (hnc : Statements.noCalls ss = Bool.true)
-    {F : Lambda.Factory CoreLParams} {Pre Post : Env Expression → Prop}
+    {F : Lambda.Factory CoreLParams} {Pre Post : Imperative.Env Expression → Prop}
     (hpin : ∀ ρ₀, Pre ρ₀ → ρ₀.factory.factory = F)
     (h : Core.Logic.Hoare.Triple π params Pre ss' Post F) :
     Core.Logic.Hoare.Triple π (params.extendBlockLabels L) Pre ss Post F := by

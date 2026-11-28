@@ -38,7 +38,7 @@ public section
     * each operator `w.lay` references is referenced by `ss`;
     * `ss` is well typed under `tys` (`Statements.WellTyped`). -/
 theorem wp_gate {G : IdSet Expression} {tys : Tys Expression} {ss : Statements}
-    {w : WOut Expression} {params : InitEnvWFParams} {ρ₀ ρ₀' : Env Expression}
+    {w : WOut Expression} {params : InitEnvWFParams} {ρ₀ ρ₀' : Imperative.Env Expression}
     (hw : wpEntry G tys ss = .ok w) (hpre : WPPre tys ss) (hrel : EntryRel tys ρ₀ ρ₀')
     (hwf : BlockInitEnvWF params ss ρ₀) (htyp : Statements.WellTyped (fun x => tys.get? x) ss)
     (hD : (Block.definedVars w.lay false).Nodup ∧ ∀ y ∈ Block.definedVars w.lay false,

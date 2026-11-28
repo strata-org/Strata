@@ -105,6 +105,14 @@ def intLit (n : Int) : Expression.Expr :=
 def smallInt : GenM Int := do
   if (← below 8) == 0 then pick [10, -10] else return (← below 7 : Nat) - (3 : Int)
 
+/-- A random value of type `ty` for an input: an integer drawn by `smallInt`, or either
+    Boolean; `none` for any other type. Unlike `leaf`'s literals, a negative integer is one
+    constant, not `Int.Neg` of a natural number. -/
+def value (ty : LMonoTy) : Option (GenM Expression.Expr) :=
+  if ty == .int then some do return .intConst valueLoc (← smallInt)
+  else if ty == .bool then some do return .boolConst valueLoc ((← below 2) == 0)
+  else none
+
 /-- A variable of type `ty` in `s`, or a literal. -/
 def leaf (s : Scope) (ty : LMonoTy) : GenM Expression.Expr := do
   let vs := s.ofType ty
@@ -231,6 +239,42 @@ def generate (seed : Nat) : Program :=
     let procs ← (List.range ((← below 3) + 1)).mapM fun i => proc s!"p{i}"
     return { decls := procs.map (.proc · #[]) }
   (gen.run (.ofSeed seed)).1
+
+/-! ## Shrinking
+
+A test that finds a program with a problem shrinks it greedily with `shrinks`, so that the
+program it prints is small. A step may leave the program ill-formed (a read of a variable
+whose declaration was removed, or a name declared twice after an arm is spliced into its
+context); the shrinker keeps only candidates with a problem of the same kind. -/
+
+mutual
+/-- The statement lists that may replace `s` in a smaller program: an arm of a branch, the
+    body of a block, or `s` with one of its own lists one step smaller. -/
+def stmtShrinks : Statement → List (List Statement)
+  | .ite c t f md => [t, f] ++ (stmtsShrinks t).map (fun t' => [.ite c t' f md])
+      ++ (stmtsShrinks f).map (fun f' => [.ite c t f' md])
+  | .block l b md => [b] ++ (stmtsShrinks b).map (fun b' => [.block l b' md])
+  | _ => []
+
+/-- The lists one step smaller than `ss`: one statement removed, or one statement replaced
+    by one of its `stmtShrinks`. -/
+def stmtsShrinks : List Statement → List (List Statement)
+  | [] => []
+  | s :: ss => [ss] ++ (stmtShrinks s).map (· ++ ss) ++ (stmtsShrinks ss).map (s :: ·)
+end
+
+/-- The programs one step smaller than `p`: one procedure removed, or one procedure's body
+    one step smaller. -/
+def shrinks (p : Program) : List Program :=
+  let n := p.decls.length
+  let dropOne := if n ≤ 1 then [] else (List.range n).map fun i => { decls := p.decls.eraseIdx i }
+  let inBody := (List.range n).flatMap fun i => match p.decls[i]? with
+    | some (Decl.proc q md) => match q.body with
+      | .structured ss opq => (stmtsShrinks ss).map fun b =>
+        { decls := p.decls.set i (.proc { q with body := .structured b opq } md) }
+      | _ => []
+    | _ => []
+  dropOne ++ inBody
 
 end Core.RandomPrograms
 

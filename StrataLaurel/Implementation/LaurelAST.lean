@@ -275,6 +275,9 @@ inductive HighType : Type where
   | Intersection (types : List (AstNode HighType))
   /-- Bitvector type of a given width. -/
   | TBv (size : Nat)
+  /-- The type of the arrays whose elements have type `elementType`. An array is a reference:
+  its elements are mutable and its length is fixed when it is allocated. -/
+  | TArray (elementType : AstNode HighType)
   /-- Type used internally by the Laurel compilation pipeline.
   This type is used when a resolution error occurs,
   to continue compilation without producing superfluous errors
@@ -536,6 +539,9 @@ inductive Variable : Type where
   /-- A local variable declaration with a name and an optional type annotation (see `Parameter?`). -/
   | Declare (parameter : Parameter?)
   | Stack (type : Option (AstNode HighType))
+  /-- The element at `index`, an `int`, of the array that `array` refers to. Combined with
+      `Assign` for element writes. An index outside the array is an error. -/
+  | ArrayElement (array : AstNode StmtExpr) (index : AstNode StmtExpr)
 
 /--
 The unified statement-expression type for Laurel programs.
@@ -654,6 +660,11 @@ inductive StmtExpr : Type where
       instantiation directly off the allocation site rather than recovering it
       from surrounding context. -/
   | New (ref : Identifier) (typeArgs : List (AstNode HighType) := [])
+  /-- Allocate an array of `length` elements of type `elementType`, each the default value of
+      that type (`new Array<T>(n)`). A negative length is an error. -/
+  | NewArray (elementType : AstNode HighType) (length : AstNode StmtExpr)
+  /-- The number of elements of the array that `array` refers to. -/
+  | ArrayLength (array : AstNode StmtExpr)
   /-- Reference to the current object (`this`/`self`). -/
   | This
   /-- Reference equality test between two expressions. -/
@@ -891,6 +902,14 @@ structure Procedure : Type where
   readsGlobals : List Identifier := []
   /-- File-scope globals this procedure writes. See `readsGlobals`. -/
   writesGlobals : List Identifier := []
+  /-- Marked `implicit`: a one-input, one-output procedure that resolution may
+      insert as a cast where a value of its input type fills a slot of its
+      output type. Resolution clears the flag once it realizes the casts. -/
+  isImplicit : Bool := false
+  /-- Marked `frame`: takes one composite and returns the composites it frames;
+      a `modifies` entry whose type has a frame procedure is rewritten through
+      it. Resolution clears the flag once it realizes the casts. -/
+  isFrame : Bool := false
 
 /-- A short user-facing name for the construct, used in diagnostic messages. -/
 def StmtExpr.constrName : StmtExpr → String
@@ -914,6 +933,8 @@ def StmtExpr.constrName : StmtExpr → String
   | .Call none ..        => "call"
   | .Call (some _) ..    => "method call"
   | .New ..              => "new"
+  | .NewArray ..         => "new array"
+  | .ArrayLength ..      => "array length"
   | .This                => "this"
   | .ReferenceEquals ..  => "reference equality"
   | .AsType ..           => "as"
@@ -1099,6 +1120,7 @@ partial def mapHighTypeNames (f : (Identifier → HighType) → Identifier → H
       | .UserDefined name => f .UserDefined name
       | .TVar name => f .TVar name
       | .TSet et => .TSet (go et)
+      | .TArray et => .TArray (go et)
       | .TMap kt vt => .TMap (go kt) (go vt)
       | .Applied base args => .Applied (go base) (args.map go)
       | .Intersection ts => .Intersection (ts.map go)
@@ -1122,6 +1144,7 @@ def anyHighType (p : HighType → Bool) (ty : HighType) : Bool :=
     anyHighType p b.val || args.attach.any (fun ⟨x, _⟩ => anyHighType p x.val)
   | .TMap k v => anyHighType p k.val || anyHighType p v.val
   | .TSet e => anyHighType p e.val
+  | .TArray e => anyHighType p e.val
   | .Intersection ts => ts.attach.any (fun ⟨x, _⟩ => anyHighType p x.val)
   | .MultiValuedExpr ts => ts.attach.any (fun ⟨x, _⟩ => anyHighType p x.val)
   -- Leaves enumerated rather than a `| _ => false` wildcard, so a NEW compound constructor is a
@@ -1142,6 +1165,7 @@ partial def tvarIdents : HighType → List Identifier
   | .Applied b args => tvarIdents b.val ++ args.flatMap (tvarIdents ·.val)
   | .TMap k v => tvarIdents k.val ++ tvarIdents v.val
   | .TSet e => tvarIdents e.val
+  | .TArray e => tvarIdents e.val
   | .Intersection ts => ts.flatMap (tvarIdents ·.val)
   | .MultiValuedExpr ts => ts.flatMap (tvarIdents ·.val)
   | _ => []
@@ -1209,6 +1233,7 @@ partial def solveInferVars (a b : HighType) (acc : Std.HashMap String HighType :
       (solveInferVars ab.val bb.val acc)
   | .TMap ak av, .TMap bk bv => solveInferVars av.val bv.val (solveInferVars ak.val bk.val acc)
   | .TSet ae, .TSet be => solveInferVars ae.val be.val acc
+  | .TArray ae, .TArray be => solveInferVars ae.val be.val acc
   | .MultiValuedExpr as, .MultiValuedExpr bs =>
     if as.length != bs.length then acc
     else (as.zip bs).foldl (fun acc (x, y) => solveInferVars x.val y.val acc) acc
@@ -1277,6 +1302,22 @@ theorem Variable.sizeOf_field_target_lt_of_eq {v : AstNode Variable}
   have : sizeOf v.val = sizeOf (Variable.Field target fieldName) := congrArg sizeOf h
   omega
 
+/-- The array of an `ArrayElement` variable is smaller than the variable, as a termination measure. -/
+theorem Variable.sizeOf_arrayElement_array_lt_of_eq {v : AstNode Variable}
+    {array index : AstNode StmtExpr} (h : v.val = Variable.ArrayElement array index) :
+    sizeOf array < sizeOf v := by
+  have hv := AstNode.sizeOf_val_lt v
+  have heq : sizeOf v.val = sizeOf (Variable.ArrayElement array index) := congrArg sizeOf h
+  simp at heq; omega
+
+/-- The index of an `ArrayElement` variable is smaller than the variable, as a termination measure. -/
+theorem Variable.sizeOf_arrayElement_index_lt_of_eq {v : AstNode Variable}
+    {array index : AstNode StmtExpr} (h : v.val = Variable.ArrayElement array index) :
+    sizeOf index < sizeOf v := by
+  have hv := AstNode.sizeOf_val_lt v
+  have heq : sizeOf v.val = sizeOf (Variable.ArrayElement array index) := congrArg sizeOf h
+  simp at heq; omega
+
 /-- Apply a monadic transformation to the condition expression, preserving the summary. -/
 @[expose]
 def Condition.mapM [Monad m] (f : AstNode StmtExpr → m (AstNode StmtExpr)) (c : Condition) : m Condition :=
@@ -1327,6 +1368,7 @@ def highEq (a : HighTypeMd) (b : HighTypeMd) : Bool := match _a: a.val, _b: b.va
   | HighType.TString, HighType.TString => true
   | HighType.TBv n1, HighType.TBv n2 => n1 == n2
   | HighType.TSet t1, HighType.TSet t2 => highEq t1 t2
+  | HighType.TArray t1, HighType.TArray t2 => highEq t1 t2
   | HighType.TMap k1 v1, HighType.TMap k2 v2 => highEq k1 k2 && highEq v1 v2
   | HighType.UserDefined r1, HighType.UserDefined r2 => r1.text == r2.text
   | HighType.TVar r1, HighType.TVar r2 => r1.text == r2.text
@@ -1404,6 +1446,7 @@ def matchTypeArg (declared actual : HighType)
   | .TMap dk dv => match actual with
     | .TMap ak av => (matchTypeArg dk.val ak.val acc).bind (fun m => matchTypeArg dv.val av.val m)
     | _ => none
+  | .TArray dv => match actual with | .TArray av => matchTypeArg dv.val av.val acc | _ => none
   -- A concrete declared type (no tyvar) need only be consistent with the actual;
   -- we don't constrain it (any mismatch is a separate type error, not our concern).
   | _ => some acc
@@ -1418,7 +1461,7 @@ def matchTypeArg (declared actual : HighType)
 /-- The proof-relevant verdict of `coerce sub sup`: not just "is `sub <: sup`?" but
     *how* to realize the coercion. `coerce` returns `some verdict` exactly when the
     subtype holds (so `isConsistentSubtype := (coerce ..).isSome`), and the verdict
-    tells the frontend's `realizeCoercion` which runtime term to insert. The three
+    tells the frontend's `realizeCoercion` which runtime term to insert. The four
     constructors are exactly the distinct realizer outputs — none collapses into another,
     because each maps to a DIFFERENT operation:
 
@@ -1428,6 +1471,7 @@ def matchTypeArg (declared actual : HighType)
     | `upcast`    | nominal composite ≤ ancestor composite | nothing — SAME represn.   |
     | `widen T`   | numeric `int ≤ real/float64`           | `int_to_real` — subtype   |
     |             |                                        |   but DIFFERENT represn.  |
+     | `implicitCast f args` | `A` ≤ `B` by an `implicit` `f` | `f<args>(e)`, by resolution |
 
     Why NOT fewer cases:
     - `upcast` vs `widen`: both are subtyping (`int <: real` just like `Dog <: Animal`),
@@ -1445,7 +1489,41 @@ inductive Coercion where
   | refl
   | upcast
   | widen (target : HighType)
+  | implicitCast (proc : String) (typeArgs : List HighTypeMd)
   deriving Inhabited
+
+structure ImplicitCast where
+  name : String
+  typeParams : List String
+  input : HighTypeMd
+  output : HighTypeMd
+  total : Bool
+  inputId : Option Nat := none
+  preconditions : List StmtExprMd := []
+
+def ImplicitCast.ofProcedures (procs : List Procedure) : List ImplicitCast :=
+  procs.filterMap fun p =>
+    match p.isImplicit, p.inputs, p.outputs with
+    | true, [i], [o] =>
+      let params := p.typeArgs.map (·.text)
+      let tvarize := mapHighTypeNames fun ctor n => if params.contains n.text then .TVar n else ctor n
+      some { name := p.name.text, typeParams := params, input := tvarize i.type,
+             output := tvarize o.type, total := p.preconditions.isEmpty }
+    | _, _, _ => none
+
+@[expose] def Procedure.clearCastMarkers (p : Procedure) : Procedure :=
+  { p with isImplicit := false, isFrame := false }
+
+def ImplicitCast.ofFrameProcedures (procs : List Procedure) : List ImplicitCast :=
+  ImplicitCast.ofProcedures (procs.map fun p => { p with isImplicit := p.isFrame })
+
+def ImplicitCast.withContracts (casts : List ImplicitCast) (resolved : List Procedure) : List ImplicitCast :=
+  casts.map fun c =>
+    match resolved.find? (·.name.text == c.name) with
+    | some p => match p.inputs with
+      | [i] => { c with inputId := i.name.uniqueId, preconditions := p.preconditions.map (·.condition) }
+      | _ => c
+    | none => c
 
 /-- Lookup tables threaded through subtyping/consistency checks. Built from
     the program's `TypeDefinition`s by the resolution pass:
@@ -1496,6 +1574,9 @@ structure TypeLattice where
       vs truthify), so it lives here as a separate hook applied at bool-context sites
       (if/assert/assume/bool-ops), not in `coerce`. `none` (native Laurel) = identity. -/
   toBool : Option (HighType → StmtExprMd → StmtExprMd) := none
+  datatypeVariance : Std.HashMap String (List Bool) := {}
+  implicitCasts : List ImplicitCast := []
+  frameCasts : List ImplicitCast := []
   deriving Inhabited
 
 /-- Unfold aliases and constrained types to their underlying type.
@@ -1755,6 +1836,9 @@ def instTagCommon (leaf : HighType → Option String) (ty : HighType) : Option S
   | .TSet e => do
     let et ← instTagCommon leaf e.val
     some s!"Set$a1${et}"
+  | .TArray e => do
+    let et ← instTagCommon leaf e.val
+    some s!"Array$a1${et}"
   | _ => none
   termination_by ty
   decreasing_by ast_recursion_decreasing
@@ -1869,17 +1953,10 @@ partial def ancestorMatchesTarget (anc sup : HighTypeMd) : Bool :=
       (aargs.zip bargs).all (fun (x, y) => ancestorMatchesTarget x y)
   | .TMap ka va, .TMap kb vb => ancestorMatchesTarget ka kb && ancestorMatchesTarget va vb
   | .TSet ea, .TSet eb => ancestorMatchesTarget ea eb
+  | .TArray ea, .TArray eb => ancestorMatchesTarget ea eb
   | _, _ => highEq anc sup
 
-/-- Pure subtyping `<:`. Walks the `extending` chain for `CompositeType`
-    (via `TypeLattice.ancestors`), unfolds `TypeAlias` to its target, and
-    unwraps `ConstrainedType` to its base (both via `TypeLattice.unfold`),
-    then falls back to structural equality via `highEq`.
-
-    Used together with `isConsistent` to form `isConsistentSubtype`, which
-    is what the bidirectional checker invokes at every check-mode boundary
-    (rule `[⇐] Sub`). -/
-def isSubtype (ctx : TypeLattice) (sub sup : HighTypeMd) : Bool :=
+private def isSubtypeUnfolded (ctx : TypeLattice) (sub sup : HighTypeMd) : Bool :=
   let sub' := ctx.unfold sub
   let sup' := ctx.unfold sup
   match sub'.val, sup'.val with
@@ -1910,6 +1987,33 @@ def isSubtype (ctx : TypeLattice) (sub sup : HighTypeMd) : Bool :=
   | .UserDefined subName, .Applied _ _ =>
     (ctx.substitutedAncestors subName.text []).any (fun anc => ancestorMatchesTarget anc sup')
   | _, _ => highEq sub' sup'
+
+/-- Pure subtyping `<:`. Walks the `extending` chain for `CompositeType`
+    (via `TypeLattice.ancestors`), unfolds `TypeAlias` to its target, and
+    unwraps `ConstrainedType` to its base (both via `TypeLattice.unfold`),
+    then falls back to structural equality via `highEq`.
+
+    Used together with `isConsistent` to form `isConsistentSubtype`, which
+    is what the bidirectional checker invokes at every check-mode boundary
+    (rule `[⇐] Sub`). -/
+def isSubtype (ctx : TypeLattice) (sub sup : HighTypeMd) : Bool :=
+  match _a: sub.val, _b: sup.val with
+  | .Applied subBase subArgs, .Applied supBase supArgs =>
+    (match highBaseName? subBase.val, highBaseName? supBase.val with
+     | some subName, some supName =>
+       (match ctx.datatypeVariance.get? subName.text with
+        | some variance =>
+          subName.text == supName.text && subArgs.length == supArgs.length &&
+            variance.length == subArgs.length &&
+            (subArgs.zip (supArgs.zip variance)).attach.all
+              (fun ⟨(x, y, cov), _⟩ => if cov then isSubtype ctx x y else highEq x y)
+        | none => false)
+     | _, _ => false) || isSubtypeUnfolded ctx sub sup
+  | _, _ => isSubtypeUnfolded ctx sub sup
+  termination_by (SizeOf.sizeOf sub)
+  decreasing_by
+    all_goals (try (rename_i h _; have := (List.of_mem_zip h).1))
+    all_goals ast_recursion_decreasing
 
 /-- The least common ancestor (join) of a list of TYPES: the unique most-specific type
     that every element is a subtype of. The type-level counterpart of the name-keyed
@@ -2003,7 +2107,14 @@ def TypeLattice.haveCommonDescendant (ctx : TypeLattice) (a b : HighTypeMd) : Bo
      For SUBTYPING, `isSubtype` additionally relates `C<args> <: P<pargs>` via
      `substitutedAncestors` (the `extends` chain with the type-arg remap applied);
      args there are likewise invariant (compared against the already-substituted
-     ancestor). True per-constructor parametric variance remains deferred.
+     ancestor). The one exception is a DATATYPE application `D<A> <: D<B>` (same head, same
+     arity, `ctx.datatypeVariance`), where a parameter relates covariantly by `isSubtype` only
+     if it occurs in every constructor field solely at immutable positions (`occursOnlyCovariantly`:
+     bare, a set element, a map value). Datatype values are immutable and `HighType` has no
+     procedure or function type, so no such position is contravariant. A parameter under a
+     composite or any other applied type (`Box<T>`, whose field is mutable) stays invariant,
+     since the composite reference is shared and writable. Other per-constructor parametric
+     variance remains deferred.
 
    `Intersection` is NOT a variance question: `A & B` has lattice structure
    (`A & B <: A`, `A & B <: B`, etc.) that is not modeled, and the current
@@ -2049,6 +2160,7 @@ def isConsistent (ctx : TypeLattice) (a b : HighTypeMd) : Bool :=
   -- `Set` has no surface-Laurel production today, so only the `.TMap` arm is exercised.
   | .TMap k1 v1, .TMap k2 v2 => isConsistent ctx k1 k2 && isConsistent ctx v1 v2
   | .TSet e1, .TSet e2 => isConsistent ctx e1 e2
+  | .TArray e1, .TArray e2 => isConsistent ctx e1 e2
   -- A BARE composite name and its INSTANTIATION are consistent when the base names
   -- match: `Box ~ Box<int>`. This is the legacy `new C` correlation form — `var b:
   -- Box<int> := new Box` synthesizes the allocation as `.UserDefined "Box"` (no args;
@@ -2155,11 +2267,95 @@ private def TypeLattice.atLeastAsPrecise (ctx : TypeLattice) (a b : HighTypeMd)
     all_goals (first | (apply Prod.Lex.left; omega)
                      | (apply Prod.Lex.right; ast_recursion_decreasing))
 
+def ImplicitCast.instantiate (ctx : TypeLattice) (c : ImplicitCast) (sub sup : HighTypeMd)
+    (exact : Bool := false) : Option (List HighTypeMd) :=
+  let fits (a b : HighTypeMd) : Bool :=
+    !(a.val matches .MultiValuedExpr _) && (isConsistent ctx a b || isSubtype ctx a b)
+  let sub' := ctx.unfold sub
+  let sup' := ctx.unfold sup
+  let bind (first : HighTypeMd × HighTypeMd) (second : HighTypeMd × HighTypeMd) :
+      Option (Std.HashMap String HighType) := do
+    let b1 ← matchTypeArg first.1.val first.2.val {}
+    let b2 := (matchTypeArg second.1.val second.2.val {}).getD {}
+    pure (b2.fold (fun acc k v => match acc.get? k with
+      | some (.TVar r) => if isInferVar r then acc.insert k v else acc
+      | some _ => acc
+      | none => acc.insert k v) b1)
+  let attempt (b : Std.HashMap String HighType) : Option (List HighTypeMd) := do
+    let args ← c.typeParams.mapM fun p => b[p]?
+    let subst : Std.HashMap String HighTypeMd :=
+      (c.typeParams.zip args).foldl (fun acc (p, t) => acc.insert p { val := t, source := sup.source }) {}
+    let input := substTypeVars subst c.input
+    let output := substTypeVars subst c.output
+    if (if exact then highEq sub' input && highEq output sup' else fits sub' input && fits output sup')
+    then pure (args.map fun t => { val := t, source := sup.source })
+    else none
+  ((bind (c.output, sup') (c.input, sub')).bind attempt).or
+    ((bind (c.input, sub') (c.output, sup')).bind attempt)
+
+def TypeLattice.implicitCastMatches (ctx : TypeLattice) (sub sup : HighTypeMd) (exact : Bool := false) :
+    List (String × List HighTypeMd) :=
+  if sub.val matches .Unknown || sup.val matches .Unknown then []
+  else ctx.implicitCasts.filterMap fun c => (c.instantiate ctx sub sup exact).map (c.name, ·)
+
+def TypeLattice.findImplicitCast (ctx : TypeLattice) (sub sup : HighTypeMd) (exact : Bool := false) :
+    Option Coercion :=
+  match ctx.implicitCastMatches sub sup exact with
+  | [(name, args)] => some (.implicitCast name args)
+  | _ => none
+
+def TypeLattice.ambiguousImplicitCast? (ctx : TypeLattice) (sub sup : HighTypeMd) : Option (List String) :=
+  let exact := ctx.implicitCastMatches sub sup (exact := true)
+  let loose := ctx.implicitCastMatches sub sup
+  if exact.length > 1 then some (exact.map (·.1))
+  else if exact.isEmpty && loose.length > 1 then some (loose.map (·.1))
+  else none
+
+def ImplicitCast.bindFrom (c : ImplicitCast) (declared actual : HighTypeMd) (source : FileRange) :
+    Option (List HighTypeMd × Std.HashMap String HighTypeMd) := do
+  let b ← matchTypeArg declared.val actual.val {}
+  let args ← c.typeParams.mapM fun p => b[p]?
+  let argsMd := args.map fun t => ({ val := t, source := source } : HighTypeMd)
+  pure (argsMd, (c.typeParams.zip argsMd).foldl (fun acc (p, t) => acc.insert p t) {})
+
+def TypeLattice.implicitCastsFrom (ctx : TypeLattice) (sub : HighTypeMd) :
+    List (String × List HighTypeMd × HighTypeMd) :=
+  let sub' := ctx.unfold sub
+  if sub'.val matches .Unknown || sub'.val matches .TVar _ then [] else
+  ctx.implicitCasts.filterMap fun c => do
+    let (args, subst) ← c.bindFrom c.input sub' sub.source
+    let input := substTypeVars subst c.input
+    if isConsistent ctx sub' input || isSubtype ctx sub' input then
+      pure (c.name, args, substTypeVars subst c.output)
+    else none
+
+def TypeLattice.frameCastFrom (ctx : TypeLattice) (sub : HighTypeMd) :
+    Option (String × List HighTypeMd) :=
+  (({ ctx with implicitCasts := ctx.frameCasts } : TypeLattice).implicitCastsFrom sub).head?.map
+    fun (n, args, _) => (n, args)
+
+def TypeLattice.isTotalImplicitCast (ctx : TypeLattice) (name : String) : Bool :=
+  ctx.implicitCasts.any fun c => c.name == name && c.total
+
+def TypeLattice.implicitCastSourceInto (ctx : TypeLattice) (head : String) (sup : HighTypeMd) :
+    Option HighTypeMd :=
+  let sup' := ctx.unfold sup
+  if sup'.val matches .Unknown || sup'.val matches .TVar _ then none else
+  ctx.implicitCasts.findSome? fun c => do
+    let (_, subst) ← c.bindFrom c.output sup' sup.source
+    let input := substTypeVars subst c.input
+    let output := substTypeVars subst c.output
+    let isHead := match highBaseName? input.val with
+      | some id => id.text == head
+      | none => false
+    if isHead && (isConsistent ctx output sup' || isSubtype ctx output sup') then pure input
+    else none
+
 /-- PROOF-RELEVANT consistent subtyping: the ONE subtyping judgment. Returns the
     abstract `Coercion` verdict witnessing `sub ≤ sup`, or `none` when unrelated.
     `isConsistentSubtype` is its `.isSome`.
 
-    That decision follows `isConsistent ∨ isSubtype` arm for arm, with two exceptions. A
+    That decision follows `isConsistent ∨ isSubtype` arm for arm, with three exceptions. A
     proc-output tuple admits a SUBTYPE at each position where those two admit only a
     consistent one. Numeric widening (int → real/float64) is an exception only once a
     frontend installs `realizeCoercion` to insert the conversion: native Laurel installs
@@ -2173,8 +2369,18 @@ private def TypeLattice.atLeastAsPrecise (ctx : TypeLattice) (a b : HighTypeMd)
     - equal after unfold → `refl`.
     - either side a bare wildcard (`Unknown`) → `refl` (gradual, no runtime op).
     - `int` into `real`/`float64` → `widen`, but only with `realizeCoercion` installed.
-    - both `UserDefined` with `sub`'s ancestors ∋ `sup` → `upcast` (nominal). -/
+    - both `UserDefined` with `sub`'s ancestors ∋ `sup` → `upcast` (nominal).
+    - otherwise, an `implicit` procedure whose input `sub` fits and whose output fits `sup`
+      → `implicitCast`. This is the third exception to the arm-for-arm agreement. It is tried
+      only after every other relation fails, so a value that fits a slot as it is is never
+      cast, unless the cast's instantiated input and output are exactly `sub` and `sup`
+      (which differ): that cast is tried first, before the gradual `.TVar` wildcard. -/
 def coerce (ctx : TypeLattice) (sub sup : HighTypeMd) : Option Coercion :=
+  (if highEq (ctx.unfold sub) (ctx.unfold sup) then none
+   else ctx.findImplicitCast sub sup (exact := true)).or
+    ((coerceNative ctx sub sup).or (ctx.findImplicitCast sub sup))
+where
+  coerceNative (ctx : TypeLattice) (sub sup : HighTypeMd) : Option Coercion :=
   match sub.val, sup.val with
   | .MultiValuedExpr ts1, .MultiValuedExpr ts2 =>
     -- Per-position verdicts are DISCARDED: carrying one would need a tuple `Coercion` constructor,
@@ -2353,6 +2559,12 @@ def callSiteCandidates (ctx : TypeLattice) (tvarInScope : Identifier → Bool)
             some (name, ({ val := ty, source := a.source } : HighTypeMd))
           else none
 
+/-- `o` reaches `cand` through a total implicit cast (`C` reaching `NullableRef<C>`). -/
+def reachesByTotalCast (ctx : TypeLattice) (o cand : HighTypeMd) : Bool :=
+  match coerce ctx o cand with
+  | some (.implicitCast proc _) => ctx.isTotalImplicitCast proc
+  | _ => false
+
 /-- One type parameter's candidates as `callSiteCombine` weighs them, kept as they arrive
     (`CandidatePool.add`): each pool without repeats, and its dominators, in pool order.
 
@@ -2374,7 +2586,8 @@ structure CandidatePool where
     subtyping. `isConsistent` alone relates two distinct composites only when they are the
     same type, so a subtype argument would otherwise conflict with its own supertype: this is
     what lets `update<K,V>(map: TotalMap K V, key: K, value: V)` take a `TotalMap int Animal` and a
-    `Dog`, binding `V ↦ Animal`.
+    `Dog`, binding `V ↦ Animal`. A total implicit cast (`C` reaching `NullableRef<C>`) satisfies
+    a candidate too.
 
     Decided over the WHOLE candidate set rather than by folding pairwise, which would make the
     verdict depend on argument order once a variable occurs three or more times: widening the
@@ -2389,7 +2602,8 @@ structure CandidatePool where
     joins if every candidate satisfies it. So a call with many arguments at one type parameter
     costs one pass over its pool per argument. -/
 def CandidatePool.add (ctx : TypeLattice) (cp : CandidatePool) (t : HighTypeMd) : CandidatePool :=
-  let sat := fun (o cand : HighTypeMd) => isConsistent ctx o cand || isSubtype ctx o cand
+  let sat := fun (o cand : HighTypeMd) =>
+    isConsistent ctx o cand || isSubtype ctx o cand || reachesByTotalCast ctx o cand
   let step := fun (pool doms : List HighTypeMd) =>
     if pool.any (highEq · t) then (pool, doms) else
     let pool' := pool ++ [t]
@@ -2439,7 +2653,8 @@ def callSiteCombine (ctx : TypeLattice) (candidates : List (String × HighTypeMd
       -- No candidate dominates: report the first mutually unrelated pair, which is the one a
       -- reader can act on.
       match pool.findSome? (fun a =>
-              (pool.find? (fun b => !isConsistent ctx a b && !isSubtype ctx a b && !isSubtype ctx b a)).map
+              (pool.find? (fun b => !isConsistent ctx a b && !isSubtype ctx a b && !isSubtype ctx b a
+                && !reachesByTotalCast ctx a b && !reachesByTotalCast ctx b a)).map
                 (fun b => (a, b))) with
       | some (a, b) => (subst, (name, a, b) :: conflicts)
       | none => (subst, conflicts)
@@ -2473,6 +2688,8 @@ def StmtExpr.constructorName (e : StmtExpr) : String :=
   | .PureFieldUpdate .. => "PureFieldUpdate"
   | .Call .. => "Call"
   | .New .. => "New"
+  | .NewArray .. => "NewArray"
+  | .ArrayLength .. => "ArrayLength"
   | .This => "This"
   | .ReferenceEquals .. => "ReferenceEquals"
   | .AsType .. => "AsType"
@@ -2509,6 +2726,7 @@ def Variable.toReadbackExpr : Variable → StmtExpr
   | .Declare param => .Var (.Local param.name)
   | .Field target fieldName => .Var (.Field target fieldName)
   | .Stack type => .Var (.Stack type)
+  | .ArrayElement a i => .Var (.ArrayElement a i)
 
 /-- Source-preserving read-back expression for a `VariableMd`
     (see `Variable.toReadbackExpr`). -/
@@ -2706,6 +2924,7 @@ def DatatypeDefinition.unsafeDestructorName (dt : DatatypeDefinition) (field : P
 partial def HighType.mentionedNames : HighType → List String
   | .UserDefined n | .TVar n => [n.text]
   | .TSet et => et.val.mentionedNames
+  | .TArray et => et.val.mentionedNames
   | .TMap kt vt => kt.val.mentionedNames ++ vt.val.mentionedNames
   | .Applied base args => base.val.mentionedNames ++ args.flatMap (·.val.mentionedNames)
   | .Intersection tys => tys.flatMap (·.val.mentionedNames)
@@ -2826,12 +3045,19 @@ def isGenericFamilyName (name : String) : Bool := name.startsWith genericFamilyP
 def isGenericFamilyParent (parent : HighTypeMd) : Bool :=
   (highBaseName? parent.val).any (isGenericFamilyName ·.text)
 
+partial def HighType.occursOnlyCovariantly (p : String) (covariant : Bool) : HighType → Bool
+  | .TVar n | .UserDefined n => n.text != p || covariant
+  | .TSet e => e.val.occursOnlyCovariantly p covariant
+  | .TMap k v => k.val.occursOnlyCovariantly p false && v.val.occursOnlyCovariantly p covariant
+  | t => !(t.mentionedNames.contains p)
+
 /-- Build a `TypeLattice` from a list of `TypeDefinition`s.
     Aliases populate `unfoldMap` with their target; constrained types populate
     it with their base; composites populate `parentExprMap` with their direct
     parent expressions, less a family parent (`genericFamilyPrefix`): beside a real
     common parent, two instantiations would have no single least common ancestor.
-    Datatypes and opaque types contribute nothing — they're nominal and irreducible. -/
+    Datatypes contribute each parameter's covariance; opaque types contribute nothing — they're
+    nominal and irreducible. -/
 def TypeLattice.ofTypes (types : List TypeDefinition) : TypeLattice :=
   types.foldl (init := {}) fun ctx td =>
     match td with
@@ -2840,7 +3066,11 @@ def TypeLattice.ofTypes (types : List TypeDefinition) : TypeLattice :=
     | .Composite c =>
       let parents := c.extending.filter (!isGenericFamilyParent ·)
       { ctx with parentExprMap := ctx.parentExprMap.insert c.name.text (c.typeArgs, parents) }
-    | .Datatype _ | .Opaque _ => ctx
+    | .Datatype dt =>
+      let variance := dt.typeArgs.map fun p =>
+        dt.constructors.all fun c => c.args.all fun a => a.type.val.occursOnlyCovariantly p.text true
+      { ctx with datatypeVariance := ctx.datatypeVariance.insert dt.name.text variance }
+    | .Opaque _ => ctx
 
 structure Constant where
   name : Identifier

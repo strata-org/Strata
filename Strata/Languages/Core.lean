@@ -17,19 +17,22 @@ import Strata.Transform.CFGLoopElim
 import Strata.Transform.LoopElim
 import Strata.Transform.InsertLoopInvariantAsserts
 import Strata.Transform.FilterProcedures
-import Strata.Transform.TerminationCheck
+import Strata.Transform.TerminationCheckPhase
 import Strata.Transform.UnrollBoundedQuantifiers
-import Strata.Transform.RecursiveFunctionAxioms
+import Strata.Transform.RecursiveFunctionAxiomsPhase
+import Strata.Transform.IrrelevantAxiomsPhase
 import Strata.Transform.FunctionInlining
 import Strata.Transform.PrecondElim
 import Strata.Transform.GenOpaqueTypeParams
 import Strata.Transform.MonomorphizeFunctions
 import Strata.Transform.NondetElim
 import Strata.Transform.BetaReduce
+import Strata.Transform.LambdaLift
 import Strata.Transform.CommonSubexprElim
 import Strata.Transform.DeadDefElim
 import Strata.Transform.Simplify
 import Strata.Transform.EqualitySimplification
+import Strata.Transform.ContextualRewrite
 import Strata.Transform.FoldAxioms
 
 /-! ## Strata Core Transform & Verification API
@@ -237,6 +240,12 @@ def Core.passSimplify : Core.PipelinePhase :=
 def Core.passEqualitySimplification : Core.PipelinePhase :=
   _root_.Core.equalitySimplificationPhase
 
+/-- Rewrite each `assert` goal under the facts on its path, and replace it by `true` when it
+    rewrites to `true`. No default order lists it; a phase list runs it after `betaReduce` in
+    the order of `--vcgen symexec` or `--vcgen wp`. -/
+def Core.passContextualRewrite : Core.PipelinePhase :=
+  _root_.Core.contextualRewritePhase
+
 /-- Fold every axiom without quantifiers, so that a later phase reads values that
     only appear once a field of a constructor application is selected. No default
     pipeline lists it. -/
@@ -258,6 +267,20 @@ def Core.passNondetElim : Core.PipelinePhase :=
 /-- Reduce beta redexes, leaving terms in normal form. -/
 def Core.passBetaReduce : Core.PipelinePhase :=
   Core.betaReducePipelinePhase
+
+/-- Replace every abstraction by a function applied to what it captures. -/
+def Core.passLambdaLift : Core.PipelinePhase :=
+  Core.lambdaLiftPipelinePhase
+
+/-- `passLambdaLift`, run only on a program it has work to do on; every other program is
+    returned unchanged. -/
+def Core.passLambdaLiftIfNeeded : Core.PipelinePhase :=
+  Core.lambdaLiftIfNeededPipelinePhase
+
+/-- Rename apart each variable named like a function or constant, establishing
+    `varsNotFunctions`, which obligation extraction reads. -/
+def Core.passSeparateVarNames : Core.PipelinePhase :=
+  Core.separateVarNamesPipelinePhase
 
 /-- Type check the program, annotating expressions with their types. -/
 def Core.passTypeCheck (options : Core.VerifyOptions := Core.VerifyOptions.default) :
@@ -377,7 +400,8 @@ def Core.nameablePhases (options : Core.VerifyOptions := Core.VerifyOptions.defa
     List Core.PipelinePhase :=
   let defaults := Core.corePipelinePhases options
   let others := [Core.passInlineAll, Core.passUnrollBoundedQuantifiers, Core.passFunctionInlining,
-      Core.passFoldAxioms, Core.passEqualitySimplification, Core.passDeclObligations options,
+      Core.passFoldAxioms, Core.passEqualitySimplification, Core.passContextualRewrite,
+      Core.passDeclObligations options,
       _root_.Core.ProgramFact.assertPhase .noCFGBodies,
       Core.passWP, Core.passSSA, Core.passGuardFwd, Core.passDefInline, Core.passDeadDefElim,
       Core.passWPLoop, Core.passGuardProp, Core.passCtorFold, Core.passSymbolicEval options,
@@ -389,7 +413,8 @@ def Core.nameablePhases (options : Core.VerifyOptions := Core.VerifyOptions.defa
     -- which knows the validation prefixes of the phases before it.
     ((Core.passiveVCGenPhases
         { options with vcgen := if options.vcgen == .uwp then .uwp else .usp }).filter
-      fun p => p.phase.name == "passiveVC")
+      fun p => p.phase.name == "passiveVC") ++
+    [Core.passLambdaLiftIfNeeded]
   defaults ++ others.filter fun p => !defaults.any (·.phase.name == p.phase.name)
 
 /-! ### Standard Core verification pipeline phases
@@ -427,26 +452,89 @@ def Core.coreAbstractedPhases
     `--phases`. -/
 def Core.phaseName (p : Core.PipelinePhase) : String := p.phase.name
 
-/-- Validate an arbitrary phase list, both that its phases compose and that
-    what they establish covers what the verification back end requires of the
-    program they produce. On failure, an explanatory diagnostic; on success, a
-    `ValidatedPipeline` the type of which carries the composition proof, so an
-    unchecked order cannot reach `verifyProgram`. -/
-def Core.validatePipeline (phases : List Core.PipelinePhase) :
-    Except String (Core.ValidatedPipeline Core.ProgramFactSet.empty) :=
-  Core.ValidatedPipeline.ofListDelivering
-    "the verification back end" Core.backEndRequiredFacts phases
+/-- Validate `phases` exactly as given against facts `entryFacts` assumed to hold on the input
+    program, both that its phases compose and that what they establish covers what the
+    verification back end requires of the program they produce. On failure, an explanatory
+    diagnostic. `validatePipelineFrom` also repairs one kind of order this refuses. -/
+def Core.validatePipelineFromExact (entryFacts : Core.ProgramFactSet)
+    (phases : List Core.PipelinePhase) :
+    Except String (Core.ValidatedPipeline entryFacts) :=
+  (Core.ValidatedPipeline.ofListFromDelivering
+    entryFacts "the verification back end" Core.backEndRequiredFacts phases).mapError
+    (Core.withSeparateVarNamesHint entryFacts phases)
 
-/-- Like `validatePipeline`, but validates against facts `entryFacts` assumed to
-    hold on the input program. The result is indexed by `entryFacts`, so
-    `verifyProgram` will require a proof that they hold of the program verified.
-    This is the API-only path a Lean front end uses to skip phases whose facts
-    it can prove of its own output. -/
+/-- The ways to run `monomorphizeFunctions` again after the last `termCheck` of `phases`, when
+    `noPolymorphicFunctions` holds just before that `termCheck`, from `entryFacts` or an earlier
+    phase, and no `monomorphizeFunctions` follows it: each is `phases` with
+    `monomorphizeFunctions` inserted at one position after `termCheck`, earliest first, with
+    the name of the phase it follows. `termCheck` declares its rank functions generic in their
+    datatype's type parameters, so a later phase that needs `noPolymorphicFunctions` needs them
+    specialized. Empty when `phases` is not of that shape. -/
+def Core.remonomorphizeAfterTermCheck (entryFacts : Core.ProgramFactSet)
+    (phases : List Core.PipelinePhase) : List (String × List Core.PipelinePhase) :=
+  let names := phases.map Core.phaseName
+  let mono := Core.phaseName Core.passMonomorphizeFunctions
+  match (names.zipIdx.reverse.find? (·.1 == Core.phaseName Core.passTermCheck)).map (·.2) with
+  | none => []
+  | some i =>
+    let monoBefore := match Core.ValidatedPipeline.ofListFrom entryFacts (phases.take i) with
+      | .ok vp => decide (Core.ProgramFact.noPolymorphicFunctions ∈ vp.establishes)
+      | .error _ => false
+    if monoBefore && !(names.drop (i + 1)).contains mono then
+      ((List.range (phases.length - i)).map (· + i + 1)).map fun j =>
+        (names[j - 1]!, phases.take j ++ Core.passMonomorphizeFunctions :: phases.drop j)
+    else []
+
+/-- Like `validatePipelineFromExact`, but where `phases` does not validate because
+    `noPolymorphicFunctions` holds before `termCheck` and nothing establishes it again after,
+    validate it with `monomorphizeFunctions` run at the earliest position after `termCheck`
+    where it validates (`remonomorphizeAfterTermCheck`), and return a warning saying so. The
+    order is repaired rather than refused because it relied only on `termCheck` keeping
+    `noPolymorphicFunctions`, which `monomorphizeFunctions` restores. -/
+def Core.validatePipelineFromRepairing (entryFacts : Core.ProgramFactSet)
+    (phases : List Core.PipelinePhase) :
+    Except String (Core.ValidatedPipeline entryFacts × List String) :=
+  match Core.validatePipelineFromExact entryFacts phases with
+  | .ok vp => .ok (vp, [])
+  | .error e =>
+    let repaired := (Core.remonomorphizeAfterTermCheck entryFacts phases).findSome?
+      fun (after, ps) =>
+        match Core.validatePipelineFromExact entryFacts ps with
+        | .ok vp => some (after, vp)
+        | .error _ => none
+    match repaired with
+    | none => .error e
+    | some (after, vp) =>
+      .ok (vp, [s!"Warning: inserted phase \
+        `{Core.phaseName Core.passMonomorphizeFunctions}` after `{after}`: \
+        `{Core.phaseName Core.passTermCheck}` declares polymorphic rank functions, which a \
+        later phase needs specialized."])
+
+/-- `validatePipelineFromRepairing` for a phase list that assumes nothing about its input. -/
+def Core.validatePipelineRepairing (phases : List Core.PipelinePhase) :
+    Except String (Core.ValidatedPipeline Core.ProgramFactSet.empty × List String) :=
+  Core.validatePipelineFromRepairing Core.ProgramFactSet.empty phases
+
+/-- Validate a phase list against facts `entryFacts` assumed to hold on the input program,
+    both that its phases compose and that what they establish covers what the verification
+    back end requires of the program they produce. It may insert `monomorphizeFunctions` after
+    `termCheck`, as `validatePipelineFromRepairing` does, without a warning; the pipeline's
+    `phases` show the phase inserted. Use `validatePipelineFromExact` to validate the order
+    exactly as given, or `validatePipelineFromRepairing` to get the warning. The
+    result is indexed by `entryFacts`, so `verifyProgram` will require a proof that they hold
+    of the program verified. This is the API-only path a Lean front end uses to skip phases
+    whose facts it can prove of its own output. -/
 def Core.validatePipelineFrom (entryFacts : Core.ProgramFactSet)
     (phases : List Core.PipelinePhase) :
     Except String (Core.ValidatedPipeline entryFacts) :=
-  Core.ValidatedPipeline.ofListFromDelivering
-    entryFacts "the verification back end" Core.backEndRequiredFacts phases
+  (Core.validatePipelineFromRepairing entryFacts phases).map (·.1)
+
+/-- `validatePipelineFrom` for a phase list that assumes nothing about its input program. On
+    failure, an explanatory diagnostic; on success, a `ValidatedPipeline` the type of which
+    carries the composition proof, so an unchecked order cannot reach `verifyProgram`. -/
+def Core.validatePipeline (phases : List Core.PipelinePhase) :
+    Except String (Core.ValidatedPipeline Core.ProgramFactSet.empty) :=
+  Core.validatePipelineFrom Core.ProgramFactSet.empty phases
 
 /-- `phases` with `extra` inserted directly after the phase named `after`.
     Anchoring by name rather than by index is what lets a caller place a phase

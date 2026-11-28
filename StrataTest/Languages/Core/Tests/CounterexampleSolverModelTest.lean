@@ -78,6 +78,36 @@ private def readBack (p : StrataDDM.Program) (stdout : String) : IO String := do
     | .error e => s!"input store rejected: {repr e}"
   return s!"{vars.map (·.1.name)}: {verdict}\n{store}"
 
+/-! ## A map value the reader cannot lift (z3)
+
+z3 may print an array as `(_ as-array k!0)`, which the model reader drops, so the valuation
+leaves `a@1` unbound although the solver assigned it. A map type has no default value
+(`defaultValueIn`), so `a@1` stays unbound: the VC check cannot evaluate the goal and reports
+`can't-validate`, not a verdict about a value the solver did not choose. -/
+
+/-- A failure that depends on a nested map value. -/
+def nested : StrataDDM.Program :=
+#strata
+program Core;
+procedure nested(a : Map int (Map int int)) {
+  assert [nestedBad]: a[1][2] != 7;
+};
+#end
+
+/-- The VC check's verdict on the answer `stdout` to `nested`'s validity check. -/
+private def nestedVerdict (stdout : String) : IO String := do
+  let (F, obs) ← obligationsOf nested
+  let [o] := obs | return s!"{obs.length} obligations"
+  let typed : List Expression.TypedIdent :=
+    (obligationReadVars o).eraseDups.map fun (n, ty) => (n, .forAll [] ty)
+  let .ok (_, .sat m) ← readAnswer typed stdout | return "no model"
+  let lm := checkedModel F o (m.map fun (k, t) => (k, smtTermToLExpr t {}, smtTermIsValue t {}))
+  return (runVCCheck F 20000 lm o true).describe
+
+/-- info: "can't-validate: goal did not reduce to a boolean" -/
+#guard_msgs in
+#eval nestedVerdict "sat\n((a@1 ((_ as-array k!0))))\n"
+
 /-! ## A constructor bound with `let` (cvc5)
 
 `second` fails only at `xs = Cons(1, Cons(7, Nil()))`. cvc5 binds `Cons` to `_let_1` and
@@ -202,6 +232,33 @@ sorts gives two names, each still a solver element name. -/
 #guard anonName "S!val!0" (sortS .int) != anonName "S!val!0" (sortS .bool)
 #guard isSolverElementName (anonName "S!val!0" (sortS .int))
 #guard isSolverElementName (anonName "@(S Int)_0" (sortS .int))
+
+/-! ## Arrays (z3, array theory)
+
+With the array theory, z3 gives a map an array term: `((as const (Array K V)) d)` and
+`(store a k v)` read back as the map literals they denote. -/
+
+/-- A failure reached only when `a[1] == 5`, `b[2]` is false and `b[3]` is true. -/
+def mapAt : StrataDDM.Program :=
+#strata
+program Core;
+procedure mapAt(a : Map int int, b : Map int bool) {
+  assert [mapBad]: a[1] != 5 || b[2] || !(b[3]);
+};
+#end
+
+/--
+info: [a@1, b@1]: genuine
+input store:
+  a@1 ↦ mapConst<int>(5)
+  b@1 ↦ (mapConst<int>(true))[2:=false]
+oracle: []
+-/
+#guard_msgs in
+#eval show IO Unit from do
+  IO.println (← readBack mapAt
+    ("sat\n((a@1 ((as const (Array Int Int)) 5))\n" ++
+      " (b@1 (store ((as const (Array Int Bool)) true) 2 false)))\n"))
 
 /-! ## End to end
 

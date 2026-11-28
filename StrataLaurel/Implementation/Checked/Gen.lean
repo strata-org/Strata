@@ -75,6 +75,7 @@ def laurelHighTypeToTyStx (tyVars knownTypes : Std.HashSet String) (ty : AstNode
     ]
   | .TString =>
     pure (mkIdent ``Ty.string)
+  | .TArray _ => .error "derive_laurel_ops: array types are not supported"
   | .UserDefined n =>
     -- Check name is a known type or var.
     if n.text ∈ tyVars ∨ n.text ∈ knownTypes then

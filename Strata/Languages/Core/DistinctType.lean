@@ -62,7 +62,7 @@ def mismatchMsg (known : KnownTypes) (name : Expression.Ident)
   | _, _ => generic
 
 /-- Type check a distinct declaration: its annotations mention no type variable a user may
-    write, and its two or more expressions share one type with no type variable in their stored
+    write, and its expressions share one type with no type variable in their stored
     annotations. -/
 def typeCheck (C : Expression.TyContext) (Env : Expression.TyEnv)
     (name : Expression.Ident) (es : List Expression.Expr) :
@@ -70,10 +70,8 @@ def typeCheck (C : Expression.TyContext) (Env : Expression.TyEnv)
   match WrittenTyVarScope.unboundAnnotMsg? false [] [] es with
   | some msg => .error f!"Error in distinct {name}: {msg}"
   | none =>
-  let resolved := match es with
-    | _ :: _ :: _ => SourceExpr.resolves C Env es
-    | _ => .error f!"Distinct '{name}' must contain at least two expressions"
-  match SourceExpr.orFreeVarError (fun _ => Env.freeVarChecks es) resolved with
+  match SourceExpr.orFreeVarError (fun _ => Env.freeVarChecks es)
+      (SourceExpr.resolves C Env es) with
   | .error e => .error e
   | .ok (ets, EnvR) =>
     match Constraints.unify (sharedTypeConstraints ets) EnvR.stateSubstInfo with

@@ -694,6 +694,72 @@ decreases int.add(n, 1)
 #guard_msgs (whitespace := lax) in
 #eval Core.typeCheck .quiet (translateWithMetaData measureIntExprPgm)
 
+---------------------------------------------------------------------
+-- A self-call whose arguments leave its type argument open
+---------------------------------------------------------------------
+
+/-! The arguments of `f(Nil(), …)` inside `f<a>` do not fix its type argument. The checker
+reads the self-call at the function's own type parameter, as it does whenever that reading
+type checks, and falls back to a fresh instance only when it does not. The program type checks
+and verifies. -/
+
+def selfCallOpenTypePgm : Program :=
+#strata
+program Core;
+
+datatype MyList (a : Type) { Nil(), Cons(hd: a, tl: MyList a) };
+
+rec function f<a> (xs : MyList a, n : int) : int
+  decreases n
+{
+  if int.le(n, 0) then 0 else int.add(1, f(Nil(), int.sub(n, 1)))
+};
+
+procedure P()
+{
+  assert [two]: f(Cons(1, Nil()), 2) == 2;
+};
+#end
+
+/--
+info:
+Obligation: f_terminates_0
+Property: assert
+Result: ✅ pass
+
+Obligation: f_terminates_1
+Property: assert
+Result: ✅ pass
+
+Obligation: two
+Property: assert
+Result: ✅ pass
+-/
+#guard_msgs in
+#eval Core.verify selfCallOpenTypePgm (options := .quiet)
+
+/-! A body with a self-call whose arguments leave its type open and one at another instance
+fails both readings. The second reading leaves a type open, so the message is that of the first
+reading, at the function's own type parameter, which points at the call at another instance. -/
+
+def selfCallsBothReadingsFailPgm : Program :=
+#strata
+program Core;
+
+datatype MyList (a : Type) { Nil(), Cons(hd: a, tl: MyList a) };
+
+rec function f<a> (xs : MyList a, n : int) : int
+  decreases n
+{
+  if int.le(n, 0) then 0
+  else int.add(f(Nil(), int.sub(n, 1)), f(Cons(xs, Nil()), int.sub(n, 1)))
+};
+#end
+
+/-- info: error: (19615-19782) Rigid type variable 'a' was refined to '(MyList a)' -/
+#guard_msgs in
+#eval Core.typeCheck .quiet (translateWithMetaData selfCallsBothReadingsFailPgm)
+
 end Strata.RecursiveFunctionTest
 
 /-! ## Recursive function block type checking -/
@@ -886,8 +952,7 @@ private def recMemberSignatures (pgm : Core.Program) : Format :=
 -- The signature stub of the member has the same type parameter.
 /-- info: f<[a_1]> : [a_1] → a_1 -/
 #guard_msgs (whitespace := lax) in
-#eval match RecFuncBlock.checkSignature initTyContext TEnv.default [reservedParamMember]
-    reservedParamMember with
+#eval match RecFuncBlock.checkSignature initTyContext TEnv.default reservedParamMember with
   | .error e => IO.println e
   | .ok sig =>
     let stub := sig.stub

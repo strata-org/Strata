@@ -342,7 +342,11 @@ def laurelAnalyzeToGotoCommand : Command where
         let (tcPgm, _) ← match Core.Program.typeCheck Ctx Env coreProgram with
           | .ok r => pure r
           | .error e => exitInternalError s!"{e.format none}"
-        let procs := tcPgm.decls.filterMap fun d => d.getProc?
+        let polymorphic := coreProgram.decls.filterMap fun d => d.getProc?.bind fun p =>
+          let name := Core.CoreIdent.toPretty p.header.name
+          if p.header.typeArgs.isEmpty || !name.startsWith "$" then none else some name
+        let procs := (tcPgm.decls.filterMap fun d => d.getProc?).filter fun p =>
+          !polymorphic.contains (Core.CoreIdent.toPretty p.header.name)
         let funcs := tcPgm.decls.filterMap fun d =>
           match d.getFunc? with
           | some f =>

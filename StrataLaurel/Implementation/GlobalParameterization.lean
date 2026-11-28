@@ -243,7 +243,7 @@ private def renameTarget (model : SemanticModel) (target : VariableMd)
     : GlobalTransformM VariableMd := do
   match target.val with
   | .Local name => return { target with val := .Local (← renameGlobalRef model name) }
-  | .Declare _ | .Field _ _ | .Stack _ => return target
+  | .Declare _ | .Field _ _ | .Stack _ | .ArrayElement .. => return target
 
 private def transformNode (model : SemanticModel) (valueUsed : Bool) (expr : StmtExprMd)
     : GlobalTransformM (List StmtExprMd) := do
