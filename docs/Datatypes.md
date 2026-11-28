@@ -134,13 +134,10 @@ injectivity of constructors.
 
 ## Limitations
 
-1. The DDM does not yet support polymorphic functions, including
-datatype constructors. Polymorphism is supported at the AST level.
-Example: `StrataTest/Languages/Core/DatatypeVerificationTests.lean`
-2. Strata also generates eliminators per data type, allowing
+Strata generates eliminators per data type, allowing
 the definition of terms defined by pattern matching and/or
 recursion, with the correct computational behavior.
-This is also not yet available at the DDM level.
+This is not yet available at the DDM level.
 Example: `StrataTest/DL/Lambda/TypeFactoryTests.lean`
 
 ## Test Examples

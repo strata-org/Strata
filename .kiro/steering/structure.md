@@ -12,15 +12,18 @@ Strata is a Lean4 verification framework using **dialects** as composable langua
 
 ### Directory Structure
 
-- `Strata/` - Core implementation (DDM, dialects, languages, transforms, backends)
+- `Strata/` - Core implementation (dialects, languages, transforms, backends)
+- `StrataLaurel/` - Laurel implementation, scripts and tests
+- `StrataCortex/` - Cortex implementation, scripts and tests
 - `StrataTest/` - Unit tests (mirrors Strata/ structure)
+- `StrataTestExtra/` - Uncached extra tests, run via `lake test`
 - `Examples/` - Sample programs (`.st` files, naming: `<name>.<dialect>.st`)
 
 ### Core Components
 
-**`Strata/DDM/`** - Dialect Definition Mechanism
+**Dialect Definition Mechanism (DDM)** - external `StrataDDM` package ([Strata-DDM](https://github.com/strata-org/Strata-DDM)), imported as `StrataDDM.*`
 - Parser, elaborator, AST for defining dialects
-- Lean integration and Ion format support
+- Lean integration (`#strata` blocks) and Ion format support
 
 **`Strata/DL/`** - Dialect Library
 - `Lambda/` - Pure functional expressions (base layer)
@@ -30,14 +33,15 @@ Strata is a Lean4 verification framework using **dialects** as composable langua
 
 **`Strata/Languages/`** - Concrete Language Implementations
 - `Core/` - Primary verification language (procedures, contracts, VCG, SMT encoding)
-- `C_Simp/` - Simplified C-like language
-- `Dyn/` - Dynamic language example
-- `Laurel/` - A common representation for front-end languages like Java, Python and JavaScript. Translated to Core.
+- `Cortex/` - CFG-based language with a heap, produced from Laurel and translated to Core CFG bodies
+- `GOTO/` - CBMC's GOTO program model and the translations into it
+
+**`StrataLaurel/`** - Laurel, a common representation for front-end languages like Java, Python and JavaScript. Translated to Core.
 
 **`Strata/Transform/`** - Program Transformations
 - Each transformation has implementation + optional correctness proof (`*Correct.lean`)
 - `CallElim` - Procedure call elimination via inlining the contract
-- `DetToNondet` - Deterministic to non-deterministic control flow
+- `DetToKleene` - Deterministic to non-deterministic control flow
 - `LoopElim` - Loop elimination using invariants
 - `ProcedureInlining` - Procedure call elimination via inlining the body
 
@@ -130,17 +134,17 @@ Top-level structure:
 
 ## Other Languages
 
-**C_Simp** (`Strata/Languages/C_Simp/`) - Simplified C-like language
-- Verification via transformation to Strata Core
-- Pipeline: Parse → Transform loops → Translate to Strata Core → VCG → SMT
+**Laurel** (`StrataLaurel/`) - Front-end representation; guides indexed in `StrataLaurel/Implementation/README.md`
 
-**Dyn** (`Strata/Languages/Dyn/`) - Dynamic language example demonstrating dialect extensibility
+**Cortex** (`Strata/Languages/Cortex/`, tests in `StrataCortex/`) - Translated to Core by `Strata/Languages/Cortex/ToCore.lean`
+
+**GOTO** (`Strata/Languages/GOTO/`) - CBMC's GOTO model; `X → GOTO` translations live here, CBMC invocation in `Strata/Backends/CBMC/`
 
 ## Transformations (`Strata/Transform/`)
 
 Program-to-program translations for simplification and verification. Each has optional correctness proof (`*Correct.lean`).
 
-**DetToNondet** - Deterministic to non-deterministic control flow
+**DetToKleene** - Deterministic to non-deterministic control flow
 - Replaces `if-then-else` with `choice` + `assume`
 
 **CallElim** - Procedure call elimination via contract inlining
@@ -176,15 +180,17 @@ Program-to-program translations for simplification and verification. Each has op
 **Main module:** `Strata.lean`
 
 **Executables:**
-- `strata` - Main CLI (includes `verify`, `check`, `toIon`, `print`, etc.)
-- `StrataCoreToGoto` - Strata Core to GOTO translation
 - `StrataToCBMC` - CBMC backend
+- `strataLaurel` - Laurel CLI
+- `StrataTestMain` - `lake test` driver
+- The `strata` CLI (`verify`, `check`, `toIon`, `print`, etc.) lives in the separate [Strata-CLI](https://github.com/strata-org/Strata-CLI) repository
 
 **Commands:**
 ```bash
 lake build                                          # Build all
 lake test                                           # Run tests
-lake exe strata verify Examples/SimpleProc.core.st   # Verify program
+# from the Strata-CLI repository:
+lake exe strata verify /path/to/Strata/Examples/SimpleProc.core.st   # Verify program
 ```
 
 ## Verification Workflow
@@ -215,7 +221,7 @@ Before starting any implementation task:
 **Example workflows:**
 
 - **Adding a feature to Strata Core:** Read `Expressions.lean`, `Statement.lean`, `Factory.lean`, then check `StrataTest/Languages/Core/` for test patterns
-- **Creating a transformation:** Read existing transforms (`DetToNondet.lean`, `CallElim.lean`), their correctness proofs, and tests in `StrataTest/Transform/`
+- **Creating a transformation:** Read existing transforms (`DetToKleene.lean`, `CallElim.lean`), their correctness proofs, and tests in `StrataTest/Transform/`
 - **Modifying expressions:** Read `Strata/DL/Lambda/LExpr.lean`, `LExprEval.lean`, `LTy.lean` to understand the AST, evaluation, and type system
 - **Working with statements:** Read `Strata/DL/Imperative/Stmt.lean` and `StmtSemantics.lean` before making changes
 
