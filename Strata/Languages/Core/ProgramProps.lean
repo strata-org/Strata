@@ -7,6 +7,8 @@ module
 
 public import Strata.Languages.Core.Program
 import Strata.Util.ListUtilsProps
+import all Strata.DL.Lambda.FactoryProps
+import all Strata.DL.Lambda.Factory
 import all Strata.Languages.Core.Program
 
 /-! # Properties of Core programs
@@ -26,6 +28,8 @@ Key results:
   distinct.
 - `Program.factoryBeforeProcedure_eq_core_of_noFunctions` — when no user
   function and no datatype precedes a procedure, its visible factory is `Core.Factory`.
+- `Program.factoryBeforeProcedure_getElem?_of_core`: the factory visible to a procedure
+  resolves every name of `Core.Factory` as `Core.Factory` does, whatever precedes it.
 - `Program.declsBeforeProcedure_eq` — the declarations before the first procedure
   of a name are `declsBeforeProcedure` of that name.
 -/
@@ -339,6 +343,41 @@ theorem Program.factoryBeforeProcedure_eq_core_of_noFunctions
         cases d <;> (try cases ‹TypeDecl›) <;> simp at hd <;>
           simpa [Decl.addToRuntimeFactory, Decl.addFunctionsToFactory] using ih hds
   exact go (p.declsBeforeProcedure procName) h
+
+/-- A declaration keeps the function its factory finds under a name: it only adds functions
+    under new names. -/
+theorem Decl.addToRuntimeFactory_getElem?_of_some {F : Lambda.Factory CoreLParams} {n : String}
+    {fn : Lambda.LFunc CoreLParams} (d : Decl) (h : F[n]? = some fn) :
+    (d.addToRuntimeFactory F)[n]? = some fn := by
+  cases d with
+  | type t md =>
+    cases t with
+    | data block =>
+      simp only [Decl.addToRuntimeFactory]
+      split
+      · simp only [Lambda.Factory.append, ← Array.foldl_toList]
+        exact Lambda.Factory.getElem?_foldl_pushIfNew_of _ h
+      · exact h
+    | _ => exact h
+  | func f md => exact Lambda.Factory.getElem?_foldl_pushIfNew_of [f.toLFunc] h
+  | recFuncBlock fs md =>
+    simp only [Decl.addToRuntimeFactory, Decl.addFunctionsToFactory]
+    rw [← List.foldl_map]
+    exact Lambda.Factory.getElem?_foldl_pushIfNew_of _ h
+  | _ => exact h
+
+/-- **Built-ins stay visible.** The factory visible to a procedure resolves every name of
+    `Core.Factory` as `Core.Factory` does, whatever the program declares before the procedure:
+    declarations only add functions under new names. -/
+theorem Program.factoryBeforeProcedure_getElem?_of_core (p : Program) (procName : String)
+    {n : String} {fn : Lambda.LFunc CoreLParams} (h : Core.Factory[n]? = some fn) :
+    (p.factoryBeforeProcedure procName)[n]? = some fn := by
+  unfold Program.factoryBeforeProcedure
+  generalize p.declsBeforeProcedure procName = ds
+  generalize Core.Factory = F at h
+  induction ds generalizing F with
+  | nil => exact h
+  | cons d rest ih => exact ih _ (Decl.addToRuntimeFactory_getElem?_of_some d h)
 
 /-- **The declarations before `q` are those the verifier gives it.** If `q` is the first
     procedure of `p` with its name, the declarations before it are

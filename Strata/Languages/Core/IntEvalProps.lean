@@ -25,11 +25,13 @@ Key results:
 - `Core.denote_intAdd_of_lookup`, `Core.denote_intSub_of_lookup`,
   `Core.denote_intMul_of_lookup`, and `Core.denote_intGt_of_lookup` lift them
   to the denotation of an operator applied to two integer-valued arguments;
-- `Core.eval_intAdd`, `eval_intSub`, `eval_intMul`, `eval_intLt`, `eval_intLe`,
-  `eval_intGt` and `eval_intGe` (instances of `Core.eval_app2_op`) give Core's evaluation of an
-  operator applied to two integers, with `eval_const`, `eval_intConst`, `eval_boolConst`,
-  `eval_fvar`, `eval_fvar_int` and `eval_fvar_of_wellFormedStore` for its leaves, and
-  `eval_eq_true`/`eval_eq_false`/`eval_eq_tt_iff` for equalities.
+- `Core.intDiv_opInterp_of_lookup` and `Core.intMod_opInterp_of_lookup` identify `Int.Div` and
+  `Int.Mod` with `/` and `%` at a non-zero divisor, where Core defines them;
+- `Core.eval_intAdd`, `eval_intSub`, `eval_intMul`, `eval_intDiv`, `eval_intMod`, `eval_intLt`,
+  `eval_intLe`, `eval_intGt` and `eval_intGe` (instances of `Core.eval_app2_op`) give Core's
+  evaluation of an operator applied to two integers, with `eval_const`, `eval_intConst`,
+  `eval_boolConst`, `eval_fvar`, `eval_fvar_int` and `eval_fvar_of_wellFormedStore` for its
+  leaves, and `eval_eq_true`/`eval_eq_false`/`eval_eq_tt_iff` for equalities.
 - `Core.eval_tt_or_ff_of_ofBool` reads a Boolean result as the factory's `true` or `false`, and
   `Core.valueOfStoredTy_int` lets an integer be assigned to a variable holding one.
 -/
@@ -116,6 +118,48 @@ theorem intMul_opInterp_of_lookup {factory : Lambda.Factory CoreLParams}
     (model.opInterp "Int.Mul"
         (Lambda.LSort.mkArrow .int [.int, .int]) a b : Int) = a * b :=
   intArith_opInterp_of_lookup model "Int.Mul" _ hlookup a b
+
+/-- An integer operation built by `binaryOp` from `op` with the guard `(· != 0)` on its
+    divisor keeps `op` as its interpretation at a non-zero divisor, in any factory that resolves
+    `name` to it. At a zero divisor the concrete evaluator declines, so a model may give any
+    value there. -/
+private theorem intGuarded_opInterp_of_lookup {factory : Lambda.Factory CoreLParams}
+    (model : Lambda.Interp factory) (name : String) (op : Int → Int → Int)
+    (hlookup : factory[name]? = some
+      (Lambda.binaryOp (T := CoreLParams) (InValTy := Int) (OutValTy := Int) ⟨name, ()⟩ op
+        (· != 0)).func)
+    (a b : Int) (hb : b ≠ 0) :
+    (model.opInterp name (Lambda.LSort.mkArrow .int [.int, .int]) a b : Int) = op a b := by
+  have heval : (Lambda.binaryOp (T := CoreLParams) (InValTy := Int) (OutValTy := Int) ⟨name, ()⟩ op
+        (· != 0)).func.concreteEval.bind
+      (fun ce => ce coreLoc (some ((Lambda.binaryOp (T := CoreLParams) (InValTy := Int)
+        (OutValTy := Int) ⟨name, ()⟩ op (· != 0)).func.instTy Lambda.Subst.empty))
+        [.intConst coreLoc a, .intConst coreLoc b]) = some (.intConst coreLoc (op a b)) := by
+    simp [Lambda.binaryOp, hb, Lambda.LambdaLeanType.cevalTy, Lambda.LambdaLeanType.mkConst,
+      Lambda.LExpr.denoteInt]
+  exact (opInterp_of_concreteEval model hlookup rfl heval (fun _ => .int) (fun _ s =>
+      @default _ (@Lambda.SortDenote.instInhabited model.tcInterp model.allInhabited s))
+    (.cons (.const rfl) (.cons (.const rfl) .nil)) (.const rfl)).symm
+
+/-- `Int.Div` is integer division at a non-zero divisor, in any factory that resolves it to
+    Core's built-in division. -/
+theorem intDiv_opInterp_of_lookup {factory : Lambda.Factory CoreLParams}
+    (model : Lambda.Interp factory)
+    (hlookup : factory["Int.Div"]? = some (Lambda.intDivFunc (T := CoreLParams)).func)
+    (a b : Int) (hb : b ≠ 0) :
+    (model.opInterp "Int.Div"
+        (Lambda.LSort.mkArrow .int [.int, .int]) a b : Int) = a / b :=
+  intGuarded_opInterp_of_lookup model "Int.Div" _ hlookup a b hb
+
+/-- `Int.Mod` is the integer remainder at a non-zero divisor, in any factory that resolves it
+    to Core's built-in remainder. -/
+theorem intMod_opInterp_of_lookup {factory : Lambda.Factory CoreLParams}
+    (model : Lambda.Interp factory)
+    (hlookup : factory["Int.Mod"]? = some (Lambda.intModFunc (T := CoreLParams)).func)
+    (a b : Int) (hb : b ≠ 0) :
+    (model.opInterp "Int.Mod"
+        (Lambda.LSort.mkArrow .int [.int, .int]) a b : Int) = a % b :=
+  intGuarded_opInterp_of_lookup model "Int.Mod" _ hlookup a b hb
 
 /-- `Int.Gt` has integer greater-than semantics in any factory that resolves it
     to Core's built-in comparison function. -/
@@ -377,6 +421,30 @@ theorem eval_intMul {f : Expression.Factory} {m m' : ExpressionMetadata}
       some (SemValue.ofInt f.model.tcInterp (a * b)) :=
   eval_app2_op "Int.Mul" (c := .int) rfl rfl rfl hx hy
       (intMul_opInterp_of_lookup f.model hlookup a b)
+
+/-- `Int.Div` applied to two integers, the second non-zero, evaluates to `a / b` when the
+    factory resolves it to Core's built-in function. -/
+theorem eval_intDiv {f : Expression.Factory} {m m' : ExpressionMetadata}
+    (hlookup : f.factory["Int.Div"]? = some (Lambda.intDivFunc (T := CoreLParams)).func)
+    {σ : CoreStore} {x y : Expression.Expr} {a b : Int}
+    (hx : Expression.eval f σ x = some (SemValue.ofInt f.model.tcInterp a))
+    (hy : Expression.eval f σ y = some (SemValue.ofInt f.model.tcInterp b)) (hb : b ≠ 0) :
+    Expression.eval f σ (.app m (.app m' intDivOp x) y) =
+      some (SemValue.ofInt f.model.tcInterp (a / b)) :=
+  eval_app2_op "Int.Div" (c := .int) rfl rfl rfl hx hy
+      (intDiv_opInterp_of_lookup f.model hlookup a b hb)
+
+/-- `Int.Mod` applied to two integers, the second non-zero, evaluates to `a % b` when the
+    factory resolves it to Core's built-in function. -/
+theorem eval_intMod {f : Expression.Factory} {m m' : ExpressionMetadata}
+    (hlookup : f.factory["Int.Mod"]? = some (Lambda.intModFunc (T := CoreLParams)).func)
+    {σ : CoreStore} {x y : Expression.Expr} {a b : Int}
+    (hx : Expression.eval f σ x = some (SemValue.ofInt f.model.tcInterp a))
+    (hy : Expression.eval f σ y = some (SemValue.ofInt f.model.tcInterp b)) (hb : b ≠ 0) :
+    Expression.eval f σ (.app m (.app m' intModOp x) y) =
+      some (SemValue.ofInt f.model.tcInterp (a % b)) :=
+  eval_app2_op "Int.Mod" (c := .int) rfl rfl rfl hx hy
+      (intMod_opInterp_of_lookup f.model hlookup a b hb)
 
 /-- `Int.Lt` applied to two integers evaluates to `decide (a < b)` when the factory resolves
     it to Core's built-in function. -/

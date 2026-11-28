@@ -34,13 +34,15 @@ interpretation interprets it as `!`.
 
 It also provides the factory-membership facts `coreFactory_boolNot`, `coreFactory_intLt`,
 `coreFactory_intLe`, `coreFactory_intGe`, `coreFactory_intGt`, `coreFactory_intAdd`,
-`coreFactory_intSub` and `coreFactory_intMul`, sharing the generic `coreFactory_get?_of_mem`,
+`coreFactory_intSub`, `coreFactory_intMul`, `coreFactory_intDiv`, `coreFactory_intMod`,
+`coreFactory_boolAnd`, `coreFactory_boolOr`
+and `coreFactory_boolImplies`, sharing the generic `coreFactory_get?_of_mem`,
 and the operator expressions `coreIntLeOpExpr` / `coreIntAddOpExpr`.
 
 For operators with a concrete evaluator, `opInterp_of_concreteEval_subst` says that every
 consistent model interprets the operator, at any instance of its type, as its concrete evaluator
-computes (`opInterp_of_concreteEval` at the declared type), and `eval_app2_op` evaluates
-an operator applied to two values to its interpretation at them; `eval_app2_op_of_sort` says
+computes (`opInterp_of_concreteEval` at the declared type), and `eval_app1_op` and
+`eval_app2_op` evaluate an operator applied to one or two values to its interpretation at them; `eval_app2_op_of_sort` says
 that any operator of type `s → s → s` applied to two values of sort `s` evaluates to one.
 -/
 
@@ -417,6 +419,56 @@ theorem coreFactory_intMul :
     simp only [Array.toList_appendList]
     repeat (first | exact List.Mem.head _ | apply List.Mem.tail))
 
+/-- `Int.Div` resolves in the concrete `Core.Factory` to `intDivFunc`. -/
+theorem coreFactory_intDiv :
+    (Core.Factory)["Int.Div"]? = some (Lambda.intDivFunc (T := CoreLParams)).func :=
+  coreFactory_get?_of_mem (wf := Lambda.intDivFunc (T := CoreLParams)) (by
+    refine Array.mem_map.mpr ⟨Lambda.intDivFunc (T := CoreLParams), ?_, rfl⟩
+    rw [Array.mem_def]
+    unfold WFFactoryArray
+    simp only [Array.toList_appendList]
+    repeat (first | exact List.Mem.head _ | apply List.Mem.tail))
+
+/-- `Int.Mod` resolves in the concrete `Core.Factory` to `intModFunc`. -/
+theorem coreFactory_intMod :
+    (Core.Factory)["Int.Mod"]? = some (Lambda.intModFunc (T := CoreLParams)).func :=
+  coreFactory_get?_of_mem (wf := Lambda.intModFunc (T := CoreLParams)) (by
+    refine Array.mem_map.mpr ⟨Lambda.intModFunc (T := CoreLParams), ?_, rfl⟩
+    rw [Array.mem_def]
+    unfold WFFactoryArray
+    simp only [Array.toList_appendList]
+    repeat (first | exact List.Mem.head _ | apply List.Mem.tail))
+
+/-- `Bool.And` resolves in the concrete `Core.Factory` to `boolAndFunc`. -/
+theorem coreFactory_boolAnd :
+    (Core.Factory)["Bool.And"]? = some (Lambda.boolAndFunc (T := CoreLParams)).func :=
+  coreFactory_get?_of_mem (wf := Lambda.boolAndFunc (T := CoreLParams)) (by
+    refine Array.mem_map.mpr ⟨Lambda.boolAndFunc (T := CoreLParams), ?_, rfl⟩
+    rw [Array.mem_def]
+    unfold WFFactoryArray
+    simp only [Array.toList_appendList]
+    repeat (first | exact List.Mem.head _ | apply List.Mem.tail))
+
+/-- `Bool.Or` resolves in the concrete `Core.Factory` to `boolOrFunc`. -/
+theorem coreFactory_boolOr :
+    (Core.Factory)["Bool.Or"]? = some (Lambda.boolOrFunc (T := CoreLParams)).func :=
+  coreFactory_get?_of_mem (wf := Lambda.boolOrFunc (T := CoreLParams)) (by
+    refine Array.mem_map.mpr ⟨Lambda.boolOrFunc (T := CoreLParams), ?_, rfl⟩
+    rw [Array.mem_def]
+    unfold WFFactoryArray
+    simp only [Array.toList_appendList]
+    repeat (first | exact List.Mem.head _ | apply List.Mem.tail))
+
+/-- `Bool.Implies` resolves in the concrete `Core.Factory` to `boolImpliesFunc`. -/
+theorem coreFactory_boolImplies :
+    (Core.Factory)["Bool.Implies"]? = some (Lambda.boolImpliesFunc (T := CoreLParams)).func :=
+  coreFactory_get?_of_mem (wf := Lambda.boolImpliesFunc (T := CoreLParams)) (by
+    refine Array.mem_map.mpr ⟨Lambda.boolImpliesFunc (T := CoreLParams), ?_, rfl⟩
+    rw [Array.mem_def]
+    unfold WFFactoryArray
+    simp only [Array.toList_appendList]
+    repeat (first | exact List.Mem.head _ | apply List.Mem.tail))
+
 /-- The concrete `Int.Le` operator expression on `Core.Factory`.  Exposed as a plain
     `def` (not `intLeFunc.opExpr` inline) so downstream modules — e.g. tests that are not
     `module`s — can name it without re-triggering the `String → Identifier` coercion that
@@ -508,6 +560,23 @@ theorem opInterp_of_concreteEval {factory : Lambda.Factory CoreLParams}
             (Lambda.LMonoTy.substTyVars vt))))
         (Lambda.denoteArgs model.tcInterp model.opInterp fv vt .nil args _ h_args) :=
   opInterp_of_concreteEval_subst model hlookup hname _ heval vt fv h_args h_result
+
+/-- **Unary operator evaluation.**  An operator annotated `a → c`, at ground types, applied to
+    an argument with value `va` evaluates to `w` when the model interprets the operator at `va`
+    as `w`. -/
+theorem eval_app1_op {f : Expression.Factory} (name : String) {m m' : ExpressionMetadata}
+    {a c : LMonoTy} (ha : a.IsGround) (hc : c.IsGround)
+    {σ : CoreStore} {x : Expression.Expr}
+    {va : SortDenote f.model.tcInterp (a.substTyVars f.tyVarVal)}
+    {w : SortDenote f.model.tcInterp (c.substTyVars f.tyVarVal)}
+    (hx : Expression.eval f σ x = some ⟨f.model.tcInterp, a.substTyVars f.tyVarVal, va⟩)
+    (hop : (f.model.opInterp name ((LMonoTy.arrow a c).substTyVars f.tyVarVal)
+      : SortDenote f.model.tcInterp (a.substTyVars f.tyVarVal) →
+        SortDenote f.model.tcInterp (c.substTyVars f.tyVarVal)) va = w) :
+    Expression.eval f σ (.app m (.op m' ⟨name, ()⟩ (some (LMonoTy.arrow a c))) x) =
+      some ⟨f.model.tcInterp, c.substTyVars f.tyVarVal, w⟩ := by
+  rw [← hop]
+  exact LExpr.denoteEval_app1_op_val (T := CoreLParams) ha hc hx
 
 /-- **Binary operator evaluation.**  An operator annotated `a → b → c`, at ground types,
     applied to arguments with values `va` and `vb` evaluates to `w` when the model interprets
