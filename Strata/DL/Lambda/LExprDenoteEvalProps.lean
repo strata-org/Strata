@@ -41,7 +41,8 @@ definitions it uses.
 - `LExpr.denoteEval_of_isValue` — a well-typed value (`isValue`) denotes one semantic
   value in every store
 - `LExpr.denoteEval_ite_iff`, `LExpr.denoteEval_app_op_bool_iff`, `LExpr.denoteEval_app2_op`,
-  `LExpr.denoteEval_app2_op_int_inv` — conditionals and operator applications
+  `LExpr.denoteEval_app2_op_int_inv`, `LExpr.denoteEval_app1_op_val` — conditionals and
+  operator applications
 - `LExpr.denoteEval_const`, `LExpr.denoteEval_eq_true`, `LExpr.denoteEval_eq_false` —
   literals and equality
 - `LExpr.denoteEval_replaceMetadata1`, `LExpr.denoteEvalResult_replaceMetadata1`,
@@ -1770,6 +1771,41 @@ theorem LExpr.denoteEval_app2_op_val {M : ModeledFactory T} {σ : ValStore T}
   show LExpr.denote M.model.tcInterp M.model.opInterp (σ.fvarVal M.model.tcInterp) M.tyVarVal
     .nil _ c h' = _
   rw [denote_app .nil happ' hτy h', denote_app .nil hop' hτx happ', denote_op, hax, hby]
+
+/-- **Unary operator law.**  An operator annotated `a → c`, at ground types, applied to an
+argument with a value of sort `a` evaluates to the operator's interpretation at that value. -/
+theorem LExpr.denoteEval_app1_op_val {M : ModeledFactory T} {σ : ValStore T}
+    {m m' : T.Metadata} {o : Identifier T.IDMeta} {x : LExpr T.mono} {a c : LMonoTy}
+    (ha : a.IsGround) (hc : c.IsGround)
+    {va : SortDenote M.model.tcInterp (a.substTyVars M.tyVarVal)}
+    (hx : x.denoteEval M σ = some ⟨M.model.tcInterp, a.substTyVars M.tyVarVal, va⟩) :
+    (LExpr.app m (.op m' o (some (LMonoTy.arrow a c))) x).denoteEval M σ =
+      some ⟨M.model.tcInterp, c.substTyVars M.tyVarVal,
+        (M.model.opInterp o.name ((LMonoTy.arrow a c).substTyVars M.tyVarVal)
+          : SortDenote M.model.tcInterp (a.substTyVars M.tyVarVal) →
+            SortDenote M.model.tcInterp (c.substTyVars M.tyVarVal)) va⟩ := by
+  letI := M.model.allInhabited
+  obtain ⟨hdx, τx, hτx, hgx, hvx⟩ := LExpr.denoteEval_eq_some_iff.mp hx
+  obtain rfl : τx = a := hgx.eq_of_substTyVars_eq ha (congrArg SemValue.sort hvx).symm
+  have hax : LExpr.denote M.model.tcInterp M.model.opInterp (σ.fvarVal M.model.tcInterp)
+      M.tyVarVal .nil (x.annotateFvars σ.ann) τx hτx = va := by
+    unfold LExpr.denoteEvalResult at hvx
+    exact (eq_of_heq (SemValue.mk.inj hvx).2.2).symm
+  have hop' : LExpr.HasTypeA [] (LExpr.op m' o (some (LMonoTy.arrow τx c)) : LExpr T.mono)
+      (.arrow τx c) := .op
+  have h' : LExpr.HasTypeA [] (LExpr.app m (.op m' o (some (LMonoTy.arrow τx c)))
+      (x.annotateFvars σ.ann)) c := .app hop' hτx
+  have hd : σ.Defines M.model.tcInterp
+      (LExpr.app m (.op m' o (some (LMonoTy.arrow τx c))) x) := by
+    intro z hz
+    simp only [getVars_eq_freeVars_idents, LExpr.freeVars, List.nil_append] at hz
+    exact hdx z (by rwa [getVars_eq_freeVars_idents])
+  rw [LExpr.denoteEval_of_hasTypeA hd h' hc]
+  unfold LExpr.denoteEvalResult
+  congr 2
+  show LExpr.denote M.model.tcInterp M.model.opInterp (σ.fvarVal M.model.tcInterp) M.tyVarVal
+    .nil _ c h' = _
+  rw [denote_app .nil hop' hτx h', denote_op, hax]
 
 /-- **Binary integer operator law.**  An operator annotated `int → int → c`, at a ground
 result type `c`, applied to two integer-valued arguments evaluates to the operator's
