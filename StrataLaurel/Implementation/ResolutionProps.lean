@@ -455,6 +455,15 @@ private theorem postM_withInferScope {α : Type} {a : ResolveM α} {P : α → P
     postM_bind_any fun _ =>
     postM_pure hres
 
+private theorem withStackJoins_preservesPostM {α : Type} {a : ResolveM α} {P : α → Prop}
+    (h : PostM a P) : PostM (withStackJoins a) P := by
+  unfold withStackJoins
+  refine postM_bind_any fun _ => ?_
+  refine postM_bind_any fun _ => ?_
+  refine postM_bind h fun r hr => ?_
+  refine postM_bind_any fun _ => ?_
+  exact postM_ite (postM_pure hr) (postM_bind_any fun _ => h)
+
 /-- withScope preserves value postconditions. -/
 theorem postM_withScope {α : Type} {a : ResolveM α} {P : α → Prop}
     (h : PostM a P) : PostM (withScope a) P := by
@@ -562,6 +571,30 @@ theorem clean_var_field (target : StmtExprMd) (f : Identifier)
   rw [clean_iff]
   exact ⟨by simp [unannotatedDeclares], by simpa [childCollect, Clean] using h⟩
 
+theorem clean_call_of_clean_arg (callee : Identifier) (e : StmtExprMd) (tys : List HighTypeMd)
+    (src : Strata.FileRange) (h : Clean e) :
+    Clean { val := .Call none callee [e] tys, source := src } := by
+  rw [clean_iff]
+  exact ⟨by simp [unannotatedDeclares], by simpa [childCollect, Clean] using h⟩
+
+theorem frameCastEntry_clean (e : StmtExprMd) (ty : HighTypeMd) (h : Clean e) :
+    PostM (Strata.Laurel.frameCastEntry e ty) (fun r => ∀ x ∈ r, Clean x) := by
+  unfold Strata.Laurel.frameCastEntry
+  refine postM_bind_any fun _ => ?_
+  split
+  · exact postM_pure (by simp)
+  · split
+    · exact postM_pure (by
+        intro x hx
+        simp only [Option.mem_def, Option.some.injEq] at hx
+        subst hx
+        exact h)
+    · exact postM_pure (by
+        intro x hx
+        simp only [Option.mem_def, Option.some.injEq] at hx
+        subst hx
+        exact clean_call_of_clean_arg _ _ _ _ h)
+
 include masterSynth in
 /-- resolveModifiesEntry yields Clean (when it yields anything). -/
 theorem resolveModifiesEntry_clean (e : StmtExprMd) :
@@ -596,7 +629,14 @@ theorem resolveModifiesEntry_clean (e : StmtExprMd) :
         subst hx
         exact htp)
     · simp only [hheap]
-      exact postM_bind_any fun _ => postM_pure (by simp)
+      refine postM_bind (frameCastEntry_clean _ _ htp) fun r hr => ?_
+      split
+      · exact postM_pure (by
+          intro x hx
+          simp only [Option.mem_def, Option.some.injEq] at hx
+          subst hx
+          exact hr _ rfl)
+      · exact postM_bind_any fun _ => postM_pure (by simp)
 
 /-- Group cleanliness: every target and the guard (when present) are Clean. -/
 def CleanModifiesGroup (g : ModifiesGroup) : Prop :=
@@ -782,7 +822,7 @@ theorem resolveProcedure_clean (proc : Procedure) :
     refine postM_bind_any fun savedAnswer => ?_
     refine postM_bind_any fun savedResume => ?_
     refine postM_bind_any fun _ => ?_
-    refine postM_bind (resolveBody_clean masterSynth masterCheck _) fun body' hbody => ?_
+    refine postM_bind (withStackJoins_preservesPostM (resolveBody_clean masterSynth masterCheck _)) fun body' hbody => ?_
     refine postM_bind_any fun _ => ?_
     refine postM_bind (postM_option_mapM _ _ (fun e => resolveStmtExpr_clean masterSynth e))
       fun invokeOn' hinv => ?_
@@ -1032,7 +1072,7 @@ theorem resolveInstanceProcedure_clean (typeName : Identifier) (proc : Procedure
     fun dec' hdec => ?_
   refine postM_bind_any fun savedAnswer => ?_
   refine postM_bind_any fun _ => ?_
-  refine postM_bind (resolveBody_clean masterSynth masterCheck _) fun body' hbody => ?_
+  refine postM_bind (withStackJoins_preservesPostM (resolveBody_clean masterSynth masterCheck _)) fun body' hbody => ?_
   refine postM_bind_any fun _ => ?_
   refine postM_bind (postM_option_mapM _ _ (fun e => resolveStmtExpr_clean masterSynth e))
     fun invokeOn' hinv => ?_
@@ -1196,7 +1236,7 @@ theorem validate_nil_of_cleanProgram (program : LaurelProgram)
     exact hfields f hf e (Option.mem_toList.mp (by simpa using he))
 
 include masterSynth masterCheck in
-theorem phase1_clean (program : LaurelProgram) :
+theorem phase1_clean (program : LaurelProgram) (realizeCasts : Bool) :
     PostM (do
       preRegisterTopLevel program
       let types' ← program.types.mapM resolveTypeDefinition
@@ -1205,7 +1245,8 @@ theorem phase1_clean (program : LaurelProgram) :
       let heapFields' ← program.heapFields.mapM resolveHeapField
       let staticFunctions' ← program.staticFunctions.mapM resolveProcedure
       let staticProcs' ← program.staticProcedures.mapM resolveProcedure
-      return { staticProcedures := staticProcs', staticFunctions := staticFunctions',
+      return { staticProcedures := if realizeCasts then staticProcs'.map Procedure.clearCastMarkers else staticProcs',
+               staticFunctions := staticFunctions',
                staticFields := staticFields', heapFields := heapFields', types := types',
                constants := constants' : LaurelProgram })
       CleanProgram := by
@@ -1221,7 +1262,11 @@ theorem phase1_clean (program : LaurelProgram) :
       resolveProcedure_clean masterSynth masterCheck p)) fun staticFunctions' hfuncs => ?_
   refine postM_bind (postM_mapM _ _ (fun p _ =>
       resolveProcedure_clean masterSynth masterCheck p)) fun staticProcs' hprocs => ?_
-  exact postM_pure ⟨hfuncs, hprocs, htypes, hconsts, hfields⟩
+  exact postM_pure ⟨hfuncs, fun proc hp => by
+    cases realizeCasts
+    · exact hprocs proc hp
+    · obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hp
+      exact hprocs q hq, htypes, hconsts, hfields⟩
 
 include masterSynth masterCheck in
 /-- **Resolution establishes the fully-annotated invariant**, conditional on
@@ -1240,7 +1285,7 @@ public theorem resolve_fullyAnnotated' (p : LaurelProgram)
   show CleanProgram (resolve p existingModel realizeCoercion toBool).program
   unfold resolve
   simp only []
-  exact phase1_clean masterSynth masterCheck _ _
+  exact phase1_clean masterSynth masterCheck _ _ _
 
 
 end Plumbing

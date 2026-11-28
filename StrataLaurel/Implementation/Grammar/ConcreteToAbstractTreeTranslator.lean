@@ -814,8 +814,8 @@ def parseProcedure (arg : Arg) : TransM Procedure := do
     | TransM.error s!"parseProcedure expects operation"
 
   -- Transitional shim: normalize legacy `procedure` shapes to the current
-  -- 11-argument form (`name typeParams parameters returnType returnParameters
-  -- throws requires invokeOn entry opaqueSpec body`). Older producers emitted a
+  -- 13-argument form (`name typeParams parameters returnType returnParameters
+  -- throws requires invokeOn entry implicit frame opaqueSpec body`). Older producers emitted a
   -- shape lacking the newer args — `typeParams` (polymorphism), `throws`
   -- (exceptions), and `entry` — in various combinations: an absent slot is
   -- spliced for each missing arg so a post-CR binary can still consume Ion
@@ -828,25 +828,34 @@ def parseProcedure (arg : Arg) : TransM Procedure := do
     | q`Laurel.procedure, #[nameArg, paramArg, returnTypeArg, returnParamsArg,
         requiresArg, invokeOnArg, opaqueSpecArg, bodyArg] =>
       pure #[nameArg, absentOpt, paramArg, returnTypeArg, returnParamsArg,
-             absentOpt, requiresArg, invokeOnArg, absentOpt,
+             absentOpt, requiresArg, invokeOnArg, absentOpt, absentOpt,
              opaqueSpecArg, bodyArg]
     -- 9-arg: pre-typeParams, pre-throws, has entry.
     | q`Laurel.procedure, #[nameArg, paramArg, returnTypeArg, returnParamsArg,
         requiresArg, invokeOnArg, entryArg, opaqueSpecArg, bodyArg] =>
       pure #[nameArg, absentOpt, paramArg, returnTypeArg, returnParamsArg,
-             absentOpt, requiresArg, invokeOnArg, entryArg,
+             absentOpt, requiresArg, invokeOnArg, entryArg, absentOpt,
              opaqueSpecArg, bodyArg]
     -- 10-arg: pre-typeParams, has throws + entry (the pre-polymorphism shape).
     | q`Laurel.procedure, #[nameArg, paramArg, returnTypeArg, returnParamsArg,
         throwsArg, requiresArg, invokeOnArg, entryArg, opaqueSpecArg, bodyArg] =>
       pure #[nameArg, absentOpt, paramArg, returnTypeArg, returnParamsArg,
-             throwsArg, requiresArg, invokeOnArg, entryArg,
+             throwsArg, requiresArg, invokeOnArg, entryArg, absentOpt,
+             opaqueSpecArg, bodyArg]
+    | q`Laurel.procedure, #[nameArg, typeParamsArg, paramArg, returnTypeArg, returnParamsArg,
+        throwsArg, requiresArg, invokeOnArg, entryArg, opaqueSpecArg, bodyArg] =>
+      pure #[nameArg, typeParamsArg, paramArg, returnTypeArg, returnParamsArg,
+             throwsArg, requiresArg, invokeOnArg, entryArg, absentOpt,
              opaqueSpecArg, bodyArg]
     | _, other => pure other
+  let args : Array Arg :=
+    if op.name == q`Laurel.procedure && args.size == 12 then
+      (args.extract 0 10).push absentOpt ++ args.extract 10 12
+    else args
 
   match op.name, args with
   | q`Laurel.procedure, #[nameArg, typeParamsArg, paramArg, returnTypeArg, returnParamsArg,
-      throwsArg, requiresArg, invokeOnArg, entryArg, opaqueSpecArg, bodyArg] =>
+      throwsArg, requiresArg, invokeOnArg, entryArg, implicitArg, frameArg, opaqueSpecArg, bodyArg] =>
 
     let name ← translateIdent nameArg
     let typeArgs ← translateTypeParams typeParamsArg
@@ -902,6 +911,16 @@ def parseProcedure (arg : Arg) : TransM Procedure := do
     -- An `entry`-marked procedure is invoked with no arguments by `runEntry`,
     -- so it cannot take inputs. Reject the combination here rather than
     -- silently running with unbound inputs at interpretation time.
+    let isImplicit ← match implicitArg with
+      | .option _ (some (.op implicitOp)) => match implicitOp.name, implicitOp.args with
+        | q`Laurel.implicitClause, #[] => pure true
+        | _, _ => TransM.error s!"Expected implicitClause operation, got {repr implicitOp.name}"
+      | _ => pure false
+    let isFrame ← match frameArg with
+      | .option _ (some (.op frameOp)) => match frameOp.name, frameOp.args with
+        | q`Laurel.frameClause, #[] => pure true
+        | _, _ => TransM.error s!"Expected frameClause operation, got {repr frameOp.name}"
+      | _ => pure false
     if isInterpretEntry && !parameters.isEmpty then
       TransM.error s!"entry procedure '{name.text}' cannot take inputs: \
                       an entry point is invoked with no arguments"
@@ -1021,6 +1040,8 @@ def parseProcedure (arg : Arg) : TransM Procedure := do
       decreases := none
       invokeOn := invokeOn
       isInterpretEntry := isInterpretEntry
+      isImplicit := isImplicit
+      isFrame := isFrame
       throwsType := throwsType
       throwsBinding := throwsBinding
       throwsInferred := throwsInferred
@@ -1030,7 +1051,7 @@ def parseProcedure (arg : Arg) : TransM Procedure := do
       body := procBody
     }
   | q`Laurel.procedure, args =>
-    TransM.error s!"parseProcedure expects 11 arguments (or a legacy 8/9/10-arg shape the \
+    TransM.error s!"parseProcedure expects 13 arguments (or a legacy 8/9/10/11/12-arg shape the \
       shim upgrades), got {args.size} (stale-arity op — regenerate the producer's Laurel \
       bindings, e.g. `strata javaGen Laurel`)"
   | _, _ =>

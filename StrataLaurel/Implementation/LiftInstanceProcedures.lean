@@ -254,15 +254,19 @@ def virtualDispatchFamilies (model : SemanticModel) (program : LaurelProgram)
     (it treats generic args invariantly and can only reject-a-sound-case, never admit-an-unsound
     one), so structural admission here never lets an unsound narrowing verify downstream.
 
+    A datatype instantiation is a subtype when its covariant arguments are
+    (`NullableRef<Dog>` for `NullableRef<Animal>`); no implicit cast is applied.
+
     SHARED by BOTH passes: `validateDispatchFamilies` (below) rejects an incompatible output with
     a clean `.userError`, and `CheckOverrideRefinement.refinementCheckers` skips synthesizing a
     post-checker for such an override (which would otherwise re-express the parent post over the
     wrong-typed output and fold into an internal `.strataBug` before this reject fires). One
     predicate keeps the skip and the reject in lockstep. -/
-def outputSignatureCompatible (model : SemanticModel) (baseM ovM : Procedure) : Bool :=
+def outputSignatureCompatible (ctx : TypeLattice) (model : SemanticModel) (baseM ovM : Procedure) : Bool :=
   baseM.outputs.length == ovM.outputs.length &&
     (baseM.outputs.zip ovM.outputs).all (fun (parentOut, childOut) =>
       typeMatchesModuloTVars parentOut.type childOut.type ||
+        isSubtype ctx childOut.type parentOut.type ||
         (match parentOut.type.val with
          | .UserDefined pn =>
            match highBaseName? childOut.type.val with
@@ -311,7 +315,7 @@ def renamesBaseTypeParams (baseTypeArgs overriderTypeArgs : List Identifier) : B
     Consumes `virtualDispatchFamilies` — the single enumerator shared by the
     Liskov checker and the dispatcher generator, so the three passes range over
     exactly the same families by construction. -/
-private def validateDispatchFamilies (model : SemanticModel) (families : List DispatchFamily)
+private def validateDispatchFamilies (ctx : TypeLattice) (model : SemanticModel) (families : List DispatchFamily)
     : List Message :=
   families.foldl (init := []) fun acc fam =>
         let ct := fam.owner; let baseM := fam.method
@@ -344,7 +348,7 @@ private def validateDispatchFamilies (model : SemanticModel) (families : List Di
             -- a covariant return (subtype of the base's) is sound and admitted. See
             -- `outputSignatureCompatible`.
             let d4 : List Message :=
-              guardErr (! outputSignatureCompatible model baseM ovM)
+              guardErr (! outputSignatureCompatible ctx model baseM ovM)
                   s!"override '{ov.name.text}.{ovM.name.text}' has an output signature incompatible with the method it overrides on '{ct.name.text}': each output must have the same type as, or a subtype of, the overridden method's corresponding output ({ovM.outputs.length} output(s) vs {baseM.outputs.length})."
             -- EXTERNAL-IN-FAMILY: an `external` (body-less) endpoint has no `$impl` for the
             -- dispatcher to call; reject either-endpoint-external (see docstring).
@@ -490,7 +494,7 @@ def liftInstanceProcedures (model : SemanticModel) (program : LaurelProgram) : L
   -- Step 0: reject dispatch families the generator cannot lower (widening throws,
   -- renamed type params, arity mismatch) with a CLEAN diagnostic — the pipeline halts
   -- here rather than letting the synthetic if-chain hard-fail downstream as a StrataBug.
-  let familyDiags := validateDispatchFamilies model families
+  let familyDiags := validateDispatchFamilies (TypeLattice.ofTypes program.types) model families
   if familyDiags.any (·.kind != .warning) then (program, familyDiags) else
   -- Step 1: collect lifted clones. The lifted proc's type params are the composite's
   -- followed by the method's own: `get(self: Box<T>)` on `composite Box<T>` becomes

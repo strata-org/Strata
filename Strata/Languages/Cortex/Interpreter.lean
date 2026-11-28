@@ -17,6 +17,7 @@ public import Strata.Languages.Cortex.LowerHeapExec
 public import Strata.Languages.Cortex.LowerGlobals
 public import Strata.Languages.Cortex.LowerCTE
 public import Strata.Languages.Core.Factory
+public import Strata.Languages.Cortex.FloatFactory
 public import Strata.Languages.Core.Program
 public import Strata.Languages.Core.Interpreter
 public import Strata.Languages.Core.StatementSemantics
@@ -120,10 +121,10 @@ variable {m : Type → Type} [Monad m] [InterpEffects CortexExpression m]
 @[expose] def stepBase (fuel : Nat) (f : LFactory) (σ : Store) (c : Cmd Core.Expression) : m Store :=
   stepBaseCmdStore (P := CortexExpression) fuel f σ c
 
-def datatypeDefault (prog : UnorderedProgram) (n : String) : Option Expr :=
-  if n == LowerComposites.compositeTy then (LowerHeapExec.defaultOf prog (.forAll [] (.tcons n []))).toOption else
+def datatypeDefault (prog : UnorderedProgram) (n : String) (args : List LMonoTy := []) : Option Expr :=
+  if n == LowerComposites.compositeTy && args.isEmpty then (LowerHeapExec.defaultOf prog (.forAll [] (.tcons n []))).toOption else
   prog.datatypes.find? (·.name == n) >>= fun d =>
-    if d.typeArgs.isEmpty then
+    if d.typeArgs.length == args.length then
       (d.constrs.find? (·.args.isEmpty)).map fun c => (constrFunc (T := Core.CoreLParams) c d).opExpr
     else none
 
@@ -137,6 +138,7 @@ def defaultValue (prog : UnorderedProgram) (_f : LFactory) (ty : Core.Expression
   | t@(.forAll [] (.tcons n [])) =>
     if isRefTy prog t then some (.const Core.valueLoc (.intConst (-1)) : Core.Expression.Expr)
     else datatypeDefault prog n
+  | .forAll [] (.tcons n args) => datatypeDefault prog n args
   | _ => none
 
 @[expose] def extCmd (fuel : Nat) (f : LFactory) (σ : Store) : IRCmd → m Store
@@ -306,8 +308,11 @@ structure RunResult where
   final : Config
   trace : Trace
 
+/-- The functions an expression of `prog` may call: Core's, the floating-point ones, those of
+the program's datatypes and the program's own. -/
 def programFactory (prog : UnorderedProgram) : Except Strata.Message LFactory := do
-  let F ← prog.datatypes.foldlM (init := Core.Factory) fun F d => do
+  let F ← Lambda.Factory.addFactory Core.Factory FloatFactory.factory
+  let F ← prog.datatypes.foldlM (init := F) fun F d => do
     let bf ← Lambda.genBlockFactory (T := Core.CoreLParams) [d]
     Lambda.Factory.addFactory F bf
   Lambda.Factory.addFactory F (Lambda.Factory.ofArray prog.functions.toArray)

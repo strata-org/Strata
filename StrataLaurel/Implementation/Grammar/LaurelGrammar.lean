@@ -40,6 +40,8 @@ module
 -- Rebuild trigger token: inferred throws clauses
 -- Rebuild trigger token: goto and block invariants
 -- Rebuild trigger token: native arrays (Array<T>, new Array<T>(n), a[i]) 7
+-- Rebuild trigger token: implicit procedures
+-- Rebuild trigger token: frame procedures
 public import Strata.Init
 public import StrataDDM.AST
 import StrataDDM.BuiltinDialects.Init

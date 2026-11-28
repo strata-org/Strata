@@ -110,6 +110,24 @@ datatype $MapEntry<V> {
 
 type Map<K, V> = TotalMap K ($MapEntry<V>)
 
+datatype NullableRef<T> {
+  Null(),
+  NonNull(value: T)
+}
+
+procedure $nullableRefOf<T>(x: T) : NullableRef<T>
+  implicit
+  return NonNull(x);
+
+procedure $nullableRefValue<T>(n: NullableRef<T>) : T
+  requires NullableRef..isNonNull(n) summary "the reference is not null"
+  implicit
+  return NullableRef..value!(n);
+
+procedure $nullableRefFrame<T>(n: NullableRef<T>) : Set<T>
+  frame
+  return if NullableRef..isNonNull(n) then setInsert(setEmpty(), NullableRef..value!(n)) else setEmpty();
+
 // The only operation with no map argument, so nothing here binds `K` or `V`. A body would need
 // to name `mapConst`'s key type, which Laurel cannot do at a call, so this one is lowered in
 // `LaurelToCoreSchemaPass` from the declared type at the use site

@@ -428,6 +428,8 @@ private def procedureToOp (proc : Procedure) : StrataDDM.Operation :=
   let invokeOnArg := optionArg (proc.invokeOn.map fun e =>
     laurelOp "invokeOnClause" #[stmtExprToArg e])
   let entryArg := optionArg (if proc.isInterpretEntry then some (laurelOp "entryClause" #[]) else none)
+  let implicitArg := optionArg (if proc.isImplicit then some (laurelOp "implicitClause" #[]) else none)
+  let frameArg := optionArg (if proc.isFrame then some (laurelOp "frameClause" #[]) else none)
   -- The exceptional behavior cases live inside `opaqueSpec` alongside
   -- `ensures`/`modifies`, so they are emitted with it. (A `.Transparent` body has
   -- no spec block to carry them; such a procedure cannot be written in the
@@ -472,6 +474,8 @@ private def procedureToOp (proc : Procedure) : StrataDDM.Operation :=
       seqArg requiresArgs,
       invokeOnArg,
       entryArg,
+      implicitArg,
+      frameArg,
       opaqueSpecArg,
       bodyArg
     ] }

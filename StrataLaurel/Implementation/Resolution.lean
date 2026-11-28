@@ -193,9 +193,13 @@ structure ResolveState where
       `program.types` at the start of `resolve`. -/
   typeLattice : TypeLattice := {}
   usesStack : Bool := false
+  /-- Whether the implicit casts a coercion needs are inserted. A program that touches the stack
+      is checked with them but left as it is, markers included: the resolution after
+      `EliminateStack` inserts them, once every stack value is a local a cast can wrap. -/
+  realizeCasts : Bool := true
   stackTypes : List HighTypeMd := []
   stackWindow : Option (List HighTypeMd) := none
-  exitStacks : List (String × List HighTypeMd) := []
+  exitStacks : List (String × List HighTypeMd × List (List Nat)) := []
   /-- How many blocks of the procedure body being resolved carry each label: a
       jump to a block that does not enclose it names it by a label unique here. -/
   procLabels : Std.HashMap String Nat := {}
@@ -207,7 +211,7 @@ structure ResolveState where
   /-- The types such locals took at their first assignment, by id. -/
   inferredDecls : Std.HashMap Nat HighTypeMd := {}
   /-- The stacks carried by non-enclosing jumps to a block's start not yet reached. -/
-  entryStacks : List (String × List HighTypeMd) := []
+  entryStacks : List (String × List HighTypeMd × List (List Nat)) := []
   /-- The stack typed at a jump target that has been passed, keyed by the label and
       whether it is the block's start, against which a later jump is checked. -/
   labelStacks : List ((String × Bool) × List HighTypeMd) := []
@@ -225,6 +229,11 @@ structure ResolveState where
   inferMentions : Std.HashMap String (List String) := {}
   /-- The calls whose type arguments were still open when they finished, latest first. -/
   pendingCannotInfer : List PendingCannotInfer := []
+  stackOrigins : List (List Nat) := []
+  windowOrigins : Option (List (List Nat)) := none
+  pushCount : Nat := 0
+  pushJoins : Std.HashMap Nat HighTypeMd := {}
+  pushHints : Std.HashMap Nat HighTypeMd := {}
   /-- Overload table for static procedures: each name maps to the list of
       registered overloads as `(uniqueId, procedure)` pairs, in declaration
       order. A name with more than one entry is overloaded. The flat `scope`
@@ -292,14 +301,28 @@ def defineNameCheckDup (iden : Identifier) (node : ResolvedNode) (overrideResolu
     defineName iden node overrideResolutionName
 
 
+private def calleeEntry (name : Identifier) : ResolveM (Option ScopeEntry) := do
+  let s ← get
+  let callable : ResolvedNode → Bool := fun node =>
+    #[ResolvedNodeKind.staticProcedure, .datatypeConstructor, .datatypeDestructor].contains node.kind
+  match s.scope.get? name.text with
+  | some (defId, node) =>
+    if callable node then return some (defId, node)
+    let shadowing := #[ResolvedNodeKind.var, .parameter, .quantifierVar].contains node.kind
+    if let some uid := name.uniqueId then
+      if shadowing then
+        if let some recorded := s.idToNode.get? uid then
+          if callable recorded then return some (uid, recorded)
+    return some (defId, node)
+  | none => return none
+
 /-- Resolve a reference: look up the name in scope and assign the definition's ID.
     Returns the identifier with its ID filled in.
     When `expected` is provided, emits a diagnostic if the resolved node's kind is not
     in the list of expected kinds. -/
 def resolveRef (name : Identifier) (source : FileRange := name.source)
     (expected : Array ResolvedNodeKind := #[]) : ResolveM Identifier := do
-  let s ← get
-  match s.scope.get? name.text with
+  match ← calleeEntry name with
   | some (defId, node) =>
     let name' := { name with uniqueId := some defId }
     if expected.size > 0 && node.kind != .unresolved && !expected.contains node.kind then
@@ -333,6 +356,28 @@ private def fieldTypeInScope (typeName : String) (fieldName : Identifier) : Reso
     | none => pure none
   | none => pure none
 
+private def compositeCastsFrom (ctx : TypeLattice) (ty : HighTypeMd) :
+    List (String × List HighTypeMd × HighTypeMd) :=
+  (ctx.implicitCastsFrom ty).filter fun (_, _, out) =>
+    match highBaseName? (ctx.unfold out).val with
+    | some n => ctx.parentExprMap.contains n.text
+    | none => false
+
+private def castReceiverName? (ctx : TypeLattice) (t : HighType) : Option String :=
+  (compositeCastsFrom ctx { val := t, source := .unknown }).head?.bind fun (_, _, out) =>
+    (highBaseName? (ctx.unfold out).val).map (·.text)
+
+private def receiverTypeName? (ctx : TypeLattice) (t : HighType) : Option String :=
+  let base := match t with
+    | .UserDefined typRef => some typRef.text
+    | .Applied b _ => match b.val with
+      | .UserDefined typRef => some typRef.text
+      | _ => none
+    | _ => none
+  match base with
+  | some n => if ctx.parentExprMap.contains n then some n else (castReceiverName? ctx t).orElse fun _ => some n
+  | none => none
+
 /-- UserDefined type name of a resolved target: a local directly, or a chained field
     access (`a#b#c`) by recursing on the inner target then `fieldTypeInScope`.
     Self-recursive on `.Var (.Field inner _)`; the `decreasing_by` proof below holds
@@ -343,26 +388,15 @@ private def targetTypeName (target : StmtExprMd) : ResolveM (Option String) := d
   | .Var (.Local ref) =>
     match s.scope.get? ref.text with
     | some (_, node) =>
-      match node.getType.val with
-      | .UserDefined typRef => pure (some typRef.text)
       -- Peel `Box<int>` to its base: field names don't depend on type args, so a
       -- generic instantiation resolves fields against the generic composite `Box`'s
       -- scope. Needed here because field resolution runs at the initial resolve, before
       -- monomorphization turns this into a plain `.UserDefined Box$int`.
-      | .Applied base _ =>
-        match base.val with
-        | .UserDefined typRef => pure (some typRef.text)
-        | _ => pure none
-      | _ => pure none
+      pure (receiverTypeName? s.typeLattice node.getType.val)
     | none => pure none
-  | .Var (.Stack (some ty)) =>
-    match ty.val with
-    | .UserDefined typRef => pure (some typRef.text)
-    | .Applied base _ =>
-      match base.val with
-      | .UserDefined typRef => pure (some typRef.text)
-      | _ => pure none
-    | _ => pure none
+  | .Var (.Stack (some ty)) => pure (receiverTypeName? s.typeLattice ty.val)
+  | .Call none callee [arg] _ =>
+    if s.typeLattice.implicitCasts.any (·.name == callee.text) then targetTypeName arg else pure none
   | .Var (.Field inner fieldName) => do
     let innerIsRef := match inner.val with
       | .Call none callee [_] _ => callee.text == compositeRefAccessor
@@ -378,10 +412,7 @@ private def targetTypeName (target : StmtExprMd) : ResolveM (Option String) := d
     | some innerTy =>
       match (← fieldTypeInScope innerTy fieldName) with
       | some (.UserDefined typRef) => pure (some typRef.text)
-      | some (.Applied base _) =>
-        match base.val with
-        | .UserDefined typRef => pure (some typRef.text)
-        | _ => pure none
+      | some t => pure ((receiverTypeName? s.typeLattice t).orElse fun _ => castReceiverName? s.typeLattice t)
       | _ => pure none
   | .AsType _ castTy =>
     -- A cast `(e as T)` fixes the static type to `T` for a following field
@@ -394,10 +425,13 @@ private def targetTypeName (target : StmtExprMd) : ResolveM (Option String) := d
   | _ => pure none
   termination_by sizeOf target
   decreasing_by
-    have := AstNode.sizeOf_val_lt target
-    have : sizeOf target.val = sizeOf (StmtExpr.Var (Variable.Field inner fieldName)) := congrArg sizeOf _h
-    simp at this
-    omega
+    all_goals have hlt := AstNode.sizeOf_val_lt target
+    · have heq : sizeOf target.val = sizeOf (StmtExpr.Call none callee [arg] _) := congrArg sizeOf _h
+      simp at heq
+      omega
+    · have heq : sizeOf target.val = sizeOf (StmtExpr.Var (Variable.Field inner fieldName)) := congrArg sizeOf _h
+      simp at heq
+      omega
 
 /-- The name and kind of the procedure or type `target` names, if it names one. Such a name is
     `.Unknown` by itself (`ResolvedNode.getType`), never because of an earlier error. -/
@@ -972,6 +1006,88 @@ private partial def stampSynthesizedCallIds (scope : Scope) (e : StmtExprMd) : S
     { e with val := .Call none callee' args' tyArgs }
   | _ => e
 
+private def reportAmbiguousCast (source : FileRange) (sub : HighTypeMd) (sup? : Option HighTypeMd)
+    (names : List String) : ResolveM Unit := do
+  let quoted := names.map fun n => s!"'{n}'"
+  let verb := if names.length > 2 then "all apply" else "both apply"
+  let target := match sup? with
+    | some sup => s!" to '{formatType sup}'"
+    | none => ""
+  let diag := diagnosticFromSource source
+    s!"ambiguous implicit conversion from '{formatType sub}'{target}: {String.intercalate " and " quoted} {verb}"
+  modify fun s => { s with errors := s.errors.push diag }
+
+private def implicitCastCall (proc : String) (tyArgs : List HighTypeMd) (e : StmtExprMd) :
+    ResolveM StmtExprMd := do
+  let s ← get
+  if !s.realizeCasts then return e
+  let callee : Identifier := match (s.overloads.getD proc []).find? (·.2.isImplicit) with
+    | some (uid, _) => { text := proc, uniqueId := some uid }
+    | none => { text := proc }
+  pure (stampSynthesizedCallIds s.scope { val := .Call none callee [e] tyArgs, source := e.source })
+
+private def receiverCasts (ctx : TypeLattice) (ty : HighTypeMd) :
+    List (String × List HighTypeMd × HighTypeMd) :=
+  let named := match highBaseName? (ctx.unfold ty).val with
+    | some n => ctx.parentExprMap.contains n.text
+    | none => false
+  if named then [] else compositeCastsFrom ctx ty
+
+/-- The type a receiver has once `castReceiver` has cast it, for a reader of an expression that is
+    not rewritten (while the casts are deferred) or not yet cast. -/
+private def castReceiverType (ctx : TypeLattice) (ty : HighTypeMd) : HighTypeMd :=
+  match receiverCasts ctx ty with
+  | [(_, _, out)] => out
+  | _ => ty
+
+private def castReceiver (resolved : StmtExprMd × HighTypeMd) :
+    ResolveM (StmtExprMd × HighTypeMd) := do
+  let (e, ty) := resolved
+  let ctx := (← get).typeLattice
+  match receiverCasts ctx ty with
+  | [(proc, tyArgs, out)] => pure (← implicitCastCall proc tyArgs e, out)
+  | [] => pure resolved
+  | candidates =>
+    reportAmbiguousCast e.source ty none (candidates.map (·.1))
+    pure resolved
+
+private partial def isPlainRead : StmtExpr → Bool
+  | .Var (.Local _) => true
+  | .Var (.Field recv _) => isPlainRead recv.val
+  | _ => false
+
+private def guardedCastIsType (target : StmtExprMd) (targetTy ty : HighTypeMd) :
+    ResolveM (Option StmtExprMd) := do
+  let ctx := (← get).typeLattice
+  let native := { ctx with implicitCasts := [] }
+  if native.mayBeBoth targetTy ty || !isPlainRead target.val then return none
+  let found := (ctx.implicitCastsFrom targetTy).findSome? fun (proc, tyArgs, out) => do
+    let c ← ctx.implicitCasts.find? (·.name == proc)
+    let uid ← c.inputId
+    guard (!c.preconditions.isEmpty && native.mayBeBoth out ty)
+    pure (c, uid, tyArgs)
+  match found with
+  | none => pure none
+  | some (c, uid, tyArgs) =>
+    if !(← get).realizeCasts then return some { val := .IsType target ty, source := target.source }
+    let cast ← implicitCastCall c.name tyArgs target
+    let pres := c.preconditions.map (mapStmtExpr fun n => match n.val with
+      | .Var (.Local id) => if id.uniqueId == some uid then target else n
+      | _ => n)
+    let andThen (a b : StmtExprMd) : StmtExprMd :=
+      { val := .Call none { text := Operation.AndThen.procName } [a, b] [], source := a.source }
+    pure (some (pres.foldr andThen { val := .IsType cast ty, source := target.source }))
+
+/-- `checkSubtype`, then the implicit cast that makes `actual` fit `expected` (if one does) around
+    `e`. Unlike `coerceTo` it realizes no other coercion, which the sites that use it have never
+    realized. -/
+private def castToExpected (source : FileRange) (expected : HighTypeMd) (actual : HighTypeMd)
+    (e : StmtExprMd) : ResolveM StmtExprMd := do
+  checkSubtype source expected actual
+  match coerce (← get).typeLattice (stripTrailingErrors actual) (stripTrailingErrors expected) with
+  | some (.implicitCast proc tyArgs) => implicitCastCall proc tyArgs e
+  | _ => pure e
+
 private def coerceTo (source : FileRange) (expected : HighTypeMd) (actual : HighTypeMd)
     (e : StmtExprMd) : ResolveM StmtExprMd := do
   let ctx := (← get).typeLattice
@@ -980,6 +1096,7 @@ private def coerceTo (source : FileRange) (expected : HighTypeMd) (actual : High
   if isVoidLikeHT actual'.val && isVoidLikeHT expected'.val then
     pure e
   else match coerce ctx actual' expected' with
+    | some (.implicitCast proc tyArgs) => implicitCastCall proc tyArgs e
     | some verdict =>
       match ctx.realizeCoercion with
       | some realize =>
@@ -994,7 +1111,9 @@ private def coerceTo (source : FileRange) (expected : HighTypeMd) (actual : High
         pure (stampSynthesizedCallIds s.scope (realize verdict e))
       | none => pure e
     | none =>
-      typeMismatch source none s!"expected '{formatType expected}'" actual
+      match ctx.ambiguousImplicitCast? actual' expected' with
+      | some names => reportAmbiguousCast source actual (some expected) names
+      | none => typeMismatch source none s!"expected '{formatType expected}'" actual
       pure e
 
 /-- Test whether a type is in the set of numeric primitives
@@ -1026,6 +1145,65 @@ private def join (ctx : TypeLattice)
   | _, .Unknown => some a
   | .TVoid, _ | _, .TVoid => some { val := .TVoid, source := a.source }
   | _, _ => if highEq a' b' then some a else none
+
+private def datatypeJoin (ctx : TypeLattice) (a b : HighTypeMd) : Option HighTypeMd :=
+  match (ctx.unfold a).val, (ctx.unfold b).val with
+  | .Applied baseA argsA, .Applied baseB argsB => do
+    let na ← highBaseName? baseA.val
+    let nb ← highBaseName? baseB.val
+    let variance ← ctx.datatypeVariance.get? na.text
+    guard (na.text == nb.text && argsA.length == argsB.length && variance.length == argsA.length)
+    let args ← ((argsA.zip argsB).zip variance).mapM fun ((x, y), cov) =>
+      if cov then (join ctx x y).orElse fun _ => ctx.commonAncestorType [x, y]
+      else if highEq (ctx.unfold x) (ctx.unfold y) then some x else none
+    pure { val := .Applied baseA args, source := a.source }
+  | _, _ => none
+
+private def castJoin (ctx : TypeLattice) (a b : HighTypeMd) : Option HighTypeMd :=
+  let toward (x y : HighTypeMd) : Option HighTypeMd :=
+    (ctx.implicitCastsFrom x).findSome? fun (proc, _, out) =>
+      if !ctx.isTotalImplicitCast proc then none
+      else if isConsistent ctx out y then some out
+      else datatypeJoin ctx out y
+  if (join ctx a b).isSome || isConsistent ctx a b then none
+  else ((datatypeJoin ctx a b).orElse fun _ => toward a b).orElse fun _ => toward b a
+
+private def castComparisonOperands (args : List StmtExprMd) (tys : List HighTypeMd) :
+    ResolveM (List StmtExprMd × List HighTypeMd) := do
+  let ctx := (← get).typeLattice
+  let totalCast (sub sup : HighTypeMd) : Option (String × List HighTypeMd) :=
+    match coerce ctx sub sup with
+    | some (.implicitCast proc tyArgs) => if ctx.isTotalImplicitCast proc then some (proc, tyArgs) else none
+    | _ => none
+  let outputOf (proc : String) (tyArgs : List HighTypeMd) (fallback : HighTypeMd) : HighTypeMd :=
+    match ctx.implicitCasts.find? (·.name == proc) with
+    | some c =>
+      substTypeVars ((c.typeParams.zip tyArgs).foldl (fun m (p, t) => m.insert p t) {}) c.output
+    | none => fallback
+  match args, tys with
+  | [a, b], [ta, tb] =>
+    match totalCast tb ta with
+    | some (proc, tyArgs) => pure ([a, ← implicitCastCall proc tyArgs b], [ta, outputOf proc tyArgs ta])
+    | none =>
+      match totalCast ta tb with
+      | some (proc, tyArgs) => pure ([← implicitCastCall proc tyArgs a, b], [outputOf proc tyArgs tb, tb])
+      | none =>
+        let toJoin (target ty : HighTypeMd) : Option (Option (String × List HighTypeMd)) :=
+          match coerce ctx ty target with
+          | some .refl | some .upcast => some none
+          | _ => (totalCast ty target).map some
+        match castJoin ctx ta tb with
+        | some target =>
+          match toJoin target ta, toJoin target tb with
+          | some ca, some cb =>
+            let castTo (c : Option (String × List HighTypeMd)) (e : StmtExprMd) : ResolveM StmtExprMd :=
+              match c with
+              | some (proc, tyArgs) => implicitCastCall proc tyArgs e
+              | none => pure e
+            pure ([← castTo ca a, ← castTo cb b], [target, target])
+          | _, _ => pure (args, tys)
+        | none => pure (args, tys)
+  | _, _ => pure (args, tys)
 
 /-- Test whether a type is a user-defined reference type. `Unknown` is accepted
     as a gradual escape hatch. Used by Fresh and ReferenceEquals, which only
@@ -1109,8 +1287,7 @@ private def concretizeFieldType (holderTy : HighTypeMd) (fieldName' : Identifier
 
 /-- Get the call return type and parameter types for a callee from scope. -/
 private def getCallInfo (callee : Identifier) : ResolveM (HighTypeMd × List HighTypeMd) := do
-  let s ← get
-  match s.scope.get? callee.text with
+  match ← calleeEntry callee with
   | some (_, .staticProcedure proc) | some (_, .instanceProcedure _ proc) =>
     pure (procResultType callee.source proc, proc.inputs.map (·.type))
   | some (_, .datatypeConstructor t ctor) =>
@@ -1155,7 +1332,7 @@ private def getCallInfo (callee : Identifier) : ResolveM (HighTypeMd × List Hig
     duplicate the already-reported name-resolution error, or wrongly flag a
     constructor/parameter/constant call). -/
 private def procArity (callee : Identifier) : ResolveM (Option Nat) := do
-  match (← get).scope.get? callee.text with
+  match ← calleeEntry callee with
   | some (_, .staticProcedure proc) | some (_, .instanceProcedure _ proc) =>
     pure (some proc.inputs.length)
   | _ => pure none
@@ -1179,7 +1356,7 @@ the unique match or reports an ambiguous / unresolved call. -/
 private def typesOverlap (ctx : TypeLattice) (a b : HighTypeMd) : Bool :=
   -- Realizer-independent: clear the realizer so numeric widening (int→real) does not make
   -- the built-in `$add(int,int)`/`$add(real,real)` pairs register as conflicting overloads.
-  let ctxNoWiden := { ctx with realizeCoercion := none }
+  let ctxNoWiden := { ctx with realizeCoercion := none, implicitCasts := [] }
   isConsistentSubtype ctxNoWiden a b || isConsistentSubtype ctxNoWiden b a
 
 /-- Two static-procedure signatures conflict — i.e. cannot coexist as overloads —
@@ -1216,6 +1393,7 @@ private def openInputTypes (proc : Procedure) : List HighTypeMd :=
     argument checking, so overload selection agrees with type checking. -/
 private def overloadAccepts (ctx : TypeLattice) (proc : Procedure)
     (argTys : List HighTypeMd) : Bool :=
+  let ctx := { ctx with implicitCasts := [] }
   proc.inputs.length == argTys.length &&
     ((openInputTypes proc).zip argTys).all (fun (p, argTy) => isConsistentSubtype ctx argTy p)
 
@@ -1372,35 +1550,45 @@ private def stackNotUpdatable (source : FileRange) : ResolveM Unit :=
   let diag := diagnosticFromSource source "a stack value cannot be updated in place"
   modify fun s => { s with errors := s.errors.push diag }
 
-private def pushStackType (ty : HighTypeMd) : ResolveM Unit :=
-  modify fun s => { s with stackTypes := ty :: s.stackTypes }
+private def pushStackType (ty : HighTypeMd) (origin : List Nat := []) : ResolveM Unit :=
+  modify fun s => { s with stackTypes := ty :: s.stackTypes, stackOrigins := origin :: s.stackOrigins }
 
-private def popStackType (source : FileRange) : ResolveM HighTypeMd := do
+private def popStackEntry (source : FileRange) : ResolveM (HighTypeMd × List Nat) := do
   let s ← get
   match s.stackWindow with
   | some (ty :: rest) =>
-    set { s with stackWindow := some rest }
-    pure ty
+    let (o, orest) := match s.windowOrigins with
+      | some (o :: r) => (o, r)
+      | _ => ([], [])
+    set { s with stackWindow := some rest, windowOrigins := some orest }
+    pure (ty, o)
   | _ =>
     match s.stackTypes with
     | ty :: rest =>
-      set { s with stackTypes := rest }
-      pure ty
-    | [] => pure { val := .Unknown, source := source }
+      set { s with stackTypes := rest, stackOrigins := s.stackOrigins.drop 1 }
+      pure (ty, s.stackOrigins.headD [])
+    | [] => pure ({ val := .Unknown, source := source }, [])
 
-private def openStackWindow (stmt : StmtExprMd) : ResolveM (Option (List HighTypeMd)) := do
+private def popStackType (source : FileRange) : ResolveM HighTypeMd := do
+  pure (← popStackEntry source).1
+
+private def openStackWindow (stmt : StmtExprMd) :
+    ResolveM (Option (List HighTypeMd) × Option (List (List Nat))) := do
   let s ← get
-  let saved := s.stackWindow
+  let saved := (s.stackWindow, s.windowOrigins)
   if !s.usesStack then return saved
-  match saved with
+  match s.stackWindow with
   | some (_ :: _) => return saved
   | _ =>
     let n := stackWindowReads stmt
-    set { s with stackWindow := some (s.stackTypes.take n).reverse, stackTypes := s.stackTypes.drop n }
+    set { s with stackWindow := some (s.stackTypes.take n).reverse, stackTypes := s.stackTypes.drop n,
+                 windowOrigins := some (s.stackOrigins.take n).reverse,
+                 stackOrigins := s.stackOrigins.drop n }
     return saved
 
-private def closeStackWindow (saved : Option (List HighTypeMd)) : ResolveM Unit :=
-  modify fun s => { s with stackWindow := saved }
+private def closeStackWindow (saved : Option (List HighTypeMd) × Option (List (List Nat))) :
+    ResolveM Unit :=
+  modify fun s => { s with stackWindow := saved.1, windowOrigins := saved.2 }
 
 def withStackWindow (stmt : StmtExprMd) (act : ResolveM α) : ResolveM α := do
   let saved ← openStackWindow stmt
@@ -1408,13 +1596,15 @@ def withStackWindow (stmt : StmtExprMd) (act : ResolveM α) : ResolveM α := do
   closeStackWindow saved
   pure r
 
-private def currentStack : ResolveM (List HighTypeMd) := do
-  pure (← get).stackTypes
-
-private def resetStack (base : List HighTypeMd) : ResolveM (List HighTypeMd) := do
+private def currentStack : ResolveM (List HighTypeMd × List (List Nat)) := do
   let s ← get
-  set { s with stackTypes := base }
-  pure s.stackTypes
+  pure (s.stackTypes, s.stackOrigins)
+
+private def resetStack (base : List HighTypeMd × List (List Nat)) :
+    ResolveM (List HighTypeMd × List (List Nat)) := do
+  let s ← get
+  set { s with stackTypes := base.1, stackOrigins := base.2 }
+  pure (s.stackTypes, s.stackOrigins)
 
 private def stackTargetType (targets : List VariableMd) (inferInfo : Option (StmtExprMd × HighTypeMd))
     (compTy : Option HighTypeMd) (vs : FileRange) : HighTypeMd :=
@@ -1423,12 +1613,26 @@ private def stackTargetType (targets : List VariableMd) (inferInfo : Option (Stm
   | none, [_], some (_, ty) => ty
   | _, _, _ => { val := .Unknown, source := vs }
 
-private def pushStackTargets (targets : List VariableMd) : ResolveM Unit :=
-  targets.forM fun t => do
+private def pushStackTargets (targets : List VariableMd) (firstId : Nat) : ResolveM Unit := do
+  let mut k := firstId
+  for t in targets do
     if let .Stack (some ty) := t.val then
       if ty.val matches .TVoid then
         modify fun s => { s with errors := s.errors.push (diagnosticFromSource t.source "a stack push needs a value") }
-      pushStackType ty
+      pushStackType ty [k]
+      k := k + 1
+
+private def assignNeedsInference (targets : List VariableMd) (pushHint? : Option HighTypeMd) : Bool :=
+  targets.any fun t => t.val matches .Declare ⟨_, none⟩ || (t.val matches .Stack none && pushHint?.isNone)
+
+private def reserveStackPushes (targets : List VariableMd) : ResolveM (Nat × Option HighTypeMd) := do
+  let s ← get
+  let first := s.pushCount
+  set { s with pushCount := first + targets.countP isStackVar }
+  let hint := match targets with
+    | [⟨.Stack none, _⟩] => s.pushHints[first]?
+    | _ => none
+  pure (first, hint)
 
 private def stackPushType (targets : List VariableMd) (source : FileRange) (r : StmtExpr × HighTypeMd) :
     StmtExpr × HighTypeMd :=
@@ -1443,33 +1647,142 @@ private def Synth.stackPermute (targets : List VariableMd) (value : StmtExprMd) 
   let (callee, args) := match value.val with
     | .Call none callee args _ => (callee, args)
     | _ => (mkId "$permute", [])
-  let tys ← args.mapM fun a => popStackType a.source
+  let entries ← args.mapM fun a => popStackEntry a.source
+  let tys := entries.map (·.1)
   let tyAt (i : Nat) : HighTypeMd := tys.getD i { val := .Unknown, source := source }
-  for i in order do pushStackType (tyAt i)
+  for i in order do pushStackType (tyAt i) ((entries[i]?.map (·.2)).getD [])
   let args' := (args.zip tys).map fun (a, ty) => (⟨.Var (.Stack (some ty)), a.source⟩ : StmtExprMd)
   pure (.Assign ((targets.zip order).map fun (t, i) => ⟨.Stack (some (tyAt i)), t.source⟩)
       ⟨.Call none callee args' [], value.source⟩,
     { val := .TVoid, source := source })
 
-private def mergeStackArms (thenStack elseStack : List HighTypeMd) (thenAbrupt elseAbrupt : Bool := false) :
-    ResolveM Unit := do
+private def underdeterminedJoin (ctx : TypeLattice) (a b : HighTypeMd) : Option HighTypeMd :=
+  let sameHead (n : Identifier) (t : HighTypeMd) : Bool :=
+    (highBaseName? t.val).any (·.text == n.text)
+  match a.val, b.val with
+  | .UserDefined n, .Applied .. => if sameHead n b then some b else none
+  | .Applied .., .UserDefined n => if sameHead n a then some a else none
+  | .Applied .., .Applied .. =>
+    if !isConsistent ctx a b then none
+    else if mentionsInferVar a.val && !mentionsInferVar b.val then some b
+    else if mentionsInferVar b.val && !mentionsInferVar a.val then some a
+    else none
+  | _, _ => none
+
+private def stackJoin (ctx : TypeLattice) (a b : HighTypeMd) : Option HighTypeMd :=
+  (((join ctx a b).orElse fun _ => underdeterminedJoin ctx a b).orElse fun _ => castJoin ctx a b).orElse
+    fun _ => ctx.commonAncestorType [a, b]
+
+private def mergeStackArms (thenStack elseStack : List HighTypeMd × List (List Nat))
+    (thenAbrupt elseAbrupt : Bool := false) : ResolveM Unit := do
   let s ← get
   if !s.usesStack then return
-  let merged :=
-    if thenAbrupt then elseStack
-    else if elseAbrupt then thenStack
-    else if thenStack.length == elseStack.length then
-      (thenStack.zip elseStack).map fun (a, b) =>
-        ((join s.typeLattice a b).orElse fun _ => s.typeLattice.commonAncestorType [a, b]).getD a
-    else thenStack
-  set { s with stackTypes := merged }
+  let originsOf (snap : List HighTypeMd × List (List Nat)) : List (List Nat) :=
+    (List.range snap.1.length).map fun i => snap.2.getD i []
+  if thenAbrupt then
+    set { s with stackTypes := elseStack.1, stackOrigins := originsOf elseStack }
+  else if elseAbrupt then
+    set { s with stackTypes := thenStack.1, stackOrigins := originsOf thenStack }
+  else if thenStack.1.length == elseStack.1.length then
+    let slots := (thenStack.1.zip elseStack.1).zip ((originsOf thenStack).zip (originsOf elseStack))
+    let merged : List (Option HighTypeMd × List Nat × HighTypeMd × HighTypeMd) :=
+      slots.map fun ((a, b), (oa, ob)) => (stackJoin s.typeLattice a b, oa ++ ob, a, b)
+    let joins := merged.foldl (init := s.pushJoins) fun acc (j?, os, a, b) =>
+      match j? with
+      | some j => if highEq j a && highEq j b then acc else os.foldl (fun m o => m.insert o j) acc
+      | none => acc
+    let tys : List HighTypeMd := merged.map fun (j?, _, a, _) => j?.getD a
+    let os : List (List Nat) := merged.map fun (_, o, _, _) => o
+    set { s with stackTypes := tys, stackOrigins := os, pushJoins := joins }
+  else
+    set { s with stackTypes := thenStack.1, stackOrigins := originsOf thenStack }
+
+def withStackJoins (act : ResolveM α) : ResolveM α := do
+  modify fun s => { s with pushCount := 0, pushJoins := {}, pushHints := {} }
+  let s0 ← get
+  let r ← act
+  let joins := (← get).pushJoins
+  if joins.isEmpty then pure r
+  else
+    set { s0 with pushHints := joins }
+    act
+
+private def fixupUnderDeterminedCtor (e : StmtExprMd) (ty target : HighTypeMd) :
+    Option (StmtExprMd × HighTypeMd) :=
+  match e.val, ty.val, target.val with
+  | .Call none callee args [], .UserDefined typName, .Applied base args' =>
+    match base.val with
+    | .UserDefined baseName =>
+      if baseName.text == typName.text then
+        some ({ e with val := .Call none callee args args' }, target)
+      else none
+    | _ => none
+  | _, _, _ => none
+
+private def dropCannotInferAt (before : Nat) (source : FileRange) : ResolveM Unit := do
+  modify fun s =>
+    let keptEnd := s.errors.extract before s.errors.size |>.filter fun d =>
+      !(source.range.start ≤ d.fileRange.range.start
+        && d.fileRange.range.stop ≤ source.range.stop
+        && d.message.startsWith "cannot infer")
+    { s with errors := s.errors.extract 0 before ++ keptEnd }
+
+private def applyCastJoin (source : FileRange) (cond' : StmtExprMd)
+    (thenBr thenBr' : StmtExprMd) (thenTy : HighTypeMd) (thenErrsBefore : Nat)
+    (e e' : StmtExprMd) (elseTy : HighTypeMd) (elseErrsBefore : Nat)
+    (target : HighTypeMd) : ResolveM (StmtExpr × HighTypeMd) := do
+  let (thenBr'', thenTy') ← match fixupUnderDeterminedCtor thenBr' thenTy target with
+    | some r => do dropCannotInferAt thenErrsBefore thenBr.source; pure r
+    | none => pure (thenBr', thenTy)
+  let (e'', elseTy') ← match fixupUnderDeterminedCtor e' elseTy target with
+    | some r => do dropCannotInferAt elseErrsBefore e.source; pure r
+    | none => pure (e', elseTy)
+  let joinSols := solveInferVars thenTy'.val target.val (solveInferVars elseTy'.val target.val)
+  recordInferSolutions joinSols source
+  let (thenBr'', e'') ← if joinSols.isEmpty then pure (thenBr'', e'')
+    else pure (← zonkExpr thenBr'', ← zonkExpr e'')
+  let thenTy' ← zonkType thenTy'
+  let elseTy' ← zonkType elseTy'
+  let thenBr''' ← coerceTo thenBr.source target thenTy' thenBr''
+  let e''' ← coerceTo e.source target elseTy' e''
+  pure (.IfThenElse cond' thenBr''' (some e'''), target)
+
+private def joinIfArms (source : FileRange) (cond' thenBr' e' : StmtExprMd)
+    (thenTy elseTy : HighTypeMd) : ResolveM (StmtExpr × HighTypeMd) := do
+  let ctx := (← get).typeLattice
+  -- A branch ending in a heap-threading assign synthesizes the plumbing type `Heap`, while a
+  -- sibling branch with no field-write stays `void`. These are not incompatible: in statement
+  -- position both branches run for effect, and the `Heap` value is the threaded heap, not a
+  -- user value. Treat `Heap` as void-like for this join only (not the shared `isVoidLikeHT`,
+  -- which gates coercion).
+  let isStmtBranchTy (t : HighType) : Bool :=
+    isVoidLikeHT t || (match t with | .UserDefined id => id.text == "Heap" | _ => false)
+  let ty ←
+    -- Primary: the shared `join` (handles Unknown/TVoid/equal — e.g. an `int`/`void`
+    -- branch pair joins to `void`). Fallback: the frontend tolerances an `.err`-grade
+    -- `(T, Error)` body or a heap-threading branch needs (strip trailing Error; treat
+    -- Heap as void-like for this join only).
+    match join ctx thenTy elseTy with
+    | some joined => pure joined
+    | none =>
+      if isConsistent ctx (stripTrailingErrors thenTy) (stripTrailingErrors elseTy) ||
+          isVoidLikeHT (stripTrailingErrors thenTy).val && isVoidLikeHT (stripTrailingErrors elseTy).val ||
+          isStmtBranchTy (stripTrailingErrors thenTy).val && isStmtBranchTy (stripTrailingErrors elseTy).val then
+        pure ((join ctx (stripTrailingErrors thenTy) (stripTrailingErrors elseTy)).getD (stripTrailingErrors thenTy))
+      else
+        let diag := diagnosticFromSource source
+          s!"'if' branches have incompatible types '{formatType thenTy}' and '{formatType elseTy}'"
+        modify fun s => { s with errors := s.errors.push diag }
+        pure { val := .Unknown, source := source }
+  pure (.IfThenElse cond' thenBr' (some e'), ty)
 
 private def withOwnStack (act : ResolveM α) : ResolveM α := do
   let s ← get
-  let saved := (s.stackTypes, s.stackWindow)
-  set { s with stackTypes := [], stackWindow := none }
+  let saved := (s.stackTypes, s.stackWindow, s.stackOrigins, s.windowOrigins)
+  set { s with stackTypes := [], stackWindow := none, stackOrigins := [], windowOrigins := none }
   let r ← act
-  modify fun st => { st with stackTypes := saved.1, stackWindow := saved.2 }
+  modify fun st => { st with stackTypes := saved.1, stackWindow := saved.2.1,
+                             stackOrigins := saved.2.2.1, windowOrigins := saved.2.2.2 }
   pure r
 
 private def mergeExitStacks (label : String) (naturalAbrupt : Bool) : ResolveM Unit := do
@@ -1477,7 +1790,7 @@ private def mergeExitStacks (label : String) (naturalAbrupt : Bool) : ResolveM U
   if !s.usesStack then return
   let mine := (s.exitStacks.filter (·.1 == label)).map (·.2)
   set { s with exitStacks := s.exitStacks.filter (·.1 != label) }
-  match (if naturalAbrupt then [] else [s.stackTypes]) ++ mine.reverse with
+  match (if naturalAbrupt then [] else [(s.stackTypes, s.stackOrigins)]) ++ mine.reverse with
   | [] => pure ()
   | first :: rest =>
     let _ ← resetStack first
@@ -1502,7 +1815,7 @@ private def enterJumpTarget (label : Option String) (stmts : List StmtExprMd) (s
   modify fun st => { st with prevAbrupt := false }
   if !s.usesStack || !s.jumpTargets.contains l then return
   let incoming := (s.entryStacks.filter (·.1 == l)).reverse.map (·.2)
-    ++ (if fallsIn then [s.stackTypes] else [])
+    ++ (if fallsIn then [(s.stackTypes, s.stackOrigins)] else [])
   modify fun st => { st with entryStacks := st.entryStacks.filter (·.1 != l) }
   let annotated ← match stmts.head? >>= stackAnnotation? with
     | some tys => do
@@ -1513,13 +1826,13 @@ private def enterJumpTarget (label : Option String) (stmts : List StmtExprMd) (s
     | none => pure none
   match annotated, incoming with
   | some tys, _ =>
-    for other in incoming do checkJumpStack l tys other source
-    let _ ← resetStack tys
-  | none, [] => let _ ← resetStack []
+    for other in incoming do checkJumpStack l tys other.1 source
+    let _ ← resetStack (tys, [])
+  | none, [] => let _ ← resetStack ([], [])
   | none, first :: rest =>
     let _ ← resetStack first
     for other in rest do
-      checkJumpStack l first other source
+      checkJumpStack l first.1 other.1 source
       mergeStackArms (← currentStack) other
   modify fun st => { st with labelStacks := ((l, true), st.stackTypes) :: st.labelStacks }
 
@@ -1538,8 +1851,8 @@ private def recordJumpStack (label : String) (destination : GotoDestination) (so
   match s.labelStacks.find? (·.1 == (label, start)) with
   | some (_, expected) => checkJumpStack label expected s.stackTypes source
   | none =>
-    if start then set { s with entryStacks := (label, s.stackTypes) :: s.entryStacks }
-    else set { s with exitStacks := (label, s.stackTypes) :: s.exitStacks }
+    if start then set { s with entryStacks := (label, s.stackTypes, s.stackOrigins) :: s.entryStacks }
+    else set { s with exitStacks := (label, s.stackTypes, s.stackOrigins) :: s.exitStacks }
 
 private def notePrevAbrupt (s : StmtExprMd) : ResolveM StmtExprMd := do
   modify fun st => { st with prevAbrupt := endsAbruptlyIn st.exitedLabels s }
@@ -1976,10 +2289,12 @@ private def thrownTypesWith (model : SemanticModel) (lattice : TypeLattice)
     | .staticProcedure p | .instanceProcedure _ p =>
       ((throwsOf p).map fun t => (atCall t, src)).toList
     | _ => []
+  let thrownReceiverType (e : StmtExprMd) : HighTypeMd :=
+    castReceiverType lattice (exprTypeAt model lattice e)
   let atMethodCall (target : StmtExprMd) (callee : Identifier) (tyArgs : List HighTypeMd)
       (ty : HighTypeMd) : HighTypeMd := match model.get callee with
     | .instanceProcedure owner p =>
-      methodTypeAt lattice owner p (exprTypeAt model lattice target) tyArgs ty
+      methodTypeAt lattice owner p (thrownReceiverType target) tyArgs ty
     | _ => ty
   -- Recursive descents go through `attach` (and named discriminant equations) so
   -- each child carries the membership/shape proof the termination argument needs.
@@ -1987,7 +2302,7 @@ private def thrownTypesWith (model : SemanticModel) (lattice : TypeLattice)
   | .Throw e =>
     -- Also recurse into the operand: a throwing call inside it (e.g. `throw f()`
     -- where `f` throws) escapes too.
-    (exprTypeAt model lattice e, expr.source) :: thrownTypesWith model lattice throwsOf e
+    (thrownReceiverType e, expr.source) :: thrownTypesWith model lattice throwsOf e
   | .Call none callee args tyArgs =>
     calleeThrows callee (typeAtCall model callee tyArgs) expr.source
       ++ args.attach.flatMap (fun ⟨a, _⟩ => thrownTypesWith model lattice throwsOf a)
@@ -2038,7 +2353,7 @@ private def thrownTypesWith (model : SemanticModel) (lattice : TypeLattice)
       | .Call none callee _ tyArgs => calleeThrows callee (typeAtCall model callee tyArgs) n.source
       | .Call (some target) callee _ tyArgs =>
         calleeThrows callee (atMethodCall target callee tyArgs) n.source
-      | .Throw e => [(exprTypeAt model lattice e, n.source)]
+      | .Throw e => [(thrownReceiverType e, n.source)]
       | _ => []) expr
   termination_by sizeOf expr
   decreasing_by
@@ -2093,6 +2408,8 @@ private structure CallInstance where
   order : List String
   params : List HighTypeMd
   result : HighTypeMd
+  /-- STOPGAP: the procedure called, which `bareTypeParameterStopgap` reads. -/
+  stopgapCallee? : Option Procedure := none
 
 /-- Instantiate a call: a fresh inference variable for each type parameter. A type parameter
     spelled `.UserDefined`, as in a datatype's stored constructor arguments, is replaced too.
@@ -2102,7 +2419,8 @@ private structure CallInstance where
     duplicate definition. Such a call reads each type parameter as `Unknown` and so reports nothing
     of its own. -/
 private def instantiateCall (typeParams : List Identifier) (params : List HighTypeMd)
-    (result : HighTypeMd) (source : FileRange) : ResolveM CallInstance := do
+    (result : HighTypeMd) (source : FileRange) (stopgapCallee? : Option Procedure := none)
+    : ResolveM CallInstance := do
   let order := typeParams.map (·.text)
   let metas ← if order.eraseDups.length == order.length then
       typeParams.foldlM (fun vars tp => do
@@ -2111,7 +2429,48 @@ private def instantiateCall (typeParams : List Identifier) (params : List HighTy
         pure (vars.insert tp.text { val := .TVar { text := inferVarName tp.text n, source }, source }))
         {}
     else pure (unknownSubst typeParams)
-  pure { metas, order, params := params.map (substTypeVars metas), result := substTypeVars metas result }
+  pure { metas, order, params := params.map (substTypeVars metas), result := substTypeVars metas result,
+         stopgapCallee? }
+
+/-- `byParam`, a type for each of some of `inst`'s type parameters, keyed by their inference
+    variables instead. -/
+private def CallInstance.atInferVars (inst : CallInstance) (byParam : Std.HashMap String HighTypeMd) :
+    Std.HashMap String HighTypeMd :=
+  byParam.fold (fun m p t => match inst.metas.get? p with
+    | some ⟨.TVar v, _⟩ => m.insert v.text t
+    | _ => m) {}
+
+/-- STOPGAP: Java type variables stand for non-null types, which Laurel cannot state, so a type
+    parameter `T` that a non-`external` procedure declares as a whole parameter type is never bound
+    to `NullableRef<X>`: `ty`, offered as evidence for `T`, becomes `X`, and the argument is passed
+    through `$nullableRefValue`, with its "the reference is not null" obligation. `external`
+    procedures are exempt only because the prelude's `$eq`/`$neq` need `T := NullableRef<_>`;
+    `external` is a proxy for "has no bound". TO REMOVE: once bounded type parameters exist
+    (`procedure f<T extends B>`), have the Java front end write `T extends java.lang.Object` on
+    every type parameter and make inference reject candidates outside the bound; then delete this
+    function, its use sites, the `external` test and the `bareTypeParameterStopgap_*` tests. See
+    /home/rwillems/repos/Laurel-bounded-type-parameters-agent-prompt.md. -/
+private def bareTypeParameterStopgap (ctx : TypeLattice) (inst : CallInstance) (typeVar : String)
+    (ty : HighTypeMd) : HighTypeMd :=
+  match inst.stopgapCallee? with
+  | none => ty
+  | some proc =>
+    let bare := inst.params.any fun p => match p.val with
+      | .TVar r => r.text == typeVar
+      | _ => false
+    match (ctx.unfold ty).val with
+    | .Applied base [payload] =>
+      match base.val with
+      | .UserDefined n => if bare && !proc.body.isExternal && n.text == "NullableRef" then payload else ty
+      | _ => ty
+    | _ => ty
+
+/-- STOPGAP: see bareTypeParameterStopgap. -/
+private def bareTypeParameterStopgapArg (ctx : TypeLattice) (inst : CallInstance)
+    (param argTy : HighTypeMd) : HighTypeMd :=
+  match param.val with
+  | .TVar r => bareTypeParameterStopgap ctx inst r.text argTy
+  | _ => argTy
 
 /-- STAGE 1 of a call: what the expected type says about its inference variables, before the
     arguments are resolved, so they can be handed slots (`argSlot`). Hints only: `solveCall` ranks
@@ -2126,7 +2485,8 @@ private def expectedHints (ctx : TypeLattice) (inst : CallInstance)
   | none => {}
   | some exp =>
     (solveInferVars (ctx.unfold inst.result).val (ctx.unfold exp).val).fold
-      (fun m k v => m.insert k { val := v, source := exp.source }) {}
+      -- STOPGAP: see bareTypeParameterStopgap
+      (fun m k v => m.insert k (bareTypeParameterStopgap ctx inst k { val := v, source := exp.source })) {}
 
 /-- Which of `tyName` and its ancestors declares the method `callee`: the most specific one, unless
     unrelated ones do. -/
@@ -2175,6 +2535,22 @@ private def exactExpected (ctx : TypeLattice) (inst : CallInstance) (expected? :
     else [(inst.result, exp)]
   | none => []
 
+private def castInferenceArgTy (ctx : TypeLattice) (pTy aTy : HighTypeMd) : HighTypeMd :=
+  let fitsNatively := match coerce ctx aTy pTy with
+    | some (.implicitCast ..) | none => false
+    | some _ => true
+  if !mentionsTVar pTy.val || fitsNatively then aTy else
+  let d := (ctx.unfold pTy).val
+  let a' := (ctx.unfold aTy).val
+  let lifted := match callSiteAncestorLift? ctx d a' with
+    | some anc => anc.val
+    | none => a'
+  if (matchTypeArg d lifted {}).isSome then aTy else
+  match (ctx.implicitCastsFrom aTy).find? fun (_, _, out) =>
+      (matchTypeArg d (ctx.unfold out).val {}).isSome with
+  | some (_, _, out) => out
+  | none => aTy
+
 /-- STAGE 3 of a call: solve its inference variables, first from the arguments (`argEvidence`: a
     `Dog` and an `Animal` give `Animal`, a `Dog` and a `Cat` conflict), then from the inference
     variables the arguments' own types carry, then from the expected type. Returns the conflicts.
@@ -2183,14 +2559,28 @@ private def exactExpected (ctx : TypeLattice) (inst : CallInstance) (expected? :
     identity(aDog)` keeps `T := Dog`. Under a type constructor the result must equal it, so it is
     evidence alongside the arguments: `var m: Map<int, Animal> := mapSet(m0, 1, aDog)` binds
     `V := Animal`. An expected type that conflicts with the arguments is set aside; the mismatch
-    against it is reported instead. -/
+    against it is reported instead.
+
+    An argument that fits its parameter only through an implicit cast is evidence at the cast's
+    output (`castInferenceArgTy`): a `C` at a `NullableRef<?T>` gives `?T := C`. `forced` solves
+    what the arguments leave open before the expected type does: a constructor's explicit type
+    arguments. -/
 private def solveCall (inst : CallInstance) (argTys : List HighTypeMd)
     (expected? : Option HighTypeMd) (source : FileRange)
+    (forced : Std.HashMap String HighTypeMd := {})
     : ResolveM (List (String × HighTypeMd × HighTypeMd)) := do
   let ctx := (← get).typeLattice
   let exact := exactExpected ctx inst expected?
+  let params ← inst.params.mapM zonkType
+  -- STOPGAP: see bareTypeParameterStopgap
+  let argTys := ((inst.params.zip params).zip argTys).map (fun ((declared, p), a) =>
+      castInferenceArgTy ctx p (bareTypeParameterStopgapArg ctx inst declared a)) ++
+    argTys.drop params.length
   let paired := inst.params.zip argTys
   let alone ← argEvidence ctx (paired.map (·.1)) (paired.map (·.2))
+  unless forced.isEmpty do
+    recordInferSolutions (forced.fold (fun m k v => if alone.1.contains k then m else m.insert k v.val) {})
+      source
   let withExpected ← argEvidence ctx ((paired ++ exact).map (·.1)) ((paired ++ exact).map (·.2))
   -- A conflict the expected type adds is the mismatch against it, which is reported as such.
   let (argSubst, conflicts) :=
@@ -2200,7 +2590,10 @@ private def solveCall (inst : CallInstance) (argTys : List HighTypeMd)
   for (p, a) in paired do
     sols := solveInferVars (← zonkType p).val a.val sols
   if let some exp := expected? then
-    sols := solveInferVars (ctx.unfold (← zonkType inst.result)).val (ctx.unfold exp).val sols
+    -- STOPGAP: see bareTypeParameterStopgap
+    sols := (solveInferVars (ctx.unfold (← zonkType inst.result)).val (ctx.unfold exp).val).fold
+      (fun m k v => if m.contains k then m
+        else m.insert k (bareTypeParameterStopgap ctx inst k { val := v, source := exp.source }).val) sols
   recordInferSolutions sols source
   pure (conflicts.map fun (n, a, b) => (inferVarParam n, a, b))
 
@@ -2208,22 +2601,34 @@ private def solveCall (inst : CallInstance) (argTys : List HighTypeMd)
     `Synth.callArgs` synthesized, against it, the solutions applied: a `Set<int>` for a `Box<T>`
     binds nothing and is rejected here. Not after a conflict, whose losing argument
     would only restate it ("cannot pass 'real' as the 'int' parameter of '$eq'" beside "cannot
-    compare 'int' with 'real'"). Returns whether every argument passed. -/
+    compare 'int' with 'real'"). An argument that fits only through an implicit cast is passed
+    through it. Returns whether every argument passed, and the arguments. -/
 private def checkCallArgs (callee : String) (args : List (StmtExprMd × HighTypeMd))
-    (params : List HighTypeMd) : ResolveM Bool := do
+    (params : List HighTypeMd) : ResolveM (Bool × List (StmtExprMd × HighTypeMd)) := do
   let ctx := (← get).typeLattice
   let mut ok := true
+  let mut checked : List (StmtExprMd × HighTypeMd) := []
   for ((a, aTy), p) in args.zip params do
     if mentionsInferVar p.val then
-      let aTy ← zonkType aTy
+      let aTy' ← zonkType aTy
       let p ← zonkType p
-      unless isConsistentSubtype ctx aTy p do
-        -- At the argument: a variable's type would point at its declaration.
-        let diag := diagnosticFromSource a.source
-          s!"cannot pass '{formatType aTy}' as the '{formatType p}' parameter of '{callee}'"
-        modify fun s => { s with errors := s.errors.push diag }
-        ok := false
-  return ok
+      match coerce ctx aTy' p with
+      | some (.implicitCast castProc castTyArgs) =>
+        checked := checked ++ [(← implicitCastCall castProc castTyArgs a, aTy)]
+      | _ =>
+        unless isConsistentSubtype ctx aTy' p do
+          match ctx.ambiguousImplicitCast? aTy' p with
+          | some names => reportAmbiguousCast a.source aTy' (some p) names
+          | none =>
+            -- At the argument: a variable's type would point at its declaration.
+            let diag := diagnosticFromSource a.source
+              s!"cannot pass '{formatType aTy'}' as the '{formatType p}' parameter of '{callee}'"
+            modify fun s => { s with errors := s.errors.push diag }
+          ok := false
+        checked := checked ++ [(a, aTy)]
+    else
+      checked := checked ++ [(a, aTy)]
+  return (ok, checked ++ args.drop checked.length)
 
 /-- The type parameters a call left open, each with its inference variable: not solved yet. One
     solved to another call's open variable is that call's to report. -/
@@ -2285,16 +2690,17 @@ private def recordedTypeArgs (subst : Std.HashMap String HighTypeMd) (params : L
     `Unknown` argument's parameter mentions, or at an `Unknown` expected type, one that any input or
     output mentions; for an ambiguous diamond
     (`callSiteLiftAmbiguous`), which `MonomorphizeComposites.settleCallNode` reports; and when
-    `quiet`. -/
+    `quiet`. `forced` is `solveCall`'s. -/
 private def finishCall (callee owner : String) (inst : CallInstance)
     (args : List (StmtExprMd × HighTypeMd))
     (expected? : Option HighTypeMd) (quiet : Bool) (source : FileRange)
-    (record : List String := inst.order)
+    (record : List String := inst.order) (forced : Std.HashMap String HighTypeMd := {})
     : ResolveM (List StmtExprMd × List HighTypeMd × HighTypeMd) := do
   let argTys := args.map (·.2)
-  let conflicts ← solveCall inst argTys expected? source
+  let conflicts ← solveCall inst argTys expected? source forced
   reportConflicts owner conflicts source
-  let argsOk ← if conflicts.isEmpty then checkCallArgs callee args inst.params else pure false
+  let (argsOk, args) ← if conflicts.isEmpty then checkCallArgs callee args inst.params
+    else pure (false, args)
   let ctx := (← get).typeLattice
   let ambiguous := (inst.params.zip argTys).any fun (p, a) =>
     callSiteLiftAmbiguous ctx (ctx.unfold p).val (ctx.unfold a).val
@@ -2364,11 +2770,10 @@ private def declareLocal (param : Parameter?) (source : FileRange) : ResolveM St
     pure { val := .Var (.Declare ⟨name', some unknown⟩), source := source }
 
 /-- Whether an assignment synthesizes its value to type a target: an unannotated
-    declaration, an untyped stack push, or a local declared without a type and not
-    yet assigned. -/
-private def synthesizesValue (targets : List VariableMd) : ResolveM Bool := do
-  pure (targets.any (fun t => t.val matches .Declare ⟨_, none⟩ || t.val matches .Stack none)
-    || (← targets.mapM untypedLocal?).any Option.isSome)
+    declaration, an untyped stack push without a joined type, or a local declared
+    without a type and not yet assigned. -/
+private def synthesizesValue (targets : List VariableMd) (pushHint? : Option HighTypeMd) : ResolveM Bool := do
+  pure (assignNeedsInference targets pushHint? || (← targets.mapM untypedLocal?).any Option.isSome)
 
 /-- Resolve an assigned local and give its type; a local declared without a type takes
     the type `compTy` of the value its first assignment stores. -/
@@ -2394,6 +2799,327 @@ private def finishUntypedDecls (body : StmtExprMd) : ResolveM StmtExprMd := do
       | none => n
     | _ => n) body
   pure (if (collectStmtExprList unannotatedDeclares patched).isEmpty then patched else body)
+
+/-- `Γ ⊢ LiteralInt n ⇒ TInt` -/
+def Synth.litInt (v : Int) (source : FileRange) : StmtExpr × HighTypeMd :=
+  (.LiteralInt v, { val := .TInt, source := source })
+
+/-- `Γ ⊢ LiteralBool b ⇒ TBool` -/
+def Synth.litBool (v : Bool) (source : FileRange) : StmtExpr × HighTypeMd :=
+  (.LiteralBool v, { val := .TBool, source := source })
+
+/-- `Γ ⊢ LiteralString s ⇒ TString` -/
+def Synth.litString (v : String) (source : FileRange) : StmtExpr × HighTypeMd :=
+  (.LiteralString v, { val := .TString, source := source })
+
+/-- `Γ ⊢ LiteralDecimal d ⇒ TReal` -/
+def Synth.litDecimal (v : StrataDDM.Decimal) (source : FileRange) : StmtExpr × HighTypeMd :=
+  (.LiteralDecimal v, { val := .TReal, source := source })
+
+/-- `Γ ⊢ LiteralBv v (width := n) ⇒ TBv n` — a bitvector literal's type is
+    fixed by its declared width. -/
+def Synth.litBv (v : Nat) (width : Nat) (source : FileRange) : StmtExpr × HighTypeMd :=
+  (.LiteralBv v width, { val := .TBv width, source := source })
+
+-- ### Variables
+
+/-- (Var-Local)
+    ```
+    Γ(x) = T
+    ──────────────────────
+    Γ ⊢ Var (.Local x) ⇒ T
+    ```
+    Resolves `ref` against the lexical scope and reads its declared type. -/
+def Synth.varLocal (ref : Identifier) (source : FileRange) :
+    ResolveM (StmtExpr × HighTypeMd) := do
+  let ref' ← resolveRef ref source
+  let ty ← getVarType ref
+  pure (.Var (.Local ref'), ty)
+
+/-- (Var-Declare)
+    ```
+    x ∉ dom(Γ)                                       (annotated, type = some T_x)
+    ────────────────────────────────────────────────────
+    Γ ⊢ Var (.Declare x (some T_x)) ⇒ TVoid ⊣ Γ, x : T_x
+
+    x ∉ dom(Γ)                                       (Var-Declare-Infer, type = none)
+    ────────────────────────────────────────────────────
+    Γ ⊢ Var (.Declare x none) ⇒ TVoid ⊣ Γ, x : Unknown
+    ```
+    `⊣ Γ, x : T_x` records that the surrounding scope is extended with
+    the new binding for the remainder of the enclosing block. The
+    declaration itself does no work other than registering `x : T_x`,
+    and yields no value, so it synthesizes `TVoid`.
+
+    When the annotation is absent (`type = none`, i.e. surface `var x`),
+    there is *neither* an annotation *nor* an initializer to read a type
+    from — `var x := e` is handled in `Synth.declInfer`/`Check.declInfer` by
+    synthesizing `e` — so this rule emits a "cannot infer a type"
+    diagnostic (binding `x : Unknown`, so that later uses of `x` do not
+    cascade further type errors). Either way the node is rewritten to a
+    fully-typed `Declare x (some T)`, so no `none` annotation survives
+    resolution.
+
+    `x ∉ dom(Γ)` is a soft side condition, not a hard premise: when `x`
+    is already bound in the current scope, `defineNameCheckDup` emits a
+    `"Duplicate definition '<x>' is already defined in this scope"`
+    diagnostic and still extends the scope — but with an *unresolved*
+    placeholder rather than `x : T_x`, so later uses of `x` do not
+    cascade further type errors. -/
+def Check.varDeclare (param : Parameter?) (source : FileRange) :
+    ResolveM StmtExprMd := do
+  declareLocal param source
+
+
+-- ### Control flow
+
+/-- (Goto)
+    ```
+    l ∈ Γ_lbl
+    ───────────────────
+    Γ ⊢ Goto l d ⇒ TVoid
+    ```
+    `exit l` and `goto l` are control-flow terminators — unconditional
+    jumps past the end of, or back to the start of, the enclosing labeled
+    block. Because they never fall through, they never deliver a value,
+    so they synthesize `TVoid`.
+
+    The premise `l ∈ Γ_lbl` requires the target label to name an
+    enclosing labeled block; labels live in their own namespace
+    (`ResolveState.labelScope`, populated by `Check.block` via
+    `withLabel`). Failing that, `l` may name another block of the procedure
+    body (`ResolveState.procLabels`): a jump to a block that does not enclose
+    it, whose placement `validateJumps` checks. The stack such a jump carries is
+    typed at its target (see `enterJumpTarget`). An unknown label is reported
+    here as `"label '<l>' is not in scope"`. -/
+def Check.goto (target : String) (destination : GotoDestination) (source : FileRange) :
+    ResolveM StmtExprMd := do
+  let st ← get
+  if st.labelScope.contains target then
+    if destination matches .blockEnd then
+      modify fun s => if s.usesStack then { s with exitStacks := (target, s.stackTypes, s.stackOrigins) :: s.exitStacks } else s
+  else if st.procLabels.contains target then
+    recordJumpStack target destination source
+  else
+    let diag := diagnosticFromSource source
+      s!"label '{target}' is not in scope"
+    modify fun s => { s with errors := s.errors.push diag }
+  modify fun s => if s.usesStack then { s with stackTypes := [], stackOrigins := [] } else s
+  pure { val := .Goto target destination, source := source }
+
+/-- Cases on whether `ref` resolves to a composite/datatype.
+    ```
+    ref is a composite or datatype,                (New-Ok)
+      or is unresolved, or is absent from Γ
+    ──────────────────────────────────────
+    Γ ⊢ New ref ⇒ UserDefined ref
+
+    ref resolves to a non-type kind               (New-Fallback)
+    ──────────────────────────────────────
+    Γ ⊢ New ref ⇒ Unknown
+    ```
+    When `ref` resolves to a composite or datatype, the type is
+    `UserDefined ref` — or, for an explicit instantiation `new C<τ…>`, the
+    applied type `Applied (UserDefined ref) [τ…]`, so the type checker and
+    `MonomorphizeComposites` see the concrete instantiation (`allocatedType`).
+    A bare `new C` carries no type args and
+    keeps the plain `UserDefined` type. The `Unknown` fallback fires *only*
+    when `ref` resolves to a present definition whose kind is neither
+    composite nor datatype (e.g. a variable or procedure name); this
+    suppresses cascading errors after the kind diagnostic has already fired.
+    An *unresolved* `ref`, or one absent from scope, takes the `UserDefined`
+    branch instead — `resolveRef` has already reported the name, so
+    re-flagging it here would only duplicate that diagnostic. The explicit
+    type args are resolved (so a `.TVar` inside is reclassified and a bad
+    arg reported) and their count is checked against the composite's
+    declared type-arg arity.
+
+    A bare `new C` for a GENERIC `C` recovers its instantiation from
+    `expected?` (`var b: Box<int> := new Box` ⇒ `typeArgs = [int]`), so the
+    allocation site carries the concrete arguments the monomorphizer needs
+    instead of leaving it to recover them from surrounding context. When
+    nothing supplies them it is a resolution error, since an
+    un-instantiated generic composite cannot be monomorphized. -/
+def Synth.new (ref : Identifier) (typeArgs : List HighTypeMd) (source : FileRange)
+    (expected? : Option HighTypeMd := none) :
+    ResolveM (StmtExpr × HighTypeMd) := do
+  let ref' ← resolveRef ref source
+    (expected := #[.compositeType, .datatypeDefinition])
+  -- Resolve explicit instantiation arguments (`new Box<int>`) so their type names
+  -- get uniqueIds, exactly as `appliedType` does in type position. Empty for a
+  -- bare `new C` (the common, pre-existing case).
+  let typeArgs' ← typeArgs.mapM resolveHighType
+  let s ← get
+  -- Arity-check explicit `new C<τ…>` against C's declared type params. `parentExprMap`
+  -- holds only COMPOSITES, so this covers a composite `new`; a generic DATATYPE `new`
+  -- (`new Bx<int,bool>`) hits the `none` branch and is instead caught downstream fail-loud
+  -- (a re-resolution `.StrataBug` after monomorphization), never a wrong-accept. Bare `new C`
+  -- carries no args (unchecked — the var's declared type drives it). Without this, surplus
+  -- args are silently dropped by the
+  -- monomorphizer's `zip`, so `new Box<int,bool>` for `Box<T>` would be over-accepted here.
+  unless typeArgs'.isEmpty do
+    match s.typeLattice.parentExprMap.get? ref.text with
+    | some (declParams, _) =>
+      checkTypeArgArity source ref.text declParams.length typeArgs'.length
+    | none => pure ()  -- datatype/unresolved: arity deferred to Core
+  let kindOk : Bool := match s.scope.get? ref.text with
+    | some (_, node) => node.kind == .unresolved ||
+        (#[ResolvedNodeKind.compositeType, .datatypeDefinition].contains node.kind)
+    | none => true
+  -- CHECK DIRECTION for a bare `new C` on a generic composite: take the instantiation from the
+  -- expected type when it names the same head. Only when the arity matches, and only for a
+  -- composite that actually declares type parameters — a bare `new C` on a non-generic `C` must
+  -- stay the plain `UserDefined` it has always been.
+  let declParams? := s.typeLattice.parentExprMap.get? ref.text |>.map (·.1)
+  let typeArgs' ←
+    if !typeArgs'.isEmpty then pure typeArgs'
+    else match declParams?, expected? with
+      | some declParams, some exp =>
+        if declParams.isEmpty then pure typeArgs'
+        else match (s.typeLattice.unfold exp).val with
+          | .Applied ⟨.UserDefined expHead, _⟩ expArgs =>
+            if expHead.text == ref.text && expArgs.length == declParams.length
+            then pure expArgs else pure typeArgs'
+          | _ => pure typeArgs'
+      | _, _ => pure typeArgs'
+  -- A generic composite with no instantiation from either source cannot be monomorphized: it
+  -- would reach Core as an un-lowered generic application (`genericReachedCoreMsg`) or be boxed
+  -- by HeapParameterization with no concrete arguments. Report it at the allocation.
+  if typeArgs'.isEmpty && kindOk then
+    if let some declParams := declParams? then
+      unless declParams.isEmpty do
+        let names := String.intercalate ", " (declParams.map (fun p => s!"'{p.text}'"))
+        let what := if declParams.length == 1 then "type argument" else "type arguments"
+        let diag := diagnosticFromSource source
+          s!"cannot infer {what} {names} of '{ref.text}': write the instantiation explicitly \
+             (`new {ref.text}<…>`) or annotate the variable it is assigned to"
+        modify fun st => { st with errors := st.errors.push diag }
+  let ty := if kindOk then allocatedType ref' typeArgs' source
+    else { val := HighType.Unknown, source := source }
+  pure (.New ref' typeArgs', ty)
+
+/-- (Yield) A bare `yield` evaluates to the value the next `resume` sends back
+    in — the enclosing coroutine's first `resumes` binding. `Γ_res` is that type
+    (`ResolveState.resumeType`, set by `resolveProcedure`).
+    ```
+    Γ_res = ρ                    Γ_res = ⊥
+    ──────────────────          ──────────────────
+    Γ ⊢ Yield ⇒ ρ               Γ ⊢ Yield ⇒ TVoid
+    ```
+    With no `resumes` the coroutine receives nothing back, so `yield` is `TVoid`;
+    a value use (`x := yield`) then correctly fails as "yields no value" rather
+    than binding `Unknown`. Coroutine elaboration later replaces `yield` with a
+    composite-field read, so this type is consumed only during resolution. -/
+def Synth.yield (source : FileRange) : ResolveM (StmtExpr × HighTypeMd) := do
+  let ty := ((← get).resumeType).getD { val := .TVoid, source := source }
+  pure (.Yield, { ty with source := source })
+
+/-- `Snapshot h` — a lowering artifact that never reaches a resolution pass
+    (it is introduced only after resolution is disabled).
+    Defined for match totality; it is a statement, so it types as `TVoid`. -/
+def Synth.snapshot (label : Identifier) (source : FileRange) : StmtExpr × HighTypeMd :=
+  (.Snapshot label, { val := .TVoid, source := source })
+
+/-- Cases on whether `instanceTypeName` is set (i.e., we're inside an
+    instance method).
+
+    ```
+    Γ.instanceTypeName = some T      (This-Inside)
+    ───────────────────────────
+    Γ ⊢ This ⇒ UserDefined T
+
+    Γ.instanceTypeName = none        (This-Outside)
+    ───────────────────────────
+    Γ ⊢ This ⇒ Unknown               (emits "'this' is not allowed outside instance methods")
+    ```
+    When `instanceTypeName` is set (we're inside an instance method,
+    populated on `ResolveState` by `resolveInstanceProcedure` for the
+    duration of an instance method body), `This` synthesizes
+    `UserDefined T`. With it, `this.field` and instance-method dispatch
+    synthesize real types instead of being wildcarded through `Unknown`.
+    Otherwise an error is emitted ("'this' is not allowed outside instance
+    methods") and the type collapses to `Unknown` to suppress cascading
+    errors. -/
+def Synth.this (source : FileRange) :
+    ResolveM (StmtExpr × HighTypeMd) := do
+  let s ← get
+  match s.instanceTypeName with
+  | some typeName =>
+    let typeId : Identifier :=
+      match s.scope.get? typeName with
+      | some (uid, _) => { text := typeName, uniqueId := some uid, source := source }
+      | none => { text := typeName, source := source }
+    pure (.This, { val := .UserDefined typeId, source := source })
+  | none =>
+    let diag := diagnosticFromSource source "'this' is not allowed outside instance methods"
+    modify fun s => { s with errors := s.errors.push diag }
+    pure (.This, { val := .Unknown, source := source })
+
+-- ### Untyped forms
+
+/-- `Γ ⊢ Abstract ⇒ Unknown` -/
+def Synth.abstract (source : FileRange) : StmtExpr × HighTypeMd :=
+  (.Abstract, { val := .Unknown, source := source })
+
+/-- `Γ ⊢ All ⇒ Unknown` -/
+def Synth.all (source : FileRange) : StmtExpr × HighTypeMd :=
+  (.All, { val := .Unknown, source := source })
+
+-- ### ContractOf
+
+/-- (Hole-Some)
+    ```
+    T_h <: T
+    ────────────────────────────
+    Γ ⊢ Hole d (some T_h) ⇐ T
+    ```
+    A typed hole carries the user's annotation `T_h`. The annotation is
+    resolved and verified against the surrounding `expected` type via
+    subsumption; the resolved annotation is preserved on the node so
+    downstream passes (hole elimination) can generate correctly typed
+    uninterpreted functions. -/
+def Check.holeSome (det : Bool) (ty : HighTypeMd) (expected : HighTypeMd)
+    (source : FileRange) : ResolveM StmtExprMd := do
+  let ty' ← resolveHighType ty
+  checkSubtype source expected ty'
+  pure { val := .Hole det (some ty'), source := source }
+
+/-- (Hole-None)
+    ```
+    ────────────────────────────────────────
+    Γ ⊢ Hole d none ⇐ T  ↦  Γ ⊢ Hole d (some T)
+    ```
+    An untyped hole in check mode records the expected type on the node
+    so downstream passes (hole elimination) don't have to infer it
+    again. -/
+def Check.holeNone (det : Bool) (expected : HighTypeMd) (source : FileRange) :
+    StmtExprMd :=
+  { val := .Hole det (some expected), source := source }
+
+private def implicitForcedTypeArgs (proc : Procedure) (prior : List HighTypeMd) : Option (List HighTypeMd) :=
+  if proc.isImplicit && prior.length == proc.typeArgs.length
+      && !prior.any (·.val matches .Unknown) then some prior else none
+
+private def ctorExpectedType (ctx : TypeLattice) (typeName : Identifier) (expected? : Option HighTypeMd) :
+    Option HighTypeMd :=
+  match expected? with
+  | some exp =>
+    let namesThis := match highBaseName? (ctx.unfold exp).val with
+      | some n => n.text == typeName.text
+      | none => false
+    if namesThis then some exp
+    else (ctx.implicitCastSourceInto typeName.text exp).orElse fun _ => some exp
+  | none => none
+
+private def forcedTypeSubst (typeParams : List String) (prior : List HighTypeMd) :
+    Std.HashMap String HighTypeMd :=
+  if typeParams.length > 0 && typeParams.length == prior.length
+      && !prior.any (·.val matches .Unknown) then
+    (typeParams.zip prior).foldl (fun m (p, t) => m.insert p t) (∅ : Std.HashMap String HighTypeMd)
+  else ∅
+
+private def addMissingBindings (base extra : Std.HashMap String HighTypeMd) : Std.HashMap String HighTypeMd :=
+  extra.fold (fun acc name ty => if acc.contains name then acc else acc.insert name ty) base
 
 set_option linter.unusedVariables false in
 set_option maxHeartbeats 400000 in
@@ -2639,41 +3365,11 @@ def Check.resolveStmtExpr (exprMd : StmtExprMd) (expected : HighTypeMd) : Resolv
 
 -- ### Literals
 
-/-- `Γ ⊢ LiteralInt n ⇒ TInt` -/
-def Synth.litInt (v : Int) (source : FileRange) : StmtExpr × HighTypeMd :=
-  (.LiteralInt v, { val := .TInt, source := source })
 
-/-- `Γ ⊢ LiteralBool b ⇒ TBool` -/
-def Synth.litBool (v : Bool) (source : FileRange) : StmtExpr × HighTypeMd :=
-  (.LiteralBool v, { val := .TBool, source := source })
 
-/-- `Γ ⊢ LiteralString s ⇒ TString` -/
-def Synth.litString (v : String) (source : FileRange) : StmtExpr × HighTypeMd :=
-  (.LiteralString v, { val := .TString, source := source })
 
-/-- `Γ ⊢ LiteralDecimal d ⇒ TReal` -/
-def Synth.litDecimal (v : StrataDDM.Decimal) (source : FileRange) : StmtExpr × HighTypeMd :=
-  (.LiteralDecimal v, { val := .TReal, source := source })
 
-/-- `Γ ⊢ LiteralBv v (width := n) ⇒ TBv n` — a bitvector literal's type is
-    fixed by its declared width. -/
-def Synth.litBv (v : Nat) (width : Nat) (source : FileRange) : StmtExpr × HighTypeMd :=
-  (.LiteralBv v width, { val := .TBv width, source := source })
 
--- ### Variables
-
-/-- (Var-Local)
-    ```
-    Γ(x) = T
-    ──────────────────────
-    Γ ⊢ Var (.Local x) ⇒ T
-    ```
-    Resolves `ref` against the lexical scope and reads its declared type. -/
-def Synth.varLocal (ref : Identifier) (source : FileRange) :
-    ResolveM (StmtExpr × HighTypeMd) := do
-  let ref' ← resolveRef ref source
-  let ty ← getVarType ref
-  pure (.Var (.Local ref'), ty)
 
 /-- (Var-Field)
     ```
@@ -2687,7 +3383,7 @@ def Synth.varField (exprMd : StmtExprMd)
     (target : StmtExprMd) (fieldName : Identifier) (source : FileRange)
     (h : exprMd.val = .Var (.Field target fieldName)) :
     ResolveM (StmtExpr × HighTypeMd) := do
-  let (target', holderTy) ← Synth.resolveStmtExpr target
+  let (target', holderTy) ← castReceiver (← Synth.resolveStmtExpr target)
   let fieldName' ← resolveFieldRef fieldName source holderTy
   -- Concretize the field's `.TVar` against the holder's instantiation. `holderTy` is
   -- the synthesized holder type — already concretized for a nested `g#inner` because
@@ -2732,42 +3428,6 @@ def Synth.array (exprMd : StmtExprMd) (source : FileRange) :
       rw [h] at hsz
       term_by_mem
 
-/-- (Var-Declare)
-    ```
-    x ∉ dom(Γ)                                       (annotated, type = some T_x)
-    ────────────────────────────────────────────────────
-    Γ ⊢ Var (.Declare x (some T_x)) ⇒ TVoid ⊣ Γ, x : T_x
-
-    x ∉ dom(Γ)                                       (Var-Declare-Infer, type = none)
-    ────────────────────────────────────────────────────
-    Γ ⊢ Var (.Declare x none) ⇒ TVoid ⊣ Γ, x : Unknown
-    ```
-    `⊣ Γ, x : T_x` records that the surrounding scope is extended with
-    the new binding for the remainder of the enclosing block. The
-    declaration itself does no work other than registering `x : T_x`,
-    and yields no value, so it synthesizes `TVoid`.
-
-    When the annotation is absent (`type = none`, i.e. surface `var x`),
-    there is *neither* an annotation *nor* an initializer to read a type
-    from — `var x := e` is handled in `Synth.declInfer`/`Check.declInfer` by
-    synthesizing `e` — so this rule emits a "cannot infer a type"
-    diagnostic (binding `x : Unknown`, so that later uses of `x` do not
-    cascade further type errors). Either way the node is rewritten to a
-    fully-typed `Declare x (some T)`, so no `none` annotation survives
-    resolution.
-
-    `x ∉ dom(Γ)` is a soft side condition, not a hard premise: when `x`
-    is already bound in the current scope, `defineNameCheckDup` emits a
-    `"Duplicate definition '<x>' is already defined in this scope"`
-    diagnostic and still extends the scope — but with an *unresolved*
-    placeholder rather than `x : T_x`, so later uses of `x` do not
-    cascade further type errors. -/
-def Check.varDeclare (param : Parameter?) (source : FileRange) :
-    ResolveM StmtExprMd := do
-  declareLocal param source
-
-
--- ### Control flow
 
 /-- (While)
     ```
@@ -2817,39 +3477,6 @@ def Check.while (exprMd : StmtExprMd)
       rw [h] at hsz
       term_by_mem
 
-/-- (Goto)
-    ```
-    l ∈ Γ_lbl
-    ───────────────────
-    Γ ⊢ Goto l d ⇒ TVoid
-    ```
-    `exit l` and `goto l` are control-flow terminators — unconditional
-    jumps past the end of, or back to the start of, the enclosing labeled
-    block. Because they never fall through, they never deliver a value,
-    so they synthesize `TVoid`.
-
-    The premise `l ∈ Γ_lbl` requires the target label to name an
-    enclosing labeled block; labels live in their own namespace
-    (`ResolveState.labelScope`, populated by `Check.block` via
-    `withLabel`). Failing that, `l` may name another block of the procedure
-    body (`ResolveState.procLabels`): a jump to a block that does not enclose
-    it, whose placement `validateJumps` checks. The stack such a jump carries is
-    typed at its target (see `enterJumpTarget`). An unknown label is reported
-    here as `"label '<l>' is not in scope"`. -/
-def Check.goto (target : String) (destination : GotoDestination) (source : FileRange) :
-    ResolveM StmtExprMd := do
-  let st ← get
-  if st.labelScope.contains target then
-    if destination matches .blockEnd then
-      modify fun s => if s.usesStack then { s with exitStacks := (target, s.stackTypes) :: s.exitStacks } else s
-  else if st.procLabels.contains target then
-    recordJumpStack target destination source
-  else
-    let diag := diagnosticFromSource source
-      s!"label '{target}' is not in scope"
-    modify fun s => { s with errors := s.errors.push diag }
-  modify fun s => if s.usesStack then { s with stackTypes := [] } else s
-  pure { val := .Goto target destination, source := source }
 
 /-- (Return)
 
@@ -3236,6 +3863,7 @@ def Synth.ifThenElse (exprMd : StmtExprMd)
     ResolveM (StmtExpr × HighTypeMd) := do
   let cond' ← Check.resolveStmtExpr cond { val := .TBool, source := cond.source }
   let base ← currentStack
+  let thenErrsBefore := (← get).errors.size
   let (thenBr', thenTy) ← Synth.resolveStmtExpr thenBr expected?
   let thenStack ← resetStack base
   match (dependent := true) elseBr with
@@ -3243,6 +3871,7 @@ def Synth.ifThenElse (exprMd : StmtExprMd)
     mergeStackArms thenStack base (endsAbruptly thenBr)
     pure (.IfThenElse cond' thenBr' none, { val := .TVoid, source := source })
   | some e =>
+    let elseErrsBefore := (← get).errors.size
     let (e', elseTy) ← Synth.resolveStmtExpr e expected?
     mergeStackArms thenStack (← currentStack) (endsAbruptly thenBr) (endsAbruptly e)
     -- An inference variable in one branch takes the other's type: the wildcard alone would accept
@@ -3256,31 +3885,9 @@ def Synth.ifThenElse (exprMd : StmtExprMd)
     let thenTy ← zonkType thenTy
     let elseTy ← zonkType elseTy
     let ctx := (← get).typeLattice
-    -- A branch ending in a heap-threading assign synthesizes the plumbing type `Heap`, while a
-    -- sibling branch with no field-write stays `void`. These are not incompatible: in statement
-    -- position both branches run for effect, and the `Heap` value is the threaded heap, not a
-    -- user value. Treat `Heap` as void-like for this join only (not the shared `isVoidLikeHT`,
-    -- which gates coercion).
-    let isStmtBranchTy (t : HighType) : Bool :=
-      isVoidLikeHT t || (match t with | .UserDefined id => id.text == "Heap" | _ => false)
-    let ty ←
-      -- Primary: the shared `join` (handles Unknown/TVoid/equal — e.g. an `int`/`void`
-      -- branch pair joins to `void`). Fallback: the frontend tolerances an `.err`-grade
-      -- `(T, Error)` body or a heap-threading branch needs (strip trailing Error; treat
-      -- Heap as void-like for this join only).
-      match join ctx thenTy elseTy with
-      | some joined => pure joined
-      | none =>
-        if isConsistent ctx (stripTrailingErrors thenTy) (stripTrailingErrors elseTy) ||
-            isVoidLikeHT (stripTrailingErrors thenTy).val && isVoidLikeHT (stripTrailingErrors elseTy).val ||
-            isStmtBranchTy (stripTrailingErrors thenTy).val && isStmtBranchTy (stripTrailingErrors elseTy).val then
-          pure ((join ctx (stripTrailingErrors thenTy) (stripTrailingErrors elseTy)).getD (stripTrailingErrors thenTy))
-        else
-          let diag := diagnosticFromSource source
-            s!"'if' branches have incompatible types '{formatType thenTy}' and '{formatType elseTy}'"
-          modify fun s => { s with errors := s.errors.push diag }
-          pure { val := .Unknown, source := source }
-    pure (.IfThenElse cond' thenBr' (some e'), ty)
+    match castJoin ctx thenTy elseTy with
+    | some target => applyCastJoin source cond' thenBr thenBr' thenTy thenErrsBefore e e' elseTy elseErrsBefore target
+    | none => joinIfArms source cond' thenBr' e' thenTy elseTy
   termination_by sizeOf exprMd * 5 + 1
   decreasing_by
     all_goals
@@ -3389,9 +3996,10 @@ def Check.assume (exprMd : StmtExprMd)
     ──────────────────────────────────
     Γ ⊢ Throw value ⇒ TVoid
     ```
-    `throw`'s operand is only synthesized: there is no synthesized exception
-    root, so a `throw` places no upper bound on its operand's type. The thrown
-    types are instead reconciled at each enclosing `catch` binding or a `throwsOn` case, whose
+    `throw`'s operand is synthesized, then cast to a composite when it is not one already (a
+    `NullableRef<E>` is unwrapped, so throwing a possibly-null value requires it non-null). There
+    is no synthesized exception root, so a `throw` places no upper bound on its operand's type. The
+    thrown types are instead reconciled at each enclosing `catch` binding or a `throwsOn` case, whose
     binding is typed at the least common ancestor of everything that can reach
     it (see `Check.tryCatch`). `throw` is a statement: it yields no value, so it
     synthesizes `TVoid`. -/
@@ -3403,8 +4011,9 @@ def Check.throw (exprMd : StmtExprMd)
   -- its operand's type; the thrown types are reconciled at each enclosing
   -- `catch` binding or a `throwsOn` case by typing the binding at their least common ancestor.
   -- `throw` is a statement (yields `TVoid`).
-  let (value', _) ← Synth.resolveStmtExpr value
-  pure { val := .Throw value', source := source }
+  let (value', valueTy) ← Synth.resolveStmtExpr value
+  let (value'', _) ← castReceiver (value', valueTy)
+  pure { val := .Throw value'', source := source }
   termination_by sizeOf exprMd * 5 + 0
   decreasing_by
     have hsz := exprMd.sizeOf_val_lt
@@ -3546,7 +4155,8 @@ def Synth.assign (exprMd : StmtExprMd)
   -- the synthesized tuple (the callee's declared output); the RHS/target
   -- compatibility is then enforced by a tuple-level Sub check at the end
   -- instead of the usual push-in.
-  let inferInfo ← if (← synthesizesValue targets) then
+  let reserved ← reserveStackPushes targets
+  let inferInfo ← if (← synthesizesValue targets reserved.2) then
       some <$> Synth.resolveStmtExpr value
     else pure none
   let (compTys, arityError) ← componentTypes targets inferInfo
@@ -3568,14 +4178,14 @@ def Synth.assign (exprMd : StmtExprMd)
       let (ref', ty) ← resolveLocalTarget ref source compTy
       pure (Sum.inl ((⟨.Local ref', vs⟩ : VariableMd), ty))
     | ⟨.Field target fieldName, vs⟩ =>
-      let (target', holderTy) ← Synth.resolveStmtExpr target
+      let (target', holderTy) ← castReceiver (← Synth.resolveStmtExpr target)
       let fieldName' ← resolveFieldRef fieldName source holderTy
       pure (Sum.inl ((⟨.Field target' fieldName', vs⟩ : VariableMd),
         ← concretizeFieldType holderTy fieldName'))
     | ⟨.Stack t, vs⟩ => do
       let ty' ← match t with
         | some ty => resolveHighType ty
-        | none => pure (stackTargetType targets inferInfo compTy vs)
+        | none => pure (reserved.2.getD (stackTargetType targets inferInfo compTy vs))
       pure (Sum.inl ((⟨.Stack (some ty'), vs⟩ : VariableMd), ty'))
     | ⟨.ArrayElement array index, vs⟩ =>
       let (array', arrayTy) ← Synth.resolveStmtExpr array
@@ -3625,7 +4235,7 @@ def Synth.assign (exprMd : StmtExprMd)
       let name' ← defineNameCheckDup param.name (.var param.name ty')
       pure (⟨.Declare ⟨name', some ty'⟩, vs⟩ : VariableMd)
   reportDuplicateTargets targets'
-  pushStackTargets targets'
+  pushStackTargets targets' reserved.1
   pure (.Assign targets' value', expectedTy)
   termination_by sizeOf exprMd * 5 + 1
   decreasing_by
@@ -3656,9 +4266,9 @@ def Check.assign (exprMd : StmtExprMd)
   -- Delegating also means the deferred-binding rule in `Synth.assign` (declared names
   -- enter scope only after the value is resolved) applies here with no duplication.
   let (synthExpr, expectedTy) ← Synth.assign exprMd targets value source h
-  unless expected.val matches .TVoid do
-    checkSubtype source expected expectedTy
-  pure { val := synthExpr, source := source }
+  let assigned : StmtExprMd := { val := synthExpr, source := source }
+  if expected.val matches .TVoid then pure assigned
+  else castToExpected source expected expectedTy assigned
   termination_by sizeOf exprMd * 5 + 2
   decreasing_by
     all_goals (omega)
@@ -3724,9 +4334,9 @@ def Check.declInfer (exprMd : StmtExprMd)
   let (value', valueTy) ← Synth.resolveStmtExpr value
   let bindTy ← declInferValueType name value'.source valueTy
   let name' ← defineNameCheckDup name (.var name bindTy)
-  unless expected.val matches .TVoid do
-    checkSubtype source expected bindTy
-  pure { val := .Assign [⟨.Declare ⟨name', some bindTy⟩, vs⟩] value', source := source }
+  let declared : StmtExprMd := { val := .Assign [⟨.Declare ⟨name', some bindTy⟩, vs⟩] value', source := source }
+  if expected.val matches .TVoid then pure declared
+  else castToExpected source expected bindTy declared
   termination_by sizeOf exprMd * 5 + 0
   decreasing_by
     have hsz := exprMd.sizeOf_val_lt
@@ -3765,7 +4375,7 @@ def Synth.incrDecr (exprMd : StmtExprMd)
       let ref' ← resolveRef ref source
       pure ((⟨.Local ref', target.source⟩ : VariableMd), ← getVarType ref)
     | .Field tgt fieldName =>
-      let (tgt', holderTy) ← Synth.resolveStmtExpr tgt
+      let (tgt', holderTy) ← castReceiver (← Synth.resolveStmtExpr tgt)
       let fieldName' ← resolveFieldRef fieldName source holderTy
       pure ((⟨.Field tgt' fieldName', target.source⟩ : VariableMd), ← concretizeFieldType holderTy fieldName')
     | .Stack t => do
@@ -3816,7 +4426,7 @@ def Synth.compoundAssign (exprMd : StmtExprMd)
       let ref' ← resolveRef ref source
       pure (⟨.Local ref', target.source⟩ : VariableMd)
     | .Field tgt fieldName =>
-      let (tgt', holderTy) ← Synth.resolveStmtExpr tgt
+      let (tgt', holderTy) ← castReceiver (← Synth.resolveStmtExpr tgt)
       let fieldName' ← resolveFieldRef fieldName source holderTy
       pure (⟨.Field tgt' fieldName', target.source⟩ : VariableMd)
     | .Stack t => do
@@ -3895,11 +4505,13 @@ def Synth.compoundAssign (exprMd : StmtExprMd)
     The result type is the (possibly multi-valued) declared output type
     from `getCallInfo`.
 
-    `priorTypeArgs` is whatever a PREVIOUS resolution stamped on this node. It is deliberately
-    ignored and recomputed: the post-pass re-resolution (`LaurelCompilationPipeline`) re-runs this
-    rule on an already-resolved tree, and the instantiation must be re-derived from the current
-    types rather than trusted, since an intervening pass may have changed them. Present only so
-    the shape of `h` matches the node. -/
+    `priorTypeArgs` is whatever a PREVIOUS resolution stamped on this node. It is recomputed rather
+    than trusted: the post-pass re-resolution (`LaurelCompilationPipeline`) re-runs this rule on an
+    already-resolved tree, and the instantiation must be re-derived from the current types, since an
+    intervening pass may have changed them. Two exceptions keep it: an `implicit` procedure's
+    recorded arguments are its instantiation, since resolution inserted the call at exactly those
+    arguments, and a generic datatype constructor's fill the parameters its arguments and slot leave
+    undetermined. -/
 def Synth.staticCall (exprMd : StmtExprMd)
     (callee : Identifier) (args : List StmtExprMd) (priorTypeArgs : List HighTypeMd)
     (source : FileRange)
@@ -3982,8 +4594,9 @@ def Synth.staticCall (exprMd : StmtExprMd)
       -- is handed over directly. A monomorphic overload reports its declared result as is.
       if proc.typeArgs.isEmpty then
         return (.Call none callee' args' [], procResultType callee.source proc)
+      -- STOPGAP: see bareTypeParameterStopgap
       let inst ← instantiateCall proc.typeArgs (proc.inputs.map (·.type))
-        (procResultType callee.source proc) source
+        (procResultType callee.source proc) source (stopgapCallee? := some proc)
       let (args', typeArgs, ty) ← finishCall callee.text callee.text inst
         resolved expected? (quiet := false) source
       return (.Call none callee' args' typeArgs, ty)
@@ -4008,16 +4621,23 @@ def Synth.staticCall (exprMd : StmtExprMd)
 
   -- GENERIC callee. Runs AFTER overload selection: `scope` keeps only the last definition of an
   -- overloaded name, so an overloaded generic must go through `selectOverloads` above.
-  let genericProc? : Option Procedure := match (← get).scope.get? callee.text with
+  let genericProc? : Option Procedure := match ← calleeEntry callee with
     | some (_, .staticProcedure proc) | some (_, .instanceProcedure _ proc) =>
       if proc.typeArgs.isEmpty then none else some proc
     | _ => none
   if let some gproc := genericProc? then
+    let forced? := implicitForcedTypeArgs gproc priorTypeArgs
     let callee' ← resolveRef callee source
       (expected := #[.parameter, .staticProcedure, .datatypeConstructor, .datatypeDestructor, .constant])
+    -- STOPGAP: see bareTypeParameterStopgap
     let inst ← instantiateCall gproc.typeArgs
-      (gproc.inputs.map (·.type)) (procResultType callee.source gproc) source
-    let hints := expectedHints (← get).typeLattice inst expected?
+      (gproc.inputs.map (·.type)) (procResultType callee.source gproc) source (stopgapCallee? := some gproc)
+    let forcedVars := match forced? with
+      | some forced => inst.atInferVars ((gproc.typeArgs.map (·.text)).zip forced
+          |>.foldl (fun m (p, t) => m.insert p t) {})
+      | none => {}
+    recordInferSolutions (forcedVars.fold (fun m k v => m.insert k v.val) {}) source
+    let hints := addMissingBindings forcedVars (expectedHints (← get).typeLattice inst expected?)
     let resolved ← Synth.callArgs exprMd args (fun a hMem => by
         have hsz := exprMd.sizeOf_val_lt
         rw [h] at hsz
@@ -4053,6 +4673,10 @@ def Synth.staticCall (exprMd : StmtExprMd)
           modify fun s => { s with errors := s.errors.push diag }
           return (.Call none callee' args' [], { val := .TBool, source := source })
       | _ => pure ()
+    let resolved ← if eqOpName?.isSome then do
+        let (cast, castTys) ← castComparisonOperands args' argTys
+        pure (cast.zip castTys)
+      else pure resolved
     let (args', typeArgs, ty) ← finishCall callee.text callee.text inst resolved expected?
       (quiet := false) source
     -- `zip` pairs only as far as the shorter list, so a surplus argument would otherwise reach Core
@@ -4073,7 +4697,7 @@ def Synth.staticCall (exprMd : StmtExprMd)
   -- Only for a field type that actually mentions a parameter: a concrete field (`Pair..fst` at
   -- `first: int`) is already precise from `getCallInfo`, so it takes the ordinary path below and
   -- keeps its bidirectional argument check. Same for a non-generic datatype (`IntList..tail!`).
-  let destructor? : Option (Identifier × Parameter) := match (← get).scope.get? callee.text with
+  let destructor? : Option (Identifier × Parameter) := match ← calleeEntry callee with
     | some (_, .datatypeDestructor dtName fld) => some (dtName, fld)
     | _ => none
   if let some (dtName, fld) := destructor? then
@@ -4114,7 +4738,7 @@ def Synth.staticCall (exprMd : StmtExprMd)
   -- arity is checked in full. (A tester like `Foo..isBar` resolves to a
   -- `.staticProcedure`, never a `.datatypeConstructor`, so it takes the ordinary
   -- procedure path below.)
-  let ctorNode? := (← get).scope.get? callee.text
+  let ctorNode? ← calleeEntry callee
   if let some (_, .datatypeConstructor typeName ctor) := ctorNode? then
     -- The datatype's own type parameters (empty for a non-generic datatype).
     let dtParams : List Identifier := match (← get).scope.get? typeName.text with
@@ -4142,18 +4766,20 @@ def Synth.staticCall (exprMd : StmtExprMd)
       { val := .Applied { val := .UserDefined typeName, source := source }
                         (typeParams.map (fun p => { val := HighType.TVar (mkId p), source := source })),
         source := source }
+    let ctorExpected? := ctorExpectedType ctx typeName expected?
     let inst ← instantiateCall dtParams fieldTys ctorRetShape source
-    let hints := expectedHints ctx inst expected?
+    let forcedCtor := inst.atInferVars (forcedTypeSubst typeParams priorTypeArgs)
+    let hints := addMissingBindings forcedCtor (expectedHints ctx inst ctorExpected?)
     let resolvedArgs ← Synth.callArgs exprMd args (fun a hMem => by
         have hsz := exprMd.sizeOf_val_lt
         rw [h] at hsz
-        term_by_mem) inst.params hints (exactExpected (← get).typeLattice inst expected?)
+        term_by_mem) inst.params hints (exactExpected (← get).typeLattice inst ctorExpected?)
     -- "Cannot infer" is left out when the expected type already NAMES this datatype. The user did
     -- annotate; if the annotation still leaves a parameter open it is malformed
     -- (`var o: Option := Nothing()` for `Option<T>`), and the type-argument arity diagnostic on the
     -- annotation is the message to act on. Adding "cannot infer T" on top would just restate it
     -- from the other side.
-    let expectedAlreadyReported : Bool := match expected? with
+    let expectedAlreadyReported : Bool := match ctorExpected? with
       | some exp =>
         exp.val matches .Unknown ||
           (match (highBaseName? (ctx.unfold exp).val) with
@@ -4161,7 +4787,7 @@ def Synth.staticCall (exprMd : StmtExprMd)
            | none => false)
       | none => false
     let (args', typeArgs, ctorTy) ← finishCall callee.text typeName.text inst resolvedArgs
-      expected? (quiet := expectedAlreadyReported) source
+      ctorExpected? (quiet := expectedAlreadyReported) source (forced := forcedCtor)
     -- The INSTANTIATED datatype, an open parameter as its inference variable, which a use of the
     -- result may still solve; recorded on the node in the datatype's parameter order too. An open
     -- parameter that is not reported (an `Unknown` expected type, or a malformed annotation with
@@ -4327,7 +4953,7 @@ def Synth.instanceCall (exprMd : StmtExprMd)
     (expected? : Option HighTypeMd := none) :
     ResolveM (StmtExpr × HighTypeMd) := do
   let errorsBefore := (← get).errors.size
-  let (target', targetTy) ← Synth.resolveStmtExpr target
+  let (target', targetTy) ← castReceiver (← Synth.resolveStmtExpr target)
   if callee.text == "length" && args.isEmpty then
     if let .TArray _ := ((← get).typeLattice.unfold targetTy).val then
       return (.ArrayLength target', { val := .TInt, source := source })
@@ -4340,7 +4966,10 @@ def Synth.instanceCall (exprMd : StmtExprMd)
   -- `TypeName$method` (see `preRegisterTopLevel` / `resolveInstanceProcedure`),
   -- matching the lifted top-level static procedure that `LiftInstanceProcedures`
   -- produces, so the method is looked up under its composite's key.
-  let lookupKey ← match (← targetTypeName target') with
+  let receiverName? ← match (← targetTypeName target') with
+    | some n => pure (some n)
+    | none => pure (receiverTypeName? (← get).typeLattice targetTy.val)
+  let lookupKey ← match receiverName? with
     | some tyName => do
       -- An instance procedure is registered ONLY under its DECLARING type's key, so an
       -- inherited call must find which ancestor of the receiver's static type declares
@@ -4402,8 +5031,9 @@ def Synth.instanceCall (exprMd : StmtExprMd)
     | some (_, .compositeType ct) => ct.typeArgs
     | _ => []
   let recvTy := rawAtUnknown (← get).typeLattice targetTy
+  -- STOPGAP: see bareTypeParameterStopgap
   let inst ← instantiateCall (ownerParams ++ proc.typeArgs) (proc.inputs.map (·.type))
-    (procResultType lookupKey.source proc) source
+    (procResultType lookupKey.source proc) source (stopgapCallee? := some proc)
   -- The first parameter is the implicit `self` receiver, which is not supplied positionally.
   let (selfParam?, callParamTypes) : Option HighTypeMd × List HighTypeMd :=
     match inst.params with
@@ -4421,7 +5051,9 @@ def Synth.instanceCall (exprMd : StmtExprMd)
   if let some selfP := selfParam? then
     let ctx := (← get).typeLattice
     let (lifted, conflicts) ←
-      argEvidence ctx (selfP :: callParamTypes) (recvTy :: resolvedArgs.map (·.2))
+      argEvidence ctx (selfP :: callParamTypes) (recvTy :: (← (callParamTypes.zip resolvedArgs).mapM
+        -- STOPGAP: see bareTypeParameterStopgap
+        fun (p, _, aTy) => do pure (castInferenceArgTy ctx (← zonkType p) (bareTypeParameterStopgapArg ctx inst p aTy))))
     let selfTy ← zonkType selfP
     unless conflicts.isEmpty && isConsistentSubtype ctx recvTy (substTypeVars lifted selfTy) do
       let recv := (← argEvidence ctx [selfP] [recvTy]).1.filter fun _ ty => !ctx.isGradualTop ty
@@ -4452,96 +5084,6 @@ def Synth.instanceCall (exprMd : StmtExprMd)
 
 -- ### Object forms
 
-/-- Cases on whether `ref` resolves to a composite/datatype.
-    ```
-    ref is a composite or datatype,                (New-Ok)
-      or is unresolved, or is absent from Γ
-    ──────────────────────────────────────
-    Γ ⊢ New ref ⇒ UserDefined ref
-
-    ref resolves to a non-type kind               (New-Fallback)
-    ──────────────────────────────────────
-    Γ ⊢ New ref ⇒ Unknown
-    ```
-    When `ref` resolves to a composite or datatype, the type is
-    `UserDefined ref` — or, for an explicit instantiation `new C<τ…>`, the
-    applied type `Applied (UserDefined ref) [τ…]`, so the type checker and
-    `MonomorphizeComposites` see the concrete instantiation (`allocatedType`).
-    A bare `new C` carries no type args and
-    keeps the plain `UserDefined` type. The `Unknown` fallback fires *only*
-    when `ref` resolves to a present definition whose kind is neither
-    composite nor datatype (e.g. a variable or procedure name); this
-    suppresses cascading errors after the kind diagnostic has already fired.
-    An *unresolved* `ref`, or one absent from scope, takes the `UserDefined`
-    branch instead — `resolveRef` has already reported the name, so
-    re-flagging it here would only duplicate that diagnostic. The explicit
-    type args are resolved (so a `.TVar` inside is reclassified and a bad
-    arg reported) and their count is checked against the composite's
-    declared type-arg arity.
-
-    A bare `new C` for a GENERIC `C` recovers its instantiation from
-    `expected?` (`var b: Box<int> := new Box` ⇒ `typeArgs = [int]`), so the
-    allocation site carries the concrete arguments the monomorphizer needs
-    instead of leaving it to recover them from surrounding context. When
-    nothing supplies them it is a resolution error, since an
-    un-instantiated generic composite cannot be monomorphized. -/
-def Synth.new (ref : Identifier) (typeArgs : List HighTypeMd) (source : FileRange)
-    (expected? : Option HighTypeMd := none) :
-    ResolveM (StmtExpr × HighTypeMd) := do
-  let ref' ← resolveRef ref source
-    (expected := #[.compositeType, .datatypeDefinition])
-  -- Resolve explicit instantiation arguments (`new Box<int>`) so their type names
-  -- get uniqueIds, exactly as `appliedType` does in type position. Empty for a
-  -- bare `new C` (the common, pre-existing case).
-  let typeArgs' ← typeArgs.mapM resolveHighType
-  let s ← get
-  -- Arity-check explicit `new C<τ…>` against C's declared type params. `parentExprMap`
-  -- holds only COMPOSITES, so this covers a composite `new`; a generic DATATYPE `new`
-  -- (`new Bx<int,bool>`) hits the `none` branch and is instead caught downstream fail-loud
-  -- (a re-resolution `.StrataBug` after monomorphization), never a wrong-accept. Bare `new C`
-  -- carries no args (unchecked — the var's declared type drives it). Without this, surplus
-  -- args are silently dropped by the
-  -- monomorphizer's `zip`, so `new Box<int,bool>` for `Box<T>` would be over-accepted here.
-  unless typeArgs'.isEmpty do
-    match s.typeLattice.parentExprMap.get? ref.text with
-    | some (declParams, _) =>
-      checkTypeArgArity source ref.text declParams.length typeArgs'.length
-    | none => pure ()  -- datatype/unresolved: arity deferred to Core
-  let kindOk : Bool := match s.scope.get? ref.text with
-    | some (_, node) => node.kind == .unresolved ||
-        (#[ResolvedNodeKind.compositeType, .datatypeDefinition].contains node.kind)
-    | none => true
-  -- CHECK DIRECTION for a bare `new C` on a generic composite: take the instantiation from the
-  -- expected type when it names the same head. Only when the arity matches, and only for a
-  -- composite that actually declares type parameters — a bare `new C` on a non-generic `C` must
-  -- stay the plain `UserDefined` it has always been.
-  let declParams? := s.typeLattice.parentExprMap.get? ref.text |>.map (·.1)
-  let typeArgs' ←
-    if !typeArgs'.isEmpty then pure typeArgs'
-    else match declParams?, expected? with
-      | some declParams, some exp =>
-        if declParams.isEmpty then pure typeArgs'
-        else match (s.typeLattice.unfold exp).val with
-          | .Applied ⟨.UserDefined expHead, _⟩ expArgs =>
-            if expHead.text == ref.text && expArgs.length == declParams.length
-            then pure expArgs else pure typeArgs'
-          | _ => pure typeArgs'
-      | _, _ => pure typeArgs'
-  -- A generic composite with no instantiation from either source cannot be monomorphized: it
-  -- would reach Core as an un-lowered generic application (`genericReachedCoreMsg`) or be boxed
-  -- by HeapParameterization with no concrete arguments. Report it at the allocation.
-  if typeArgs'.isEmpty && kindOk then
-    if let some declParams := declParams? then
-      unless declParams.isEmpty do
-        let names := String.intercalate ", " (declParams.map (fun p => s!"'{p.text}'"))
-        let what := if declParams.length == 1 then "type argument" else "type arguments"
-        let diag := diagnosticFromSource source
-          s!"cannot infer {what} {names} of '{ref.text}': write the instantiation explicitly \
-             (`new {ref.text}<…>`) or annotate the variable it is assigned to"
-        modify fun st => { st with errors := st.errors.push diag }
-  let ty := if kindOk then allocatedType ref' typeArgs' source
-    else { val := HighType.Unknown, source := source }
-  pure (.New ref' typeArgs', ty)
 
 /-- The user-facing reason the target type of an `is`/`as` cannot be accepted, or `none` if it can
     be. Shared by both operators, so their wording cannot drift and the reason is worded by the
@@ -4597,7 +5139,7 @@ def Synth.asType (exprMd : StmtExprMd)
     (target : StmtExprMd) (ty : HighTypeMd)
     (h : exprMd.val = .AsType target ty) :
     ResolveM (StmtExpr × HighTypeMd) := do
-  let (target', targetTy) ← Synth.resolveStmtExpr target
+  let (target', targetTy) ← castReceiver (← Synth.resolveStmtExpr target)
   let ty' ← resolveHighType ty
   let ctx := (← get).typeLattice
   if let some msg := castTargetRejection? "as" ctx ty' then
@@ -4634,6 +5176,8 @@ def Synth.isType (exprMd : StmtExprMd)
   if let some msg := castTargetRejection? "is" ctx ty' then
     let diag := diagnosticFromSource ty.source msg
     modify fun s => { s with errors := s.errors.push diag }
+  else if let some guarded := (← guardedCastIsType target' targetTy ty') then
+    return (guarded.val, { val := .TBool, source := source })
   else unless ctx.mayBeBoth targetTy ty' do
     -- In a `catch` guard, testing the caught exception against an unrelated type
     -- is legitimate (a Java multi-catch names an unchecked type the `try` body
@@ -4941,27 +5485,7 @@ def Synth.fresh (exprMd : StmtExprMd) (expr : StmtExpr)
     rw [h] at hsz
     term_by_mem
 
-/-- (Yield) A bare `yield` evaluates to the value the next `resume` sends back
-    in — the enclosing coroutine's first `resumes` binding. `Γ_res` is that type
-    (`ResolveState.resumeType`, set by `resolveProcedure`).
-    ```
-    Γ_res = ρ                    Γ_res = ⊥
-    ──────────────────          ──────────────────
-    Γ ⊢ Yield ⇒ ρ               Γ ⊢ Yield ⇒ TVoid
-    ```
-    With no `resumes` the coroutine receives nothing back, so `yield` is `TVoid`;
-    a value use (`x := yield`) then correctly fails as "yields no value" rather
-    than binding `Unknown`. Coroutine elaboration later replaces `yield` with a
-    composite-field read, so this type is consumed only during resolution. -/
-def Synth.yield (source : FileRange) : ResolveM (StmtExpr × HighTypeMd) := do
-  let ty := ((← get).resumeType).getD { val := .TVoid, source := source }
-  pure (.Yield, { ty with source := source })
 
-/-- `Snapshot h` — a lowering artifact that never reaches a resolution pass
-    (it is introduced only after resolution is disabled).
-    Defined for match totality; it is a statement, so it types as `TVoid`. -/
-def Synth.snapshot (label : Identifier) (source : FileRange) : StmtExpr × HighTypeMd :=
-  (.Snapshot label, { val := .TVoid, source := source })
 
 /-- (Resume) `resume(target [, value])` hands back the target coroutine's
     most-recently-yielded value, so it synthesizes that coroutine's first
@@ -5115,52 +5639,8 @@ def Synth.proveBy (exprMd : StmtExprMd)
 
 -- ### Self reference
 
-/-- Cases on whether `instanceTypeName` is set (i.e., we're inside an
-    instance method).
 
-    ```
-    Γ.instanceTypeName = some T      (This-Inside)
-    ───────────────────────────
-    Γ ⊢ This ⇒ UserDefined T
 
-    Γ.instanceTypeName = none        (This-Outside)
-    ───────────────────────────
-    Γ ⊢ This ⇒ Unknown               (emits "'this' is not allowed outside instance methods")
-    ```
-    When `instanceTypeName` is set (we're inside an instance method,
-    populated on `ResolveState` by `resolveInstanceProcedure` for the
-    duration of an instance method body), `This` synthesizes
-    `UserDefined T`. With it, `this.field` and instance-method dispatch
-    synthesize real types instead of being wildcarded through `Unknown`.
-    Otherwise an error is emitted ("'this' is not allowed outside instance
-    methods") and the type collapses to `Unknown` to suppress cascading
-    errors. -/
-def Synth.this (source : FileRange) :
-    ResolveM (StmtExpr × HighTypeMd) := do
-  let s ← get
-  match s.instanceTypeName with
-  | some typeName =>
-    let typeId : Identifier :=
-      match s.scope.get? typeName with
-      | some (uid, _) => { text := typeName, uniqueId := some uid, source := source }
-      | none => { text := typeName, source := source }
-    pure (.This, { val := .UserDefined typeId, source := source })
-  | none =>
-    let diag := diagnosticFromSource source "'this' is not allowed outside instance methods"
-    modify fun s => { s with errors := s.errors.push diag }
-    pure (.This, { val := .Unknown, source := source })
-
--- ### Untyped forms
-
-/-- `Γ ⊢ Abstract ⇒ Unknown` -/
-def Synth.abstract (source : FileRange) : StmtExpr × HighTypeMd :=
-  (.Abstract, { val := .Unknown, source := source })
-
-/-- `Γ ⊢ All ⇒ Unknown` -/
-def Synth.all (source : FileRange) : StmtExpr × HighTypeMd :=
-  (.All, { val := .Unknown, source := source })
-
--- ### ContractOf
 
 /-- Cases on the contract type `ty` and on whether `fn` is a procedure
     reference.
@@ -5237,34 +5717,7 @@ def Synth.contractOf (exprMd : StmtExprMd)
 
 -- ### Holes
 
-/-- (Hole-Some)
-    ```
-    T_h <: T
-    ────────────────────────────
-    Γ ⊢ Hole d (some T_h) ⇐ T
-    ```
-    A typed hole carries the user's annotation `T_h`. The annotation is
-    resolved and verified against the surrounding `expected` type via
-    subsumption; the resolved annotation is preserved on the node so
-    downstream passes (hole elimination) can generate correctly typed
-    uninterpreted functions. -/
-def Check.holeSome (det : Bool) (ty : HighTypeMd) (expected : HighTypeMd)
-    (source : FileRange) : ResolveM StmtExprMd := do
-  let ty' ← resolveHighType ty
-  checkSubtype source expected ty'
-  pure { val := .Hole det (some ty'), source := source }
 
-/-- (Hole-None)
-    ```
-    ────────────────────────────────────────
-    Γ ⊢ Hole d none ⇐ T  ↦  Γ ⊢ Hole d (some T)
-    ```
-    An untyped hole in check mode records the expected type on the node
-    so downstream passes (hole elimination) don't have to infer it
-    again. -/
-def Check.holeNone (det : Bool) (expected : HighTypeMd) (source : FileRange) :
-    StmtExprMd :=
-  { val := .Hole det (some expected), source := source }
 
 end -- mutual
 end Resolution
@@ -5279,8 +5732,26 @@ private def resolveStmtExpr (e : StmtExprMd) : ResolveM StmtExprMd := do
 /-- Whether `ty` may appear in a modifies clause. Uses `scope` to tell a value type from a
     heap reference. -/
 private def isHeapRelevantModifiesTarget (scope : Scope) (ty : HighType) : Bool :=
-  (classifyModifiesHighType
-    (fun n => n.text != compositeTypeName.text && isValueTypeName scope n) ty).isSome
+  let isValue := fun n => n.text != compositeTypeName.text && isValueTypeName scope n
+  (classifyModifiesHighType isValue ty).isSome ||
+    (modifiesValueSetElem? ty).any fun e => (classifyModifiesHighType isValue e.val).isSome
+
+private def isFrameOutput (scope : Scope) (outputs : List Parameter) : Bool :=
+  match outputs with
+  | [o] => isHeapRelevantModifiesTarget scope o.type.val ||
+      (modifiesValueSetElem? o.type.val).any (·.val matches .TVar _)
+  | _ => false
+
+def frameCastEntry (e' : StmtExprMd) (ty : HighTypeMd) : ResolveM (Option StmtExprMd) := do
+  let s ← get
+  match s.typeLattice.frameCastFrom ty with
+  | none => pure none
+  | some (proc, tyArgs) =>
+    if !s.realizeCasts then return some e'
+    let callee : Identifier := match (s.overloads.getD proc []).find? (·.2.isFrame) with
+      | some (uid, _) => { text := proc, uniqueId := some uid }
+      | none => { text := proc }
+    pure (some { val := .Call none callee [e'] tyArgs, source := e'.source })
 
 /-- Report that a modifies entry was dropped — unless part of its type failed to resolve, in which
     case resolution already reported the real error and naming the type again only buries it. Any
@@ -5330,10 +5801,13 @@ private def resolveModifiesEntry (e : StmtExprMd) : ResolveM (Option StmtExprMd)
     if isHeapRelevantModifiesTarget st.scope ty' then
       return some e'
     else
-      reportDroppedModifies ty' e.source
-        s!"modifies clause entry has non-composite type \
-           '{formatHighTypeVal ty'}'; only a heap object can be framed"
-      return none
+      match ← frameCastEntry e' ty with
+      | some call => return some call
+      | none =>
+        reportDroppedModifies ty' e.source
+          s!"modifies clause entry has non-composite type \
+             '{formatHighTypeVal ty'}'; only a heap object can be framed"
+        return none
 
 /-- Resolve the modifies entries of an `Opaque` body, dropping the
     non-heap-relevant ones via `resolveModifiesEntry`. -/
@@ -5521,7 +5995,7 @@ def resolveProcedure (proc : Procedure) : ResolveM Procedure := do
     let savedResume := (← get).resumeType
     modify fun s => { s with answerType := some (outputs'.map (·.type))
                              resumeType := resumes'.head?.map (·.type) }
-    let body' ← resolveBody proc.body
+    let body' ← withStackJoins (resolveBody proc.body)
     modify fun s => { s with answerType := savedAnswer, resumeType := savedResume }
     -- Coroutine-only source validations (`relies`/`guarantees` are
     -- coroutine-only; coroutines carry no `ensures`) live in
@@ -5607,7 +6081,7 @@ def resolveInstanceProcedure (typeName : Identifier) (proc : Procedure) : Resolv
     let dec' ← proc.decreases.mapM resolveStmtExpr
     let savedAnswer := (← get).answerType
     modify fun s => { s with answerType := some (outputs'.map (·.type)) }
-    let body' ← resolveBody proc.body
+    let body' ← withStackJoins (resolveBody proc.body)
     modify fun s => { s with answerType := savedAnswer }
     let invokeOn' ← proc.invokeOn.mapM resolveStmtExpr
     modify fun s => { s with instanceTypeName := savedInstType }
@@ -5952,11 +6426,11 @@ def isDiamondInheritedField (model : SemanticModel) (typeName : Identifier) (fie
 Check whether accessing `fieldName` on `target` is a diamond-inherited field access,
 and if so return a diagnostic error using the given `source` range.
 -/
-private def checkDiamondFieldAccess (model : SemanticModel) (target : StmtExprMd)
+private def checkDiamondFieldAccess (model : SemanticModel) (lattice : TypeLattice) (target : StmtExprMd)
     (fieldName : Identifier) (source : FileRange) : List Message :=
   -- Peel the receiver to its base name so a generic receiver `D<int>` (`.Applied`) is
   -- checked too; otherwise it slips to mono and surfaces as a `.StrataBug`, not this diagnostic.
-  match highBaseName? (computeExprType model target).val with
+  match highBaseName? (castReceiverType lattice (computeExprType model target)).val with
   | some typeName =>
     match isDiamondInheritedField model typeName fieldName with
     | .ok true =>
@@ -5966,31 +6440,31 @@ private def checkDiamondFieldAccess (model : SemanticModel) (target : StmtExprMd
   | _ => []
 
 /-- Check `e` itself for a diamond-inherited field access; the caller's traversal supplies recursion. -/
-private def collectDiamondFieldAt (model : SemanticModel) (e : StmtExprMd) :
+private def collectDiamondFieldAt (model : SemanticModel) (lattice : TypeLattice) (e : StmtExprMd) :
     StateM (List Message) StmtExprMd := do
   match e.val with
   | .Var (.Field target fieldName) =>
-    modify (· ++ checkDiamondFieldAccess model target fieldName e.source)
+    modify (· ++ checkDiamondFieldAccess model lattice target fieldName e.source)
   | .Assign targets _ =>
     for t in targets do
       match t.val with
       | .Field target fieldName =>
-        modify (· ++ checkDiamondFieldAccess model target fieldName t.source)
+        modify (· ++ checkDiamondFieldAccess model lattice target fieldName t.source)
       | _ => pure ()
   | .IncrDecr _ _ target =>
     match target.val with
     | .Field tgt fieldName =>
-      modify (· ++ checkDiamondFieldAccess model tgt fieldName target.source)
+      modify (· ++ checkDiamondFieldAccess model lattice tgt fieldName target.source)
     | _ => pure ()
   | .CompoundAssign _ target _ =>
     -- `CompoundAssign` is new on mainline; the caller's traversal visits `rhs` and any
     -- nested field subtree, so only the direct `.Field` target introduces a field access here.
     match target.val with
     | .Field tgt fieldName =>
-      modify (· ++ checkDiamondFieldAccess model tgt fieldName target.source)
+      modify (· ++ checkDiamondFieldAccess model lattice tgt fieldName target.source)
     | _ => pure ()
   | .PureFieldUpdate target fieldName _ =>
-    modify (· ++ checkDiamondFieldAccess model target fieldName e.source)
+    modify (· ++ checkDiamondFieldAccess model lattice target fieldName e.source)
   | _ => pure ()
   pure e
 
@@ -6003,8 +6477,9 @@ private def collectDiamondFieldAt (model : SemanticModel) (e : StmtExprMd) :
     Not covered: `constrained`-type constraint/witness and constant initializers —
     non-procedure positions that fail loud as `.strataBug` (no silent accept). Promoting to
     `.userError` needs bound-variable scoping verified first. -/
-private def validateDiamondFieldAccesses (model : SemanticModel) (program : LaurelProgram) : List Message :=
-  ((mapLaurelProgramProceduresM (mapProcedureM (mapStmtExprM (collectDiamondFieldAt model))) program).run []).2
+private def validateDiamondFieldAccesses (model : SemanticModel) (lattice : TypeLattice)
+    (program : LaurelProgram) : List Message :=
+  ((mapLaurelProgramProceduresM (mapProcedureM (mapStmtExprM (collectDiamondFieldAt model lattice))) program).run []).2
 
 /-! ## Pre-registration: populate scope with all top-level names before resolving bodies -/
 
@@ -7615,18 +8090,75 @@ private def validateCallsToEntryProcedures (analysis : InitialEffectAnalysis) : 
   analysis.allProcs.flatMap fun proc =>
     (entryContractExpressions proc ++ bodyExpressions proc).flatMap errorsIn
 
+private partial def typeCarriesConstraint (constrained : Std.HashSet String)
+    (datatypes : Std.HashMap String DatatypeDefinition)
+    (aliases : Std.HashMap String TypeAlias) (seen : List String) (ty : HighTypeMd) : Bool :=
+  match ty.val with
+  | .UserDefined name =>
+    if constrained.contains name.text then true else
+    match aliases.get? name.text with
+    | some alias =>
+      !seen.contains name.text && alias.typeArgs.isEmpty &&
+        typeCarriesConstraint constrained datatypes aliases (name.text :: seen) alias.target
+    | none => false
+  | .Applied base args =>
+    match base.val with
+    | .UserDefined name =>
+      match aliases.get? name.text with
+      | some alias =>
+        !seen.contains name.text &&
+          match applyAliasArgs alias.typeArgs args alias.target with
+          | some target => typeCarriesConstraint constrained datatypes aliases (name.text :: seen) target
+          | none => false
+      | none =>
+        match datatypes.get? name.text with
+        | some dt =>
+          dt.constrainedArgsSupported datatypes.get? && dt.typeArgs.length == args.length &&
+          let subst : Std.HashMap String HighTypeMd :=
+            (dt.typeArgs.zip args).foldl (fun m (p, a) => m.insert p.text a) {}
+          dt.constructors.any fun ctor =>
+            ctor.args.any fun p =>
+              p.type.val.mentionedNames.any (fun n => dt.typeArgs.any (·.text == n)) &&
+              typeCarriesConstraint constrained datatypes aliases seen (substTypeVars subst p.type)
+        | none => false
+    | _ => false
+  | _ => false
+
+/-- Mirrors when `ConstrainedTypeElim` adds a constraint clause for a global that an entry
+    procedure cannot satisfy: its type is a constrained type, or a datatype applied to
+    arguments that carry such a constraint through a generic constructor field (a composite
+    counts there, as `LowerComposite` turns each into one), looking through type aliases. A
+    global whose type is a composite itself is accepted. -/
 private def validateEntryConstrainedGlobalUse (program : LaurelProgram)
     (analysis : InitialEffectAnalysis) : List Message :=
   let constrainedNames : Std.HashSet String :=
     program.types.foldl (init := {}) fun names td =>
       match td with
       | .Constrained ct => names.insert ct.name.text
+      | .Composite ct => names.insert ct.name.text
       | _ => names
   if constrainedNames.isEmpty then [] else
-  let isConstrained (field : Field) : Bool :=
-    match field.type.val with
-    | .UserDefined name => constrainedNames.contains name.text
+  let datatypes : Std.HashMap String DatatypeDefinition :=
+    program.types.foldl (init := {}) fun m td =>
+      match td with
+      | .Datatype dt => m.insert dt.name.text dt
+      | _ => m
+  let aliases : Std.HashMap String TypeAlias :=
+    program.types.foldl (init := {}) fun m td =>
+      match td with
+      | .Alias ta => m.insert ta.name.text ta
+      | _ => m
+  let compositeNames : Std.HashSet String :=
+    program.types.foldl (init := {}) fun names td =>
+      match td with
+      | .Composite ct => names.insert ct.name.text
+      | _ => names
+  let isComposite (ty : HighTypeMd) : Bool :=
+    match ty.val with
+    | .UserDefined name => compositeNames.contains name.text
     | _ => false
+  let isConstrained (field : Field) : Bool :=
+    !isComposite field.type && typeCarriesConstraint constrainedNames datatypes aliases [] field.type
   analysis.allProcs.filterMap fun proc =>
     if !proc.isInterpretEntry then none else
     let constrained := (entryUsedGlobals program analysis proc).filter isConstrained
@@ -7942,12 +8474,18 @@ private def validateInvokeOnGlobalWrites (program : LaurelProgram)
 
     `entryConstrainedGlobals` allows an entry procedure to use a global of a constrained type
     (see `validateEntryConstrainedGlobalUse`). Set it only for a pipeline that checks a
-    global's constraint inside the entry procedure's body; the Laurel pipeline does not. -/
+    global's constraint inside the entry procedure's body; the Laurel pipeline does not.
+
+    `deferWhileStack` leaves the implicit casts of a program that touches the stack, and its
+    `implicit` and `frame` markers, to a later resolution of a program that no longer does: the
+    Laurel pipeline's, after `EliminateStack`. -/
 public def resolve (program : LaurelProgram) (existingModel: Option SemanticModel := none)
     (realizeCoercion : Option (Coercion → StmtExprMd → StmtExprMd) := none)
     (toBool : Option (HighType → StmtExprMd → StmtExprMd) := none)
     (reservedNames : Std.HashSet String := {})
-    (entryConstrainedGlobals : Bool := false) : ResolutionResult :=
+    (entryConstrainedGlobals : Bool := false) (deferWhileStack : Bool := false) : ResolutionResult :=
+  let usesStack := programTouchesStack program
+  let realizeCasts := !(deferWhileStack && usesStack)
   -- Phase 1: pre-register all top-level names, then assign IDs and resolve references
   let phase1 : ResolveM LaurelProgram := do
     -- Binders get their ids first, so pre-registration and `scopeTypeParams` name the same
@@ -7960,14 +8498,51 @@ public def resolve (program : LaurelProgram) (existingModel: Option SemanticMode
     let heapFields' ← program.heapFields.mapM resolveHeapField
     let staticFunctions' ← program.staticFunctions.mapM resolveProcedure
     let staticProcs' ← program.staticProcedures.mapM resolveProcedure
-    return { program with staticFunctions := staticFunctions', staticProcedures := staticProcs',
+    for proc in program.staticProcedures do
+      if proc.isImplicit && !(proc.inputs.length == 1 && proc.outputs.length == 1) then
+        let diag := diagnosticFromSource proc.name.source
+          s!"implicit procedure '{proc.name.text}' must take one input and return one output"
+        modify fun s => { s with errors := s.errors.push diag }
+    let implicitProcs := program.staticProcedures.filter (·.isImplicit)
+    for (proc, i) in implicitProcs.zipIdx do
+      if (implicitProcs.take i).any (·.name.text == proc.name.text) then
+        let diag := diagnosticFromSource proc.name.source
+          s!"implicit procedure '{proc.name.text}' is declared more than once; implicit procedures must have distinct names"
+        modify fun s => { s with errors := s.errors.push diag }
+    for proc in staticProcs' do
+      if proc.isFrame && !(proc.inputs.length == 1 && isFrameOutput (← get).scope proc.outputs) then
+        let diag := diagnosticFromSource proc.name.source
+          s!"frame procedure '{proc.name.text}' must take one input and return one output whose type is a composite or a Set of composites"
+        modify fun s => { s with errors := s.errors.push diag }
+    for td in program.types do
+      if let .Composite ct := td then
+        for proc in ct.instanceProcedures do
+          if proc.isImplicit then
+            let diag := diagnosticFromSource proc.name.source
+              s!"implicit procedure '{proc.name.text}' must be a static procedure, not a procedure of '{ct.name.text}'"
+            modify fun s => { s with errors := s.errors.push diag }
+          if proc.isFrame then
+            let diag := diagnosticFromSource proc.name.source
+              s!"frame procedure '{proc.name.text}' must be a static procedure, not a procedure of '{ct.name.text}'"
+            modify fun s => { s with errors := s.errors.push diag }
+    return { program with staticFunctions := staticFunctions',
+                          staticProcedures := if realizeCasts then staticProcs'.map Procedure.clearCastMarkers else staticProcs',
                           staticFields := staticFields', heapFields := heapFields',
                           types := types', constants := constants' }
   let nextId := existingModel.elim 1 (fun m => m.nextId)
-  let typeLattice := { TypeLattice.ofTypes program.types with
+  let typeLattice0 := { TypeLattice.ofTypes program.types with
     realizeCoercion := realizeCoercion, toBool := toBool,
-    reservedNames := reservedNames }
-  let (program', finalState) := phase1.run { nextId := nextId, typeLattice, usesStack := programTouchesStack program }
+    reservedNames := reservedNames,
+    implicitCasts := ImplicitCast.ofProcedures program.staticProcedures,
+    frameCasts := ImplicitCast.ofFrameProcedures program.staticProcedures }
+  let implicitPre : ResolveM (List ImplicitCast) := do
+    let program ← stampBinderIds program
+    preRegisterTopLevel program
+    let resolvedCasts ← (program.staticProcedures.filter (·.isImplicit)).mapM resolveProcedure
+    pure (ImplicitCast.withContracts (← get).typeLattice.implicitCasts resolvedCasts)
+  let (implicitCasts, _) := implicitPre.run { nextId := nextId, typeLattice := typeLattice0 }
+  let typeLattice := { typeLattice0 with implicitCasts := implicitCasts }
+  let (program', finalState) := phase1.run { nextId := nextId, typeLattice, usesStack, realizeCasts }
   -- Phase 2: build refToDef from the resolved program (all definitions now have UUIDs)
   let refToDef := buildRefToDef program'
   -- Heap-effect classification over all procedures (static plus composite
@@ -7990,6 +8565,7 @@ public def resolve (program : LaurelProgram) (existingModel: Option SemanticMode
     heapWriters := heapWriters
     heapAllocators := heapAllocators
     conflictingOverloads := finalState.conflictingOverloads
+    implicitCasts := existingModel.elim implicitCasts (·.implicitCasts)
   }
   let heapAnalysisErrors : Array Message :=
     (match heapReadersResult with
@@ -7998,7 +8574,7 @@ public def resolve (program : LaurelProgram) (existingModel: Option SemanticMode
     (match heapWritersResult with
       | .error e => #[Message.fromString s!"Internal error: computeWritesHeap: {e}" .strataBug]
       | .ok _ => #[])
-  let diamondErrors := validateDiamondFieldAccesses semanticModel program'
+  let diamondErrors := validateDiamondFieldAccesses semanticModel typeLattice program'
   -- No pass introduces an alias or a constrained type; only authored ones can form a cycle.
   let typeCycleErrors :=
     if existingModel.isNone then validateTypeCycles semanticModel program'.types else []

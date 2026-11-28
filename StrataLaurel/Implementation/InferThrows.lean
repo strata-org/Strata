@@ -166,7 +166,7 @@ private def typeNames (tys : List HighTypeMd) : String :=
 def inferThrows (model : SemanticModel) (program : LaurelProgram)
     (declared : Option (List (Option HighTypeMd)) := none)
     : List (Option (Option HighTypeMd)) × List Message :=
-  let lattice := TypeLattice.ofTypes program.types
+  let lattice := { TypeLattice.ofTypes program.types with implicitCasts := model.implicitCasts }
   let named := namedProcedures program
   let declaredMap : Std.HashMap String (Option HighTypeMd) :=
     match declared with
@@ -313,11 +313,11 @@ def resolveWithInferredThrows (program : LaurelProgram)
     (realizeCoercion : Option (Coercion → StmtExprMd → StmtExprMd) := none)
     (toBool : Option (HighType → StmtExprMd → StmtExprMd) := none)
     (reservedNames : Std.HashSet String := {})
-    (entryConstrainedGlobals : Bool := false) : ResolutionResult :=
+    (entryConstrainedGlobals : Bool := false) (deferWhileStack : Bool := false) : ResolutionResult :=
   let resolveFresh (p : LaurelProgram) :=
     resolve p (realizeCoercion := realizeCoercion)
       (toBool := toBool) (reservedNames := reservedNames)
-      (entryConstrainedGlobals := entryConstrainedGlobals)
+      (entryConstrainedGlobals := entryConstrainedGlobals) (deferWhileStack := deferWhileStack)
   let first := resolveFresh program
   if !hasInferredThrows program then first
   else
