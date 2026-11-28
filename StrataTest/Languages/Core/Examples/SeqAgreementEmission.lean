@@ -15,21 +15,26 @@ meta section
 
 The axiom stating that `Sequence.select!` equals `Sequence.select` in range belongs
 to `Sequence.select`, and the encoder sends a function's axioms only for a query
-that uses that function. A query written with `select!` alone therefore carries no
-agreement axiom, while a query that uses both selectors carries it. Each program
+that uses that function. The `SeqTotalize` phase rewrites every checked operation to
+its total twin before encoding, so no query uses `Sequence.select` and the agreement
+axiom is never sent, whichever selectors the program is written with. Each program
 below prints, for its one query, how many asserted formulas mention both
-selectors. -/
+selectors. A pipeline without `SeqTotalize` shows the axiom is still sent when a
+query uses both. -/
 
 namespace Core.SeqAgreementEmission.Tests
 
 /-- The `assert` commands of the queries written for `pgm`, each joined into one line. -/
-private def asserts (pgm : StrataDDM.Program) : IO (List String) := do
+private def asserts (pgm : StrataDDM.Program)
+    (pipeline : Option (Core.ValidatedPipeline Core.ProgramFactSet.empty) := none) :
+    IO (List String) := do
   let vcDir : System.FilePath := "_test_vcs_seq_agreement_emission"
   if ← vcDir.pathExists then
     IO.FS.removeDirAll vcDir
   IO.FS.createDirAll vcDir
   let _ ← Strata.Core.verify pgm (options := { Core.VerifyOptions.quiet with
     skipSolver := true, vcDirectory := vcDir, alwaysGenerateSMT := true })
+    (pipeline := pipeline)
   let mut out := []
   for e in ← vcDir.readDir do
     if e.fileName.endsWith ".smt2" then
@@ -48,8 +53,10 @@ private def mentions (a op : String) : Bool := (a.splitOn op).length > 1
 
 /-- The number of asserted formulas, in the queries written for `pgm`, that mention
     both `Sequence.select!` and `Sequence.select`. -/
-private def agreementAsserts (pgm : StrataDDM.Program) : IO Unit := do
-  let n := (← asserts pgm).filter (fun a =>
+private def agreementAsserts (pgm : StrataDDM.Program)
+    (pipeline : Option (Core.ValidatedPipeline Core.ProgramFactSet.empty) := none) :
+    IO Unit := do
+  let n := (← asserts pgm pipeline).filter (fun a =>
     mentions a "Sequence.select!" && mentions a "Sequence.select#") |>.length
   IO.println s!"agreement asserts: {n}"
 
@@ -84,7 +91,8 @@ procedure P()
 #guard_msgs in
 #eval agreementAsserts uncheckedOnlyPgm
 
-/-- Both selectors appear: the agreement axiom is sent. -/
+/-- Both selectors appear in the source, but after `SeqTotalize` the query uses
+`select!` only: the agreement axiom is not sent. -/
 def bothSelectorsPgm : StrataDDM.Program :=
 #strata
 program Core;
@@ -99,16 +107,27 @@ procedure P()
 };
 #end
 
-/-- info: agreement asserts: 1 -/
+/-- info: agreement asserts: 0 -/
 #guard_msgs in
 #eval agreementAsserts bothSelectorsPgm
 
-/-- Only checked operations appear. The query receives the agreement axiom of
-`Sequence.select`, which mentions `Sequence.select!`; the other quantified formulas
-that mention an unchecked operation are the `select!` copies of the select-of-update
-and select-of-take axioms, already present without the agreement axiom. All of them
-are triggered on an unchecked term, which this query does not contain, so they never
-fire here. The counts pin both the axiom set and those triggers. -/
+/-- The default order without `SeqTotalize`. -/
+private def withoutSeqTotalize : Option (Core.ValidatedPipeline Core.ProgramFactSet.empty) :=
+  (Core.ValidatedPipeline.ofList
+    ((Core.corePipelinePhases Core.VerifyOptions.quiet).filter
+      fun p => p.phase.name != "seqTotalize")).toOption
+
+-- Without `SeqTotalize` the same query uses both selectors, and the agreement axiom
+-- is sent.
+
+/-- info: agreement asserts: 1 -/
+#guard_msgs in
+#eval agreementAsserts bothSelectorsPgm (pipeline := withoutSeqTotalize)
+
+/-- Only checked operations appear in the source. After `SeqTotalize` the query
+uses the unchecked operations only, so the quantified formulas that mention one are
+the axioms of those operations, each triggered on an unchecked term.
+The counts pin both the axiom set and those triggers. -/
 def checkedOnlyPgm : StrataDDM.Program :=
 #strata
 program Core;
@@ -122,7 +141,7 @@ procedure P()
 };
 #end
 
-/-- info: quantified asserts: 28, mentioning an unchecked operation: 11, of those triggered on an unchecked operation: 11 -/
+/-- info: quantified asserts: 28, mentioning an unchecked operation: 24, of those triggered on an unchecked operation: 24 -/
 #guard_msgs in
 #eval quantifiedAsserts checkedOnlyPgm
 

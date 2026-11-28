@@ -39,6 +39,7 @@ import Strata.Transform.GenOpaqueTypeParams
 import Strata.Transform.MonomorphizeFunctions
 import Strata.Transform.NondetElim
 import Strata.Transform.PrecondElim
+import Strata.Transform.SeqTotalize
 public import Strata.Transform.RecursiveFunctionAxiomsPhase
 import Strata.Transform.TerminationCheckPhase
 import Strata.Languages.Core.ObligationExtraction
@@ -2286,7 +2287,8 @@ def transformPipelinePhases (options : VerifyOptions := VerifyOptions.default)
   let cutCFGLoops := if symExecCFG then [cfgLoopElimPipelinePhase] else []
   hoistChoices ++ [typeCheckPipelinePhase options (moreFns := moreFns)] ++ filterPhases ++
     cfgCheck ++ cutCFGLoops ++
-    [callElimPipelinePhase, termCheckPipelinePhase, precondElimPipelinePhase]
+    [callElimPipelinePhase, termCheckPipelinePhase, precondElimPipelinePhase,
+      seqTotalizePipelinePhase]
     ++ postFilterPhases ++ [insertLoopInvariantAssertsPipelinePhase, loopElimPipelinePhase]
 
 /-- Symbolic-evaluation pipeline phase: partially evaluates the program into
@@ -2438,7 +2440,7 @@ def passiveVCGenPhases (options : VerifyOptions := VerifyOptions.default)
     -- CFG loop elimination comes before call elimination, so that the program its
     -- validation replays a model through still has its calls, whose callees replay runs.
     [cfgLoopElimPipelinePhase, callElimPipelinePhase, termCheckPipelinePhase,
-     precondElimPipelinePhase] ++ postFilterPhases ++
+     precondElimPipelinePhase, seqTotalizePipelinePhase] ++ postFilterPhases ++
     [insertLoopInvariantAssertsPipelinePhase, loopElimPipelinePhase,
      genOpaqueTypeParamsPipelinePhase,
      monomorphizeFunctionsPipelinePhase,

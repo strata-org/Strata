@@ -1752,7 +1752,7 @@ Result: ✅ pass
 -- The back end requires `noLambdas`, so a pipeline that leaves out
 -- `lambdaLift` is rejected when it is assembled.
 /--
-info: phase #16 `the verification back end` requires `noLambdas` but preceding phases only guarantee `noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noBetaRedexes, noPrecondsFromFuncs, hasObligationForm, noProcedureContracts, noPolymorphicProcedures, noPolymorphicFunctions, typeAnnotated, exitsCovered, varsNotFunctions`
+info: phase #17 `the verification back end` requires `noLambdas` but preceding phases only guarantee `noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noBetaRedexes, noPrecondsFromFuncs, hasObligationForm, noProcedureContracts, noPolymorphicProcedures, noPolymorphicFunctions, typeAnnotated, exitsCovered, varsNotFunctions`
 -/
 #guard_msgs in
 #eval match Strata.Core.validatePipeline ((_root_.Core.corePipelinePhases .quiet).filter

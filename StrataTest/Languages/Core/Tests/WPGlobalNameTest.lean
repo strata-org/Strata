@@ -399,7 +399,7 @@ private def validation (names : List String) : Except String String := do
   | .error e => pure e
 
 /--
-info: Except.ok "phase #19 `commonSubexprElim` requires `noInits` but preceding phases only guarantee `noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noBetaRedexes, noLambdas, noPrecondsFromFuncs, hasObligationForm, noProcedureContracts, noPolymorphicProcedures, noPolymorphicFunctions, typeAnnotated, exitsCovered, armsHaveObligations, varsNotFunctions`"
+info: Except.ok "phase #20 `commonSubexprElim` requires `noInits` but preceding phases only guarantee `noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noBetaRedexes, noLambdas, noPrecondsFromFuncs, hasObligationForm, noProcedureContracts, noPolymorphicProcedures, noPolymorphicFunctions, typeAnnotated, exitsCovered, armsHaveObligations, varsNotFunctions`"
 -/
 #guard_msgs in
 #eval validation wpThenCSE
@@ -408,7 +408,7 @@ info: Except.ok "phase #19 `commonSubexprElim` requires `noInits` but preceding 
 nameable under `--vcgen wp`, the same list is rejected with the same diagnostic. -/
 
 /--
-info: Except.ok "phase #19 `commonSubexprElim` requires `noInits` but preceding phases only guarantee `noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noBetaRedexes, noLambdas, noPrecondsFromFuncs, hasObligationForm, noProcedureContracts, noPolymorphicProcedures, noPolymorphicFunctions, typeAnnotated, exitsCovered, armsHaveObligations, varsNotFunctions`"
+info: Except.ok "phase #20 `commonSubexprElim` requires `noInits` but preceding phases only guarantee `noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noBetaRedexes, noLambdas, noPrecondsFromFuncs, hasObligationForm, noProcedureContracts, noPolymorphicProcedures, noPolymorphicFunctions, typeAnnotated, exitsCovered, armsHaveObligations, varsNotFunctions`"
 -/
 #guard_msgs in
 #eval show Except String String from do
@@ -436,7 +436,7 @@ private def wpOrder : List String :=
 #eval validation wpOrder
 
 /--
-info: Except.ok "phase #17 `the verification back end` requires:\n  • `noBetaRedexes`: preceding phases only guarantee `noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noPrecondsFromFuncs, hasObligationForm, noProcedureContracts, noPolymorphicProcedures, noPolymorphicFunctions, typeAnnotated, exitsCovered, armsHaveObligations, varsNotFunctions`\n  • `noLambdas`: preceding phases only guarantee `noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noPrecondsFromFuncs, hasObligationForm, noProcedureContracts, noPolymorphicProcedures, noPolymorphicFunctions, typeAnnotated, exitsCovered, armsHaveObligations, varsNotFunctions`"
+info: Except.ok "phase #18 `the verification back end` requires:\n  • `noBetaRedexes`: preceding phases only guarantee `noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noPrecondsFromFuncs, hasObligationForm, noProcedureContracts, noPolymorphicProcedures, noPolymorphicFunctions, typeAnnotated, exitsCovered, armsHaveObligations, varsNotFunctions`\n  • `noLambdas`: preceding phases only guarantee `noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noPrecondsFromFuncs, hasObligationForm, noProcedureContracts, noPolymorphicProcedures, noPolymorphicFunctions, typeAnnotated, exitsCovered, armsHaveObligations, varsNotFunctions`"
 -/
 #guard_msgs in
 #eval validation (wpOrder.filter (fun n => n != "betaReduce" && n != "lambdaLift"))
