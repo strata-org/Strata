@@ -103,6 +103,22 @@ theorem of_forall_entryFactory (params : InitEnvWFParams)
     Triple π params Pre ss Post (factory := factory) :=
   fun ρ₀ hpre hinit => h ρ₀.factory ρ₀ ⟨hpre, rfl⟩ hinit
 
+/-- **A fact about the runtime factory is invariant.** A run keeps the factory, so a
+    predicate that environments with the same factory share holds after the statements
+    once it holds before. The axioms a procedure assumes at its entry are such a
+    predicate when they read no variable
+    (`Core.Specification.AxiomsBeforeProcedureDecl.of_closed`). -/
+theorem frame_factory (params : InitEnvWFParams)
+    {Pre Post : Imperative.Env Expression → Prop} {ss : Statements}
+    (R : Imperative.Env Expression → Prop)
+    (hR : ∀ ρ ρ', ρ.factory = ρ'.factory → R ρ → R ρ')
+    (h : Triple π params Pre ss Post (factory := factory)) :
+    Triple π params (fun ρ => Pre ρ ∧ R ρ) ss (fun ρ => Post ρ ∧ R ρ) (factory := factory) := by
+  intro ρ₀ hpre hinit
+  obtain ⟨hprefix, hpost⟩ := h ρ₀ hpre.1 hinit
+  refine ⟨hprefix, fun ρ' tr hrun hreach => ⟨hpost ρ' tr hrun hreach, hR ρ₀ ρ' ?_ hpre.2⟩⟩
+  rcases hrun with hrun | ⟨_, hrun⟩ <;> exact Imperative.starE_preserves_factory hrun
+
 /-! ## Rules for a single command -/
 
 /-- A generic single Core command.  `h` receives the full `InitEnvWF params (.cmd c) ρ₀`,

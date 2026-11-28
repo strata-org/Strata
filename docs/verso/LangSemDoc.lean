@@ -622,6 +622,8 @@ a proved `Procedure.contractTriple` of a structured body gives that property
 (`procedureAssertsValidOnTraces_of_contractTriple`): both validate the assertions of every
 finite execution and the postconditions of every finished run. For a polymorphic procedure,
 it does so through its instance at its own type parameters.
+At a call, the axioms of a callee declared no later than the caller follow from the
+caller's entry when they read no variable (`AxiomsBeforeProcedureDecl.callee`).
 `StrataTest/Languages/Core/Tests/Logic/Hoare.lean` has examples of Hoare triples
 derived from procedure contracts and their proofs,
 `StrataTest/Languages/Core/Tests/Logic/HoareAxioms.lean` has contracts that rest on

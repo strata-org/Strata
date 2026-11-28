@@ -292,6 +292,17 @@ def Program.typeNamesWithPrefix (p : Program) (pfx : String) : Std.HashSet Strin
     | .proc proc _ => proc.header.name.name != procName
     | _ => true
 
+/-- Do the axioms and `distinct` declarations before the procedure named `procName` read
+    no variable? Only `.fvar` nodes read the store. Constants and functions are `.op`
+    nodes, which read the factory, so such declarations hold or fail in an environment by
+    its factory alone (`Specification.AxiomsBeforeProcedureDecl.of_closed`). -/
+@[expose] def Program.axiomsClosedBeforeProcedure (p : Program) (procName : String) : Bool :=
+  (p.declsBeforeProcedure procName).all fun d =>
+    match d with
+    | .ax a _ => a.e.freeVars.isEmpty
+    | .distinct _ es _ => es.all (·.freeVars.isEmpty)
+    | _ => true
+
 /-- Extend `factory` with the functions in `decl`: a function declaration
     adds itself, a recursive block adds all of its functions, and every other
     declaration leaves the factory unchanged. -/
